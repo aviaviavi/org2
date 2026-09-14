@@ -3051,6 +3051,8 @@ public final class WorkspaceStore {
   private var aiChatTranscriptWritesBlocked = false
   private var openClawThreadHydrationTasks: [UUID: Task<Void, Never>] = [:]
   private var openClawThreadHydrationTaskTokens: [UUID: UUID] = [:]
+  private var pendingOpenClawHydrationCommits: [UUID: PendingOpenClawHydrationCommit] = [:]
+  private var pendingOpenClawHydrationCommitTasks: [UUID: Task<Void, Never>] = [:]
   private var inactiveAIChatTranscriptsByPath: [String: OpenClawTranscriptState] = [:]
   private var inactiveAIChatTranscriptPathLRU: [String] = []
   private var openClawTranscriptLoadTask: Task<Void, Never>?
@@ -3424,6 +3426,8 @@ public final class WorkspaceStore {
   private var documentSlidePageIndexes: [String: Int] = [:]
   @ObservationIgnored private var corpusAgentSkillRefreshGeneration: UInt64 = 0
   @ObservationIgnored private var corpusAgentSkillRefreshTask: Task<Void, Never>?
+  @ObservationIgnored private var corpusAgentSkillLoadedCorpusPath: String?
+  @ObservationIgnored private var corpusAgentSkillRefreshCorpusPath: String?
   @ObservationIgnored var corpusAgentSkillDiscoveryForTesting: (@Sendable (Bool) -> Void)?
   @ObservationIgnored private var orgCryptRecipientRefreshGeneration: UInt64 = 0
   @ObservationIgnored private var orgCryptRecipientRefreshTask: Task<Void, Never>?
@@ -3613,6 +3617,10 @@ public final class WorkspaceStore {
   }
 
   public func bootstrap() async {
+    let cli = self.cli
+    Task.detached(priority: .utility) {
+      await cli.prewarmAppHTMLRenderer()
+    }
     await restoreLocalDocumentPublications()
     await refreshAudioSettingsStatusAsync()
     if corpusRoot == nil {
@@ -25902,6 +25910,7 @@ public final class WorkspaceStore {
        unloadedOpenClawChatThreadIDs.remove(threadID) != nil {
       openClawThreadHydrationTaskTokens.removeValue(forKey: threadID)
       openClawThreadHydrationTasks.removeValue(forKey: threadID)?.cancel()
+      discardPendingOpenClawHydrationCommit(for: threadID)
     }
     touchHydratedOpenClawChatThread(threadID)
   }
@@ -27603,7 +27612,7 @@ public final class WorkspaceStore {
       }
       if let summaryIndex = archivedOpenClawChatThreadSummaries.firstIndex(where: {
         $0.id == thread.id
-      }) {
+      }), archivedOpenClawChatThreadSummaries[summaryIndex] != nextSummary {
         archivedOpenClawChatThreadSummaries[summaryIndex] = nextSummary
       }
     } else {
@@ -27612,7 +27621,7 @@ public final class WorkspaceStore {
       }
       if let summaryIndex = visibleOpenClawChatThreadSummaries.firstIndex(where: {
         $0.id == thread.id
-      }) {
+      }), visibleOpenClawChatThreadSummaries[summaryIndex] != nextSummary {
         visibleOpenClawChatThreadSummaries[summaryIndex] = nextSummary
       }
     }
@@ -28157,6 +28166,9 @@ public final class WorkspaceStore {
     guard let thread = openClawChatThreads.first(where: { $0.id == id }) else {
       return
     }
+    if let previousID = selectedOpenClawChatThreadID, previousID != id {
+      commitPendingOpenClawHydration(for: previousID)
+    }
     let requiresHydration = unloadedOpenClawChatThreadIDs.contains(thread.id)
     let selectionChanged = selectedOpenClawChatThreadID != thread.id
     saveOpenClawComposerForSelectedThread()
@@ -28208,6 +28220,18 @@ public final class WorkspaceStore {
     messages: [OpenClawChatMessage],
     isSharedRoom: Bool
   ) -> [OpenClawPreparedMessagePresentation] {
+    prepareInitialOpenClawMessagePresentations(
+      inputs: initialOpenClawMessagePresentationInputs(
+        messages: messages,
+        isSharedRoom: isSharedRoom
+      )
+    )
+  }
+
+  nonisolated private static func initialOpenClawMessagePresentationInputs(
+    messages: [OpenClawChatMessage],
+    isSharedRoom: Bool
+  ) -> [OpenClawMessagePresentationInput] {
     let window = OpenClawChatTranscriptWindow(
       messages: messages,
       isSharedRoom: isSharedRoom,
@@ -28223,6 +28247,12 @@ public final class WorkspaceStore {
       // values (including legacy inline Data) into the presentation cache.
       inputs.append(OpenClawMessagePresentationInput(message))
     }
+    return inputs
+  }
+
+  nonisolated private static func prepareInitialOpenClawMessagePresentations(
+    inputs: [OpenClawMessagePresentationInput]
+  ) -> [OpenClawPreparedMessagePresentation] {
     var prepared: [OpenClawPreparedMessagePresentation] = []
     prepared.reserveCapacity(inputs.count)
     for input in inputs {
@@ -28245,21 +28275,11 @@ public final class WorkspaceStore {
     openClawThreadHydrationTaskTokens[id] = token
     let task = Task { @MainActor [weak self] in
       guard !Task.isCancelled else { return }
-      let hydration = await Task.detached(priority: .userInitiated) {
-        let loaded = AIChatTranscriptStore.shared.loadThread(
+      let loaded = await Task.detached(priority: .userInitiated) {
+        AIChatTranscriptStore.shared.loadThread(
           id: id,
           metadata: metadata,
           legacyURL: transcriptURL
-        )
-        let presentations = loaded.map {
-          Self.prepareInitialOpenClawMessagePresentations(
-            messages: $0.messages,
-            isSharedRoom: $0.isSharedRoom
-          )
-        } ?? []
-        return OpenClawPreparedThreadHydration(
-          loaded: loaded,
-          presentations: presentations
         )
       }.value
       self?.openClawThreadHydrationDidLoadForTesting?(id)
@@ -28274,14 +28294,18 @@ public final class WorkspaceStore {
             !Task.isCancelled,
             self.openClawThreadHydrationTaskTokens[id] == token
       else { return }
-      self.openClawThreadHydrationTaskTokens.removeValue(forKey: id)
-      self.openClawThreadHydrationTasks.removeValue(forKey: id)
+      defer {
+        if self.openClawThreadHydrationTaskTokens[id] == token {
+          self.openClawThreadHydrationTaskTokens.removeValue(forKey: id)
+          self.openClawThreadHydrationTasks.removeValue(forKey: id)
+        }
+      }
       guard self.openClawTranscriptLoadGeneration == transcriptGeneration,
             self.openClawTranscriptURL.standardizedFileURL.path == transcriptURL.path,
             self.openClawThreadMessageMutationVersions[id, default: 0] == mutationVersion,
             self.unloadedOpenClawChatThreadIDs.contains(id)
       else { return }
-      guard let loaded = hydration.loaded,
+      guard let loaded,
             let index = self.openClawChatThreads.firstIndex(where: { $0.id == id })
       else {
         self.errorText = "AI chat conversation \(metadata.title) could not be loaded from storage."
@@ -28301,13 +28325,8 @@ public final class WorkspaceStore {
         tracksPersistence: false,
         makesColdPlaceholderAuthoritative: false
       )
-      self.replaceAIChatThreadIncrementally(
-        at: index,
-        with: hydrated,
-        messageCount: cachedMessageCount
-      )
-      OpenClawMessagePresentationCache.install(hydration.presentations)
-      if self.selectedOpenClawChatThreadID == id {
+      let publishesSelectedThread = self.selectedOpenClawChatThreadID == id
+      if publishesSelectedThread {
         self.replaceOpenClawMessages(hydrated.messages, shouldPersist: false)
         self.syncSelectedOpenClawSendState()
         self.openClawStatusText = self.isSendingOpenClawMessage
@@ -28316,7 +28335,46 @@ public final class WorkspaceStore {
             ? "Ready for a Codex message"
             : Self.openClawStatusText(settings: self.currentOpenClawSettings())
       }
-      self.enforceHydratedOpenClawChatThreadLimit()
+      if publishesSelectedThread,
+         self.selectedSurface == .openClaw || self.isOpenClawAssistantPresented {
+        // The selected messages are sufficient to update the transcript. Defer
+        // mutating the 500+ item observed thread collection until WebKit has
+        // acknowledged that DOM update, so sidebar bookkeeping cannot compete
+        // with the first visible frame.
+        self.deferOpenClawHydrationCommit(
+          PendingOpenClawHydrationCommit(
+            thread: hydrated,
+            messageCount: cachedMessageCount,
+            transcriptPath: transcriptURL.path,
+            transcriptGeneration: transcriptGeneration,
+            mutationVersion: mutationVersion
+          )
+        )
+      } else {
+        self.replaceAIChatThreadIncrementally(
+          at: index,
+          with: hydrated,
+          messageCount: cachedMessageCount
+        )
+        self.enforceHydratedOpenClawChatThreadLimit()
+      }
+      // Presentation enrichment is not required for a readable transcript:
+      // AIChatTranscriptDocument immediately publishes a safe plain excerpt.
+      // Warm the structured cache only after that first frame can be drawn.
+      let presentationInputs = Self.initialOpenClawMessagePresentationInputs(
+        messages: loaded.messages,
+        isSharedRoom: loaded.isSharedRoom
+      )
+      Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(100))
+        guard !Task.isCancelled else { return }
+        let presentations = await Task.detached(priority: .utility) {
+          Self.prepareInitialOpenClawMessagePresentations(
+            inputs: presentationInputs
+          )
+        }.value
+        OpenClawMessagePresentationCache.install(presentations)
+      }
     }
     openClawThreadHydrationTasks[id] = task
   }
@@ -28328,7 +28386,46 @@ public final class WorkspaceStore {
       if let task = openClawThreadHydrationTasks[id] { await task.value }
     }
     guard !unloadedOpenClawChatThreadIDs.contains(id) else { return nil }
-    return openClawChatThreads.first(where: { $0.id == id })
+    return pendingOpenClawHydrationCommits[id]?.thread
+      ?? openClawChatThreads.first(where: { $0.id == id })
+  }
+
+  private func deferOpenClawHydrationCommit(_ commit: PendingOpenClawHydrationCommit) {
+    let id = commit.thread.id
+    pendingOpenClawHydrationCommitTasks.removeValue(forKey: id)?.cancel()
+    pendingOpenClawHydrationCommits[id] = commit
+    pendingOpenClawHydrationCommitTasks[id] = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(for: .milliseconds(500))
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      self?.commitPendingOpenClawHydration(for: id)
+    }
+  }
+
+  private func commitPendingOpenClawHydration(for id: UUID) {
+    guard let commit = pendingOpenClawHydrationCommits.removeValue(forKey: id) else {
+      return
+    }
+    pendingOpenClawHydrationCommitTasks.removeValue(forKey: id)?.cancel()
+    guard openClawTranscriptLoadGeneration == commit.transcriptGeneration,
+          openClawTranscriptURL.standardizedFileURL.path == commit.transcriptPath,
+          openClawThreadMessageMutationVersions[id, default: 0] == commit.mutationVersion,
+          let index = openClawChatThreads.firstIndex(where: { $0.id == id })
+    else { return }
+    replaceAIChatThreadIncrementally(
+      at: index,
+      with: commit.thread,
+      messageCount: commit.messageCount
+    )
+    enforceHydratedOpenClawChatThreadLimit()
+  }
+
+  private func discardPendingOpenClawHydrationCommit(for id: UUID) {
+    pendingOpenClawHydrationCommits.removeValue(forKey: id)
+    pendingOpenClawHydrationCommitTasks.removeValue(forKey: id)?.cancel()
   }
 
   /// Returns a complete thread for detail projections without moving file IO
@@ -28902,6 +28999,19 @@ public final class WorkspaceStore {
   public func completeOpenClawChatScrollRestoration(threadID: UUID?) {
     lastCompletedOpenClawChatScrollRestorationThreadID = threadID
     openClawChatScrollRestorationCompletionGeneration &+= 1
+    guard let threadID, pendingOpenClawHydrationCommits[threadID] != nil else { return }
+    pendingOpenClawHydrationCommitTasks.removeValue(forKey: threadID)?.cancel()
+    pendingOpenClawHydrationCommitTasks[threadID] = Task { @MainActor [weak self] in
+      do {
+        // WebKit has applied the DOM mutation. Leave one display interval for
+        // that frame to reach the screen before invalidating the large sidebar.
+        try await Task.sleep(for: .milliseconds(50))
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      self?.commitPendingOpenClawHydration(for: threadID)
+    }
   }
 
   public func openChatFileReference(_ reference: OpenClawFileReference) {
@@ -30067,16 +30177,28 @@ public final class WorkspaceStore {
   }
 
   public func refreshCorpusAgentSkills(force: Bool = false) {
-    corpusAgentSkillRefreshGeneration &+= 1
-    let generation = corpusAgentSkillRefreshGeneration
-    corpusAgentSkillRefreshTask?.cancel()
     guard let root = corpusRoot?.standardizedFileURL else {
+      corpusAgentSkillRefreshGeneration &+= 1
+      corpusAgentSkillRefreshTask?.cancel()
       corpusAgentSkillCommands = []
       workspaceSkills = []
       selectedWorkspaceSkillID = nil
       corpusAgentSkillRefreshTask = nil
+      corpusAgentSkillLoadedCorpusPath = nil
+      corpusAgentSkillRefreshCorpusPath = nil
       return
     }
+    let rootPath = root.path
+    if !force,
+       corpusAgentSkillLoadedCorpusPath == rootPath
+        || (corpusAgentSkillRefreshTask != nil
+          && corpusAgentSkillRefreshCorpusPath == rootPath) {
+      return
+    }
+    corpusAgentSkillRefreshGeneration &+= 1
+    let generation = corpusAgentSkillRefreshGeneration
+    corpusAgentSkillRefreshTask?.cancel()
+    corpusAgentSkillRefreshCorpusPath = rootPath
     let sessionGeneration = corpusSessionGeneration
     let observer = corpusAgentSkillDiscoveryForTesting
     corpusAgentSkillRefreshTask = Task { @MainActor [weak self] in
@@ -30096,6 +30218,8 @@ public final class WorkspaceStore {
       else { return }
       self.corpusAgentSkillCommands = commands
       self.workspaceSkills = skills
+      self.corpusAgentSkillLoadedCorpusPath = rootPath
+      self.corpusAgentSkillRefreshCorpusPath = nil
       if let selectedID = self.selectedWorkspaceSkillID,
          !skills.contains(where: { $0.id == selectedID }) {
         self.selectedWorkspaceSkillID = nil
@@ -36900,6 +37024,7 @@ public final class WorkspaceStore {
     for id in refreshedIDs {
       openClawThreadHydrationTasks.removeValue(forKey: id)?.cancel()
       openClawThreadHydrationTaskTokens.removeValue(forKey: id)
+      discardPendingOpenClawHydrationCommit(for: id)
       openClawPendingUserMessageIDsByThreadID.removeValue(forKey: id)
       openClawThreadMessageRevisions.removeValue(forKey: id)
       syncedAIChatCleanMetadata.removeValue(forKey: id)
@@ -37024,6 +37149,9 @@ public final class WorkspaceStore {
     openClawThreadHydrationTasks.values.forEach { $0.cancel() }
     openClawThreadHydrationTasks.removeAll()
     openClawThreadHydrationTaskTokens.removeAll()
+    pendingOpenClawHydrationCommitTasks.values.forEach { $0.cancel() }
+    pendingOpenClawHydrationCommitTasks.removeAll()
+    pendingOpenClawHydrationCommits.removeAll()
     unloadedOpenClawChatThreadIDs = []
     hydratedOpenClawChatThreadLRU = []
     openClawThreadMessageMutationVersions.removeAll()
@@ -37558,6 +37686,32 @@ public final class WorkspaceStore {
           return
         }
       }
+      // Start the enhanced renderer immediately. Native blocks remain the
+      // first dependable frame, but their Swift parse no longer sits in front
+      // of the independent HTML parse on the critical path.
+      let htmlTask: Task<String, Error>? = cachedHTML == nil
+        ? Task { @MainActor [weak self] in
+            guard let self else { throw CancellationError() }
+            let sourceLineOffset = max(0, source.startLine - 1)
+            let stylesheetPath = self.appHTMLStylesheetPath
+            if let testRenderer = self.entryHTMLRendererForTesting {
+              return try await testRenderer(
+                source.text,
+                source.file,
+                sourceLineOffset,
+                stylesheetPath
+              )
+            }
+            return try await self.cli.renderAppHTML(
+              source.text,
+              sourcePath: source.file,
+              sourceLineOffset: sourceLineOffset,
+              stylesheetPath: stylesheetPath,
+              corpusRootPath: self.corpusRoot?.path
+            )
+          }
+        : nil
+      defer { htmlTask?.cancel() }
       let modifiedAt = self.selectedEntrySource?.id == source.id
         ? self.selectedEntrySourceModifiedAt
         : self.corpusFilesByPath[
@@ -37599,22 +37753,9 @@ public final class WorkspaceStore {
       // without ever leaving the default document view blocked on a process.
       self.applyRenderedBlocks(blocks, metadata: blockMetadata, for: source)
 
-      if cachedHTML == nil {
+      if let htmlTask {
         do {
-          let sourceLineOffset = max(0, source.startLine - 1)
-          let stylesheetPath = self.appHTMLStylesheetPath
-          let html: String
-          if let testRenderer = self.entryHTMLRendererForTesting {
-            html = try await testRenderer(source.text, source.file, sourceLineOffset, stylesheetPath)
-          } else {
-            html = try await self.cli.renderAppHTML(
-              source.text,
-              sourcePath: source.file,
-              sourceLineOffset: sourceLineOffset,
-              stylesheetPath: stylesheetPath,
-              corpusRootPath: self.corpusRoot?.path
-            )
-          }
+          let html = try await htmlTask.value
           guard generation == self.entrySourceLoadGeneration,
                 renderGeneration == self.entryHTMLRenderGeneration,
                 self.selectedEntrySource?.id == source.id,
@@ -44222,9 +44363,12 @@ private struct OpenClawPreparedWorkspaceTranscriptLoad: Sendable {
   let presentations: [OpenClawPreparedMessagePresentation]
 }
 
-private struct OpenClawPreparedThreadHydration: Sendable {
-  let loaded: OpenClawChatThread?
-  let presentations: [OpenClawPreparedMessagePresentation]
+private struct PendingOpenClawHydrationCommit: Sendable {
+  let thread: OpenClawChatThread
+  let messageCount: Int?
+  let transcriptPath: String
+  let transcriptGeneration: UInt64
+  let mutationVersion: UInt64
 }
 
 private struct OpenClawTranscriptPayload: Codable {

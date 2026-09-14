@@ -4,6 +4,40 @@ import XCTest
 
 @MainActor
 final class WorkspaceSkillsTests: XCTestCase {
+  func testNonForcedRefreshReusesLoadedCorpusSkillCatalog() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("openorg-reuse-workspace-skills-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "openorg-reuse-workspace-skills-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.waitForCorpusAgentSkillRefreshForTesting()
+    XCTAssertTrue(store.workspaceSkills.isEmpty)
+
+    let skill = root.appendingPathComponent(".agents/skills/later/SKILL.md")
+    try FileManager.default.createDirectory(
+      at: skill.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try """
+    ---
+    name: later
+    description: Added after the initial scan.
+    ---
+    """.write(to: skill, atomically: true, encoding: .utf8)
+
+    store.refreshCorpusAgentSkills()
+    await store.waitForCorpusAgentSkillRefreshForTesting()
+    XCTAssertTrue(store.workspaceSkills.isEmpty)
+
+    store.refreshCorpusAgentSkills(force: true)
+    await store.waitForCorpusAgentSkillRefreshForTesting()
+    XCTAssertEqual(store.workspaceSkills.map(\.name), ["later"])
+  }
+
   func testCreateSkillWritesAnEditableWorkspaceSkillWithoutOverwriting() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("openorg-create-workspace-skill-\(UUID().uuidString)", isDirectory: true)

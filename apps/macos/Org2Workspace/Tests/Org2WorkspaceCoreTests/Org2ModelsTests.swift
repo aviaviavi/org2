@@ -102,6 +102,19 @@ private final class ThreadSafeBoolRecorder: @unchecked Sendable {
   }
 }
 
+private final class ThreadSafeCLIMetricRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Org2CLIInvocationMetric] = []
+
+  var values: [Org2CLIInvocationMetric] {
+    lock.withLock { storage }
+  }
+
+  func append(_ value: Org2CLIInvocationMetric) {
+    lock.withLock { storage.append(value) }
+  }
+}
+
 private final class ControlledDailyNoteDirectoryResolver: @unchecked Sendable {
   private let lock = NSLock()
   private let firstStarted = DispatchSemaphore(value: 0)
@@ -1264,6 +1277,35 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(html.contains("globalThis.unsafeHead"))
   }
 
+  func testOrg2CLIReusesWarmAppHTMLRendererWithinInteractiveBudget() async throws {
+    let metrics = ThreadSafeCLIMetricRecorder()
+    let cli = try Org2CLI(
+      repoRoot: Org2CLI.defaultRepoRoot(),
+      telemetryHandler: metrics.append
+    )
+    await cli.prewarmAppHTMLRenderer()
+    let source = "* Local preview\n" + String(repeating: "A short local paragraph.\n", count: 20)
+    let started = Date()
+
+    for index in 0..<8 {
+      let html = try await cli.renderAppHTML(
+        source,
+        sourcePath: "/tmp/warm-preview-\(index).org2"
+      )
+      XCTAssertTrue(html.contains("Local preview"))
+    }
+
+    let elapsed = Date().timeIntervalSince(started)
+    let renderMetrics = metrics.values.filter { $0.command == "render-html-service" }
+    XCTAssertEqual(renderMetrics.count, 8)
+    XCTAssertTrue(renderMetrics.allSatisfy { $0.outcome == .succeeded })
+    XCTAssertLessThan(
+      elapsed,
+      1.0,
+      "Eight warm local renders took \(elapsed)s; this likely regressed to one process launch per render"
+    )
+  }
+
   func testOrg2CLIAppHTMLRenderHasHardTimeout() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-render-timeout-\(UUID().uuidString)", isDirectory: true)
@@ -1282,6 +1324,64 @@ final class Org2ModelsTests: XCTestCase {
     } catch let error as Org2CLIError {
       XCTAssertEqual(error, .commandTimedOut(seconds: 1))
     }
+  }
+
+  func testOrg2CLIAppHTMLRenderServiceTimeoutDoesNotCrashHost() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-render-service-timeout-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try "process.stdin.resume(); setInterval(() => {}, 1000);\n".write(
+      to: dist.appendingPathComponent("render-html-service.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let cli = Org2CLI(repoRoot: root)
+
+    do {
+      _ = try await cli.renderAppHTML(
+        "* Slow service\n",
+        sourcePath: "/tmp/slow-service.org2",
+        timeout: 0.05
+      )
+      XCTFail("Expected rendering to time out")
+    } catch let error as Org2CLIError {
+      XCTAssertEqual(error, .commandTimedOut(seconds: 1))
+    }
+  }
+
+  func testOrg2CLIAppHTMLRendererRecoversAfterCancellationBurst() async throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let source = "* Cancellation stress\n" + String(
+      repeating: "A paragraph with [[https://example.com][a link]].\n",
+      count: 400
+    )
+
+    for index in 0..<12 {
+      let render = Task {
+        try await cli.renderAppHTML(
+          source,
+          sourcePath: "/tmp/cancelled-render-\(index).org2"
+        )
+      }
+      try await Task.sleep(nanoseconds: 2_000_000)
+      render.cancel()
+      _ = try? await render.value
+    }
+
+    let started = Date()
+    let html = try await cli.renderAppHTML(
+      "* Recovered renderer\n",
+      sourcePath: "/tmp/recovered-render.org2",
+      timeout: 2
+    )
+    XCTAssertTrue(html.contains("Recovered renderer"))
+    XCTAssertLessThan(
+      Date().timeIntervalSince(started),
+      1.5,
+      "A cancelled render left the shared service lane stranded"
+    )
   }
 
   func testOrg2CLICancellationTerminatesRunningProcess() async throws {

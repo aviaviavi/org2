@@ -15,7 +15,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     changeSummary: AIChatTranscriptHTML.ChangeSummary? = nil
   ) -> AIChatTranscriptHTML.Entry {
     .init(id: id, role: role, title: role == "user" ? "You" : "Assistant", timestamp: "Today",
-      html: html, preparing: preparing, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
+      html: html, plainText: nil, preparing: preparing, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
       isRoomResponse: false, copied: false, isTruncated: false,
       responseTrace: trace, changeSummary: changeSummary)
   }
@@ -104,6 +104,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       source: "* Already rendered",
       expanded: false,
       html: "<main><strong>Already rendered</strong></main>",
+      plainText: nil,
       contexts: []
     )
     AIChatTranscriptRenderedBodyCache.install(
@@ -248,18 +249,39 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       Visible user message.
       """
     )
-    XCTAssertNil(AIChatTranscriptHTML.cachedUserBody(for: message, expanded: false))
+    XCTAssertNil(AIChatTranscriptHTML.cachedPreparedBody(for: message, expanded: false))
 
     OpenClawMessagePresentationCache.install(
       OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(message))
     )
-    let warm = AIChatTranscriptHTML.cachedUserBody(for: message, expanded: false)
+    let warm = AIChatTranscriptHTML.cachedPreparedBody(for: message, expanded: false)
 
     XCTAssertNotNil(warm)
     XCTAssertTrue(warm?.html.contains("Visible user message.") == true)
     XCTAssertFalse(warm?.html.contains("PRIVATE-AUTOMATIC-PROMPT") == true)
     XCTAssertEqual(warm?.contexts.map(\.title), ["Private"])
-    XCTAssertNil(AIChatTranscriptHTML.cachedUserBody(for: message, expanded: true))
+    XCTAssertNil(AIChatTranscriptHTML.cachedPreparedBody(for: message, expanded: true))
+  }
+
+  func testPlainAssistantMessageReusesWarmPresentationWithoutRichRendering() {
+    OpenClawMessagePresentationCache.removeAllForTesting()
+    let plain = OpenClawChatMessage(
+      role: .assistant,
+      content: "A local plain-text response with no Org syntax."
+    )
+    let structured = OpenClawChatMessage(
+      role: .assistant,
+      content: "* Result\n\n- One item"
+    )
+    OpenClawMessagePresentationCache.install([
+      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(plain)),
+      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(structured)),
+    ])
+
+    let body = AIChatTranscriptHTML.cachedPreparedBody(for: plain, expanded: false)
+    XCTAssertTrue(body?.html.contains("A local plain-text response") == true)
+    XCTAssertEqual(body?.plainText, plain.content)
+    XCTAssertNil(AIChatTranscriptHTML.cachedPreparedBody(for: structured, expanded: false))
   }
 
   func testAuxiliaryControlsKeepIconsTextAndActionsAlignedAtNarrowWidths() async throws {

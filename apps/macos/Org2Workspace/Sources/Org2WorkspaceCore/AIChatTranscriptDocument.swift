@@ -6,6 +6,7 @@ struct AIChatTranscriptRenderedBody: Equatable {
   let source: String
   let expanded: Bool
   let html: String
+  let plainText: String?
   let contexts: [AIChatTranscriptHTML.Context]
 }
 
@@ -79,7 +80,13 @@ enum AIChatTranscriptRenderedBodyCache {
     let contextCost = body.contexts.reduce(0) {
       $0 + $1.title.utf8.count + $1.kind.utf8.count + 32
     }
-    let cost = max(1, body.source.utf8.count + body.html.utf8.count + contextCost)
+    let cost = max(
+      1,
+      body.source.utf8.count
+        + body.html.utf8.count
+        + (body.plainText?.utf8.count ?? 0)
+        + contextCost
+    )
     cache.setObject(
       Value(body),
       forKey: Key(messageID: messageID, sourcePath: sourcePath, expanded: body.expanded),
@@ -245,12 +252,17 @@ struct AIChatTranscriptDocument: View {
       let resolved = rendered[message.id].flatMap {
         $0.source == input.text && $0.expanded == input.expanded ? $0 : nil
       } ?? cachedRenderedBody(input: input)
-        ?? cachedUserBody(message: message, input: input)
+        ?? cachedPreparedBody(message: message, input: input)
       let isPreparing = message.role == .user && resolved == nil
+      let fallbackPlainText = resolved == nil && !isPreparing ? excerpt.text : nil
+      let plainText = resolved?.plainText ?? fallbackPlainText
       return AIChatTranscriptHTML.Entry(
         id: message.id.uuidString.lowercased(), role: message.role.rawValue,
         title: title(message), timestamp: AIChatMessageTimestampPresentation.displayText(for: message.createdAt),
-        html: resolved?.html ?? AIChatDocumentHTML.plain(isPreparing ? "" : excerpt.text),
+        html: plainText == nil
+          ? resolved?.html ?? AIChatDocumentHTML.plain(isPreparing ? "" : excerpt.text)
+          : "",
+        plainText: plainText,
         preparing: isPreparing,
         contexts: resolved?.contexts ?? [],
         attachments: message.attachments.map(AIChatTranscriptHTML.Attachment.init),
@@ -297,7 +309,7 @@ struct AIChatTranscriptDocument: View {
       where nextRendered[input.id]?.source != input.text
         || nextRendered[input.id]?.expanded != input.expanded {
         if let cached = cachedRenderedBody(input: input)
-          ?? cachedUserBody(message: message, input: input) {
+          ?? cachedPreparedBody(message: message, input: input) {
           nextRendered[input.id] = cached
           AIChatTranscriptRenderedBodyCache.install(
             cached,
@@ -337,6 +349,7 @@ struct AIChatTranscriptDocument: View {
             source: input.text,
             expanded: input.expanded,
             html: html,
+            plainText: input.formatted ? nil : prepared.0,
             contexts: prepared.1
           )
           AIChatTranscriptRenderedBodyCache.install(
@@ -432,11 +445,11 @@ struct AIChatTranscriptDocument: View {
     }
   }
 
-  private func cachedUserBody(
+  private func cachedPreparedBody(
     message: OpenClawChatMessage,
     input: RenderInput
   ) -> AIChatTranscriptRenderedBody? {
-    guard let prepared = AIChatTranscriptHTML.cachedUserBody(
+    guard let prepared = AIChatTranscriptHTML.cachedPreparedBody(
       for: message,
       expanded: input.expanded
     ) else { return nil }
@@ -444,6 +457,7 @@ struct AIChatTranscriptDocument: View {
       source: input.text,
       expanded: input.expanded,
       html: prepared.html,
+      plainText: prepared.plainText,
       contexts: prepared.contexts
     )
   }
@@ -567,23 +581,30 @@ struct AIChatTranscriptDocument: View {
 }
 
 enum AIChatTranscriptHTML {
-  struct PreparedUserBody: Equatable {
+  struct PreparedBody: Equatable {
     let html: String
+    let plainText: String
     let contexts: [Context]
   }
 
   @MainActor
-  static func cachedUserBody(
+  static func cachedPreparedBody(
     for message: OpenClawChatMessage,
     expanded: Bool
-  ) -> PreparedUserBody? {
-    guard message.role == .user, !expanded else { return nil }
+  ) -> PreparedBody? {
+    guard !expanded else { return nil }
     let input = OpenClawMessagePresentationInput(message)
     guard let cached = OpenClawMessagePresentationCache.cachedPresentation(for: input) else {
       return nil
     }
-    return PreparedUserBody(
+    if message.role != .user {
+      guard cached.body.org?.usesStructuredRendering != true,
+            !cached.body.containsInlineSyntax
+      else { return nil }
+    }
+    return PreparedBody(
       html: AIChatDocumentHTML.plain(cached.body.displayedText),
+      plainText: cached.body.displayedText,
       contexts: cached.context.contexts.map(Context.init)
     )
   }
@@ -734,6 +755,7 @@ enum AIChatTranscriptHTML {
     let title: String
     let timestamp: String
     let html: String
+    let plainText: String?
     let preparing: Bool
     let contexts: [Context]
     let attachments: [Attachment]
@@ -778,6 +800,7 @@ enum AIChatTranscriptHTML {
   .message-header { display:flex; align-items:center; gap:6px; min-height:24px; font-size:11px; color:light-dark(#777,#aaa); margin-bottom:5px; }
   .message-header strong { color:light-dark(#666,#bbb); font-weight:600; }
   .message-header time { opacity:.7; }
+  main.plain-message { white-space:pre-wrap; }
   .system-badge,.queued-badge { padding:2px 5px; border-radius:4px; font-size:10px; font-weight:600; background:light-dark(#f9ead6,#503b26); color:light-dark(#a05b08,#f0aa5b); }
   .queued-badge { color:inherit; background:light-dark(#eee,#383838); }
   button { font:inherit; color:inherit; border:0; border-radius:4px; padding:3px 6px; background:transparent; cursor:pointer; user-select:none; -webkit-user-select:none; }
@@ -958,6 +981,11 @@ enum AIChatTranscriptHTML {
       }
       return body;
     };
+    const plainMessageBody = text => {
+      const body=document.createElement('main');
+      body.className='org2-document plain-message'; body.textContent=text||'';
+      return body;
+    };
     const setRenderedOrgText = (node, text, html) => {
       node.replaceChildren();
       node.classList.toggle('rendered',!!html);
@@ -993,7 +1021,7 @@ enum AIChatTranscriptHTML {
         for(let i=0;i<2;i++) { const line=document.createElement('span'); line.className='message-placeholder-line'; lines.append(line); }
         placeholder.append(pulse,lines); card.append(placeholder);
       } else {
-        card.append(renderedOrgBody(e.html,'main'));
+        card.append(typeof e.plainText==='string' ? plainMessageBody(e.plainText) : renderedOrgBody(e.html,'main'));
       }
       if(!e.preparing && e.isTruncated) { const expand=button('⌄  Show Full Message','expand',e.id); expand.className='expansion'; card.append(expand); }
       if(e.attachments.length) {
@@ -1169,11 +1197,12 @@ enum AIChatTranscriptHTML {
       if(data.sending && !data.live) { status.append(document.createTextNode('Working…'),button('Stop','stop')); }
       else if(!data.entries.length) status.textContent=data.status;
       pending=null; hasPendingLive=false;
+      if(changedThread && !data.search) scrollTo(0,maxScroll()*data.initialPosition);
       requestAnimationFrame(()=>{
         const token=data.thread+':'+data.searchGeneration+':'+data.search;
         const target=data.search && document.getElementById('message-'+data.search);
         if(target && token!==searchToken) { target.scrollIntoView({block:'center'}); searchToken=token; }
-        else if(changedThread) scrollTo(0,maxScroll()*data.initialPosition);
+        else if(changedThread && data.search) scrollTo(0,maxScroll()*data.initialPosition);
         else if(follow) scrollTo(0,maxScroll());
         else if(anchor && document.getElementById(anchor.id)) scrollTo(0,oldTop+document.getElementById(anchor.id).getBoundingClientRect().top-anchor.top);
         report();
@@ -1234,6 +1263,9 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
     let previous = c.payload
     guard previous != next else { return }
     let onlyLiveChanged = previous.map { Self.documentPayloadMatches($0, next) } ?? false
+    c.restorationThreadAfterDOMUpdate = previous?.thread != next.thread && next.search == nil
+      ? next.thread
+      : nil
     c.payload=next
     if c.loaded {
       if onlyLiveChanged { c.updateLive(view) }
@@ -1261,6 +1293,7 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
   final class Coordinator: AIChatDocumentWebView.Coordinator {
     var payload: AIChatTranscriptHTML.Payload?
     var restoredThread: String?
+    var restorationThreadAfterDOMUpdate: String?
     var onAction: ((String,String?,String?) -> Void)?
     var onPosition: ((String,Double) -> Void)?
     override func update(_ view: WKWebView) {
@@ -1272,7 +1305,20 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
         value["html"]=OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in:entry.html)
         return value
       }
-      view.callAsyncJavaScript("window.__transcriptUpdate(data)",arguments:["data":object],in:nil,in:.page)
+      let restorationThread = restorationThreadAfterDOMUpdate
+      restorationThreadAfterDOMUpdate = nil
+      view.callAsyncJavaScript(
+        "window.__transcriptUpdate(data)",
+        arguments: ["data": object],
+        in: nil,
+        in: .page
+      ) { [weak self] result in
+        guard case .success = result, let restorationThread else { return }
+        Task { @MainActor [weak self] in
+          guard let self, self.payload?.thread == restorationThread else { return }
+          self.completeRestoration(for: restorationThread)
+        }
+      }
     }
     func updateLive(_ view: WKWebView) {
       guard let payload else { return }
@@ -1291,12 +1337,18 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
       guard message.frameInfo.isMainFrame, let value=message.body as? [String:Any],
             let thread=value["thread"] as? String, thread==payload?.thread else { return }
       if let position=value["position"] as? Double, position.isFinite {
-        if restoredThread != thread { restoredThread = thread; onAction?("restored", nil, nil) }
+        completeRestoration(for: thread)
         onPosition?(thread,min(1,max(0,position)))
       }
       if let action=value["action"] as? String {
         onAction?(action, value["id"] as? String, value["detail"] as? String)
       }
+    }
+
+    private func completeRestoration(for thread: String) {
+      guard restoredThread != thread else { return }
+      restoredThread = thread
+      onAction?("restored", nil, nil)
     }
   }
 }

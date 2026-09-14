@@ -934,6 +934,7 @@ final class AIChatTranscriptStoreTests: XCTestCase {
       openClawTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
+    store.selectedSurface = .openClaw
     XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(cold.id))
 
     store.selectOpenClawChatThread(cold.id)
@@ -944,6 +945,18 @@ final class AIChatTranscriptStoreTests: XCTestCase {
       attachmentBytes
     )
     XCTAssertFalse(store.unloadedAIChatThreadIDsForTesting.contains(cold.id))
+    XCTAssertNotNil(
+      store.openClawChatThreads.first(where: { $0.id == cold.id })?.storedMessageCount,
+      "Visible transcript data should publish before the corpus-wide thread collection"
+    )
+
+    store.completeOpenClawChatScrollRestoration(threadID: cold.id)
+    try await Task.sleep(for: .milliseconds(80))
+
+    XCTAssertNil(
+      store.openClawChatThreads.first(where: { $0.id == cold.id })?.storedMessageCount,
+      "The backing thread should commit after the visible transcript frame"
+    )
   }
 
   @MainActor
@@ -1148,11 +1161,14 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     store.selectOpenClawChatThread(selected.id)
     await store.waitForAIChatThreadHydrationForTesting(cold.id)
 
-    let cached = try XCTUnwrap(
-      OpenClawMessagePresentationCache.cachedPresentationForTesting(
+    var eventuallyCached: OpenClawCachedMessagePresentation?
+    for _ in 0..<100 where eventuallyCached == nil {
+      eventuallyCached = OpenClawMessagePresentationCache.cachedPresentationForTesting(
         messageID: coldMessage.id
       )
-    )
+      if eventuallyCached == nil { try await Task.sleep(for: .milliseconds(10)) }
+    }
+    let cached = try XCTUnwrap(eventuallyCached)
     XCTAssertEqual(cached.rawText, coldMessage.content)
 
     store.selectOpenClawChatThread(cold.id)

@@ -214,6 +214,70 @@ public struct Org2CLI: Sendable {
     resolveEmbeds: Bool = true,
     timeout: TimeInterval = 8
   ) async throws -> String {
+    let servicePath = repoRoot.appendingPathComponent("dist/render-html-service.js")
+    if FileManager.default.fileExists(atPath: servicePath.path) {
+      let startedAt = DispatchTime.now().uptimeNanoseconds
+      do {
+        let html = try await Org2HTMLRenderServicePool.shared.render(
+          text: text,
+          sourcePath: sourcePath,
+          sourceLineOffset: sourceLineOffset,
+          stylesheetPath: stylesheetPath,
+          corpusRootPath: corpusRootPath,
+          resolveEmbeds: resolveEmbeds,
+          repoRoot: repoRoot,
+          nodePath: runtimeNodePath,
+          timeout: timeout
+        )
+        let byteCounts = await Task.detached(priority: .utility) {
+          (text.utf8.count, html.utf8.count)
+        }.value
+        let metric = Org2CLIInvocationMetric(
+          command: "render-html-service",
+          elapsedMilliseconds: Double(
+            DispatchTime.now().uptimeNanoseconds - startedAt
+          ) / 1_000_000,
+          outcome: .succeeded,
+          standardInputBytes: byteCounts.0,
+          standardOutputBytes: byteCounts.1,
+          standardErrorBytes: 0,
+          exitStatus: nil
+        )
+        Self.recordTelemetry(metric)
+        telemetryHandler?(metric)
+        return html
+      } catch is CancellationError {
+        let metric = Self.appHTMLServiceFailureMetric(
+          startedAt: startedAt,
+          outcome: .cancelled
+        )
+        Self.recordTelemetry(metric)
+        telemetryHandler?(metric)
+        throw CancellationError()
+      } catch let error as Org2CLIError {
+        let outcome: Org2CLIInvocationOutcome = if case .commandTimedOut = error {
+          .timedOut
+        } else {
+          .failed
+        }
+        let metric = Self.appHTMLServiceFailureMetric(
+          startedAt: startedAt,
+          outcome: outcome
+        )
+        Self.recordTelemetry(metric)
+        telemetryHandler?(metric)
+        throw error
+      } catch {
+        let metric = Self.appHTMLServiceFailureMetric(
+          startedAt: startedAt,
+          outcome: .failed
+        )
+        Self.recordTelemetry(metric)
+        telemetryHandler?(metric)
+        throw error
+      }
+    }
+
     var arguments = ["--source-path", sourcePath]
     if let corpusRootPath { arguments += ["--corpus-root", corpusRootPath] }
     if !resolveEmbeds { arguments.append("--reference-embeds") }
@@ -237,6 +301,22 @@ public struct Org2CLI: Sendable {
       operation.cancel()
     }
     return String(decoding: data, as: UTF8.self)
+  }
+
+  public func prewarmAppHTMLRenderer() async {
+    let servicePath = repoRoot.appendingPathComponent("dist/render-html-service.js")
+    guard FileManager.default.fileExists(atPath: servicePath.path) else { return }
+    _ = try? await Org2HTMLRenderServicePool.shared.render(
+      text: "",
+      sourcePath: "/tmp/openorg-renderer-prewarm.org",
+      sourceLineOffset: 0,
+      stylesheetPath: nil,
+      corpusRootPath: nil,
+      resolveEmbeds: false,
+      repoRoot: repoRoot,
+      nodePath: runtimeNodePath,
+      timeout: 8
+    )
   }
 
   public func renderPresentationPDF(
@@ -569,6 +649,23 @@ public struct Org2CLI: Sendable {
     let exitStatus = metric.exitStatus.map(String.init) ?? "none"
     telemetryLogger.info(
       "command=\(metric.command, privacy: .public) elapsed_ms=\(metric.elapsedMilliseconds, privacy: .public) outcome=\(metric.outcome.rawValue, privacy: .public) stdin_bytes=\(metric.standardInputBytes, privacy: .public) stdout_bytes=\(metric.standardOutputBytes, privacy: .public) stderr_bytes=\(metric.standardErrorBytes, privacy: .public) exit_status=\(exitStatus, privacy: .public)"
+    )
+  }
+
+  private static func appHTMLServiceFailureMetric(
+    startedAt: UInt64,
+    outcome: Org2CLIInvocationOutcome
+  ) -> Org2CLIInvocationMetric {
+    Org2CLIInvocationMetric(
+      command: "render-html-service",
+      elapsedMilliseconds: Double(
+        DispatchTime.now().uptimeNanoseconds - startedAt
+      ) / 1_000_000,
+      outcome: outcome,
+      standardInputBytes: 0,
+      standardOutputBytes: 0,
+      standardErrorBytes: 0,
+      exitStatus: nil
     )
   }
 

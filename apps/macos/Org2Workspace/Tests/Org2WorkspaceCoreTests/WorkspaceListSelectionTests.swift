@@ -455,7 +455,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     )
   }
 
-  func testReopenedThreadGetsAFreshSidebarRowIdentity() {
+  func testSidebarThreadRowIdentitySurvivesSettlementChanges() {
     let threadID = UUID()
     let activeThread = OpenClawChatThread(
       id: threadID,
@@ -467,42 +467,14 @@ final class WorkspaceListSelectionTests: XCTestCase {
       settledAt: .some(Date(timeIntervalSince1970: 1_700_000_000))
     )
 
+    XCTAssertEqual(
+      OpenClawSidebarThreadRowIdentity(thread: activeThread),
+      OpenClawSidebarThreadRowIdentity(thread: settledThread)
+    )
     XCTAssertNotEqual(
-      OpenClawSidebarThreadRowIdentity(thread: activeThread, isSending: false),
-      OpenClawSidebarThreadRowIdentity(thread: settledThread, isSending: false)
-    )
-    XCTAssertFalse(OpenClawSidebarThreadRowIdentity(thread: activeThread, isSending: false).isSettled)
-    XCTAssertTrue(OpenClawSidebarThreadRowIdentity(thread: settledThread, isSending: false).isSettled)
-  }
-
-  func testFinishedThreadGetsAFreshSidebarRowIdentity() {
-    let thread = OpenClawChatThread(
-      title: "Thread",
-      sessionKey: "agent:main:thread"
-    )
-
-    XCTAssertNotEqual(
-      OpenClawSidebarThreadRowIdentity(thread: thread, isSending: true),
-      OpenClawSidebarThreadRowIdentity(thread: thread, isSending: false)
-    )
-  }
-
-  func testSelectingAnotherWorkingThreadTransfersTheActivityAnimationHost() {
-    let thread = OpenClawChatThread(
-      title: "Thread",
-      sessionKey: "agent:main:thread"
-    )
-
-    XCTAssertNotEqual(
+      OpenClawSidebarThreadRowIdentity(thread: activeThread),
       OpenClawSidebarThreadRowIdentity(
-        thread: thread,
-        isSending: true,
-        isSelected: true
-      ),
-      OpenClawSidebarThreadRowIdentity(
-        thread: thread,
-        isSending: true,
-        isSelected: false
+        thread: OpenClawChatThread(title: "Other", sessionKey: "agent:main:other")
       )
     )
   }

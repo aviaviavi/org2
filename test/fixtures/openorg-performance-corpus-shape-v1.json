@@ -1,6 +1,6 @@
 {
   "$schema": "org2:openorg-performance-corpus-shape:v1",
-  "version": 3,
+  "version": 4,
   "description": "Aggregate, privacy-safe union of the root-heavy and zoned OpenOrg corpus layouts. It preserves both workloads without corpus text, file names, IDs, or source paths.",
   "privacy": {
     "containsCorpusContent": false,
@@ -8,28 +8,28 @@
     "containsSourcePaths": false
   },
   "documents": {
-    "activeFileCount": 5475,
+    "activeFileCount": 5747,
     "rootFileCount": 1934,
     "extensionMix": {
-      "csv": 35,
-      "md": 127,
+      "csv": 93,
+      "md": 128,
       "org": 3239,
-      "org2": 2074
+      "org2": 2287
     },
     "zones": [
-      { "kind": "notes", "fileCount": 1206 },
-      { "kind": "daily", "fileCount": 1439 },
+      { "kind": "notes", "fileCount": 1285 },
+      { "kind": "daily", "fileCount": 1449 },
       { "kind": "agents", "fileCount": 34 },
-      { "kind": "meetings", "fileCount": 276 },
-      { "kind": "views", "fileCount": 418 },
-      { "kind": "other", "fileCount": 168 }
+      { "kind": "meetings", "fileCount": 336 },
+      { "kind": "views", "fileCount": 530 },
+      { "kind": "other", "fileCount": 179 }
     ],
     "sizeBytes": {
-      "p50": 2077,
-      "p90": 17120,
-      "p95": 35606,
-      "p99": 181762,
-      "max": 5848122
+      "p50": 2385,
+      "p90": 18654,
+      "p95": 37419,
+      "p99": 197885,
+      "max": 23064423
     },
     "largeDocumentWorkload": {
       "headlineIntervalBytes": 896,
@@ -39,17 +39,17 @@
     }
   },
   "chat": {
-    "threadCount": 362,
-    "activeThreadCount": 12,
-    "archivedThreadCount": 350,
-    "messageCount": 2905,
-    "maxMessagesPerThread": 233,
-    "attachmentBytes": 20033298,
-    "largestMessageBytes": 7741,
+    "threadCount": 512,
+    "activeThreadCount": 16,
+    "archivedThreadCount": 496,
+    "messageCount": 4500,
+    "maxMessagesPerThread": 384,
+    "attachmentBytes": 25736872,
+    "largestMessageBytes": 80973,
     "encodedTranscriptBytes": 41338378
   },
   "workspaceScale": {
-    "agentRunCount": 5935,
+    "agentRunCount": 8000,
     "approvalItemCount": 500,
     "externalThreadCount": 250,
     "sourceProfileCount": 12

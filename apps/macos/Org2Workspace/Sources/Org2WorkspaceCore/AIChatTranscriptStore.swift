@@ -172,11 +172,33 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   func loadCommittedIfAvailable(legacyURL: URL) -> AIChatTranscriptLoadResult? {
     let url = legacyURL.standardizedFileURL
     let key = url.path
-    guard let state = Self.loadStoreState(legacyURL: url) else { return nil }
+    let state: StoreState
+    let result: AIChatTranscriptLoadResult
+    if let fastState = Self.loadFastStoreState(legacyURL: url) {
+      let fastResult = Self.loadShardedSnapshot(legacyURL: url, state: fastState)
+      let eagerIDs = fastState.current.map {
+        Self.eagerThreadIDs(
+          threads: $0.threads.map(\.metadata),
+          selectedThreadID: $0.selectedThreadID
+        )
+      } ?? []
+      if fastResult.unloadedThreadIDs.isDisjoint(with: eagerIDs) {
+        state = fastState
+        result = fastResult
+      } else {
+        guard let recovered = Self.loadStoreState(legacyURL: url) else { return nil }
+        state = recovered
+        result = Self.loadShardedSnapshot(legacyURL: url, state: recovered)
+      }
+    } else {
+      guard let recovered = Self.loadStoreState(legacyURL: url) else { return nil }
+      state = recovered
+      result = Self.loadShardedSnapshot(legacyURL: url, state: recovered)
+    }
     condition.lock()
     validatedStoreStates[key] = state
     condition.unlock()
-    return Self.loadShardedSnapshot(legacyURL: url, state: state)
+    return result
   }
 
   func setWritesSuspendedForTesting(_ suspended: Bool, legacyURL: URL) {
@@ -805,6 +827,35 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       )
     }
     return nil
+  }
+
+  /// The commit marker and immutable manifest digest are the atomic commit
+  /// boundary. Validate only the small eager working set on the launch path;
+  /// cold shards are verified when opened. A failed eager/cold shard read
+  /// falls back to the exhaustive recovery scan before any data is exposed.
+  private static func loadFastStoreState(legacyURL: URL) -> StoreState? {
+    let storeURL = storeDirectory(for: legacyURL)
+    let markerURL = storeURL.appendingPathComponent("migration-marker.json")
+    guard let markerData = try? Data(contentsOf: markerURL, options: .mappedIfSafe),
+          let marker = try? JSONDecoder().decode(StoreMarker.self, from: markerData),
+          marker.schema == StoreMarker.schemaValue,
+          marker.version == 1,
+          isValidDigest(marker.currentDigest),
+          marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true,
+          let current = loadManifestCandidate(
+            named: marker.currentManifest,
+            expectedDigest: marker.currentDigest,
+            storeURL: storeURL
+          )
+    else { return nil }
+    let previous = marker.previousManifest.flatMap {
+      loadManifestCandidate(
+        named: $0,
+        expectedDigest: marker.previousDigest,
+        storeURL: storeURL
+      )
+    }
+    return StoreState(current: current, previous: previous, recoveryStatus: .healthy)
   }
 
   private static func loadManifest(

@@ -2482,12 +2482,7 @@ private struct SidebarView: View {
             } else {
               ForEach(chatThreads) { summary in
                 chatThreadRow(summary)
-                  .id(OpenClawSidebarThreadRowIdentity(
-                    summary: summary,
-                    isSending: store.openClawSendingThreadIDs.contains(summary.id),
-                    isSelected: store.selectedOpenClawChatThreadID == summary.id
-                      && store.selectedSurface == .openClaw
-                  ))
+                  .id(OpenClawSidebarThreadRowIdentity(summary: summary))
                   .listRowBackground(Color.clear)
               }
 
@@ -2503,12 +2498,7 @@ private struct SidebarView: View {
                 )) { summary in
                   chatThreadRow(summary)
                     .opacity(0.68)
-                    .id(OpenClawSidebarThreadRowIdentity(
-                      summary: summary,
-                      isSending: store.openClawSendingThreadIDs.contains(summary.id),
-                      isSelected: store.selectedOpenClawChatThreadID == summary.id
-                        && store.selectedSurface == .openClaw
-                    ))
+                    .id(OpenClawSidebarThreadRowIdentity(summary: summary))
                     .listRowBackground(Color.clear)
                 }
 
@@ -2642,8 +2632,6 @@ private struct SidebarView: View {
   private func chatThreadRow(_ summary: OpenClawSidebarThreadSummary) -> some View {
     OpenClawSidebarThreadRow(
       summary: summary,
-      isSelected: store.selectedOpenClawChatThreadID == summary.id
-        && store.selectedSurface == .openClaw,
       isSending: store.openClawSendingThreadIDs.contains(summary.id),
       select: {
         store.makeSurfacePrimary(.openClaw)
@@ -3072,27 +3060,13 @@ enum OpenClawSettledThreadPagination {
 
 struct OpenClawSidebarThreadRowIdentity: Hashable {
   let threadID: UUID
-  let isSettled: Bool
-  let isSending: Bool
-  let isSelected: Bool
 
-  init(thread: OpenClawChatThread, isSending: Bool, isSelected: Bool = false) {
-    self.init(
-      summary: OpenClawSidebarThreadSummary(thread: thread),
-      isSending: isSending,
-      isSelected: isSelected
-    )
+  init(thread: OpenClawChatThread) {
+    self.init(summary: OpenClawSidebarThreadSummary(thread: thread))
   }
 
-  init(
-    summary: OpenClawSidebarThreadSummary,
-    isSending: Bool,
-    isSelected: Bool = false
-  ) {
+  init(summary: OpenClawSidebarThreadSummary) {
     threadID = summary.id
-    isSettled = summary.isSettled
-    self.isSending = isSending
-    self.isSelected = isSelected
   }
 }
 
@@ -3130,7 +3104,6 @@ private struct OpenClawSidebarThreadRow: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var isHovered = false
   let summary: OpenClawSidebarThreadSummary
-  let isSelected: Bool
   let isSending: Bool
   let select: () -> Void
   let rename: (UUID) -> Void
@@ -3138,6 +3111,11 @@ private struct OpenClawSidebarThreadRow: View {
   let togglePin: () -> Void
   let settle: () -> Void
   let reopen: () -> Void
+
+  private var isSelected: Bool {
+    store.selectedOpenClawChatThreadID == summary.id
+      && store.selectedSurface == .openClaw
+  }
 
   var body: some View {
     HStack(spacing: 2) {

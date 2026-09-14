@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import SwiftUI
+import WebKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -894,20 +895,25 @@ private final class WorkspaceRenderPerformanceHarness {
     )
   }
 
-  func primaryTranscriptScrollGeometry() -> OpenOrgScrollGeometry? {
+  func primaryTranscriptScrollGeometry() async -> OpenOrgScrollGeometry? {
     let views = [hostingView] + Self.descendantViews(in: hostingView)
-    guard let bridge = views.first(where: {
+    guard let webView = views.first(where: {
       $0.accessibilityIdentifier() == OpenClawChatAccessibilityIdentity.transcriptScrollBridge
         && $0.window === window
-    }), let scrollView = bridge.enclosingScrollView,
-          let documentView = scrollView.documentView else {
+    }) as? WKWebView,
+          let value = try? await webView.evaluateJavaScript(
+            "({height:document.documentElement.scrollHeight,viewport:innerHeight,origin:scrollY})"
+          ) as? [String: Any],
+          let documentHeight = value["height"] as? NSNumber,
+          let viewportHeight = value["viewport"] as? NSNumber,
+          let originY = value["origin"] as? NSNumber else {
       return nil
     }
     return OpenOrgScrollGeometry(
-      documentHeight: documentView.bounds.height,
-      viewportHeight: scrollView.contentView.bounds.height,
-      originY: scrollView.contentView.bounds.origin.y,
-      isFlipped: documentView.isFlipped
+      documentHeight: CGFloat(truncating: documentHeight),
+      viewportHeight: CGFloat(truncating: viewportHeight),
+      originY: CGFloat(truncating: originY),
+      isFlipped: true
     )
   }
 
@@ -2248,7 +2254,9 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     XCTAssertEqual(WorkspaceRuntimeIdentity.compiledBuildConfiguration, "release")
     XCTAssertEqual(environment.manifest.activeFileCount, environment.shape.documents.activeFileCount)
 
-    let transcriptURL = environment.corpusRoot.appendingPathComponent("performance-chat.json")
+    let transcriptURL = environment.corpusRoot
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("performance-chat.json")
     let chatFixture = try writeShardedChatTranscript(
       shape: environment.shape.chat,
       to: transcriptURL
@@ -2493,6 +2501,16 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     WorkspaceInteractionLatency.resetRecordedSamples()
     var threadSwitchSamples: [Double] = []
     var threadSwitchSampleLabels: [String] = []
+    let tracesThreadSwitches = ProcessInfo.processInfo.environment[
+      "OPENORG_PERFORMANCE_TRACE_CHAT"
+    ] == "1"
+    var tracedThreadID: UUID?
+    var tracedThreadStart = CACurrentMediaTime()
+    var tracedHydrationMilliseconds: Double?
+    store.openClawThreadHydrationDidLoadForTesting = { threadID in
+      guard tracesThreadSwitches, threadID == tracedThreadID else { return }
+      tracedHydrationMilliseconds = (CACurrentMediaTime() - tracedThreadStart) * 1_000
+    }
     for index in 0..<30 {
       let targetID = threadIDs[index]
       XCTAssertTrue(
@@ -2500,15 +2518,28 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         "Every measured synthetic switch must begin with a cold settled shard"
       )
       try await workspaceHarness.prepareAIThreadRowAction(targetID)
+      tracedThreadID = targetID
+      tracedThreadStart = CACurrentMediaTime()
+      tracedHydrationMilliseconds = nil
       let token = WorkspaceInteractionLatency.begin(.threadSwitchToDraw)
       try workspaceHarness.performAIThreadRowAction(targetID)
+      let actionMilliseconds = (CACurrentMediaTime() - tracedThreadStart) * 1_000
       try await waitForFirstUsableThreadRestoration(
         targetID: targetID,
         store: store,
         harness: workspaceHarness,
         requiresVisibleAttachment: true
       )
-      threadSwitchSamples.append(WorkspaceInteractionLatency.finish(token))
+      let firstUsableMilliseconds = WorkspaceInteractionLatency.finish(token)
+      threadSwitchSamples.append(firstUsableMilliseconds)
+      if tracesThreadSwitches {
+        print(
+          "PERFORMANCE-TRACE chat-switch index=\(index) "
+            + "action=\(String(format: "%.1f", actionMilliseconds)) ms "
+            + "hydration=\(tracedHydrationMilliseconds.map { String(format: "%.1f", $0) } ?? "pending") ms "
+            + "first-usable=\(String(format: "%.1f", firstUsableMilliseconds)) ms"
+        )
+      }
       try await waitForThreadRestoration(
         targetID: targetID,
         store: store,
@@ -4530,15 +4561,14 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let deadline = CACurrentMediaTime() + timeout
     while CACurrentMediaTime() < deadline {
       await harness.drawFirstUsableFrame()
-      let hydratedThread = store.openClawChatThreads.first { thread in
-        thread.id == targetID && thread.storedMessageCount == nil
-      }
-      let visibleMessages = hydratedThread?.messages
-        .suffix(OpenClawChatTranscriptWindow.initialLimit) ?? []
+      let isSelected = store.selectedOpenClawChatThreadID == targetID
+      let visibleMessages = isSelected
+        ? Array(store.openClawMessages.suffix(OpenClawChatTranscriptWindow.initialLimit))
+        : []
       let hasRequiredAttachment = !requiresVisibleAttachment
         || visibleMessages.contains(where: { !$0.attachments.isEmpty })
-      if store.selectedOpenClawChatThreadID == targetID,
-         hydratedThread != nil,
+      if isSelected,
+         !store.unloadedAIChatThreadIDsForTesting.contains(targetID),
          hasRequiredAttachment,
          store.lastCompletedOpenClawChatScrollRestorationThreadID == targetID {
         return
@@ -4557,6 +4587,9 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
   ) async throws {
     let deadline = CACurrentMediaTime() + 6
     var previousGeometry: OpenOrgScrollGeometry?
+    var lastGeometry: OpenOrgScrollGeometry?
+    var lastHadHydratedThread = false
+    var lastHadRequiredAttachment = false
     var stableGeometryCount = 0
     while CACurrentMediaTime() < deadline {
       await harness.drawAfterDeferredViewUpdates()
@@ -4567,10 +4600,13 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         .suffix(OpenClawChatTranscriptWindow.initialLimit) ?? []
       let hasRequiredAttachment = !requiresVisibleAttachment
         || visibleMessages.contains(where: { !$0.attachments.isEmpty })
+      lastHadHydratedThread = hydratedThread != nil
+      lastHadRequiredAttachment = hasRequiredAttachment
+      lastGeometry = await harness.primaryTranscriptScrollGeometry()
       if store.selectedOpenClawChatThreadID == targetID,
          hydratedThread != nil,
          hasRequiredAttachment,
-         let geometry = harness.primaryTranscriptScrollGeometry(),
+         let geometry = lastGeometry,
          geometry.isAtBottom {
         if let previousGeometry,
            geometry.isApproximatelyEqual(to: previousGeometry) {
@@ -4588,7 +4624,15 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       }
       try await Task.sleep(nanoseconds: 5_000_000)
     }
-    XCTFail("Timed out waiting for thread hydration, bottom restoration, and a stable visible frame")
+    let geometryDescription = lastGeometry.map {
+      "height=\($0.documentHeight), viewport=\($0.viewportHeight), originY=\($0.originY), flipped=\($0.isFlipped), atBottom=\($0.isAtBottom)"
+    } ?? "nil"
+    XCTFail(
+      "Timed out waiting for thread hydration, bottom restoration, and a stable visible frame; "
+        + "selected=\(store.selectedOpenClawChatThreadID?.uuidString ?? "nil"), "
+        + "hydrated=\(lastHadHydratedThread), attachment=\(lastHadRequiredAttachment), "
+        + "stableFrames=\(stableGeometryCount), geometry=\(geometryDescription)"
+    )
     throw PerformanceHarnessError.timedOut
   }
 
