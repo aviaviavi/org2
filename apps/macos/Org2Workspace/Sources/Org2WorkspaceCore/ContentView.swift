@@ -9513,6 +9513,7 @@ private struct MeetingsView: View {
 
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.top, 12)
       .padding(.bottom, 12)
 
       if store.meetings.isEmpty && store.pendingMeetingProcessingItems.isEmpty {

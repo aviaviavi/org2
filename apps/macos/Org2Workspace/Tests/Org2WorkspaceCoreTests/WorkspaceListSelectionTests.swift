@@ -47,6 +47,37 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertFalse(source.contains("Use the toolbar Refresh to retry."))
   }
 
+  func testMeetingCaptureControlsAreInsetFromTheHeader() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+    let meetingsStart = try XCTUnwrap(source.range(of: "private struct MeetingsView: View"))
+    let nextViewStart = try XCTUnwrap(
+      source.range(
+        of: "private struct MeetingTranscriptionProgressView",
+        range: meetingsStart.upperBound..<source.endIndex
+      )
+    )
+    let meetingsView = source[meetingsStart.lowerBound..<nextViewStart.lowerBound]
+
+    XCTAssertTrue(
+      meetingsView.contains(
+        """
+        .padding(.horizontal, WorkspaceDesign.contentInset)
+              .padding(.top, 12)
+              .padding(.bottom, 12)
+        """
+      ),
+      "Meeting capture controls must have breathing room below the header divider"
+    )
+  }
+
   func testSourcesExposeConnectorLocalSyncAndScheduleControls() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile
