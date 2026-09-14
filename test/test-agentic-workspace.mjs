@@ -649,6 +649,8 @@ try {
     title: "Weekly product update",
     instructions: "Summarize product progress and cite the relevant project notes.",
     destinationRef: "builtin.claude",
+    model: "claude-opus-4-1",
+    reasoningEffort: "high",
     agentRef: supportAgent.id,
     schedule: "0 9 * * 1",
     timezone: "America/Los_Angeles",
@@ -657,13 +659,19 @@ try {
   assert.equal(validateWorkflow(scheduledAutomation).valid, true);
   assert.equal(scheduledAutomation.state, "active");
   assert.equal(scheduledAutomation.destinationRef, "builtin.claude");
+  assert.equal(scheduledAutomation.model, "claude-opus-4-1");
+  assert.equal(scheduledAutomation.reasoningEffort, "high");
   assert.deepEqual(
     workflowScheduleOccurrences(scheduledAutomation, { now: "2026-08-31T16:00:30Z" }).map((item) => item.scheduledFor),
     ["2026-08-31T16:00:00.000Z"],
   );
   const renderedAutomation = renderWorkflowOrg(scheduledAutomation);
   assert.match(renderedAutomation, /:AI_DESTINATION_REF: builtin\.claude/);
+  assert.match(renderedAutomation, /:MODEL: claude-opus-4-1/);
+  assert.match(renderedAutomation, /:REASONING_EFFORT: high/);
   assert.equal(parseWorkflowOrg(renderedAutomation).destinationRef, "builtin.claude");
+  assert.equal(parseWorkflowOrg(renderedAutomation).model, "claude-opus-4-1");
+  assert.equal(parseWorkflowOrg(renderedAutomation).reasoningEffort, "high");
   const automationRun = instantiateWorkflow(scheduledAutomation, {});
   assert.equal(automationRun.destinationRef, "builtin.claude");
   assert.match(renderAgentRunOrg(automationRun), /:AI_DESTINATION_REF: builtin\.claude/);
@@ -686,6 +694,8 @@ try {
     "--title", "Weekly product update",
     "--prompt", "Summarize product progress.",
     "--destination-ref", "builtin.claude",
+    "--model", "claude-opus-4-1",
+    "--reasoning-effort", "high",
     "--schedule", "0 9 * * 1",
     "--timezone", "America/Los_Angeles",
     "--now", "2026-08-31T15:58:00Z",
@@ -694,6 +704,8 @@ try {
   ], { encoding: "utf8" });
   assert.equal(createdAutomation.status, 0, createdAutomation.stderr || createdAutomation.stdout);
   assert.equal(JSON.parse(createdAutomation.stdout).workflow.destinationRef, "builtin.claude");
+  assert.equal(JSON.parse(createdAutomation.stdout).workflow.model, "claude-opus-4-1");
+  assert.equal(JSON.parse(createdAutomation.stdout).workflow.reasoningEffort, "high");
   const dueAutomation = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "due",
     "--now", "2026-08-31T16:00:30Z", "--dir", automationRoot, "--json",
@@ -702,6 +714,8 @@ try {
   const dueAutomationPayload = JSON.parse(dueAutomation.stdout);
   assert.equal(dueAutomationPayload.hostRef, "desktop");
   assert.equal(dueAutomationPayload.due[0].scheduledFor, "2026-08-31T16:00:00.000Z");
+  assert.equal(dueAutomationPayload.due[0].model, "claude-opus-4-1");
+  assert.equal(dueAutomationPayload.due[0].reasoningEffort, "high");
   const dispatchedAutomation = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "run", "weekly-product-update",
     "--trigger", "schedule", "--scheduled-for", "2026-08-31T16:00:00Z",
@@ -710,7 +724,11 @@ try {
   assert.equal(dispatchedAutomation.status, 0, dispatchedAutomation.stderr || dispatchedAutomation.stdout);
   const dispatchedAutomationPayload = JSON.parse(dispatchedAutomation.stdout);
   assert.equal(dispatchedAutomationPayload.run.destinationRef, "builtin.claude");
+  assert.equal(dispatchedAutomationPayload.model, "claude-opus-4-1");
+  assert.equal(dispatchedAutomationPayload.reasoningEffort, "high");
   assert.match(dispatchedAutomationPayload.prompt, /ORG2_AI_DESTINATION_REF: builtin\.claude/);
+  assert.match(dispatchedAutomationPayload.prompt, /ORG2_MODEL: claude-opus-4-1/);
+  assert.match(dispatchedAutomationPayload.prompt, /ORG2_REASONING_EFFORT: high/);
   const overlappingAutomation = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "due",
     "--now", "2026-09-07T16:00:30Z", "--dir", automationRoot, "--json",
@@ -718,6 +736,14 @@ try {
   assert.equal(overlappingAutomation.status, 0, overlappingAutomation.stderr || overlappingAutomation.stdout);
   assert.equal(JSON.parse(overlappingAutomation.stdout).due.length, 0);
   assert.equal(JSON.parse(overlappingAutomation.stdout).skipped[0].activeRunId, dispatchedAutomationPayload.run.id);
+  const clearedAutomationConfiguration = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "workflow", "schedule", "weekly-product-update",
+    "--cron", "0 9 * * 1", "--clear-model", "--clear-reasoning-effort",
+    "--dir", automationRoot, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(clearedAutomationConfiguration.status, 0, clearedAutomationConfiguration.stderr || clearedAutomationConfiguration.stdout);
+  assert.equal(JSON.parse(clearedAutomationConfiguration.stdout).workflow.model, undefined);
+  assert.equal(JSON.parse(clearedAutomationConfiguration.stdout).workflow.reasoningEffort, undefined);
   const previewDeletion = spawnSync(process.execPath, [
     path.resolve("dist/cli.js"), "workflow", "delete", "weekly-product-update",
     "--dir", automationRoot, "--json",
@@ -744,6 +770,16 @@ try {
   assert.deepEqual(
     invalidTriggerValidation.issues.map((issue) => issue.path),
     ["triggers[0].schedule", "triggers[1].id", "triggers[1].type"],
+  );
+  const invalidExecutionConfiguration = validateWorkflow({
+    ...workflow,
+    model: "invalid\nmodel",
+    reasoningEffort: "very high",
+  });
+  assert.equal(invalidExecutionConfiguration.valid, false);
+  assert.deepEqual(
+    invalidExecutionConfiguration.issues.map((issue) => issue.path),
+    ["model", "reasoningEffort"],
   );
   saveWorkflow(root, workflow);
   assert.equal(workflowPath(root, workflow.id), path.join(root, "workflows", "board-briefing.org2"));

@@ -682,20 +682,22 @@ The account file is curated canonical knowledge, so aliases, stable identity, co
 
 * Reusable workflows and triggers
 
-=workflow create= writes a prompt, destination reference, and optional schedule as a plain =org2:workflow:v1= file under the visible top-level =workflows/=. =workflow save RUN_ID= generalizes a completed run into a fuller draft workflow. Packages can also declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Automations and workflows]] for the plain-text ownership and destination-neutral execution contract.
+=workflow create= writes a prompt, destination reference, optional exact model and reasoning effort, and optional schedule as a plain =org2:workflow:v1= file under the visible top-level =workflows/=. =workflow save RUN_ID= generalizes a completed run into a fuller draft workflow. Packages can also declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Automations and workflows]] for the plain-text ownership and destination-neutral execution contract.
 
 #+begin_src sh
 org2 workflow create weekly-product-update \
   --title "Weekly product update" \
   --prompt "Prepare a cited update from this week's product notes." \
   --destination-ref builtin.claude \
+  --model opus \
   --schedule "0 9 * * 1" --timezone America/Los_Angeles --dir ~/notes
 org2 workflow save RUN_ID --id weekly-operating-review --version 1.0.0 --dir ~/notes
 org2 workflow validate weekly-operating-review --dir ~/notes
 org2 workflow run weekly-operating-review --input week=2026-W29 --dir ~/notes
 org2 workflow activate weekly-operating-review --dir ~/notes
 org2 workflow schedule weekly-operating-review --cron "0 9 * * 1" \
-  --timezone America/Los_Angeles --gate-event capture --gate-path notes/ --dir ~/notes
+  --timezone America/Los_Angeles --model gpt-5.6-sol \
+  --reasoning-effort high --gate-event capture --gate-path notes/ --dir ~/notes
 org2 workflow signal weekly-operating-review --event capture \
   --signal-id capture-2026-W29 --changed notes/inbox.org --dir ~/notes
 org2 workflow due --now 2026-07-20T16:00:00Z --dir ~/notes --json
@@ -710,7 +712,7 @@ org2 workflow package weekly-operating-review --dir ~/notes --json
 org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes
 #+end_src
 
-Schedule syntax accepts positive whole-number intervals such as =every 15m=, =every 4h=, or =every 1d=, plus deterministic five-field cron expressions with an optional IANA timezone. =workflow due= reports only the latest missed occurrence for each active automation and identifies occurrences suppressed by an active attempt. Event hosts can also ask =workflow triggers= which declarations are due; =--event= accepts only =capture= or =meeting-import= and rejects unknown event names. =workflow signal= persists capture, meeting-import, or file-change evidence. A schedule with =--gate-event= and/or =--gate-path= starts an attempt only when a matching signal is newer than its prior attempt boundary; otherwise =workflow gate= and =workflow run --trigger= return a deterministic skip result without creating a run. The logical workflow identity stays stable while each eligible execution receives distinct attempt identity, schedule/trigger provenance, destination reference, and consumed signal IDs. =run list --json= exposes attempt roll-ups so clients can summarize history without conflating retries or recurring executions. =workflow delete= previews by default and requires =--apply=; it removes the definition while preserving prior runs and does not cancel an already-dispatched attempt.
+Schedule syntax accepts positive whole-number intervals such as =every 15m=, =every 4h=, or =every 1d=, plus deterministic five-field cron expressions with an optional IANA timezone. =--model= and =--reasoning-effort= write exact invocation choices into the canonical workflow; =--clear-model= and =--clear-reasoning-effort= restore destination/runtime defaults. =workflow due= reports only the latest missed occurrence for each active automation and identifies occurrences suppressed by an active attempt. Event hosts can also ask =workflow triggers= which declarations are due; =--event= accepts only =capture= or =meeting-import= and rejects unknown event names. =workflow signal= persists capture, meeting-import, or file-change evidence. A schedule with =--gate-event= and/or =--gate-path= starts an attempt only when a matching signal is newer than its prior attempt boundary; otherwise =workflow gate= and =workflow run --trigger= return a deterministic skip result without creating a run. The logical workflow identity stays stable while each eligible execution receives distinct attempt identity, schedule/trigger provenance, destination reference, requested model/reasoning configuration, and consumed signal IDs. =run list --json= exposes attempt roll-ups so clients can summarize history without conflating retries or recurring executions. =workflow delete= previews by default and requires =--apply=; it removes the definition while preserving prior runs and does not cancel an already-dispatched attempt.
 
 =workflow package= emits distribution metadata for one provider-independent workflow. =workflow corpus-template= wraps that metadata with ordinary starter files and the standard =raw/=, =notes/=, =views/=, =compiled/=, run, and workflow zones as =org2:corpus-template:v1=. The package is data, not an installer: recipients review it, initialize/open a corpus with their client, and place the workflow record in =workflows/=. Org2 still reads the legacy early-alpha =.org2/workflows/= location; =workflow migrate= moves non-conflicting files into the visible directory.
 

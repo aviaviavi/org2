@@ -1480,6 +1480,8 @@ final class AgentRunModelsTests: XCTestCase {
         "instructions": "Prepare {{week}}.",
         "riskClass": "local-draft",
         "destinationRef": "builtin.claude",
+        "model": "claude-opus-4-1",
+        "reasoningEffort": "high",
         "capabilities": ["agent-context"],
         "inputs": [{"id":"week","description":"Week","required":true,"default":"current"}],
         "triggers": [{"id":"schedule","type":"schedule","enabled":true,"schedule":"0 9 * * 1","timezone":"America/Los_Angeles"}],
@@ -1495,6 +1497,8 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(workflow.id, "weekly-review")
     XCTAssertEqual(workflow.inputs.first?.default, "current")
     XCTAssertEqual(workflow.destinationRef, "builtin.claude")
+    XCTAssertEqual(workflow.model, "claude-opus-4-1")
+    XCTAssertEqual(workflow.reasoningEffort, "high")
     XCTAssertEqual(workflow.scheduleSummary, "0 9 * * 1 · America/Los_Angeles")
     XCTAssertFalse(workflow.legacyLocation)
   }
@@ -1509,6 +1513,8 @@ final class AgentRunModelsTests: XCTestCase {
         "workflowId": "weekly-review",
         "title": "Weekly review",
         "destinationRef": "builtin.codex",
+        "model": "gpt-5.6-sol",
+        "reasoningEffort": "xhigh",
         "agentRef": "product-research",
         "triggerId": "schedule",
         "schedule": "0 9 * * 1",
@@ -1523,6 +1529,8 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertEqual(payload.hostRef, "press-trial")
     XCTAssertEqual(due.id, "weekly-review:schedule:2026-08-31T16:00:00.000Z")
     XCTAssertEqual(due.destinationRef, "builtin.codex")
+    XCTAssertEqual(due.model, "gpt-5.6-sol")
+    XCTAssertEqual(due.reasoningEffort, "xhigh")
     XCTAssertEqual(due.agentRef, "product-research")
 
     let legacyData = Data(#"""

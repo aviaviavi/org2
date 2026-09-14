@@ -91,16 +91,17 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="creating-an-automation">Creating an automation</h1>
-<p>Open <strong>Agent Work → Automations</strong> in the Mac app and choose <strong>New Automation</strong>. Give it a name and prompt, select any enabled AI destination, optionally attach an agent profile, and either leave it manual or add an interval or cron schedule. OpenOrg writes the result as a normal file under <code>workflows/</code>. <strong>Edit Source</strong> opens that canonical file in the ordinary Org2 editor.</p>
+<p>Open <strong>Agent Work → Automations</strong> in the Mac app and choose <strong>New Automation</strong>. Give it a name and prompt, select any enabled AI destination, optionally pin an exact model and reasoning effort, optionally attach an agent profile, and either leave it manual or add an interval or cron schedule. OpenOrg writes the result as a normal file under <code>workflows/</code>. <strong>Edit Source</strong> opens that canonical file in the ordinary Org2 editor.</p>
 <p>The minimal CLI form is:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow create weekly-product-update \
   --title &quot;Weekly product update&quot; \
   --prompt &quot;Prepare a cited update from this week's product notes.&quot; \
   --destination-ref builtin.claude \
+  --model opus \
   --schedule &quot;0 9 * * 1&quot; \
   --timezone America/Los_Angeles \
   --dir ~/notes</code></pre>
-<p>The readable <code>:AI_DESTINATION_REF:</code> property is a symbolic reference to configured app state; credentials and machine-local connection details never enter the workflow file. If that exact destination is missing or disabled, the attempt fails visibly instead of being sent somewhere else.</p>
+<p>The readable <code>:AI_DESTINATION_REF:</code> property is a symbolic reference to configured app state. Optional <code>:MODEL:</code> and <code>:REASONING_EFFORT:</code> properties pin the exact runtime choices for every manual or scheduled attempt. Leave either field absent to use that destination's configured/default value. Credentials and machine-local connection details never enter the workflow file. If the destination is missing, disabled, or cannot honor a requested reasoning level, the attempt fails visibly instead of being rerouted or silently dropping the request.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="creating-and-maintaining-a-fuller-workflow">Creating and maintaining a fuller workflow</h1>
@@ -116,7 +117,8 @@ org2 workflow due --dir ~/notes --json
 org2 workflow activate weekly-review --dir ~/notes
 org2 workflow pause weekly-review --dir ~/notes
 org2 workflow schedule weekly-review --cron &quot;0 9 * * 1&quot; \
-  --timezone America/Los_Angeles --dir ~/notes
+  --timezone America/Los_Angeles --model gpt-5.6-sol \
+  --reasoning-effort high --dir ~/notes
 org2 workflow delete weekly-review --dir ~/notes
 org2 workflow delete weekly-review --dir ~/notes --apply
 org2 workflow migrate --dir ~/notes</code></pre>
@@ -129,13 +131,13 @@ org2 workflow migrate --dir ~/notes</code></pre>
 <p>For each due occurrence OpenOrg:</p>
 <ol>
 <li><p>Creates a durable numbered run from the exact workflow revision before contacting an AI destination.</p></li>
-<li><p>Records the schedule, planned time, destination reference, agent profile, and stable logical-work ID.</p></li>
+<li><p>Records the schedule, planned time, destination reference, agent profile, and stable logical-work ID, then carries the file-owned model and reasoning effort into dispatch.</p></li>
 <li><p>Refuses to overlap a queued, running, blocked, or approval-waiting attempt for the same automation.</p></li>
 <li><p>Opens a destination thread and sends the resolved prompt through the same destination-neutral path used by AI Chat.</p></li>
 <li><p>Retains the reply, result, errors, artifacts, approvals, duration, and destination thread in the shared run history.</p></li>
 </ol>
 <p>Codex, Claude Code, OpenClaw, and enabled custom or direct-provider destinations all use this path. Manual <strong>Run Now</strong> uses the same durable preparation and dispatch without waiting for the clock. Pausing the automation stops new attempts; it does not erase its source or history.</p>
-<p>Automation threads use the configured destination model, or the runtime default when none is configured. They do not inherit model or reasoning overrides from interactive chats. Ordinary new chats continue to remember those choices. This keeps unrelated chat preferences from forcing an OpenClaw automation to require the live Gateway when HTTP compatibility would otherwise be available; it does not bypass authentication failures or explicit destination model requirements.</p>
+<p>Automation threads use the workflow's exact <code>model</code> and <code>reasoningEffort</code> when present. Otherwise they use the configured destination model and runtime reasoning default. They do not inherit overrides from interactive chats. Ordinary new chats continue to remember those choices. A runtime that rejects a pinned value fails that attempt visibly; OpenOrg does not retry a file-configured automation with different defaults.</p>
 <p>This first version requires OpenOrg to be running. A small background helper or provider-native scheduler can be added later without changing the workflow file or splitting its run history.</p>
 </section>
 <section class="org2-headline level-1">
@@ -171,7 +173,7 @@ org2 workflow migrate --dir ~/notes</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="current-limits">Current limits</h1>
-<p>This is an early automation surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, destination reference, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. Scheduled work requires the selected desktop app or headless server process to be running. OpenOrg does not yet offer a friendly natural-language schedule builder or delegate clock ownership to Codex or Claude Code native schedulers.</p>
+<p>This is an early automation surface. The canonical file carries readable Org2 authoring fields plus a versioned machine-state block for the complete portable definition. The visible title, description, instructions, destination reference, model, reasoning effort, version, risk, and lifecycle state are authoritative when edited in source; a later structured save normalizes those values back into the complete definition. Source mode remains the complete editing escape hatch while structured assistance for inputs, steps, outputs, validation, and approvals becomes deeper. Scheduled work requires the selected desktop app or headless server process to be running. OpenOrg does not yet delegate clock ownership to Codex or Claude Code native schedulers.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="running-without-the-desktop-app">Running without the desktop app</h1>

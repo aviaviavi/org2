@@ -257,6 +257,7 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
       if (args[0] === "corpus") return JSON.stringify({ identity: { id: "personal" } });
       if (args[0] === "workflow" && args[1] === "list") return JSON.stringify({ workflows: [{
         id: "weekly-review", version: "1.0.0", title: "Weekly review", state: "active",
+        model: "openai/gpt-5.6-sol", reasoningEffort: "high",
         triggers: [{ id: "schedule", type: "schedule", enabled: true, schedule: "0 9 * * 1", timezone: "America/Los_Angeles" }],
       }] });
       return "";
@@ -270,6 +271,10 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   assert.equal(added[0].schedule.tz, "America/Los_Angeles");
   assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
   assert.equal(workflowMarker(added[0].payload.text).triggerId, "schedule");
+  assert.equal(added[0].payload.model, "openai/gpt-5.6-sol");
+  assert.equal(added[0].payload.thinking, "high");
+  assert.match(added[0].payload.text, /ORG2_MODEL: openai\/gpt-5\.6-sol/);
+  assert.match(added[0].payload.text, /ORG2_REASONING_EFFORT: high/);
 });
 
 test("continues to reconcile the legacy OpenClaw schedule trigger", async () => {

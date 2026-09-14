@@ -55,6 +55,8 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     `ORG2_WORKFLOW_VERSION: ${workflow.version}`,
     ...(runId ? [`ORG2_WORKFLOW_RUN_ID: ${runId}`] : []),
     ...(triggerId ? [`ORG2_WORKFLOW_TRIGGER_ID: ${triggerId}`] : []),
+    ...(workflow.model ? [`ORG2_MODEL: ${workflow.model}`] : []),
+    ...(workflow.reasoningEffort ? [`ORG2_REASONING_EFFORT: ${workflow.reasoningEffort}`] : []),
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
     `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
@@ -935,7 +937,12 @@ export class Org2Lifecycle {
         schedule: { kind: "cron", expr: trigger.schedule, ...(trigger.timezone ? { tz: trigger.timezone } : {}) },
         sessionTarget: "isolated",
         wakeMode: "now",
-        payload: { kind: "agentTurn", text: workflowExecutionPrompt(workflow, {}, undefined, trigger.id) },
+        payload: {
+          kind: "agentTurn",
+          text: workflowExecutionPrompt(workflow, {}, undefined, trigger.id),
+          ...(workflow.model ? { model: workflow.model } : {}),
+          ...(workflow.reasoningEffort ? { thinking: workflow.reasoningEffort } : {}),
+        },
       };
       const fingerprint = JSON.stringify(desired);
       if (!job) {

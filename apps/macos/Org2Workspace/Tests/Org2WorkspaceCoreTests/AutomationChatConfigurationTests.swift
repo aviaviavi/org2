@@ -12,7 +12,19 @@ final class AutomationChatConfigurationTests: XCTestCase {
     try await checkAutomationConfiguration(destinationModel: "configured-destination-model")
   }
 
-  private func checkAutomationConfiguration(destinationModel: String?) async throws {
+  func testAutomationFileOverridesDestinationModelAndReasoning() async throws {
+    try await checkAutomationConfiguration(
+      destinationModel: "configured-destination-model",
+      automationModel: "automation-model",
+      automationReasoningEffort: "xhigh"
+    )
+  }
+
+  private func checkAutomationConfiguration(
+    destinationModel: String?,
+    automationModel: String? = nil,
+    automationReasoningEffort: String? = nil
+  ) async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("automation-chat-defaults-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -26,7 +38,7 @@ final class AutomationChatConfigurationTests: XCTestCase {
     ]), forKey: "Org2Workspace.aiChat.lastConfigurations.v1")
 
     let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
-    _ = try await cli.run([
+    var createArguments = [
       "workflow", "create", "configuration-regression",
       "--title", "Configuration regression",
       "--prompt", "Prepare a local summary.",
@@ -35,7 +47,14 @@ final class AutomationChatConfigurationTests: XCTestCase {
       "--timezone", "America/Los_Angeles",
       "--now", "2099-08-30T15:58:00Z",
       "--dir", root.path, "--json"
-    ])
+    ]
+    if let automationModel {
+      createArguments += ["--model", automationModel]
+    }
+    if let automationReasoningEffort {
+      createArguments += ["--reasoning-effort", automationReasoningEffort]
+    }
+    _ = try await cli.run(createArguments)
     let store = WorkspaceStore(
       cli: cli,
       defaults: defaults,
@@ -70,8 +89,8 @@ final class AutomationChatConfigurationTests: XCTestCase {
     let automation = try XCTUnwrap(store.openClawChatThreads.first(where: {
       $0.title == "Automation: Configuration regression"
     }))
-    XCTAssertEqual(automation.model, destinationModel)
-    XCTAssertNil(automation.reasoningEffort)
+    XCTAssertEqual(automation.model, automationModel ?? destinationModel)
+    XCTAssertEqual(automation.reasoningEffort, automationReasoningEffort)
     XCTAssertEqual(automation.messages.last(where: { $0.role == .assistant })?.content, "Local summary ready.")
 
     // Automation dispatch must not clear the user's preferences for ordinary chats.

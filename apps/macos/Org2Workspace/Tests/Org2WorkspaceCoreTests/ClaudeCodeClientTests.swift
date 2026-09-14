@@ -192,6 +192,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
       "--title", "Weekly Claude brief",
       "--prompt", "Prepare the weekly brief from the corpus.",
       "--destination-ref", AIChatDestinationConfiguration.localClaudeID,
+      "--model", "opus",
       "--schedule", "0 9 * * 1",
       "--timezone", "America/Los_Angeles",
       "--now", "2099-08-30T15:58:00Z",
@@ -206,6 +207,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
         let prompt = messages.last(where: { $0.role == .user })?.content ?? ""
         XCTAssertTrue(prompt.contains("ORG2_WORKFLOW_ID: weekly-claude-brief"))
         XCTAssertTrue(prompt.contains("ORG2_AI_DESTINATION_REF: builtin.claude"))
+        XCTAssertTrue(prompt.contains("ORG2_MODEL: opus"))
         XCTAssertTrue(prompt.contains("Prepare the weekly brief from the corpus."))
         return ClaudeCodeTurnResult(sessionID: "automation-session", reply: "The weekly brief is ready.")
       },
@@ -238,6 +240,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     XCTAssertEqual(run.outcome?.summary, "The weekly brief is ready.")
     let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.title == "Automation: Weekly Claude brief" }))
     XCTAssertEqual(thread.destinationID, AIChatDestinationConfiguration.localClaudeID)
+    XCTAssertEqual(thread.model, "opus")
     XCTAssertEqual(thread.messages.last(where: { $0.role == .assistant })?.content, "The weekly brief is ready.")
   }
 }

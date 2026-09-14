@@ -81,6 +81,8 @@ export interface AgentWorkflow {
   compatibility: { org2: string; schema: string };
   sourceRunId?: string;
   destinationRef?: string;
+  model?: string;
+  reasoningEffort?: string;
   agentRef?: string;
   goalRef?: string;
   createdAt: string;
@@ -98,6 +100,8 @@ export interface PromptAutomationInput {
   instructions: string;
   description?: string;
   destinationRef?: string;
+  model?: string;
+  reasoningEffort?: string;
   agentRef?: string;
   goalRef?: string;
   schedule?: string;
@@ -217,6 +221,8 @@ export function promptAutomation(input: PromptAutomationInput): AgentWorkflow {
     ],
     compatibility: { org2: ">=0.3.0 <1", schema: ORG2_WORKFLOW_SCHEMA },
     ...(String(input.destinationRef || "").trim() ? { destinationRef: String(input.destinationRef).trim() } : {}),
+    ...(String(input.model || "").trim() ? { model: String(input.model).trim() } : {}),
+    ...(String(input.reasoningEffort || "").trim() ? { reasoningEffort: String(input.reasoningEffort).trim() } : {}),
     ...(String(input.agentRef || "").trim() ? { agentRef: String(input.agentRef).trim() } : {}),
     ...(String(input.goalRef || "").trim() ? { goalRef: String(input.goalRef).trim() } : {}),
     createdAt: now,
@@ -235,6 +241,12 @@ export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationRes
   try { safeIdentifier(workflow.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
   if (!workflow.title?.trim()) issues.push({ path: "title", message: "is required" });
   if (workflow.destinationRef !== undefined && !String(workflow.destinationRef).trim()) issues.push({ path: "destinationRef", message: "must not be empty when present" });
+  if (workflow.model !== undefined && (!String(workflow.model).trim() || /[\r\n]/.test(String(workflow.model)))) {
+    issues.push({ path: "model", message: "must be a non-empty single-line model identifier when present" });
+  }
+  if (workflow.reasoningEffort !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(workflow.reasoningEffort).trim())) {
+    issues.push({ path: "reasoningEffort", message: "must be a non-empty reasoning identifier when present" });
+  }
   if (!["draft", "active", "paused"].includes(workflow.state || "draft")) issues.push({ path: "state", message: "must be draft, active, or paused" });
   if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(workflow.version || "")) issues.push({ path: "version", message: "must be semantic version syntax" });
   const ids = new Set<string>();
@@ -321,6 +333,8 @@ export function workflowExecutionPrompt(
     "ORG2_WORKFLOW_RUN_STARTED: true",
     ...(run.attempt?.triggerId ? [`ORG2_WORKFLOW_TRIGGER_ID: ${run.attempt.triggerId}`] : []),
     ...(workflow.destinationRef ? [`ORG2_AI_DESTINATION_REF: ${workflow.destinationRef}`] : []),
+    ...(workflow.model ? [`ORG2_MODEL: ${workflow.model}`] : []),
+    ...(workflow.reasoningEffort ? [`ORG2_REASONING_EFFORT: ${workflow.reasoningEffort}`] : []),
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
     `Execute the Org2 automation “${workflow.title}”.`,
@@ -360,6 +374,8 @@ export function renderWorkflowOrg(workflow: AgentWorkflow): string {
     ...(workflow.agentRef ? [`:AGENT_REF: ${workflow.agentRef}`] : []),
     ...(workflow.goalRef ? [`:GOAL_REF: ${workflow.goalRef}`] : []),
     ...(workflow.destinationRef ? [`:AI_DESTINATION_REF: ${workflow.destinationRef}`] : []),
+    ...(workflow.model ? [`:MODEL: ${workflow.model}`] : []),
+    ...(workflow.reasoningEffort ? [`:REASONING_EFFORT: ${workflow.reasoningEffort}`] : []),
     ":END:",
     workflow.description,
     "",
@@ -403,6 +419,8 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const agentRef = properties.match(/^:AGENT_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const goalRef = properties.match(/^:GOAL_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const destinationRef = properties.match(/^:AI_DESTINATION_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const model = properties.match(/^:MODEL:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const reasoningEffort = properties.match(/^:REASONING_EFFORT:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const visibleDescription = drawer
     ? afterHeading.slice(drawer[0].length).match(/^([\s\S]*?)^\*\* Instructions[ \t]*\r?$/m)?.[1]?.trim()
     : undefined;
@@ -421,6 +439,8 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
     ...(agentRef ? { agentRef } : {}),
     ...(goalRef ? { goalRef } : {}),
     ...(destinationRef ? { destinationRef } : {}),
+    ...(model ? { model } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
     ...(riskClass ? { riskClass: riskClass as AgentRunRiskClass } : {}),
     state: (state || parsed.state || "draft") as AgentWorkflowState,
   };
@@ -812,6 +832,8 @@ export function packagedWorkflowManifest(workflow: AgentWorkflow): Record<string
     capabilities: workflow.capabilities,
     riskClass: workflow.riskClass,
     destinationRef: workflow.destinationRef,
+    model: workflow.model,
+    reasoningEffort: workflow.reasoningEffort,
     inputs: workflow.inputs,
     outputs: workflow.outputs,
     approvals: workflow.approvals,

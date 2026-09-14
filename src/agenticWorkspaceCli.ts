@@ -208,9 +208,9 @@ const HELP = `Agentic workspace commands:
   org2 run approval-reconcile [--apply] [--json]
   org2 review list [--status pending] | org2 review show RUN
   org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|delete|migrate|package|corpus-template|install-builtin
-  org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--agent-ref ID] [--schedule EXPR --timezone IANA]
+  org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--model ID] [--reasoning-effort LEVEL] [--agent-ref ID] [--schedule EXPR --timezone IANA]
   org2 workflow due [--host-ref HOST] [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
-  org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] | --disable
+  org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] [--model ID|--clear-model] [--reasoning-effort LEVEL|--clear-reasoning-effort] | --disable
   org2 workflow delete ID [--apply]
   org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
   org2 runtime init|show|select|verify-paths
@@ -1313,6 +1313,8 @@ function workflowCommand(parsed: ParsedArgs): void {
       instructions: required(flag(parsed, "prompt"), "--prompt is required"),
       description: flag(parsed, "description"),
       destinationRef: flag(parsed, "destination-ref") || flag(parsed, "destination"),
+      model: flag(parsed, "model"),
+      reasoningEffort: flag(parsed, "reasoning-effort") || flag(parsed, "reasoning"),
       agentRef: flag(parsed, "agent-ref"),
       goalRef: flag(parsed, "goal-ref"),
       schedule,
@@ -1344,6 +1346,8 @@ function workflowCommand(parsed: ParsedArgs): void {
           workflowId: item.id,
           title: item.title,
           destinationRef: item.destinationRef,
+          model: item.model,
+          reasoningEffort: item.reasoningEffort,
           agentRef: item.agentRef,
           goalRef: item.goalRef,
           triggerId: occurrence.trigger.id,
@@ -1383,11 +1387,17 @@ function workflowCommand(parsed: ParsedArgs): void {
     const timezone = flag(parsed, "timezone")?.trim() || flag(parsed, "tz")?.trim();
     const disabled = parsed.flags.has("disable");
     const destinationRef = flag(parsed, "destination-ref") || flag(parsed, "destination");
+    const model = flag(parsed, "model");
+    const reasoningEffort = flag(parsed, "reasoning-effort") || flag(parsed, "reasoning");
+    const clearModel = parsed.flags.has("clear-model");
+    const clearReasoningEffort = parsed.flags.has("clear-reasoning-effort");
     const gateEvents = flags(parsed, "gate-event").map((event) =>
       choice(event, [...WORKFLOW_EVENT_TRIGGER_TYPES, "file-change"] as const, "workflow gate event")
     );
     const gatePaths = flags(parsed, "gate-path");
     if (!disabled && !cron) throw new Error("workflow schedule requires --cron EXPR or --disable");
+    if (model && clearModel) throw new Error("workflow schedule accepts either --model or --clear-model, not both");
+    if (reasoningEffort && clearReasoningEffort) throw new Error("workflow schedule accepts either --reasoning-effort or --clear-reasoning-effort, not both");
     const updated = updateWorkflow(corpus, id, (item) => {
       const scheduleIds = new Set<string>([WORKFLOW_SCHEDULE_TRIGGER_ID, ...LEGACY_WORKFLOW_SCHEDULE_TRIGGER_IDS]);
       const triggers = item.triggers.filter((trigger) => !scheduleIds.has(trigger.id));
@@ -1410,6 +1420,10 @@ function workflowCommand(parsed: ParsedArgs): void {
         ...item,
         triggers,
         ...(destinationRef ? { destinationRef: destinationRef.trim() } : {}),
+        ...(model ? { model: model.trim() } : {}),
+        ...(clearModel ? { model: undefined } : {}),
+        ...(reasoningEffort ? { reasoningEffort: reasoningEffort.trim() } : {}),
+        ...(clearReasoningEffort ? { reasoningEffort: undefined } : {}),
       };
     });
     output(parsed, updated, disabled ? `${id}: schedule disabled` : `${id}: scheduled ${cron}`);
@@ -1505,7 +1519,14 @@ function workflowCommand(parsed: ParsedArgs): void {
       });
       const file = saveAgentRun(corpus, run, { expectedRevision: null });
       if (triggerId) updateWorkflow(corpus, id, (item) => markWorkflowTriggerAttempt(item, triggerId, attemptAt));
-      output(parsed, { run, file, eligibility, prompt: workflowExecutionPrompt(workflow, run, inputs) }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
+      output(parsed, {
+        run,
+        file,
+        eligibility,
+        model: workflow.model,
+        reasoningEffort: workflow.reasoningEffort,
+        prompt: workflowExecutionPrompt(workflow, run, inputs),
+      }, `created run ${run.id} from ${id}@${workflow.version}${run.attempt ? ` attempt ${run.attempt.number}` : ""}`);
       return;
     } finally { release(); }
   }

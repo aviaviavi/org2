@@ -7108,6 +7108,8 @@ public final class WorkspaceStore {
     cron: String,
     timezone: String,
     destinationID: String?,
+    model: String?,
+    reasoningEffort: String?,
     enabled: Bool
   ) async -> Bool {
     guard let corpusRoot else {
@@ -7133,6 +7135,18 @@ public final class WorkspaceStore {
       if let destinationID = destinationID?.trimmingCharacters(in: .whitespacesAndNewlines),
          !destinationID.isEmpty {
         arguments += ["--destination-ref", destinationID]
+      }
+      let model = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if model.isEmpty {
+        if workflow.model != nil { arguments.append("--clear-model") }
+      } else {
+        arguments += ["--model", model]
+      }
+      let reasoningEffort = reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if reasoningEffort.isEmpty {
+        if workflow.reasoningEffort != nil { arguments.append("--clear-reasoning-effort") }
+      } else {
+        arguments += ["--reasoning-effort", reasoningEffort]
       }
       _ = try await cli.run(arguments)
       if enabled && workflow.state != "active" {
@@ -7195,6 +7209,8 @@ public final class WorkspaceStore {
     title: String,
     prompt: String,
     destinationID: String,
+    model: String?,
+    reasoningEffort: String?,
     agentRef: String?,
     schedule: String?,
     timezone: String
@@ -7224,6 +7240,14 @@ public final class WorkspaceStore {
         "--dir", corpusRoot.path,
         "--json"
       ]
+      if let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !model.isEmpty {
+        arguments += ["--model", model]
+      }
+      if let reasoningEffort = reasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !reasoningEffort.isEmpty {
+        arguments += ["--reasoning-effort", reasoningEffort]
+      }
       if let agentRef = agentRef?.trimmingCharacters(in: .whitespacesAndNewlines),
          !agentRef.isEmpty {
         arguments += ["--agent-ref", agentRef]
@@ -7330,6 +7354,14 @@ public final class WorkspaceStore {
         await failAgentAutomationRun(run.id, reason: "The configured AI destination is unavailable or disabled.")
         return nil
       }
+      if let reasoningEffort = prepared.reasoningEffort,
+         !Self.automationDestinationSupportsReasoning(destination.adapter) {
+        await failAgentAutomationRun(
+          run.id,
+          reason: "\(destination.title) cannot apply the configured reasoning effort \(reasoningEffort). Choose Codex or OpenClaw, or clear REASONING_EFFORT in the automation file."
+        )
+        return nil
+      }
 
       _ = try await cli.run([
         "run", "start", run.id,
@@ -7343,6 +7375,8 @@ public final class WorkspaceStore {
         runtime: destination.runtime,
         destinationID: destination.id,
         inheritsChatConfiguration: false,
+        modelOverride: prepared.model,
+        reasoningEffortOverride: prepared.reasoningEffort,
         defersPersistence: true,
         selectsThread: presentsThread
       )
@@ -7387,6 +7421,17 @@ public final class WorkspaceStore {
     }
     return enabledAIChatDestinations.first(where: { $0.id == AIChatDestinationConfiguration.openClawID })
       ?? enabledAIChatDestinations.first
+  }
+
+  nonisolated private static func automationDestinationSupportsReasoning(
+    _ adapter: AIChatDestinationAdapter
+  ) -> Bool {
+    switch adapter {
+    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
+      true
+    case .claudeLocal, .openAI, .anthropic, .openRouter, .ollama:
+      false
+    }
   }
 
   private func failAgentAutomationRun(_ runID: String, reason: String) async {
@@ -25541,7 +25586,8 @@ public final class WorkspaceStore {
           destinationID: destinationID
         )
       }
-    } catch let error as OpenClawGatewayError where Self.shouldRetryAIChatWithDefaults(
+    } catch let error as OpenClawGatewayError where automationRunIDsByThreadID[threadID] == nil
+      && Self.shouldRetryAIChatWithDefaults(
       after: error,
       model: selectedModel,
       reasoningEffort: selectedReasoningEffort
@@ -28139,6 +28185,8 @@ public final class WorkspaceStore {
     isSharedRoom: Bool = false,
     roomAudience: AIChatAudience = .thread,
     inheritsChatConfiguration: Bool = true,
+    modelOverride: String? = nil,
+    reasoningEffortOverride: String? = nil,
     defersPersistence: Bool = false,
     selectsThread: Bool = true
   ) -> OpenClawChatThread {
@@ -28152,9 +28200,13 @@ public final class WorkspaceStore {
     } else {
       // Automations use configured destination defaults, not unrelated chat
       // choices that can silently require a live Gateway and prevent fallback.
-      lastConfiguration = aiChatDestination(id: resolvedDestinationID)?.model.map {
-        AIChatLastConfiguration(model: $0, reasoningEffort: nil)
-      }
+      let model = modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+        ?? aiChatDestination(id: resolvedDestinationID)?.model
+      let reasoningEffort = reasoningEffortOverride?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      lastConfiguration = model != nil || reasoningEffort != nil
+        ? AIChatLastConfiguration(model: model, reasoningEffort: reasoningEffort)
+        : nil
     }
     let initialRoomDestinationIDs = isSharedRoom
       ? enabledAIChatDestinations.map(\.id)

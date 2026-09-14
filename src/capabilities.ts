@@ -30,7 +30,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
       "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for local MCP discovery. A headless OpenOrg server can expose the same retrieval tools through read-only Streamable HTTP MCP.",
-      "Use `org2 workflow create` for a plain prompt automation, `org2 workflow due` for destination-neutral schedule checks, and preview-first `org2 workflow delete` to remove a definition without erasing run history; OpenOrg can dispatch due attempts to any configured AI destination.",
+      "Use `org2 workflow create` for a plain prompt automation with optional file-owned model and reasoning effort, `org2 workflow due` for destination-neutral schedule checks, and preview-first `org2 workflow delete` to remove a definition without erasing run history; OpenOrg can dispatch due attempts to any configured AI destination.",
       "Use `org2 goal` for durable outcomes and `org2 agent-profile` for portable named workers plus runtime bindings; resolve a runtime agent ID before creating delegated work.",
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",

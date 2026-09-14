@@ -10,6 +10,8 @@ const workflow = promptAutomation({
   title: "Serialization regression",
   instructions: "Summarize the project notes.",
   destinationRef: "builtin.codex",
+  model: "gpt-5.6-sol",
+  reasoningEffort: "high",
   agentRef: "project-reviewer",
   goalRef: "project-review",
   schedule: "every 4h",
@@ -29,10 +31,14 @@ for (const newline of ["\n", "\r\n"]) {
 const edited = (preamble + rendered)
   .replace("* Serialization regression", "* Revised workflow")
   .replace(":WORKFLOW_STATE: active", ":WORKFLOW_STATE: paused")
+  .replace(":MODEL: gpt-5.6-sol", ":MODEL: gpt-6-astra")
+  .replace(":REASONING_EFFORT: high", ":REASONING_EFFORT: xhigh")
   .replace(workflow.description, "A maintained description.");
 assert.equal(parseWorkflowOrg(edited).title, "Revised workflow");
 assert.equal(parseWorkflowOrg(edited).state, "paused");
 assert.equal(parseWorkflowOrg(edited).description, "A maintained description.");
+assert.equal(parseWorkflowOrg(edited).model, "gpt-6-astra");
+assert.equal(parseWorkflowOrg(edited).reasoningEffort, "xhigh");
 assert.equal(parseWorkflowOrg(rendered.replace(workflow.description, "")).description, "");
 assert.equal(parseWorkflowOrg(preamble.replace(":ID:", ":AGENT_REF: unrelated\n:ID:") + rendered).agentRef, workflow.agentRef);
 
@@ -73,6 +79,8 @@ try {
     assert.equal(saved.agentRef, workflow.agentRef);
     assert.equal(saved.goalRef, workflow.goalRef);
     assert.equal(saved.destinationRef, workflow.destinationRef);
+    assert.equal(saved.model, workflow.model);
+    assert.equal(saved.reasoningEffort, workflow.reasoningEffort);
     assert.equal(saved.state, action === "pause" ? "paused" : "active");
   }
   // Copy metadata only under the same guarded write as the workflow update.

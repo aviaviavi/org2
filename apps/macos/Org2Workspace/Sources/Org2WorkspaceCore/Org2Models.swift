@@ -360,6 +360,8 @@ public struct AgentWorkflowDueItem: Decodable, Hashable, Sendable, Identifiable 
   public let workflowId: String
   public let title: String
   public let destinationRef: String?
+  public let model: String?
+  public let reasoningEffort: String?
   public let agentRef: String?
   public let goalRef: String?
   public let triggerId: String
@@ -379,6 +381,8 @@ public struct AgentWorkflowRunPayload: Decodable, Sendable {
   public let activeRunId: String?
   public let run: AgentRunItem?
   public let file: String?
+  public let model: String?
+  public let reasoningEffort: String?
   public let prompt: String?
 }
 
@@ -406,6 +410,8 @@ public struct AgentWorkflowItem: Identifiable, Decodable, Hashable, Sendable {
   public let legacyLocation: Bool
   public let sourceRunId: String?
   public let destinationRef: String?
+  public let model: String?
+  public let reasoningEffort: String?
   public let agentRef: String?
   public let goalRef: String?
   public let createdAt: String

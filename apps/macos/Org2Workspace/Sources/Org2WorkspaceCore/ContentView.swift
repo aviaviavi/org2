@@ -5630,6 +5630,12 @@ private struct WorkflowRow: View {
         if let destinationRef = workflow.destinationRef {
           Label(store.aiChatDestination(id: destinationRef)?.title ?? destinationRef, systemImage: "paperplane")
         }
+        if let model = workflow.model {
+          Label(model, systemImage: "cpu")
+        }
+        if let reasoningEffort = workflow.reasoningEffort {
+          Label(reasoningEffort, systemImage: "brain")
+        }
         let runCount = store.agentRunCount(workflowID: workflow.id)
         if runCount > 0 {
           Button {
@@ -5713,6 +5719,8 @@ private struct NewAutomationSheet: View {
   @State private var title = ""
   @State private var prompt = ""
   @State private var destinationID = ""
+  @State private var model = ""
+  @State private var reasoningEffort = ""
   @State private var agentRef = ""
   @State private var scheduleEnabled = true
   @State private var schedule = "0 9 * * 1"
@@ -5735,6 +5743,11 @@ private struct NewAutomationSheet: View {
               .tag(destination.id)
           }
         }
+
+        TextField("Model (destination default)", text: $model)
+          .help("Exact model identifier stored in the automation file. Leave blank to use the destination default.")
+        TextField("Reasoning effort (destination default)", text: $reasoningEffort)
+          .help("Exact reasoning level stored in the automation file, such as low, medium, high, or xhigh. Leave blank to use the destination default.")
 
         Picker("Agent", selection: $agentRef) {
           Text("Destination default").tag("")
@@ -5784,6 +5797,8 @@ private struct NewAutomationSheet: View {
               title: title,
               prompt: prompt,
               destinationID: destinationID,
+              model: model,
+              reasoningEffort: reasoningEffort,
               agentRef: selectedAgent,
               schedule: selectedSchedule,
               timezone: timezone
@@ -5837,6 +5852,8 @@ private struct WorkflowScheduleSheet: View {
   @State private var cron: String
   @State private var timezone: String
   @State private var destinationID: String
+  @State private var model: String
+  @State private var reasoningEffort: String
   @State private var isSaving = false
   @State private var saveError: String?
 
@@ -5847,6 +5864,8 @@ private struct WorkflowScheduleSheet: View {
     _cron = State(initialValue: trigger?.schedule ?? "0 9 * * 1")
     _timezone = State(initialValue: trigger?.timezone ?? TimeZone.current.identifier)
     _destinationID = State(initialValue: workflow.destinationRef ?? "")
+    _model = State(initialValue: workflow.model ?? "")
+    _reasoningEffort = State(initialValue: workflow.reasoningEffort ?? "")
   }
 
   var body: some View {
@@ -5860,6 +5879,10 @@ private struct WorkflowScheduleSheet: View {
             .tag(destination.id)
         }
       }
+      TextField("Model (destination default)", text: $model)
+        .help("Exact model identifier stored in the automation file. Leave blank to use the destination default.")
+      TextField("Reasoning effort (destination default)", text: $reasoningEffort)
+        .help("Exact reasoning level stored in the automation file. Leave blank to use the destination default.")
       Toggle("Enable schedule", isOn: $enabled)
       if enabled {
         AutomationScheduleEditor(expression: $cron, timezone: $timezone)
@@ -5884,6 +5907,8 @@ private struct WorkflowScheduleSheet: View {
               cron: cron,
               timezone: timezone,
               destinationID: destinationID,
+              model: model,
+              reasoningEffort: reasoningEffort,
               enabled: enabled
             )
             isSaving = false
