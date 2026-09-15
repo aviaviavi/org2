@@ -131,7 +131,14 @@ const localFastDaily = JSON.parse(
     "tools/build-macos-app.mjs",
     ["--configuration", "debug", "--local-fast", "--print-configuration"],
     0,
-    noGoogleOAuthEnvironment
+    {
+      ...noGoogleOAuthEnvironment,
+      // Configuration tests run on Linux as well as macOS. Exercise the
+      // bundled-runtime contract without depending on a runner-level
+      // Homebrew whisper.cpp installation.
+      ORG2_WORKSPACE_WHISPER_CPP_PATH: process.execPath,
+      ORG2_WORKSPACE_WHISPER_MODEL_PATH: fileURLToPath(import.meta.url),
+    }
   ).stdout
 );
 assert.equal(localFastDaily.configuration, "debug");
