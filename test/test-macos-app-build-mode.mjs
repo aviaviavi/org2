@@ -62,11 +62,11 @@ assert.ok(
 assert.match(makefileSource, /^macos-app-restart:\n\tnpm run build:macos-app:restart$/m);
 assert.equal(
   packageJSON.scripts["build:macos-app:restart"],
-  "node tools/build-macos-app.mjs --configuration release --local-optimized --restart"
+  "node tools/build-macos-app.mjs --configuration debug --local-fast --restart"
 );
 assert.equal(
   packageJSON.scripts["build:macos-app"],
-  "node tools/build-macos-app.mjs --configuration release --local-optimized"
+  "node tools/build-macos-app.mjs --configuration debug --local-fast"
 );
 
 function run(script, args, expectedStatus = 0, environment = process.env) {
@@ -125,6 +125,21 @@ const localOptimizedDaily = JSON.parse(
 assert.equal(localOptimizedDaily.configuration, "release");
 assert.equal(localOptimizedDaily.optimizationMode, "incremental -O");
 assert.match(localOptimizedDaily.swiftScratchPath, /\.build\/macos-local-optimized$/);
+
+const localFastDaily = JSON.parse(
+  run(
+    "tools/build-macos-app.mjs",
+    ["--configuration", "debug", "--local-fast", "--print-configuration"],
+    0,
+    noGoogleOAuthEnvironment
+  ).stdout
+);
+assert.equal(localFastDaily.configuration, "debug");
+assert.equal(localFastDaily.optimizationMode, "shared incremental debug (-Onone)");
+assert.equal(localFastDaily.swiftScratchPath, null);
+assert.ok(localFastDaily.nodePath);
+assert.ok(localFastDaily.whisperCppPath);
+assert.ok(localFastDaily.whisperModelPath);
 
 const refusedUnconfiguredDistribution = run(
   "tools/build-macos-app.mjs",
@@ -222,6 +237,29 @@ const refusedLocalOptimizedDebug = run(
   1
 );
 assert.match(refusedLocalOptimizedDebug.stderr, /requires --configuration release/);
+
+const refusedLocalFastRelease = run(
+  "tools/build-macos-app.mjs",
+  [
+    "--configuration", "release",
+    "--local-fast",
+    "--print-configuration",
+  ],
+  1
+);
+assert.match(refusedLocalFastRelease.stderr, /requires --configuration debug/);
+
+const refusedAmbiguousLocalMode = run(
+  "tools/build-macos-app.mjs",
+  [
+    "--configuration", "debug",
+    "--local-fast",
+    "--local-optimized",
+    "--print-configuration",
+  ],
+  1
+);
+assert.match(refusedAmbiguousLocalMode.stderr, /either --local-fast or --local-optimized/);
 
 const restartDaily = JSON.parse(
   run("tools/build-macos-app.mjs", [

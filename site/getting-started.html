@@ -272,9 +272,12 @@ cd org2
 npm ci
 npm run build
 npm run org2 -- --version</code></pre>
-<p>Build the optimized daily Mac app with:</p>
+<p>Build the self-contained daily Mac app for local development with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run build:macos-app
 open ~/Applications/OpenOrg.app</code></pre>
+<p>This command reuses the incremental debug cache shared with Swift tests, which
+keeps the edit-build loop short. Use <code>npm run build:macos-app:release</code> when you
+specifically need an optimized distribution or performance-validation build.</p>
 <p>For a local dogfooding loop, <code>make macos-app-restart</code> (or
 <code>npm run build:macos-app:restart</code>) leaves the current daily app open while it compiles
 and verifies a staged replacement. It requests a graceful quit only when the

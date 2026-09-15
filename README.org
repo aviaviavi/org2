@@ -108,13 +108,14 @@ make macos-app
 #+end_src
 
 The equivalent npm script is =npm run build:macos-app=. The daily-app command
-builds with Swift's =-O= optimizer and incremental per-file compilation by
-default, so it keeps optimized runtime performance without re-optimizing the
-entire macOS module after every source edit. The explicit =:release= variant
-retains whole-module optimization for distribution builds. Both paths assemble
-and verify a complete staged app before replacing the installed bundle, so a
-failed build leaves the existing app untouched. Use the explicit variants when
-switching modes during development:
+builds a self-contained development bundle with Swift's shared incremental
+debug cache, so focused Swift tests and app builds reuse the same compiled
+objects instead of recompiling the large workspace module under =-O=. The
+explicit =:release= variant retains whole-module optimization for distribution
+and performance validation. Both paths assemble and verify a complete staged
+app before replacing the installed bundle, so a failed build leaves the
+existing app untouched. Use the explicit variants when switching modes during
+development:
 
 #+begin_src sh
 make macos-app-restart
@@ -137,9 +138,10 @@ npm run build:macos-app:codex:release  # isolated optimized app
 #+end_src
 
 The build refuses to place an implicit debug binary at the daily app's bundle
-identifier; only the explicit =:debug= command authorizes that. The app reports
-*Debug* or *Optimized release* under its audio/runtime settings, and the bundle
-records the same mode as =Org2BuildConfiguration= in =Info.plist=.
+identifier; the normal local-fast command and explicit =:debug= command are the
+two authorized development modes. The app reports *Debug* or *Optimized
+release* under its audio/runtime settings, and the bundle records the same mode
+as =Org2BuildConfiguration= in =Info.plist=.
 
 By default this writes to =~/Applications/OpenOrg.app=, signs it with
 bundle id =org.org2.workspace=, and uses the first available stable code-signing
