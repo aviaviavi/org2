@@ -10,12 +10,13 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     _ html: String,
     role: String = "assistant",
     preparing: Bool = false,
+    attachments: [AIChatTranscriptHTML.Attachment] = [],
     failure: String? = nil,
     trace: AIChatTranscriptHTML.Trace? = nil,
     changeSummary: AIChatTranscriptHTML.ChangeSummary? = nil
   ) -> AIChatTranscriptHTML.Entry {
     .init(id: id, role: role, title: role == "user" ? "You" : "Assistant", timestamp: "Today",
-      html: html, plainText: nil, preparing: preparing, contexts: [], attachments: [], failure: failure, queued: false, canSteer: false,
+      html: html, plainText: nil, preparing: preparing, contexts: [], attachments: attachments, failure: failure, queued: false, canSteer: false,
       isRoomResponse: false, copied: false, isTruncated: false,
       responseTrace: trace, changeSummary: changeSummary)
   }
@@ -26,8 +27,29 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       status: "", search: search, searchGeneration: generation, initialPosition: position, compact: false,
       live: live)
   }
-  private func document() async throws -> WKWebView {
-    let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
+  private func document(attachments: [OpenClawChatAttachment] = []) async throws -> WKWebView {
+    let resources = OrgHTMLLocalResourceSchemeHandler()
+    resources.configure(
+      source: EntrySource(
+        file: "/tmp/chat-message.org",
+        startLine: 1,
+        endLineExclusive: 1,
+        text: "",
+        isSubtree: false
+      ),
+      corpusRoot: nil
+    )
+    resources.configureChatAttachments(attachments)
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    configuration.setURLSchemeHandler(
+      resources,
+      forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
+    )
+    let view = WKWebView(
+      frame: NSRect(x: 0, y: 0, width: 460, height: 320),
+      configuration: configuration
+    )
     view.loadHTMLString(AIChatTranscriptHTML.shell, baseURL: nil)
     for _ in 0..<150 {
       if !view.isLoading, (try? await view.evaluateJavaScript("document.readyState")) as? String == "complete" { break }
@@ -178,6 +200,55 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     let result = try await view.evaluateJavaScript("events") as? [[String: Any]] ?? []
     XCTAssertTrue(result.contains { $0["action"] as? String == "copy" && $0["id"] as? String == "copy-me" })
     XCTAssertTrue(result.contains { $0["code"] as? String == "first line\nsecond line" })
+  }
+
+  func testImageAttachmentsRenderInlinePreviews() async throws {
+    let bitmap = try XCTUnwrap(NSBitmapImageRep(
+      bitmapDataPlanes: nil,
+      pixelsWide: 8,
+      pixelsHigh: 8,
+      bitsPerSample: 8,
+      samplesPerPixel: 4,
+      hasAlpha: true,
+      isPlanar: false,
+      colorSpaceName: .deviceRGB,
+      bytesPerRow: 0,
+      bitsPerPixel: 0
+    ))
+    let imageData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    let attachment = OpenClawChatAttachment(
+      fileName: "Screenshot.png",
+      mimeType: "image/png",
+      data: imageData
+    )
+    let view = try await document(attachments: [attachment])
+    try await update(view, payload([
+      entry(
+        "image",
+        "<main><p>See attached.</p></main>",
+        role: "user",
+        attachments: [AIChatTranscriptHTML.Attachment(attachment)]
+      )
+    ]))
+
+    var result: [String: Any] = [:]
+    for _ in 0..<150 {
+      result = try await view.evaluateJavaScript("""
+        (()=>{
+          const image=document.querySelector('.attachment-preview img');
+          return { count:document.querySelectorAll('.attachment-preview img').length,
+            width:image?.naturalWidth||0, source:image?.getAttribute('src')||'' };
+        })()
+        """) as? [String: Any] ?? [:]
+      if result["width"] as? Int == 8 { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+
+    XCTAssertEqual(result["count"] as? Int, 1)
+    XCTAssertEqual(result["width"] as? Int, 8)
+    XCTAssertTrue(
+      (result["source"] as? String)?.hasPrefix("org2-resource://attachment/") == true
+    )
   }
 
   func testEstablishedMessageChromeAndInlineSummariesRemainVisible() async throws {

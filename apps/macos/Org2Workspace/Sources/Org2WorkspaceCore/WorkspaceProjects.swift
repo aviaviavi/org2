@@ -43,6 +43,15 @@ enum WorkspaceProjectContext {
   }
 }
 
+enum WorkspaceProjectThreadVisibility {
+  static func activeSummaries(
+    for project: WorkspaceProjectNote,
+    from summaries: [OpenClawSidebarThreadSummary]
+  ) -> [OpenClawSidebarThreadSummary] {
+    summaries.filter { !$0.isSettled && project.contains($0.id) }
+  }
+}
+
 enum WorkspaceProjectPalette {
   static let names = ["blue", "teal", "green", "orange", "red", "purple", "gray"]
   static func tint(_ name: String) -> Color {
@@ -102,11 +111,13 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
           get: { expandedProjects.contains(project.id) },
           set: { if $0 { expandedProjects.insert(project.id) } else { expandedProjects.remove(project.id) } }
         )) {
-          let threads = (store.sidebarOpenClawChatThreadSummaries + store.sidebarSettledOpenClawChatThreadSummaries)
-            .filter { project.contains($0.id) }
+          let threads = WorkspaceProjectThreadVisibility.activeSummaries(
+            for: project,
+            from: store.sidebarOpenClawChatThreadSummaries
+          )
           ForEach(threads) { summary in threadRow(summary) }
           if threads.isEmpty {
-            Text("No chats yet").font(.caption).foregroundStyle(.secondary)
+            Text("No active chats").font(.caption).foregroundStyle(.secondary)
           }
         } label: {
           HStack(spacing: 7) {

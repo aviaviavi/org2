@@ -56,6 +56,41 @@ final class WorkspaceProjectTests: XCTestCase {
     XCTAssertEqual(WorkspaceProjectContext.presentation(projects: [], threadID: UUID()), "")
   }
 
+  func testProjectSidebarHidesSettledThreads() {
+    let activeID = UUID()
+    let settledID = UUID()
+    let note = WorkspaceProjectNote(
+      id: UUID().uuidString,
+      title: "Launch",
+      color: "blue",
+      file: "/local/launch.org",
+      relativePath: "launch.org",
+      revision: "sha256:fixture",
+      threadIDs: [activeID.uuidString.lowercased(), settledID.uuidString.lowercased()],
+      brief: "",
+      briefTruncated: false
+    )
+    let active = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+      id: activeID,
+      title: "Active",
+      sessionKey: "active"
+    ))
+    let settled = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+      id: settledID,
+      title: "Settled",
+      sessionKey: "settled",
+      settledAt: Date()
+    ))
+
+    XCTAssertEqual(
+      WorkspaceProjectThreadVisibility.activeSummaries(
+        for: note,
+        from: [active, settled]
+      ).map(\.id),
+      [activeID]
+    )
+  }
+
   func testProjectHeaderButtonsKeepStableHitGeometry() throws {
     let packageRoot = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()

@@ -5,6 +5,27 @@ import XCTest
 
 @MainActor
 final class AIChatDocumentMediaTests: XCTestCase {
+  func testChatAttachmentsUseRevisionedResourceURLsOnlyForImages() throws {
+    let image = OpenClawChatAttachment(
+      fileName: "Screenshot.png",
+      mimeType: "image/png",
+      data: Data([1, 2, 3])
+    )
+    let text = OpenClawChatAttachment(
+      fileName: "notes.txt",
+      mimeType: "text/plain",
+      data: Data("notes".utf8)
+    )
+
+    let imageURL = try XCTUnwrap(
+      OrgHTMLLocalResourceSchemeHandler.chatAttachmentResourceURL(for: image)
+    )
+    XCTAssertEqual(imageURL.scheme, OrgHTMLLocalResourceSchemeHandler.scheme)
+    XCTAssertEqual(imageURL.host, "attachment")
+    XCTAssertTrue(imageURL.absoluteString.contains("revision="))
+    XCTAssertNil(OrgHTMLLocalResourceSchemeHandler.chatAttachmentResourceURL(for: text))
+  }
+
   func testLocalImagesLoadThroughTheDocumentResourceHandler() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

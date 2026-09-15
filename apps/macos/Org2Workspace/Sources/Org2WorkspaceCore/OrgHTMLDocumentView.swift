@@ -203,6 +203,7 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   private let lock = NSLock()
   private var sourceDirectory: URL?
   private var corpusRoot: URL?
+  private var chatAttachments: [String: OpenClawChatAttachment] = [:]
 
   func configure(source: EntrySource, corpusRoot: URL?) {
     let sourceURL = OrgHTMLDocumentView.sourceFileURL(source, corpusRoot: corpusRoot)
@@ -210,6 +211,34 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
       sourceDirectory = sourceURL.deletingLastPathComponent().standardizedFileURL
       self.corpusRoot = corpusRoot?.standardizedFileURL
     }
+  }
+
+  func configureChatAttachments(_ attachments: [OpenClawChatAttachment]) {
+    let images = attachments.filter {
+      OpenClawAttachmentPresentation.previewKind(for: $0) == .image
+    }
+    lock.withLock {
+      chatAttachments = Dictionary(
+        images.map { ($0.id.uuidString.lowercased(), $0) },
+        uniquingKeysWith: { _, latest in latest }
+      )
+    }
+  }
+
+  nonisolated static func chatAttachmentResourceURL(
+    for attachment: OpenClawChatAttachment
+  ) -> URL? {
+    guard OpenClawAttachmentPresentation.previewKind(for: attachment) == .image else {
+      return nil
+    }
+    var components = URLComponents()
+    components.scheme = scheme
+    components.host = "attachment"
+    components.path = "/" + attachment.id.uuidString.lowercased()
+    components.queryItems = [
+      URLQueryItem(name: "revision", value: attachment.persistedContentDigest)
+    ]
+    return components.url
   }
 
   nonisolated static func rewritingLocalImageSources(in html: String) -> String {
@@ -239,8 +268,17 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   }
 
   func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
-    guard let requestURL = urlSchemeTask.request.url,
-          let fileURL = fileURL(for: requestURL),
+    guard let requestURL = urlSchemeTask.request.url else {
+      urlSchemeTask.didFailWithError(resourceError(.fileReadNoPermission))
+      return
+    }
+
+    if requestURL.host == "attachment" {
+      serveChatAttachment(for: requestURL, to: urlSchemeTask)
+      return
+    }
+
+    guard let fileURL = fileURL(for: requestURL),
           let contentType = UTType(filenameExtension: fileURL.pathExtension),
           contentType.conforms(to: .image),
           let mimeType = contentType.preferredMIMEType
@@ -266,6 +304,50 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   }
 
   func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+
+  private func serveChatAttachment(
+    for requestURL: URL,
+    to urlSchemeTask: any WKURLSchemeTask
+  ) {
+    let id = requestURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    let revision = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?
+      .queryItems?
+      .first(where: { $0.name == "revision" })?
+      .value
+    guard !id.isEmpty,
+          let attachment = lock.withLock({ chatAttachments[id] }),
+          revision == attachment.persistedContentDigest,
+          OpenClawAttachmentPresentation.previewKind(for: attachment) == .image,
+          let mimeType = chatAttachmentMIMEType(attachment)
+    else {
+      urlSchemeTask.didFailWithError(resourceError(.fileReadNoPermission))
+      return
+    }
+
+    do {
+      let data = try attachment.loadData()
+      let response = URLResponse(
+        url: requestURL,
+        mimeType: mimeType,
+        expectedContentLength: data.count,
+        textEncodingName: nil
+      )
+      urlSchemeTask.didReceive(response)
+      urlSchemeTask.didReceive(data)
+      urlSchemeTask.didFinish()
+    } catch {
+      urlSchemeTask.didFailWithError(error)
+    }
+  }
+
+  private func chatAttachmentMIMEType(_ attachment: OpenClawChatAttachment) -> String? {
+    let declared = attachment.mimeType.lowercased()
+    if declared.hasPrefix("image/") {
+      return declared
+    }
+    return UTType(filenameExtension: URL(fileURLWithPath: attachment.fileName).pathExtension)?
+      .preferredMIMEType
+  }
 
   private func fileURL(for requestURL: URL) -> URL? {
     guard requestURL.scheme?.lowercased() == Self.scheme,

@@ -293,7 +293,8 @@ struct AIChatTranscriptDocument: View {
         initialPosition: store.openClawChatScrollPosition(isAssistantPanel: compact) ?? 1,
         compact: compact,
         live: liveInput.map(livePayload)
-      ), sourcePath: sourcePath, corpusRoot: store.corpusRoot,
+      ), attachments: messages.flatMap(\.attachments),
+      sourcePath: sourcePath, corpusRoot: store.corpusRoot,
       linkResolver: linkResolver, openFileReference: openFileReference,
       onAction: handleAction,
       onPosition: { thread, position in
@@ -615,11 +616,15 @@ enum AIChatTranscriptHTML {
     let id: String
     let fileName: String
     let mimeType: String
+    let previewURL: String?
 
     init(_ attachment: OpenClawChatAttachment) {
       id = attachment.id.uuidString.lowercased()
       fileName = attachment.fileName
       mimeType = attachment.mimeType
+      previewURL = OrgHTMLLocalResourceSchemeHandler
+        .chatAttachmentResourceURL(for: attachment)?
+        .absoluteString
     }
   }
 
@@ -813,6 +818,7 @@ enum AIChatTranscriptHTML {
   .attachments { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,104px)); gap:8px; margin-top:8px; }
   .attachment { text-align:left; padding:0; overflow:hidden; }
   .attachment-preview { height:72px; display:grid; place-items:center; border:1px solid light-dark(#d8d8d3,#424442); border-radius:6px; background:light-dark(#f5f4f1,#1d1f1d); }
+  .attachment-preview img { display:block; width:100%; height:100%; object-fit:cover; border-radius:5px; }
   .attachment-preview svg { width:22px; height:22px; opacity:.65; }
   .attachment-name { display:block; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; color:light-dark(#777,#aaa); }
   .queued-actions { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:11px; color:light-dark(#777,#aaa); }
@@ -1026,7 +1032,11 @@ enum AIChatTranscriptHTML {
         const attachments=document.createElement('div'); attachments.className='attachments';
         for(const attachment of e.attachments) {
           const b=button('','attachment',e.id,attachment.id); b.className='attachment'; b.title='Open '+attachment.fileName;
-          const preview=document.createElement('span'); preview.className='attachment-preview'; preview.append(icon('file'));
+          const preview=document.createElement('span'); preview.className='attachment-preview';
+          if(attachment.previewURL) {
+            const image=document.createElement('img'); image.src=attachment.previewURL; image.alt='';
+            image.onerror=()=>preview.replaceChildren(icon('file')); preview.append(image);
+          } else preview.append(icon('file'));
           const name=document.createElement('span'); name.className='attachment-name'; name.textContent=attachment.fileName;
           b.append(preview,name); attachments.append(b);
         }
@@ -1235,6 +1245,7 @@ enum AIChatTranscriptHTML {
 
 struct AIChatTranscriptWebView: NSViewRepresentable {
   let payload: AIChatTranscriptHTML.Payload
+  let attachments: [OpenClawChatAttachment]
   let sourcePath: String
   let corpusRoot: URL?
   let linkResolver: OrgRoamLinkResolver
@@ -1263,6 +1274,10 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
     c.onAction=onAction; c.onPosition=onPosition; c.openFileReference=openFileReference
     c.sourcePath=sourcePath; c.corpusRoot=corpusRoot; c.linkResolver=linkResolver
     c.resources.configure(source: EntrySource(file:sourcePath,startLine:1,endLineExclusive:1,text:"",isSubtree:false),corpusRoot:corpusRoot)
+    if c.attachments != attachments {
+      c.attachments = attachments
+      c.resources.configureChatAttachments(attachments)
+    }
     var next = payload
     if let previous = c.payload, previous.thread == next.thread { next.initialPosition = previous.initialPosition }
     let previous = c.payload
@@ -1297,6 +1312,7 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
   }
   final class Coordinator: AIChatDocumentWebView.Coordinator {
     var payload: AIChatTranscriptHTML.Payload?
+    var attachments: [OpenClawChatAttachment] = []
     var restoredThread: String?
     var restorationThreadAfterDOMUpdate: String?
     var onAction: ((String,String?,String?) -> Void)?
