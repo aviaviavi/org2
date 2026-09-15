@@ -16868,6 +16868,53 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testMarkReviewOnlyApprovalDoneElsewhereClosesReviewMetadataWithoutTodo() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-external-review-record-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("review-record.org")
+    try """
+    * Review record
+    :PROPERTIES:
+    :ID: review-record-id
+    :ORG2_ARTIFACT_ROLE: view
+    :ORG2_REVIEW_STATUS: review-required
+    :END:
+
+    User-provided request awaiting review.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    await store.refreshApprovals(updatesStatus: true)
+
+    let item = try XCTUnwrap(store.approvalItems.first)
+    XCTAssertNil(item.todo)
+    XCTAssertEqual(item.idValue, "review-record-id")
+
+    await store.completeApprovalExternally(
+      item,
+      summary: "Handled in the customer workflow."
+    )
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* Review record"))
+    XCTAssertFalse(updated.contains("* DONE Review record"))
+    XCTAssertTrue(updated.contains(":ORG2_REVIEW_STATUS: completed-externally"))
+    XCTAssertTrue(updated.contains(":STATUS: completed-externally"))
+    XCTAssertTrue(updated.contains(":COMPLETED_EXTERNALLY_AT: <"))
+    XCTAssertTrue(updated.contains(":EXTERNAL_COMPLETION_NOTE: Handled in the customer workflow."))
+    XCTAssertTrue(store.approvalItems.isEmpty)
+
+    await store.refreshApprovals()
+
+    XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
   func testPriorityAndPropertyShortcutsUpdateTempNote() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-priority-\(UUID().uuidString)", isDirectory: true)

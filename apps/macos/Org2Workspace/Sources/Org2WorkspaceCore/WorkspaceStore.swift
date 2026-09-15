@@ -9013,6 +9013,7 @@ public final class WorkspaceStore {
           agendaItemID: nil,
           idValue: item.idValue
         ),
+        hasTodo: item.todo != nil,
         summary: normalizedSummary
       )
       if let standaloneContext {
@@ -33556,9 +33557,10 @@ public final class WorkspaceStore {
 
   nonisolated private static func approvalProperties(
     for target: HeadlineMutationTarget,
-    in raw: String
+    in raw: String,
+    requiresTodo: Bool = true
   ) throws -> (target: HeadlineMutationTarget, properties: [String: String]) {
-    let resolved = try resolveHeadlineMutationTarget(target, in: raw, requiresTodo: true)
+    let resolved = try resolveHeadlineMutationTarget(target, in: raw, requiresTodo: requiresTodo)
     let lines = normalizeLineEndings(raw)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
@@ -33829,6 +33831,7 @@ public final class WorkspaceStore {
 
   private func completeStandaloneApprovalExternally(
     _ target: HeadlineMutationTarget,
+    hasTodo: Bool,
     summary: String
   ) async throws {
     let context = try documentMutationContext(for: target)
@@ -33836,26 +33839,79 @@ public final class WorkspaceStore {
     let testMutation = todoStatusMutationForTesting
     let timestamp = Self.orgTimestamp(Date())
     try await performDocumentMutation(context: context, files: [target.file]) { execution in
-      let statusResult = try await Self.mutateTodoStatusInDocument(
-        .done,
-        target: target,
-        cli: cli,
-        execution: execution,
-        testMutation: testMutation
+      let propertyTarget: HeadlineMutationTarget
+      if hasTodo {
+        propertyTarget = try await Self.mutateTodoStatusInDocument(
+          .done,
+          target: target,
+          cli: cli,
+          execution: execution,
+          testMutation: testMutation
+        ).target
+      } else {
+        propertyTarget = target
+      }
+      let snapshot = try await execution.readSnapshot(at: URL(fileURLWithPath: target.file))
+      let current = try Self.approvalProperties(
+        for: propertyTarget,
+        in: snapshot.text,
+        requiresTodo: hasTodo
       )
       _ = try await Self.upsertPropertiesInDocument(
-        [
-          "STATUS": "completed-externally",
-          "COMPLETED_EXTERNALLY_AT": timestamp,
-          "EXTERNAL_COMPLETION_NOTE": Self.sanitizeOrgPropertyValue(summary),
-        ],
-        target: statusResult.target,
+        Self.completedExternallyApprovalProperties(
+          existingProperties: current.properties,
+          timestamp: timestamp,
+          summary: summary
+        ),
+        target: current.target,
         execution: execution
       )
     }
     guard isCurrentDocumentCorpusContext(context) else { return }
     await refreshAfterHeadlineMutation(target)
     statusText = "Recorded external completion -> \(target.title)"
+  }
+
+  nonisolated private static func completedExternallyApprovalProperties(
+    existingProperties: [String: String],
+    timestamp: String,
+    summary: String
+  ) -> [String: String] {
+    var properties: [String: String] = [
+      "STATUS": "completed-externally",
+      "COMPLETED_EXTERNALLY_AT": timestamp,
+      "EXTERNAL_COMPLETION_NOTE": sanitizeOrgPropertyValue(summary),
+    ]
+
+    for key in [
+      "ORG2_REVIEW_STATUS",
+      "REVIEW_STATUS",
+      "REVIEW",
+      "FOLLOWUP_STATUS",
+      "REPLY_STATUS",
+      "ACCESS_POLICY",
+      "REVIEW_POLICY"
+    ] where existingProperties[key] != nil {
+      properties[key] = "completed-externally"
+    }
+
+    for key in [
+      "WAITING_ON",
+      "BLOCKED_BY",
+      "ORG2_WAITING_ON",
+      "NEXT_ACTION",
+      "ACTION_REQUIRED",
+      "ORG2_NEXT_ACTION",
+      "HANDOFF_SUMMARY",
+      "ORG2_HANDOFF_SUMMARY"
+    ] {
+      guard let value = existingProperties[key] else { continue }
+      if containsApprovalSignal(value) {
+        properties[key] = "completed-externally"
+      }
+    }
+
+    return properties
   }
 
   private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async throws {
