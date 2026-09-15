@@ -410,16 +410,6 @@ struct AIChatTranscriptDocument: View {
       guard !Task.isCancelled else { return }
       let text = prepared?.text?.text
       let reasoning = prepared?.reasoning
-      preparedLive = PreparedLive(
-        threadID: liveInput.threadID,
-        startedAt: liveInput.startedAt,
-        text: text,
-        textHTML: nil,
-        hasEarlierText: prepared?.text?.hasEarlierText ?? false,
-        reasoning: reasoning,
-        reasoningHTML: nil,
-        activities: prepared?.activityFeedItems ?? []
-      )
       async let textHTML = renderedProgressHTML(text)
       async let reasoningHTML = renderedProgressHTML(reasoning)
       let renderedTextHTML = await textHTML
@@ -987,10 +977,18 @@ enum AIChatTranscriptHTML {
       return body;
     };
     const setRenderedOrgText = (node, text, html) => {
-      node.replaceChildren();
-      node.classList.toggle('rendered',!!html);
-      if(html) node.append(renderedOrgBody(html));
-      else node.textContent=text||'';
+      const nextText=text||'', nextHTML=html||null;
+      if(node._orgText===nextText && node._orgHTML===nextHTML) return;
+      const wasRendered=node.classList.contains('rendered');
+      node.classList.toggle('rendered',!!nextHTML);
+      if(nextHTML) {
+        node.replaceChildren(renderedOrgBody(nextHTML));
+      } else if(wasRendered) {
+        node.replaceChildren(); node.textContent=nextText;
+      } else if(node.textContent!==nextText) {
+        node.textContent=nextText;
+      }
+      node._orgText=nextText; node._orgHTML=nextHTML;
     };
     const makeMessage = e => {
       const a=document.createElement('article'); a.id='message-'+e.id; a.className=e.role;
@@ -1136,15 +1134,22 @@ enum AIChatTranscriptHTML {
       const text=root.querySelector('.live-text'); setRenderedOrgText(text,live.text,live.textHTML); text.hidden=!live.text;
       const textToggle=root.querySelector('.live-text-toggle'); textToggle.hidden=!live.hasEarlierText;
       if(live.hasEarlierText) updateDisclosure(textToggle,live.textExpanded?'Show latest update':'Show all progress',live.textExpanded?'chevronUp':'chevronDown');
-      const feed=root.querySelector('.live-feed'); feed.replaceChildren(); feed.classList.toggle('expanded',live.activityExpanded);
+      const feed=root.querySelector('.live-feed');
+      const retainedReasoning=feed.querySelector(':scope > .reasoning-row');
+      for(const child of [...feed.children]) if(child!==retainedReasoning) child.remove();
+      feed.classList.toggle('expanded',live.activityExpanded);
       if(live.activityExpanded && live.reasoning) {
-        const row=document.createElement('div'); row.className='reasoning-row detail-icon'; row.append(icon('sparkle'));
-        const copy=document.createElement('div'); copy.className='reasoning-copy';
-        const title=document.createElement('span'); title.className='reasoning-title'; title.textContent='Approach';
-        const value=document.createElement('div'); value.className='reasoning-text';
+        const row=retainedReasoning||document.createElement('div');
+        if(!retainedReasoning) {
+          row.className='reasoning-row detail-icon'; row.append(icon('sparkle'));
+          const copy=document.createElement('div'); copy.className='reasoning-copy';
+          const title=document.createElement('span'); title.className='reasoning-title'; title.textContent='Approach';
+          const value=document.createElement('div'); value.className='reasoning-text';
+          copy.append(title,value); row.append(copy); feed.prepend(row);
+        }
+        const value=row.querySelector('.reasoning-text');
         setRenderedOrgText(value,live.reasoning,live.reasoningHTML);
-        copy.append(title,value); row.append(copy); feed.append(row);
-      }
+      } else retainedReasoning?.remove();
       let activities=live.activities;
       if(!live.activityExpanded) { const running=activities.filter(x=>x.status==='running').slice(-1)[0]; activities=running?[running]:activities.slice(-1); }
       activities.forEach(activity=>{

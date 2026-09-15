@@ -3189,7 +3189,7 @@ public enum AIChatMessageDeliveryPreference: String, Codable, Sendable {
   case followUp
 }
 
-public struct AIChatReasoningOption: Identifiable, Hashable, Sendable {
+public struct AIChatReasoningOption: Identifiable, Hashable, Codable, Sendable {
   public let id: String
   public let label: String
   public let detail: String?
@@ -3201,7 +3201,7 @@ public struct AIChatReasoningOption: Identifiable, Hashable, Sendable {
   }
 }
 
-public struct AIChatModelOption: Identifiable, Hashable, Sendable {
+public struct AIChatModelOption: Identifiable, Hashable, Codable, Sendable {
   public let id: String
   public let label: String
   public let detail: String?

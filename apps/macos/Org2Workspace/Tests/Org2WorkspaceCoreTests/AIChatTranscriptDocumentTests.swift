@@ -411,6 +411,53 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     ))
   }
 
+  func testLiveReasoningUpdatesItsExistingTrailNodeInPlace() async throws {
+    func live(reasoning: String, reasoningHTML: String) -> AIChatTranscriptHTML.Live {
+      AIChatTranscriptHTML.Live(
+        title: "Codex is thinking", detail: nil,
+        quietTitle: "Waiting for Codex", quietDetail: "Quiet",
+        stalledTitle: "Codex may be stalled", stalledDetail: "Stalled",
+        startedAtMilliseconds: Date().timeIntervalSince1970 * 1_000,
+        lastEventAtMilliseconds: Date().timeIntervalSince1970 * 1_000,
+        usesLivenessThresholds: false, animates: true,
+        text: nil, textHTML: nil,
+        hasEarlierText: false, textExpanded: false,
+        reasoning: reasoning, reasoningHTML: reasoningHTML,
+        activities: [], activityExpanded: true
+      )
+    }
+    let first = live(
+      reasoning: "Check =first=.",
+      reasoningHTML: "<main><p>Check <code>first</code>.</p></main>"
+    )
+    let second = live(
+      reasoning: "Check =second=.",
+      reasoningHTML: "<main><p>Check <code>second</code>.</p></main>"
+    )
+    let view = try await document()
+    try await update(view, payload([], sending: true, live: first))
+    try await view.evaluateJavaScript("""
+      window.liveReasoningRow=document.querySelector('.live-feed > .reasoning-row');
+      window.liveReasoningValue=document.querySelector('.live-feed .reasoning-text');
+      null;
+      """)
+
+    let json = try XCTUnwrap(String(data: JSONEncoder().encode(second), encoding: .utf8))
+    try await view.evaluateJavaScript("window.__transcriptLiveUpdate(\(json)); null;")
+    let result = try await view.evaluateJavaScript("""
+      ({
+        sameRow:document.querySelector('.live-feed > .reasoning-row')===window.liveReasoningRow,
+        sameValue:document.querySelector('.live-feed .reasoning-text')===window.liveReasoningValue,
+        code:document.querySelector('.live-feed .reasoning-text code')?.textContent,
+        rows:document.querySelectorAll('.live-feed > .reasoning-row').length
+      })
+      """) as? [String: Any]
+    XCTAssertEqual(result?["sameRow"] as? Bool, true)
+    XCTAssertEqual(result?["sameValue"] as? Bool, true)
+    XCTAssertEqual(result?["code"] as? String, "second")
+    XCTAssertEqual(result?["rows"] as? Int, 1)
+  }
+
   func testLiveAndSavedReasoningUseOrgRendering() async throws {
     let commentary = "I’m fixing =main=; see [[https://example.com/docs][the docs]]."
     let reasoning = "Reuse the =Org2= renderer for *reasoning*, too."

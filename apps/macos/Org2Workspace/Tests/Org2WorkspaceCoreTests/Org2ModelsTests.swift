@@ -2321,6 +2321,54 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAIChatConfigurationCatalogSurvivesAProviderOutageAndAppRestart() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-ai-catalog-cache-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-workspace-ai-catalog-cache-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let first = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+    )
+    first.cacheAIChatConfigurationForTesting(
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      models: [
+        AIChatModelOption(
+          id: "openai/gpt-5.6-sol",
+          label: "GPT 5.6 Sol",
+          supportsReasoning: true,
+          isDefault: true
+        )
+      ],
+      effectiveModel: "openai/gpt-5.6-sol",
+      reasoningOptions: [
+        AIChatReasoningOption(id: "low", label: "Low"),
+        AIChatReasoningOption(id: "high", label: "High")
+      ],
+      defaultReasoningEffort: "high"
+    )
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+    )
+    restored.createOpenClawChatThread()
+
+    XCTAssertEqual(restored.aiChatModelOptions.map(\.id), ["openai/gpt-5.6-sol"])
+    XCTAssertEqual(restored.aiChatReasoningOptions.map(\.id), ["low", "high"])
+    XCTAssertEqual(restored.aiChatEffectiveModel, "openai/gpt-5.6-sol")
+    XCTAssertEqual(restored.aiChatDefaultReasoningEffort, "high")
+    XCTAssertEqual(restored.selectedAIChatModelLabel, "GPT 5.6 Sol")
+    XCTAssertEqual(restored.selectedAIChatReasoningLabel, "High")
+  }
+
+  @MainActor
   func testSelectingChatThreadNeverRewritesFullTranscriptAndStillRestoresSelection() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-fast-chat-selection-\(UUID().uuidString)", isDirectory: true)

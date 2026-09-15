@@ -3691,6 +3691,24 @@ struct OpenClawComposerView: View {
         if !store.selectedAIChatDestination.adapter.isDirectProvider {
           effortConfiguration
         }
+        Divider()
+        HStack {
+          if store.isRefreshingAIChatConfiguration {
+            ProgressView()
+              .controlSize(.small)
+            Text("Updating options…")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer()
+          Button {
+            Task { await store.refreshAIChatConfiguration() }
+          } label: {
+            Label("Refresh Options", systemImage: "arrow.clockwise")
+          }
+          .controlSize(.small)
+          .disabled(store.isRefreshingAIChatConfiguration)
+        }
       }
       .padding(18)
       .frame(width: 300)

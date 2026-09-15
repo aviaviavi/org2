@@ -12478,6 +12478,29 @@ private struct LinkedPDFPreviewPane: View {
         .padding(14)
       }
     }
+    .overlay(alignment: .topTrailing) {
+      if store.linkedPDFPreviewData != nil {
+        Button {
+          store.retryLinkedPDFPreview()
+        } label: {
+          if store.isLoadingLinkedPDFPreview {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Image(systemName: "arrow.clockwise")
+          }
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .padding(9)
+        .background(.regularMaterial, in: Circle())
+        .overlay(Circle().stroke(WorkspaceDesign.hairline))
+        .padding(12)
+        .disabled(store.isLoadingLinkedPDFPreview)
+        .help(store.isLoadingLinkedPDFPreview ? "Refreshing PDF preview" : "Refresh PDF preview")
+        .accessibilityLabel(store.isLoadingLinkedPDFPreview ? "Refreshing PDF preview" : "Refresh PDF preview")
+      }
+    }
     .task(id: store.selectedLocation?.file) {
       zoomScale = 1
       pageCount = 0

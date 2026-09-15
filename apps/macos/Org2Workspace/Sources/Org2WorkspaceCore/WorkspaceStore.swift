@@ -631,6 +631,14 @@ private struct AIChatLastConfiguration: Codable {
   let reasoningEffort: String?
 }
 
+private struct AIChatConfigurationCatalogCacheEntry: Codable, Equatable, Sendable {
+  let requestedModel: String?
+  let models: [AIChatModelOption]
+  let effectiveModel: String?
+  let reasoningOptions: [AIChatReasoningOption]
+  let defaultReasoningEffort: String?
+}
+
 private struct CanonicalDocumentCacheEntry: Sendable {
   let fileContentDigest: String?
   let document: Org2CanonicalDocument
@@ -824,6 +832,7 @@ private struct CorpusChangeObservation {
 
 struct CorpusFileEventClassification: Equatable, Sendable {
   let contentPaths: [String]
+  let pdfPreviewPaths: [String]
   let hasAgentRunStateChanges: Bool
   let hasConfigurationChanges: Bool
   let hasAIChatInboxChanges: Bool
@@ -2922,6 +2931,7 @@ public final class WorkspaceStore {
   private let openClawRemoteCorpusPathsByCorpusKey = "Org2Workspace.openClawRemoteCorpusPathsByCorpus.v1"
   private let selectedAIChatThreadsByTranscriptKey = "Org2Workspace.aiChat.selectedThreadsByTranscript.v1"
   private let aiChatLastConfigurationsKey = "Org2Workspace.aiChat.lastConfigurations.v1"
+  private let aiChatConfigurationCatalogCacheKey = "Org2Workspace.aiChat.configurationCatalogCache.v1"
   private let aiChatDestinationsKey = "Org2Workspace.aiChat.destinations.v1"
   private let aiChatCorpusAccessScopeKey = "Org2Workspace.aiChat.corpusAccessScope.v1"
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
@@ -3122,6 +3132,7 @@ public final class WorkspaceStore {
   private var openClawActiveCommandDiscoveryID: String?
   private var openClawCommandDiscoveryGeneration = 0
   private var aiChatConfigurationGeneration = 0
+  @ObservationIgnored private var aiChatConfigurationCatalogCache: [String: AIChatConfigurationCatalogCacheEntry] = [:]
   private var aiChatConfigurationFallbackNoticesByThreadID: [UUID: String] = [:]
   private var activeMeetingRecording: PendingMeetingRecording?
   private var meetingRecordingRecoveryExclusionPaths: MeetingArtifactPaths?
@@ -3547,6 +3558,10 @@ public final class WorkspaceStore {
     aiChatDestinations = Self.restoreAIChatDestinations(
       from: defaults,
       key: aiChatDestinationsKey
+    )
+    aiChatConfigurationCatalogCache = Self.restoreAIChatConfigurationCatalogCache(
+      from: defaults,
+      key: aiChatConfigurationCatalogCacheKey
     )
     codexSandboxAccess = defaults.string(forKey: codexSandboxAccessKey)
       .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
@@ -4832,6 +4847,9 @@ public final class WorkspaceStore {
       return
     }
 
+    if !requiresFullScan, !classified.pdfPreviewPaths.isEmpty {
+      scheduleSelectedPDFPreviewRefresh(for: classified.pdfPreviewPaths)
+    }
     recordCorpusFileEvents(classified.contentPaths)
     if requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
       // Embed contents are derived from other notes. Host-text cache keys alone
@@ -12162,11 +12180,32 @@ public final class WorkspaceStore {
     Task { await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0) }
   }
 
-  private func scheduleLinkedPDFPreviewLoad(for location: WorkspaceLocation) {
+  private func scheduleSelectedPDFPreviewRefresh(for changedPaths: [String]) {
+    guard let selectedLocation,
+          Self.isPDFFile(selectedLocation.file),
+          changedPaths.contains(URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path)
+    else { return }
+    scheduleLinkedPDFPreviewLoad(
+      for: selectedLocation,
+      delayNanoseconds: 150_000_000
+    )
+  }
+
+  private func scheduleLinkedPDFPreviewLoad(
+    for location: WorkspaceLocation,
+    delayNanoseconds: UInt64 = 0
+  ) {
     linkedPDFLoadTask?.cancel()
     linkedPDFLoadGeneration += 1
     let generation = linkedPDFLoadGeneration
     linkedPDFLoadTask = Task { @MainActor [weak self] in
+      if delayNanoseconds > 0 {
+        do {
+          try await Task.sleep(nanoseconds: delayNanoseconds)
+        } catch {
+          return
+        }
+      }
       await self?.loadLinkedPDFPreview(for: location, generation: generation)
     }
   }
@@ -20901,6 +20940,7 @@ public final class WorkspaceStore {
     aiChatDestinations[index] = normalized
     aiChatDestinationSettingsError = nil
     invalidateCodexClient(forDestinationID: normalized.id)
+    removeCachedAIChatConfiguration(destinationID: normalized.id)
     persistAIChatDestinations()
   }
 
@@ -20920,6 +20960,7 @@ public final class WorkspaceStore {
     }
     aiChatDestinations.removeAll(where: { $0.id == destinationID })
     invalidateCodexClient(forDestinationID: destinationID)
+    removeCachedAIChatConfiguration(destinationID: destinationID)
     try? AIChatDestinationCredentials.deleteToken(destinationID: destinationID)
     persistAIChatDestinations()
   }
@@ -20937,6 +20978,7 @@ public final class WorkspaceStore {
         try AIChatDestinationCredentials.saveToken(normalized, destinationID: destinationID)
       }
       invalidateCodexClient(forDestinationID: destinationID)
+      removeCachedAIChatConfiguration(destinationID: destinationID)
       aiChatDestinationSettingsError = nil
     } catch {
       aiChatDestinationSettingsError = error.localizedDescription
@@ -21144,10 +21186,12 @@ public final class WorkspaceStore {
         model: .some(lastConfiguration?.model),
         reasoningEffort: .some(lastConfiguration?.reasoningEffort)
       )
-    aiChatModelOptions = []
-    aiChatReasoningOptions = []
-    aiChatEffectiveModel = nil
-    aiChatDefaultReasoningEffort = nil
+    if !applyCachedAIChatConfiguration(for: openClawChatThreads[index]) {
+      aiChatModelOptions = []
+      aiChatReasoningOptions = []
+      aiChatEffectiveModel = nil
+      aiChatDefaultReasoningEffort = nil
+    }
     openClawStatusText = "Ready for a \(destination.title) message"
     sortOpenClawChatThreadsForDisplay()
     persistOpenClawTranscript()
@@ -21303,7 +21347,14 @@ public final class WorkspaceStore {
       aiChatEffectiveModel = nil
       aiChatDefaultReasoningEffort = nil
       let destinationIDs = thread.roomDestinationIDs
-      let loaded = await withTaskGroup(
+      let cachedPairs: [(String, [AIChatModelOption])] = thread.roomDestinationIDs.compactMap { destinationID in
+        guard let models = aiChatConfigurationCatalogCache[destinationID]?.models,
+              !models.isEmpty
+        else { return nil }
+        return (destinationID, models)
+      }
+      let cachedLoaded = Dictionary(uniqueKeysWithValues: cachedPairs)
+      let refreshed = await withTaskGroup(
         of: (String, [AIChatModelOption]?).self,
         returning: [String: [AIChatModelOption]].self
       ) { group in
@@ -21315,7 +21366,7 @@ public final class WorkspaceStore {
         }
         var result: [String: [AIChatModelOption]] = [:]
         for await (destinationID, models) in group {
-          if let models { result[destinationID] = models }
+          if let models, !models.isEmpty { result[destinationID] = models }
         }
         return result
       }
@@ -21324,6 +21375,10 @@ public final class WorkspaceStore {
       else {
         return
       }
+      for (destinationID, models) in refreshed {
+        cacheAIChatModelCatalog(destinationID: destinationID, models: models)
+      }
+      let loaded = cachedLoaded.merging(refreshed) { _, fresh in fresh }
       aiChatDestinationModelOptions = loaded
       aiChatRoomModelOptions = Dictionary(uniqueKeysWithValues: AIChatRuntime.allCases.compactMap { runtime in
         destinationIDs.first(where: { aiChatDestinationRuntime($0) == runtime })
@@ -21338,6 +21393,7 @@ public final class WorkspaceStore {
       let effectiveModel: String?
       let reasoningOptions: [AIChatReasoningOption]
       let defaultReasoningEffort: String?
+      let resolvedReasoningConfiguration: Bool
       switch selectedAIChatDestination.adapter {
       case .codexLocal, .codexRemote, .codexManagedRemote:
         models = try await modelsForAIChatDestination(thread.destinationID)
@@ -21347,11 +21403,13 @@ public final class WorkspaceStore {
         effectiveModel = selectedModel?.id
         reasoningOptions = selectedModel?.reasoningOptions ?? []
         defaultReasoningEffort = selectedModel?.defaultReasoningEffort
+        resolvedReasoningConfiguration = true
       case .claudeLocal:
         models = try await modelsForAIChatDestination(thread.destinationID)
         effectiveModel = thread.model
         reasoningOptions = []
         defaultReasoningEffort = nil
+        resolvedReasoningConfiguration = true
       case .openClaw:
         let settings = openClawSettings(forDestinationID: thread.destinationID, allowKeychainRead: true)
         let client = OpenClawGatewayClient(settings: settings)
@@ -21374,11 +21432,13 @@ public final class WorkspaceStore {
         effectiveModel = configuration?.model
         reasoningOptions = configuration?.reasoningOptions ?? []
         defaultReasoningEffort = configuration?.defaultReasoningEffort
+        resolvedReasoningConfiguration = configuration != nil
       case .openAI, .anthropic, .openRouter, .ollama:
         models = try await modelsForAIChatDestination(thread.destinationID)
         effectiveModel = thread.model ?? selectedAIChatDestination.model
         reasoningOptions = []
         defaultReasoningEffort = nil
+        resolvedReasoningConfiguration = true
       }
 
       guard generation == aiChatConfigurationGeneration,
@@ -21386,10 +21446,28 @@ public final class WorkspaceStore {
       else {
         return
       }
-      aiChatModelOptions = models
-      aiChatEffectiveModel = effectiveModel
-      aiChatReasoningOptions = reasoningOptions
-      aiChatDefaultReasoningEffort = defaultReasoningEffort
+      let cached = aiChatConfigurationCatalogCache[thread.destinationID]
+      let displayedModels = models.isEmpty ? cached?.models ?? [] : models
+      let displayedEffectiveModel = effectiveModel ?? cached?.effectiveModel
+      let canUseCachedReasoning = cached?.requestedModel == thread.model
+      let displayedReasoningOptions = resolvedReasoningConfiguration
+        ? reasoningOptions
+        : canUseCachedReasoning ? cached?.reasoningOptions ?? [] : []
+      let displayedDefaultReasoningEffort = resolvedReasoningConfiguration
+        ? defaultReasoningEffort
+        : canUseCachedReasoning ? cached?.defaultReasoningEffort : nil
+      aiChatModelOptions = displayedModels
+      aiChatEffectiveModel = displayedEffectiveModel
+      aiChatReasoningOptions = displayedReasoningOptions
+      aiChatDefaultReasoningEffort = displayedDefaultReasoningEffort
+      cacheAIChatConfiguration(
+        destinationID: thread.destinationID,
+        requestedModel: thread.model,
+        models: displayedModels,
+        effectiveModel: displayedEffectiveModel,
+        reasoningOptions: displayedReasoningOptions,
+        defaultReasoningEffort: displayedDefaultReasoningEffort
+      )
     } catch {
       guard generation == aiChatConfigurationGeneration,
             selectedOpenClawChatThreadID == threadID
@@ -21458,6 +21536,120 @@ public final class WorkspaceStore {
       reasoningEffort: configuration.reasoningEffort
     )
     return configuration
+  }
+
+  @discardableResult
+  private func applyCachedAIChatConfiguration(
+    for thread: OpenClawChatThread
+  ) -> Bool {
+    guard let cached = aiChatConfigurationCatalogCache[thread.destinationID],
+          !cached.models.isEmpty || cached.effectiveModel != nil || !cached.reasoningOptions.isEmpty
+    else {
+      return false
+    }
+    aiChatModelOptions = cached.models
+    aiChatEffectiveModel = thread.model ?? cached.effectiveModel
+
+    let selectedModel = thread.model.flatMap { selected in
+      cached.models.first(where: { $0.id == selected })
+    } ?? cached.effectiveModel.flatMap { effective in
+      cached.models.first(where: { $0.id == effective })
+    } ?? cached.models.first(where: \.isDefault)
+    if thread.runtime == .codex {
+      aiChatReasoningOptions = selectedModel?.reasoningOptions ?? cached.reasoningOptions
+      aiChatDefaultReasoningEffort = selectedModel?.defaultReasoningEffort
+        ?? cached.defaultReasoningEffort
+    } else if thread.runtime == .openClaw, cached.requestedModel == thread.model {
+      aiChatReasoningOptions = cached.reasoningOptions
+      aiChatDefaultReasoningEffort = cached.defaultReasoningEffort
+    } else {
+      aiChatReasoningOptions = []
+      aiChatDefaultReasoningEffort = nil
+    }
+    return true
+  }
+
+  private func cacheAIChatConfiguration(
+    destinationID: String,
+    requestedModel: String?,
+    models: [AIChatModelOption],
+    effectiveModel: String?,
+    reasoningOptions: [AIChatReasoningOption],
+    defaultReasoningEffort: String?
+  ) {
+    guard !models.isEmpty || effectiveModel != nil || !reasoningOptions.isEmpty else { return }
+    let entry = AIChatConfigurationCatalogCacheEntry(
+      requestedModel: requestedModel,
+      models: models,
+      effectiveModel: effectiveModel,
+      reasoningOptions: reasoningOptions,
+      defaultReasoningEffort: defaultReasoningEffort
+    )
+    guard aiChatConfigurationCatalogCache[destinationID] != entry else { return }
+    aiChatConfigurationCatalogCache[destinationID] = entry
+    persistAIChatConfigurationCatalogCache()
+  }
+
+  private func cacheAIChatModelCatalog(
+    destinationID: String,
+    models: [AIChatModelOption]
+  ) {
+    guard !models.isEmpty else { return }
+    let existing = aiChatConfigurationCatalogCache[destinationID]
+    cacheAIChatConfiguration(
+      destinationID: destinationID,
+      requestedModel: existing?.requestedModel,
+      models: models,
+      effectiveModel: existing?.effectiveModel ?? aiChatDestination(id: destinationID)?.model,
+      reasoningOptions: existing?.reasoningOptions ?? [],
+      defaultReasoningEffort: existing?.defaultReasoningEffort
+    )
+  }
+
+  func cacheAIChatConfigurationForTesting(
+    destinationID: String,
+    requestedModel: String? = nil,
+    models: [AIChatModelOption],
+    effectiveModel: String?,
+    reasoningOptions: [AIChatReasoningOption],
+    defaultReasoningEffort: String?
+  ) {
+    cacheAIChatConfiguration(
+      destinationID: destinationID,
+      requestedModel: requestedModel,
+      models: models,
+      effectiveModel: effectiveModel,
+      reasoningOptions: reasoningOptions,
+      defaultReasoningEffort: defaultReasoningEffort
+    )
+  }
+
+  private func removeCachedAIChatConfiguration(destinationID: String) {
+    guard aiChatConfigurationCatalogCache.removeValue(forKey: destinationID) != nil else { return }
+    persistAIChatConfigurationCatalogCache()
+  }
+
+  private func persistAIChatConfigurationCatalogCache() {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults),
+          let data = try? JSONEncoder().encode(aiChatConfigurationCatalogCache)
+    else { return }
+    defaults.set(data, forKey: aiChatConfigurationCatalogCacheKey)
+  }
+
+  private static func restoreAIChatConfigurationCatalogCache(
+    from defaults: UserDefaults,
+    key: String
+  ) -> [String: AIChatConfigurationCatalogCacheEntry] {
+    guard !shouldIgnoreStandardDefaultsForTests(defaults),
+          let data = defaults.data(forKey: key),
+          let cache = try? JSONDecoder().decode(
+            [String: AIChatConfigurationCatalogCacheEntry].self,
+            from: data
+          )
+    else {
+      return [:]
+    }
+    return cache
   }
 
   private func storedAIChatConfigurations() -> [String: AIChatLastConfiguration] {
@@ -27013,6 +27205,8 @@ public final class WorkspaceStore {
     let contentExtensions = Set(["org", "org2", "md", "csv", "canvas"])
     var contentPaths: [String] = []
     var seenContentPaths = Set<String>()
+    var pdfPreviewPaths: [String] = []
+    var seenPDFPreviewPaths = Set<String>()
     var hasAgentRunStateChanges = false
     var hasConfigurationChanges = false
     var hasAIChatInboxChanges = false
@@ -27041,6 +27235,12 @@ public final class WorkspaceStore {
         hasAIChatInboxChanges = true
         continue
       }
+      if URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf",
+         !isDefaultIgnoredSyncArtifactPath(path),
+         seenPDFPreviewPaths.insert(path).inserted {
+        pdfPreviewPaths.append(path)
+        continue
+      }
       guard contentExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
             !isDefaultIgnoredSyncArtifactPath(path),
             seenContentPaths.insert(path).inserted
@@ -27052,6 +27252,7 @@ public final class WorkspaceStore {
 
     return CorpusFileEventClassification(
       contentPaths: contentPaths,
+      pdfPreviewPaths: pdfPreviewPaths,
       hasAgentRunStateChanges: hasAgentRunStateChanges,
       hasConfigurationChanges: hasConfigurationChanges,
       hasAIChatInboxChanges: hasAIChatInboxChanges,
@@ -28445,10 +28646,12 @@ public final class WorkspaceStore {
     restoreOpenClawComposer(for: thread.id)
     syncSelectedOpenClawSendState()
     aiChatConfigurationGeneration &+= 1
-    if !aiChatModelOptions.isEmpty { aiChatModelOptions = [] }
-    if !aiChatReasoningOptions.isEmpty { aiChatReasoningOptions = [] }
-    if aiChatEffectiveModel != nil { aiChatEffectiveModel = nil }
-    if aiChatDefaultReasoningEffort != nil { aiChatDefaultReasoningEffort = nil }
+    if !applyCachedAIChatConfiguration(for: thread) {
+      if !aiChatModelOptions.isEmpty { aiChatModelOptions = [] }
+      if !aiChatReasoningOptions.isEmpty { aiChatReasoningOptions = [] }
+      if aiChatEffectiveModel != nil { aiChatEffectiveModel = nil }
+      if aiChatDefaultReasoningEffort != nil { aiChatDefaultReasoningEffort = nil }
+    }
     let nextStatus = requiresHydration
       ? "Loading conversation…"
       : isSendingOpenClawMessage
@@ -29416,6 +29619,9 @@ public final class WorkspaceStore {
         openClawHasStoredToken = OpenClawKeychain.containsToken()
       }
 
+      removeCachedAIChatConfiguration(
+        destinationID: AIChatDestinationConfiguration.openClawID
+      )
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
       Task { @MainActor [weak self] in
         await self?.refreshOpenClawCommands(force: true)

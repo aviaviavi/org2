@@ -476,6 +476,20 @@ final class CSVDocumentTests: XCTestCase {
     XCTAssertNil(store.selectedEntrySource)
     XCTAssertNil(store.selectedEntryRenderError)
     XCTAssertNil(store.linkedPDFPreviewError)
+
+    let refreshedData = Data("%PDF-1.4\n% refreshed linked preview\n".utf8)
+    try refreshedData.write(to: pdf, options: .atomic)
+    store.handleCorpusFileEvents(
+      [pdf.path],
+      corpusRoot: root,
+      requiresFullScan: false
+    )
+
+    try await waitForCondition {
+      store.linkedPDFPreviewData == refreshedData && !store.isLoadingLinkedPDFPreview
+    }
+    XCTAssertEqual(store.linkedPDFPreviewData, refreshedData)
+    XCTAssertNil(store.linkedPDFPreviewError)
   }
 
   @MainActor
