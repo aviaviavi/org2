@@ -39,7 +39,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos to OpenOrg notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Transcribe voice messages into OpenOrg AI chat drafts.</string>
+	<string>Transcribe voice messages and imported call recordings into OpenOrg drafts.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

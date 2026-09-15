@@ -10,11 +10,14 @@ This is the OpenOrg iOS app for phone-side Org2 review:
 - queues new notes in `mobile-inbox.org2` so desktop sync can merge/refile them safely;
 - lets new notes become scheduled TODOs with Today, Tomorrow, Next Week, Next Month, or a picked date;
 - installs a Share extension named "Capture to OpenOrg" for OS-level capture from apps such as X;
+- imports traditional iPhone calls from New Note → Import Phone Call: paste the transcript created by Apple's iOS 18.1+ Call Recording feature, or transcribe a saved audio recording with iOS Speech as a fallback;
 - appends approval/discussion actions to `mobile-inbox.org2` in the selected corpus;
 - opens a WhatsApp share URL for approval discussion fallback.
 - pairs directly with OpenOrg on a Mac over Tailscale for live AI chat control.
 
 New-note capture remains a durable outbound request that can sync back to a desktop agent or OpenClaw workflow. When a Mac is paired, approval decisions and TODO state changes execute directly through the Mac's shared Org2 runtime and update the phone only after canonical state is returned.
+
+For a cellular call, first make sure everyone is willing to be recorded, then use the Phone app's built-in Call Recording control. iOS announces the recording to every participant and saves the recording and, where supported, its speaker-labeled transcript in Notes. Copy that transcript, open **New Note → Import Phone Call** in OpenOrg, and use the native **Paste** control. Verify the transcript before saving it. If Notes did not produce one, save the audio to Files and choose **Choose Audio Recording** instead. Call recording and transcription availability varies by region, language, device, and OS version. OpenOrg cannot and does not tap another app's live call audio.
 
 ## Sync Shape
 

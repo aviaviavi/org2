@@ -1169,10 +1169,18 @@ private struct WorkspaceTabState {
   let navigation: WorkspaceNavigationSnapshot
   let backStack: [WorkspaceNavigationSnapshot]
   let surface: WorkspaceTabSurfaceState
+  let editor: WorkspaceTabEditorState
   let documentViewportSourceLines: [String: Int]
   let documentSlidePageIndexes: [String: Int]
   let openClawChatScrollPositionsByThreadID: [UUID: Double]
   let openClawAssistantChatScrollPositionsByThreadID: [UUID: Double]
+}
+
+private struct WorkspaceTabEditorState {
+  let isEditingEntry: Bool
+  let selection: NSRange
+  let presentation: SourceEditorPresentation
+  let isPreviewPaused: Bool
 }
 
 private struct WorkspaceTabSurfaceState {
@@ -3359,6 +3367,13 @@ public final class WorkspaceStore {
     }
   }
   private var workspaceTabStates: [WorkspaceTab.ID: WorkspaceTabState] = [:]
+  private var workspaceTabEditorRestoreTask: Task<Void, Never>?
+  private var workspaceTabEditorRestoreGeneration = 0
+  private var workspaceTabEditorRestoreTarget: (
+    tabID: WorkspaceTab.ID,
+    surface: WorkspaceSurface,
+    locationIdentity: String
+  )?
   private var workspaceUndoStack: [WorkspaceUndoAction] = []
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var corpusWorkspaceCaches: [String: CorpusWorkspaceCache] = [:]
@@ -11627,10 +11642,31 @@ public final class WorkspaceStore {
       workspaceTabs[index].title = metadata.title
       workspaceTabs[index].systemImage = metadata.systemImage
     }
+    let editorState: WorkspaceTabEditorState
+    if let target = workspaceTabEditorRestoreTarget,
+       target.tabID == selectedWorkspaceTabID,
+       target.surface == selectedSurface,
+       selectedLocation.map({ Self.selectionIdentity(for: $0) }) == target.locationIdentity,
+       let pendingState = workspaceTabStates[selectedWorkspaceTabID]?.editor,
+       pendingState.isEditingEntry,
+       !isEditingEntry {
+      // Loading a tab's source editor is asynchronous. If the user switches
+      // away again before it mounts, retain the tab's intended editor state
+      // instead of snapshotting that brief loading state as "not editing."
+      editorState = pendingState
+    } else {
+      editorState = WorkspaceTabEditorState(
+        isEditingEntry: isEditingEntry,
+        selection: sourceEditorSelection,
+        presentation: sourceEditorPresentation,
+        isPreviewPaused: isSourceEditorPreviewPaused
+      )
+    }
     workspaceTabStates[selectedWorkspaceTabID] = WorkspaceTabState(
       navigation: currentWorkspaceNavigationSnapshot(),
       backStack: workspaceNavigationBackStack,
       surface: currentWorkspaceTabSurfaceState(),
+      editor: editorState,
       documentViewportSourceLines: documentViewportSourceLines,
       documentSlidePageIndexes: documentSlidePageIndexes,
       openClawChatScrollPositionsByThreadID: openClawChatScrollPositionsByThreadID,
@@ -11641,6 +11677,7 @@ public final class WorkspaceStore {
   private func activateWorkspaceTab(_ tabID: WorkspaceTab.ID) {
     guard workspaceTabs.contains(where: { $0.id == tabID }) else { return }
     let state = workspaceTabStates[tabID] ?? initialWorkspaceTabState()
+    cancelWorkspaceTabEditorRestore()
     // A tab switch is a session boundary even when both tabs point at the
     // same file. Tear down the outgoing detail first so editor drafts,
     // in-flight loads, and view-local state cannot leak into the next tab.
@@ -11655,6 +11692,74 @@ public final class WorkspaceStore {
     defaults.set(documentSlidePageIndexes, forKey: documentSlidePageIndexesKey)
     workspaceNavigationBackStack = state.backStack
     restoreWorkspaceNavigationSnapshot(state.navigation)
+    restoreWorkspaceTabEditorState(state.editor, tabID: tabID)
+  }
+
+  private func restoreWorkspaceTabEditorState(
+    _ state: WorkspaceTabEditorState,
+    tabID: WorkspaceTab.ID
+  ) {
+    sourceEditorPresentation = state.presentation
+    isSourceEditorPreviewPaused = state.isPreviewPaused
+    guard state.isEditingEntry,
+          let location = selectedLocation,
+          !Self.isPDFFile(location.file)
+    else { return }
+
+    workspaceTabEditorRestoreGeneration += 1
+    let generation = workspaceTabEditorRestoreGeneration
+    let expectedSurface = selectedSurface
+    let expectedLocationIdentity = Self.selectionIdentity(for: location)
+    workspaceTabEditorRestoreTarget = (
+      tabID: tabID,
+      surface: expectedSurface,
+      locationIdentity: expectedLocationIdentity
+    )
+    workspaceTabEditorRestoreTask = Task { @MainActor [weak self] in
+      await OrgSyntaxTextEditorLifecycle.waitForPendingTextCheckpoints()
+      guard !Task.isCancelled, let self else { return }
+      defer {
+        if self.workspaceTabEditorRestoreGeneration == generation {
+          self.workspaceTabEditorRestoreTask = nil
+          self.workspaceTabEditorRestoreTarget = nil
+        }
+      }
+      guard self.workspaceTabEditorRestoreGeneration == generation,
+            self.selectedWorkspaceTabID == tabID,
+            self.selectedSurface == expectedSurface,
+            self.selectedLocation.map(Self.selectionIdentity(for:)) == expectedLocationIdentity
+      else { return }
+      guard await self.awaitPendingEditorPersistence() else {
+        self.statusText = "Could not restore the editor until its saved draft is resolved"
+        return
+      }
+      guard !Task.isCancelled,
+            self.workspaceTabEditorRestoreGeneration == generation,
+            self.selectedWorkspaceTabID == tabID,
+            self.selectedSurface == expectedSurface,
+            self.selectedLocation.map(Self.selectionIdentity(for:)) == expectedLocationIdentity
+      else { return }
+
+      if !self.isEditingEntry {
+        await self.loadEntrySource(for: location)
+        guard !Task.isCancelled,
+              self.workspaceTabEditorRestoreGeneration == generation,
+              self.selectedWorkspaceTabID == tabID,
+              self.selectedSurface == expectedSurface,
+              self.selectedLocation.map(Self.selectionIdentity(for:)) == expectedLocationIdentity
+        else { return }
+        self.beginEditingSelectedEntry(initialSelection: state.selection)
+      }
+      self.sourceEditorPresentation = state.presentation
+      self.isSourceEditorPreviewPaused = state.isPreviewPaused
+    }
+  }
+
+  private func cancelWorkspaceTabEditorRestore() {
+    workspaceTabEditorRestoreTask?.cancel()
+    workspaceTabEditorRestoreTask = nil
+    workspaceTabEditorRestoreTarget = nil
+    workspaceTabEditorRestoreGeneration += 1
   }
 
   private func selectAdjacentWorkspaceTab(offset: Int) {
@@ -11699,6 +11804,12 @@ public final class WorkspaceStore {
       ),
       backStack: [],
       surface: initialWorkspaceTabSurfaceState(),
+      editor: WorkspaceTabEditorState(
+        isEditingEntry: false,
+        selection: NSRange(location: 0, length: 0),
+        presentation: sourceEditorPresentation,
+        isPreviewPaused: false
+      ),
       documentViewportSourceLines: documentViewportSourceLines,
       documentSlidePageIndexes: documentSlidePageIndexes,
       openClawChatScrollPositionsByThreadID: openClawChatScrollPositionsByThreadID,
@@ -11807,6 +11918,7 @@ public final class WorkspaceStore {
   }
 
   private func resetWorkspaceTabsForCorpusChange() {
+    cancelWorkspaceTabEditorRestore()
     workspaceTabStates = [:]
     let metadata = currentWorkspaceTabMetadata()
     workspaceTabs = [WorkspaceTab(
@@ -15734,7 +15846,16 @@ public final class WorkspaceStore {
     }
 
     let request: EditorPersistenceRequest?
-    if isLiveFileEditorSelected {
+    if isEditingEntry {
+      request = EditorPersistenceRequest(
+        key: editorPersistenceKey(kind: "source-editor", file: source.file, identity: source.id),
+        file: source.file,
+        startLine: source.startLine,
+        endLineExclusive: source.endLineExclusive,
+        expectedOriginal: source.text,
+        replacement: sourceEditorLocalDraftText ?? sourceEditorInteraction.text
+      )
+    } else if isLiveFileEditorSelected {
       // A navigation checkpoint owns any native-buffer edit. If there was no
       // checkpoint, only enqueue the observable mirror when local input made
       // this document dirty. Persisting a clean programmatic load can race an
@@ -15747,15 +15868,6 @@ public final class WorkspaceStore {
         endLineExclusive: source.endLineExclusive,
         expectedOriginal: source.text,
         replacement: editableEntryText
-      )
-    } else if isEditingEntry {
-      request = EditorPersistenceRequest(
-        key: editorPersistenceKey(kind: "source-editor", file: source.file, identity: source.id),
-        file: source.file,
-        startLine: source.startLine,
-        endLineExclusive: source.endLineExclusive,
-        expectedOriginal: source.text,
-        replacement: sourceEditorLocalDraftText ?? sourceEditorInteraction.text
       )
     } else if let block = activeEditingBlock,
               transientDraftBlock?.block.id != block.id {

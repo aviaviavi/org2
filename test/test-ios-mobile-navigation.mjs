@@ -24,6 +24,10 @@ const mobileCaptureSupport = readFileSync(
   resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCaptureSupport.swift"),
   "utf8",
 );
+const mobileCallTranscriptImport = readFileSync(
+  resolve("apps/ios/Org2Mobile/Org2Mobile/MobileCallTranscriptImport.swift"),
+  "utf8",
+);
 const remoteCoordinator = readFileSync(
   resolve("apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/MobileRemoteCoordinator.swift"),
   "utf8",
@@ -81,6 +85,24 @@ const newNote = contentView.slice(
 assert.doesNotMatch(newNote, /Section\("Corpus"\)/);
 assert.match(newNote, /Menu \{[\s\S]*Photo Library[\s\S]*Camera/);
 assert.match(newNote, /Button\("Save"\)/);
+assert.match(newNote, /Label\("Import Phone Call", systemImage: "phone\.arrow\.down\.left"\)/);
+assert.match(newNote, /MobileCallTranscriptImportView/);
+assert.match(mobileCallTranscriptImport, /PasteButton\(payloadType: String\.self\)/);
+assert.match(mobileCallTranscriptImport, /accessibilityLabel\("Paste Apple Transcript"\)/);
+assert.match(mobileCallTranscriptImport, /Make sure everyone is willing to be recorded/);
+assert.match(mobileCallTranscriptImport, /Verify the transcript before saving it/);
+assert.doesNotMatch(
+  mobileCallTranscriptImport,
+  /UIPasteboard/,
+  "Explicit transcript paste must use PasteButton without an extra paste-permission alert",
+);
+assert.match(mobileCallTranscriptImport, /SFSpeechURLRecognitionRequest\(url: url\)/);
+assert.match(mobileCallTranscriptImport, /allowedContentTypes: \[\.audio\]/);
+assert.doesNotMatch(
+  mobileCallTranscriptImport,
+  /AVAudioEngine/,
+  "Call ingestion must use a completed recording, not attempt to tap live Phone audio",
+);
 
 assert.match(remoteViews, /struct MobileAISidebarView/);
 assert.match(remoteViews, /sidebarButton\([\s\S]*?"External Threads"/);

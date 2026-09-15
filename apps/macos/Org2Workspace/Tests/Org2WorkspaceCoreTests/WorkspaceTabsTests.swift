@@ -210,6 +210,126 @@ final class WorkspaceTabsTests: XCTestCase {
     XCTAssertEqual(store.documentViewportSourceLine(for: source), 20)
   }
 
+  func testTabsRestoreSourceEditorModePresentationAndSelection() async throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-tab-editor-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    let file = root.appendingPathComponent("editable.org")
+    let original = "* Editable\nOriginal text\n"
+    let edited = "* Editable\nEdited in the first tab\n"
+    try original.write(to: file, atomically: true, encoding: .utf8)
+    let location = WorkspaceLocation.openClaw(OpenClawThread(
+      title: "Editable",
+      file: file.path,
+      line: 1,
+      zone: "notes",
+      modifiedAt: nil
+    ))
+    let source = EntrySource(
+      file: file.path,
+      startLine: 1,
+      endLineExclusive: 4,
+      text: original,
+      isSubtree: false
+    )
+
+    let editorTabID = store.selectedWorkspaceTabID
+    store.selectedSurface = .files
+    store.selectedEntrySourceMode = .page
+    store.selectedLocation = location
+    store.selectedEntrySource = source
+    store.beginEditingSelectedEntry()
+    store.sourceEditorPresentation = .split
+    let selection = NSRange(location: edited.utf16.count, length: 0)
+    store.sourceEditorInteraction.text = edited
+    store.noteSourceEditorLocalTextChanged(edited)
+    store.sourceEditorSelection = selection
+    XCTAssertTrue(store.isEditingEntry)
+
+    let previewTabID = store.newWorkspaceTab()
+    XCTAssertFalse(store.isEditingEntry)
+    store.sourceEditorPresentation = .source
+    let draftPersisted = await store.waitForPendingEditorPersistenceForTesting()
+    XCTAssertTrue(draftPersisted, store.errorText ?? store.statusText)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), edited)
+
+    store.selectWorkspaceTab(editorTabID)
+    for _ in 0..<100 where !store.isEditingEntry {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    XCTAssertEqual(store.selectedWorkspaceTabID, editorTabID)
+    XCTAssertEqual(store.selectedLocation, location)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.sourceEditorPresentation, .split)
+    XCTAssertEqual(store.sourceEditorSelection, selection)
+    XCTAssertEqual(store.sourceEditorInteraction.text, edited)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), edited)
+
+    store.selectWorkspaceTab(previewTabID)
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.sourceEditorPresentation, .source)
+  }
+
+  func testRapidTabSwitchDoesNotLoseOrLeakPendingSourceEditorRestore() async throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-tab-editor-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    let file = root.appendingPathComponent("editable.org")
+    let text = "* Editable\nOriginal text\n"
+    try text.write(to: file, atomically: true, encoding: .utf8)
+    let location = WorkspaceLocation.openClaw(OpenClawThread(
+      title: "Editable",
+      file: file.path,
+      line: 1,
+      zone: "notes",
+      modifiedAt: nil
+    ))
+    let source = EntrySource(
+      file: file.path,
+      startLine: 1,
+      endLineExclusive: 4,
+      text: text,
+      isSubtree: false
+    )
+
+    let editorTabID = store.selectedWorkspaceTabID
+    store.selectedSurface = .files
+    store.selectedEntrySourceMode = .page
+    store.selectedLocation = location
+    store.selectedEntrySource = source
+    store.beginEditingSelectedEntry()
+    let previewTabID = store.newWorkspaceTab()
+    store.entrySourceLoaderForTesting = { _, _, _ in
+      try await Task.sleep(nanoseconds: 150_000_000)
+      return source
+    }
+
+    store.selectWorkspaceTab(editorTabID)
+    store.selectWorkspaceTab(previewTabID)
+    try await Task.sleep(nanoseconds: 300_000_000)
+
+    XCTAssertEqual(store.selectedWorkspaceTabID, previewTabID)
+    XCTAssertFalse(store.isEditingEntry)
+
+    store.selectWorkspaceTab(editorTabID)
+    for _ in 0..<100 where !store.isEditingEntry {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertEqual(store.selectedWorkspaceTabID, editorTabID)
+    XCTAssertTrue(store.isEditingEntry)
+  }
+
   func testDeferredSurfaceActionsUseTheMountedTabIdentity() throws {
     let packageRoot = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()

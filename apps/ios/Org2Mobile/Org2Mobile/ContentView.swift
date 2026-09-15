@@ -1228,6 +1228,7 @@ private struct NewNoteView: View {
   @State private var attachments: [NoteAttachment] = []
   @State private var isPhotoLibraryPresented = false
   @State private var isCameraPresented = false
+  @State private var isCallImportPresented = false
   @FocusState private var focusedField: NewNoteFocusedField?
 
   var body: some View {
@@ -1307,6 +1308,13 @@ private struct NewNoteView: View {
               value: MobileCaptureWriter.orgDayTimestamp(date)
             )
           }
+
+          Button {
+            focusedField = nil
+            isCallImportPresented = true
+          } label: {
+            Label("Import Phone Call", systemImage: "phone.arrow.down.left")
+          }
         }
       }
       .navigationTitle("New Note")
@@ -1336,6 +1344,11 @@ private struct NewNoteView: View {
       .sheet(isPresented: $isPhotoLibraryPresented) {
         ImagePicker(sourceType: .photoLibrary) { image in
           addImage(image)
+        }
+      }
+      .sheet(isPresented: $isCallImportPresented) {
+        MobileCallTranscriptImportView { draft in
+          applyCallTranscript(draft)
         }
       }
     }
@@ -1374,6 +1387,18 @@ private struct NewNoteView: View {
     let imageData = UIImage(data: data)?.jpegData(compressionQuality: 0.86) ?? data
     let filename = "photo-\(UUID().uuidString.prefix(8)).jpg"
     attachments.append(NoteAttachment(filename: filename, data: imageData))
+  }
+
+  private func applyCallTranscript(_ draft: MobileCallTranscriptDraft) {
+    if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      title = draft.title
+    }
+    if bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      bodyText = draft.body
+    } else {
+      bodyText += "\n\n\(draft.body)"
+    }
+    focusedField = .body
   }
 
   private var scheduledDate: Date? {
