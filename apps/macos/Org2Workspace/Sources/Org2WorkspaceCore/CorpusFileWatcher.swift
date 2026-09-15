@@ -6,14 +6,25 @@ import Foundation
 final class CorpusFileWatcher: @unchecked Sendable {
   typealias Handler = @Sendable (_ paths: [String], _ requiresFullScan: Bool) -> Void
 
+  /// FSEvents may still be delivering a callback while the owning watcher is
+  /// being torn down. Keep callback data in a separately retained context so
+  /// a callback never has to resurrect the watcher from its `deinit`.
+  private final class CallbackContext: @unchecked Sendable {
+    let handler: Handler
+
+    init(handler: @escaping Handler) {
+      self.handler = handler
+    }
+  }
+
   private let rootPath: String
-  private let handler: Handler
+  private let callbackContext: CallbackContext
   private let queue = DispatchQueue(label: "org.org2.workspace.corpus-events", qos: .utility)
   private var stream: FSEventStreamRef?
 
   init(rootURL: URL, handler: @escaping Handler) {
     rootPath = rootURL.standardizedFileURL.path
-    self.handler = handler
+    callbackContext = CallbackContext(handler: handler)
     start()
   }
 
@@ -24,14 +35,21 @@ final class CorpusFileWatcher: @unchecked Sendable {
   private func start() {
     var context = FSEventStreamContext(
       version: 0,
-      info: Unmanaged.passUnretained(self).toOpaque(),
-      retain: nil,
-      release: nil,
+      info: Unmanaged.passUnretained(callbackContext).toOpaque(),
+      retain: { info in
+        guard let info else { return nil }
+        _ = Unmanaged<CallbackContext>.fromOpaque(info).retain()
+        return info
+      },
+      release: { info in
+        guard let info else { return }
+        Unmanaged<CallbackContext>.fromOpaque(info).release()
+      },
       copyDescription: nil
     )
     let callback: FSEventStreamCallback = { _, info, count, eventPaths, eventFlags, _ in
       guard let info else { return }
-      let watcher = Unmanaged<CorpusFileWatcher>.fromOpaque(info).takeUnretainedValue()
+      let callbackContext = Unmanaged<CallbackContext>.fromOpaque(info).takeUnretainedValue()
       let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
       var changedPaths: [String] = []
       var requiresFullScan = false
@@ -49,7 +67,7 @@ final class CorpusFileWatcher: @unchecked Sendable {
         }
       }
       if requiresFullScan || !changedPaths.isEmpty {
-        watcher.handler(changedPaths, requiresFullScan)
+        callbackContext.handler(changedPaths, requiresFullScan)
       }
     }
     let flags = FSEventStreamCreateFlags(
