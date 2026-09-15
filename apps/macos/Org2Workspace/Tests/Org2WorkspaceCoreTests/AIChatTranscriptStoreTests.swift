@@ -951,7 +951,7 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     )
 
     store.completeOpenClawChatScrollRestoration(threadID: cold.id)
-    try await Task.sleep(for: .milliseconds(80))
+    await store.waitForAIChatHydrationCommitForTesting(cold.id)
 
     XCTAssertNil(
       store.openClawChatThreads.first(where: { $0.id == cold.id })?.storedMessageCount,

@@ -37543,6 +37543,10 @@ public final class WorkspaceStore {
     if let task = openClawThreadHydrationTasks[id] { await task.value }
   }
 
+  func waitForAIChatHydrationCommitForTesting(_ id: UUID) async {
+    if let task = pendingOpenClawHydrationCommitTasks[id] { await task.value }
+  }
+
   func aiChatThreadMessageMutationVersionForTesting(_ id: UUID) -> UInt64? {
     openClawThreadMessageMutationVersions[id]
   }
