@@ -186,4 +186,57 @@ final class WorkspaceProjectTests: XCTestCase {
     let persisted = try String(contentsOf: projectURL, encoding: .utf8)
     XCTAssertTrue(persisted.contains(forkID.uuidString.lowercased()))
   }
+
+  @MainActor
+  func testRemoteProjectThreadPersistsMembershipBeforePublishingThread() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-mobile-create-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "WorkspaceProjectTests.MobileCreate.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let projectID = UUID().uuidString.lowercased()
+    let projectURL = root.appendingPathComponent("mobile.org")
+    let projectText = """
+    #+ORG2_KIND: project
+    #+TITLE: Mobile
+    :PROPERTIES:
+    :ID: \(projectID)
+    :END:
+
+    Keep mobile chat work together.
+    """
+    try projectText.write(to: projectURL, atomically: true, encoding: .utf8)
+    await store.refreshProjects()
+
+    let initialThreadCount = store.openClawChatThreads.count
+    let missingProjectThreadID = await store.createAIChatRemoteThread(
+      destinationID: AIChatDestinationConfiguration.localCodexID,
+      projectID: "missing-project"
+    )
+    XCTAssertNil(missingProjectThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, initialThreadCount)
+
+    let createdThreadID = await store.createAIChatRemoteThread(
+      destinationID: AIChatDestinationConfiguration.localCodexID,
+      projectID: projectID
+    )
+    let threadID = try XCTUnwrap(createdThreadID)
+
+    XCTAssertNotNil(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    XCTAssertTrue(
+      try XCTUnwrap(store.projectNotes.first(where: { $0.id == projectID }))
+        .contains(threadID)
+    )
+    let persisted = try String(contentsOf: projectURL, encoding: .utf8)
+    XCTAssertTrue(persisted.contains(threadID.uuidString.lowercased()))
+  }
 }

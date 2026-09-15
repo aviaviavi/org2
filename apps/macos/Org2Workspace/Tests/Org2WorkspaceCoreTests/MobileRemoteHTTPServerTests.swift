@@ -137,6 +137,63 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(restored.protocolVersion, 2)
   }
 
+  func testProjectChatMetadataAndMutationsRoundTripWithoutChangingTheWireVersion() throws {
+    let threadID = UUID()
+    let project = MobileRemoteProjectSummary(
+      id: "project-openorg",
+      title: "OpenOrg",
+      color: "purple",
+      threadIDs: [threadID]
+    )
+    let list = MobileRemoteThreadList(threads: [], projects: [project])
+    let listData = try MobileRemoteProtocol.encoder().encode(list)
+    let restoredList = try MobileRemoteProtocol.decoder().decode(
+      MobileRemoteThreadList.self,
+      from: listData
+    )
+
+    XCTAssertEqual(restoredList, list)
+    XCTAssertTrue(try XCTUnwrap(restoredList.projects?.first).contains(threadID))
+
+    let create = MobileRemoteCreateThreadRequest(
+      runtime: "codex",
+      destinationID: "builtin.codex",
+      projectID: project.id
+    )
+    let createData = try MobileRemoteProtocol.encoder().encode(create)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(
+        MobileRemoteCreateThreadRequest.self,
+        from: createData
+      ),
+      create
+    )
+
+    let update = MobileRemoteUpdateThreadProjectRequest(
+      projectID: project.id,
+      isMember: false
+    )
+    let updateData = try MobileRemoteProtocol.encoder().encode(update)
+    XCTAssertEqual(
+      try MobileRemoteProtocol.decoder().decode(
+        MobileRemoteUpdateThreadProjectRequest.self,
+        from: updateData
+      ),
+      update
+    )
+    let legacyList = try MobileRemoteProtocol.decoder().decode(
+      MobileRemoteThreadList.self,
+      from: Data(#"{"threads":[]}"#.utf8)
+    )
+    XCTAssertNil(legacyList.projects)
+    let legacyCreate = try MobileRemoteProtocol.decoder().decode(
+      MobileRemoteCreateThreadRequest.self,
+      from: Data(#"{"runtime":"codex","destinationID":"builtin.codex"}"#.utf8)
+    )
+    XCTAssertNil(legacyCreate.projectID)
+    XCTAssertEqual(MobileRemoteProtocol.version, 2)
+  }
+
   func testPushRegistrationRoundTripsWithoutChangingTheWireVersion() throws {
     let request = MobileRemotePushRegistrationRequest(
       deviceToken: String(repeating: "a1", count: 32),

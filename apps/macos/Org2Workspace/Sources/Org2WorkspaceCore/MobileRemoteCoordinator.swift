@@ -376,7 +376,8 @@ public final class MobileRemoteCoordinator: ObservableObject {
       let threads = store.openClawChatThreads
       return await backgroundWork.threadListResponse(
         threads: threads,
-        context: threadProjectionContext(for: threads, store: store)
+        context: threadProjectionContext(for: threads, store: store),
+        projects: mobileRemoteProjects(from: store.projectNotes)
       )
     }
 
@@ -384,17 +385,35 @@ public final class MobileRemoteCoordinator: ObservableObject {
       guard let payload = try? request.decode(MobileRemoteCreateThreadRequest.self) else {
         return .error("Choose a configured AI destination.", statusCode: 400)
       }
-      let id: UUID
-      if let destinationID = payload.destinationID {
-        guard store.enabledAIChatDestinations.contains(where: { $0.id == destinationID }) else {
+      let resolvedDestinationID: String
+      if let requestedDestinationID = payload.destinationID {
+        guard store.enabledAIChatDestinations.contains(where: { $0.id == requestedDestinationID }) else {
           return .error("That AI destination is unavailable on this host.", statusCode: 400)
         }
-        id = store.createAIChatRemoteThread(destinationID: destinationID)
+        resolvedDestinationID = requestedDestinationID
       } else {
         guard let runtime = AIChatRuntime(rawValue: payload.runtime) else {
           return .error("Choose a configured Codex, Claude Code, or OpenClaw runtime.", statusCode: 400)
         }
-        id = store.createAIChatRemoteThread(runtime: runtime)
+        resolvedDestinationID = store.enabledAIChatDestinations.first(where: { $0.runtime == runtime })?.id
+          ?? AIChatDestinationConfiguration.defaultID(for: runtime)
+      }
+      let id: UUID
+      if let projectID = payload.projectID {
+        guard let projectThreadID = await store.createAIChatRemoteThread(
+          destinationID: resolvedDestinationID,
+          projectID: projectID
+        ) else {
+          return .error(
+            store.projectStatus.isEmpty
+              ? "That chat could not be added to the project."
+              : store.projectStatus,
+            statusCode: 409
+          )
+        }
+        id = projectThreadID
+      } else {
+        id = store.createAIChatRemoteThread(destinationID: resolvedDestinationID)
       }
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: id), statusCode: 201)
     }
@@ -576,6 +595,27 @@ public final class MobileRemoteCoordinator: ObservableObject {
         MobileRemoteThreadProjection.summary(thread: updated, context: context)
       )
     }
+    if request.method == "POST", components.count == 4, components[3] == "project" {
+      guard let payload = try? request.decode(MobileRemoteUpdateThreadProjectRequest.self) else {
+        return .error("Choose a project membership to update.", statusCode: 400)
+      }
+      guard await store.setProjectMembership(
+        payload.isMember,
+        projectID: payload.projectID,
+        threadID: threadID
+      ) else {
+        return .error(
+          store.projectStatus.isEmpty
+            ? "That project membership could not be updated."
+            : store.projectStatus,
+          statusCode: 409
+        )
+      }
+      return .json(
+        MobileRemoteMutationResponse(accepted: true, threadID: threadID),
+        statusCode: 200
+      )
+    }
     if request.method == "POST", components.count == 4, components[3] == "fork" {
       guard let forkedThreadID = await store.forkAIChatThread(
         threadID,
@@ -728,6 +768,19 @@ public final class MobileRemoteCoordinator: ObservableObject {
         store.isAIChatThreadRunning($0.id)
       }.map(\.id))
     )
+  }
+
+  private func mobileRemoteProjects(
+    from projects: [WorkspaceProjectNote]
+  ) -> [MobileRemoteProjectSummary] {
+    projects.map { project in
+      MobileRemoteProjectSummary(
+        id: project.id,
+        title: project.title,
+        color: project.color,
+        threadIDs: project.threadIDs.compactMap(UUID.init(uuidString:))
+      )
+    }
   }
 
   private func threadDetailProjectionContext(

@@ -123,10 +123,22 @@ public struct MobileRemotePairResponse: Codable, Hashable, Sendable {
 public struct MobileRemoteCreateThreadRequest: Codable, Hashable, Sendable {
   public let runtime: String
   public let destinationID: String?
+  public let projectID: String?
 
-  public init(runtime: String, destinationID: String? = nil) {
+  public init(runtime: String, destinationID: String? = nil, projectID: String? = nil) {
     self.runtime = runtime
     self.destinationID = destinationID
+    self.projectID = projectID
+  }
+}
+
+public struct MobileRemoteUpdateThreadProjectRequest: Codable, Hashable, Sendable {
+  public let projectID: String
+  public let isMember: Bool
+
+  public init(projectID: String, isMember: Bool) {
+    self.projectID = projectID
+    self.isMember = isMember
   }
 }
 
@@ -268,9 +280,32 @@ public struct MobileRemoteUpdateThreadStateRequest: Codable, Hashable, Sendable 
 
 public struct MobileRemoteThreadList: Codable, Hashable, Sendable {
   public let threads: [MobileRemoteThreadSummary]
+  public let projects: [MobileRemoteProjectSummary]?
 
-  public init(threads: [MobileRemoteThreadSummary]) {
+  public init(
+    threads: [MobileRemoteThreadSummary],
+    projects: [MobileRemoteProjectSummary]? = nil
+  ) {
     self.threads = threads
+    self.projects = projects
+  }
+}
+
+public struct MobileRemoteProjectSummary: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let title: String
+  public let color: String
+  public let threadIDs: [UUID]
+
+  public init(id: String, title: String, color: String, threadIDs: [UUID]) {
+    self.id = id
+    self.title = title
+    self.color = color
+    self.threadIDs = threadIDs
+  }
+
+  public func contains(_ threadID: UUID) -> Bool {
+    threadIDs.contains(threadID)
   }
 }
 

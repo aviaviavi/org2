@@ -200,9 +200,13 @@ public struct MobileRemoteThreadDetailProjectionContext: Sendable {
 public enum MobileRemoteThreadProjection {
   public static func list(
     threads: [OpenClawChatThread],
-    context: MobileRemoteThreadProjectionContext
+    context: MobileRemoteThreadProjectionContext,
+    projects: [MobileRemoteProjectSummary] = []
   ) -> MobileRemoteThreadList {
-    MobileRemoteThreadList(threads: threads.map { summary(thread: $0, context: context) })
+    MobileRemoteThreadList(
+      threads: threads.map { summary(thread: $0, context: context) },
+      projects: projects
+    )
   }
 
   public static func detail(
@@ -359,14 +363,19 @@ public struct MobileRemoteBackgroundWork: Sendable {
 
   public func threadListResponse(
     threads: [OpenClawChatThread],
-    context: MobileRemoteThreadProjectionContext
+    context: MobileRemoteThreadProjectionContext,
+    projects: [MobileRemoteProjectSummary] = []
   ) async -> MobileRemoteHTTPResponse {
     let beforeWork = self.beforeWork
     let didFinishWork = self.didFinishWork
     return await Task.detached(priority: .userInitiated) {
       await beforeWork()
       let response = MobileRemoteHTTPResponse.json(
-        MobileRemoteThreadProjection.list(threads: threads, context: context)
+        MobileRemoteThreadProjection.list(
+          threads: threads,
+          context: context,
+          projects: projects
+        )
       )
       didFinishWork(mobileRemoteIsMainThread())
       return response

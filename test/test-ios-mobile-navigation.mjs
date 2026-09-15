@@ -123,6 +123,10 @@ assert.match(
   remoteViews,
   /Label\("New \\\(destination\.name\) Chat", systemImage: "plus\.bubble"\)/,
 );
+assert.match(remoteViews, /Section\("Projects"\)/);
+assert.match(remoteViews, /Menu\("New Chat in Project", systemImage: "folder\.badge\.plus"\)/);
+assert.match(remoteViews, /activeThreads\.filter \{ project\.contains\(\$0\.id\) \}/);
+assert.match(remoteViews, /remote\.setProjectMembership/);
 assert.doesNotMatch(remoteViews, /New \(destination\.name\) Chat/);
 assert.match(remoteViews, /struct MobileSettingsView/);
 assert.match(remoteViews, /Text\("Reply Notifications"\)/);
@@ -174,13 +178,16 @@ assert.match(
 );
 
 const createThread = remoteStore.slice(
-  remoteStore.indexOf("func createThread(destination:"),
+  remoteStore.indexOf("func createThread("),
   remoteStore.indexOf("func refreshExternalThreads()"),
 );
 assert.match(createThread, /guard let threadID = response\.threadID/);
 assert.match(createThread, /guard isConnected else/);
 assert.doesNotMatch(createThread, /await refresh\(\)/);
 assert.match(createThread, /Task \{ \[weak self\][\s\S]*refresh\(reportsErrors: false\)/);
+assert.match(createThread, /projectID: project\?\.id/);
+assert.match(remoteStore, /projects = nextThreads\.projects \?\? \[\]/);
+assert.match(remoteStore, /\/v1\/threads\/\\\(threadID\.uuidString\)\/project/);
 
 assert.match(corpusStore, /content\.title = "OpenOrg due today"/);
 assert.match(remoteCoordinator, /title: "OpenOrg reply notifications"/);

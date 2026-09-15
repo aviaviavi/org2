@@ -20,8 +20,49 @@ private func mobileAIRuntimeSystemImage(_ runtime: String) -> String {
   }
 }
 
+private struct MobileRemoteProjectLabel: View {
+  let project: MobileRemoteProjectSummary
+
+  var body: some View {
+    HStack(spacing: 7) {
+      if project.color == "none" {
+        Image(systemName: "folder")
+          .foregroundStyle(.secondary)
+      } else {
+        Circle()
+          .fill(tint)
+          .frame(width: 9, height: 9)
+      }
+      Text(project.title)
+        .lineLimit(1)
+    }
+  }
+
+  private var tint: Color {
+    if project.color.hasPrefix("#"),
+       project.color.count == 7,
+       let value = UInt64(project.color.dropFirst(), radix: 16) {
+      return Color(
+        red: Double((value >> 16) & 255) / 255,
+        green: Double((value >> 8) & 255) / 255,
+        blue: Double(value & 255) / 255
+      )
+    }
+    return switch project.color {
+    case "teal": .teal
+    case "green": .green
+    case "orange": .orange
+    case "red": .red
+    case "purple": .purple
+    case "gray": .gray
+    default: .blue
+    }
+  }
+}
+
 struct MobileAISidebarView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
+  @State private var expandedProjectIDs: Set<String> = []
   let selectedThreadID: UUID?
   let openWorkspace: () -> Void
   let openFiles: () -> Void
@@ -51,6 +92,20 @@ struct MobileAISidebarView: View {
                 Label("New \(destination.name) Chat", systemImage: "plus.bubble")
               }
             }
+            if !remote.projects.isEmpty {
+              Divider()
+              Menu("New Chat in Project", systemImage: "folder.badge.plus") {
+                ForEach(remote.projects) { project in
+                  Menu(project.title) {
+                    ForEach(aiChatDestinations) { destination in
+                      Button(destination.name) {
+                        createThread(destination: destination, project: project)
+                      }
+                    }
+                  }
+                }
+              }
+            }
           } label: {
             Image(systemName: "square.and.pencil")
           }
@@ -77,6 +132,35 @@ struct MobileAISidebarView: View {
           )
           .disabled(!remote.isPaired)
           sidebarButton("Settings", systemImage: "gearshape", action: openSettings)
+        }
+
+        if !remote.projects.isEmpty {
+          Section("Projects") {
+            ForEach(remote.projects) { project in
+              DisclosureGroup(isExpanded: projectExpansionBinding(project.id)) {
+                let projectThreads = activeThreads(in: project)
+                ForEach(projectThreads) { thread in
+                  threadButton(thread)
+                }
+                if projectThreads.isEmpty {
+                  Text("No active chats")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Menu {
+                  ForEach(aiChatDestinations) { destination in
+                    Button(destination.name) {
+                      createThread(destination: destination, project: project)
+                    }
+                  }
+                } label: {
+                  Label("New Chat", systemImage: "plus.bubble")
+                }
+              } label: {
+                MobileRemoteProjectLabel(project: project)
+              }
+            }
+          }
         }
 
         if !activeThreads.isEmpty {
@@ -113,7 +197,40 @@ struct MobileAISidebarView: View {
       if remote.isPaired && remote.threads.isEmpty {
         await remote.refresh(reportsErrors: false)
       }
+      expandProjectContainingSelection()
     }
+    .onChange(of: selectedThreadID) {
+      expandProjectContainingSelection()
+    }
+    .onChange(of: remote.projects) {
+      expandProjectContainingSelection()
+    }
+  }
+
+  private func projectExpansionBinding(_ projectID: String) -> Binding<Bool> {
+    Binding(
+      get: { expandedProjectIDs.contains(projectID) },
+      set: { isExpanded in
+        if isExpanded {
+          expandedProjectIDs.insert(projectID)
+        } else {
+          expandedProjectIDs.remove(projectID)
+        }
+      }
+    )
+  }
+
+  private func expandProjectContainingSelection() {
+    guard let selectedThreadID else { return }
+    for project in remote.projects where project.contains(selectedThreadID) {
+      expandedProjectIDs.insert(project.id)
+    }
+  }
+
+  private func activeThreads(
+    in project: MobileRemoteProjectSummary
+  ) -> [MobileRemoteThreadSummary] {
+    activeThreads.filter { project.contains($0.id) }
   }
 
   private var activeThreads: [MobileRemoteThreadSummary] {
@@ -177,6 +294,26 @@ struct MobileAISidebarView: View {
       } label: {
         Label("Fork Thread", systemImage: "arrow.triangle.branch")
       }
+      if !remote.projects.isEmpty {
+        Menu("Projects", systemImage: "folder") {
+          ForEach(remote.projects) { project in
+            Button {
+              Task {
+                await remote.setProjectMembership(
+                  !project.contains(thread.id),
+                  project: project,
+                  threadID: thread.id
+                )
+              }
+            } label: {
+              Label(
+                project.title,
+                systemImage: project.contains(thread.id) ? "checkmark.circle.fill" : "circle"
+              )
+            }
+          }
+        }
+      }
       Button {
         Task { await remote.setPinned(!thread.isPinned, threadID: thread.id) }
       } label: {
@@ -209,9 +346,16 @@ struct MobileAISidebarView: View {
     ]
   }
 
-  private func createThread(destination: MobileRemoteAIDestination) {
+  private func createThread(
+    destination: MobileRemoteAIDestination,
+    project: MobileRemoteProjectSummary? = nil
+  ) {
     Task {
-      if let threadID = await remote.createThread(destination: destination) {
+      if let threadID = await remote.createThread(
+        destination: destination,
+        project: project
+      ) {
+        if let project { expandedProjectIDs.insert(project.id) }
         openThread(threadID)
       }
     }
@@ -337,6 +481,7 @@ struct MobileSettingsView: View {
 struct MobileRemoteRootView: View {
   @EnvironmentObject private var remote: MobileRemoteStore
   @State private var path: [UUID] = []
+  @State private var expandedProjectIDs: Set<String> = []
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -362,6 +507,20 @@ struct MobileRemoteRootView: View {
                   createThread(destination: destination)
                 } label: {
                   Label("New \(destination.name) Chat", systemImage: "plus.bubble")
+                }
+              }
+              if !remote.projects.isEmpty {
+                Divider()
+                Menu("New Chat in Project", systemImage: "folder.badge.plus") {
+                  ForEach(remote.projects) { project in
+                    Menu(project.title) {
+                      ForEach(aiChatDestinations) { destination in
+                        Button(destination.name) {
+                          createThread(destination: destination, project: project)
+                        }
+                      }
+                    }
+                  }
                 }
               }
               Divider()
@@ -507,6 +666,35 @@ struct MobileRemoteRootView: View {
         }
       }
 
+      if !remote.projects.isEmpty {
+        Section("Projects") {
+          ForEach(remote.projects) { project in
+            DisclosureGroup(isExpanded: projectExpansionBinding(project.id)) {
+              let projectThreads = activeThreads(in: project)
+              ForEach(projectThreads) { thread in
+                threadLink(thread)
+              }
+              if projectThreads.isEmpty {
+                Text("No active chats")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              Menu {
+                ForEach(aiChatDestinations) { destination in
+                  Button(destination.name) {
+                    createThread(destination: destination, project: project)
+                  }
+                }
+              } label: {
+                Label("New Chat", systemImage: "plus.bubble")
+              }
+            } label: {
+              MobileRemoteProjectLabel(project: project)
+            }
+          }
+        }
+      }
+
       if !activeThreads.isEmpty {
         Section("Chats") {
           ForEach(activeThreads) { thread in
@@ -551,6 +739,25 @@ struct MobileRemoteRootView: View {
     remote.threads.filter { !$0.isSettled }
   }
 
+  private func projectExpansionBinding(_ projectID: String) -> Binding<Bool> {
+    Binding(
+      get: { expandedProjectIDs.contains(projectID) },
+      set: { isExpanded in
+        if isExpanded {
+          expandedProjectIDs.insert(projectID)
+        } else {
+          expandedProjectIDs.remove(projectID)
+        }
+      }
+    )
+  }
+
+  private func activeThreads(
+    in project: MobileRemoteProjectSummary
+  ) -> [MobileRemoteThreadSummary] {
+    activeThreads.filter { project.contains($0.id) }
+  }
+
   private var settledThreads: [MobileRemoteThreadSummary] {
     remote.threads.filter(\.isSettled)
   }
@@ -589,6 +796,26 @@ struct MobileRemoteRootView: View {
         }
       } label: {
         Label("Fork Thread", systemImage: "arrow.triangle.branch")
+      }
+      if !remote.projects.isEmpty {
+        Menu("Projects", systemImage: "folder") {
+          ForEach(remote.projects) { project in
+            Button {
+              Task {
+                await remote.setProjectMembership(
+                  !project.contains(thread.id),
+                  project: project,
+                  threadID: thread.id
+                )
+              }
+            } label: {
+              Label(
+                project.title,
+                systemImage: project.contains(thread.id) ? "checkmark.circle.fill" : "circle"
+              )
+            }
+          }
+        }
       }
       Button {
         Task { await remote.setPinned(!thread.isPinned, threadID: thread.id) }
@@ -636,9 +863,13 @@ struct MobileRemoteRootView: View {
     ]
   }
 
-  private func createThread(destination: MobileRemoteAIDestination) {
+  private func createThread(
+    destination: MobileRemoteAIDestination,
+    project: MobileRemoteProjectSummary? = nil
+  ) {
     Task {
-      if let id = await remote.createThread(destination: destination) {
+      if let id = await remote.createThread(destination: destination, project: project) {
+        if let project { expandedProjectIDs.insert(project.id) }
         path = [id]
       }
     }

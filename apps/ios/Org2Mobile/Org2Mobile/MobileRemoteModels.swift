@@ -77,6 +77,12 @@ struct MobileRemotePairResponse: Codable {
 struct MobileRemoteCreateThreadRequest: Codable {
   let runtime: String
   let destinationID: String?
+  let projectID: String?
+}
+
+struct MobileRemoteUpdateThreadProjectRequest: Codable {
+  let projectID: String
+  let isMember: Bool
 }
 
 struct MobileRemoteSendMessageRequest: Codable {
@@ -161,6 +167,18 @@ struct MobileRemoteUpdateThreadStateRequest: Codable {
 
 struct MobileRemoteThreadList: Codable {
   let threads: [MobileRemoteThreadSummary]
+  let projects: [MobileRemoteProjectSummary]?
+}
+
+struct MobileRemoteProjectSummary: Codable, Hashable, Identifiable {
+  let id: String
+  let title: String
+  let color: String
+  let threadIDs: [UUID]
+
+  func contains(_ threadID: UUID) -> Bool {
+    threadIDs.contains(threadID)
+  }
 }
 
 struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable {

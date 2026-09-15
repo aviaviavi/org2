@@ -20,6 +20,7 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var serverName = "OpenOrg on Mac"
   @Published private(set) var status: MobileRemoteServerStatus?
   @Published private(set) var threads: [MobileRemoteThreadSummary] = []
+  @Published private(set) var projects: [MobileRemoteProjectSummary] = []
   @Published private(set) var threadDetail: MobileRemoteThreadDetail?
   @Published private(set) var threadConfiguration: MobileRemoteThreadConfiguration?
   @Published private(set) var threadConnectionError: String?
@@ -297,6 +298,7 @@ final class MobileRemoteStore: ObservableObject {
     pushRegistrationFingerprint = nil
     status = nil
     threads = []
+    projects = []
     threadDetail = nil
     loadingThreadID = nil
     threadDetailCache.removeAll()
@@ -351,6 +353,7 @@ final class MobileRemoteStore: ObservableObject {
       await reconcileReplyNotifications(with: nextThreads.threads, connectionGeneration: generation)
       guard isCurrentConnection(generation) else { return }
       threads = nextThreads.threads
+      projects = nextThreads.projects ?? []
       pruneThreadDetailCache(keeping: Set(nextThreads.threads.map(\.id)))
       defaults.set(serverName, forKey: Self.serverNameKey)
     } catch {
@@ -762,7 +765,10 @@ final class MobileRemoteStore: ObservableObject {
     status == .authorized || status == .provisional || status == .ephemeral
   }
 
-  func createThread(destination: MobileRemoteAIDestination) async -> UUID? {
+  func createThread(
+    destination: MobileRemoteAIDestination,
+    project: MobileRemoteProjectSummary? = nil
+  ) async -> UUID? {
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     guard isConnected else {
@@ -776,7 +782,8 @@ final class MobileRemoteStore: ObservableObject {
         "/v1/threads",
         payload: MobileRemoteCreateThreadRequest(
           runtime: destination.runtime,
-          destinationID: destination.id
+          destinationID: destination.id,
+          projectID: project?.id
         ),
         as: MobileRemoteMutationResponse.self
       )
@@ -794,6 +801,34 @@ final class MobileRemoteStore: ObservableObject {
     } catch {
       errorMessage = error.localizedDescription
       return nil
+    }
+  }
+
+  func setProjectMembership(
+    _ isMember: Bool,
+    project: MobileRemoteProjectSummary,
+    threadID: UUID
+  ) async {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
+    guard !mutatingThreadIDs.contains(threadID) else { return }
+    mutatingThreadIDs.insert(threadID)
+    defer { mutatingThreadIDs.remove(threadID) }
+    do {
+      let response: MobileRemoteMutationResponse = try await pairedClient().post(
+        "/v1/threads/\(threadID.uuidString)/project",
+        payload: MobileRemoteUpdateThreadProjectRequest(
+          projectID: project.id,
+          isMember: isMember
+        ),
+        as: MobileRemoteMutationResponse.self
+      )
+      guard response.accepted else {
+        throw MobileRemoteClientError.server("The host did not update the project.")
+      }
+      await refresh(reportsErrors: false)
+    } catch {
+      errorMessage = error.localizedDescription
     }
   }
 

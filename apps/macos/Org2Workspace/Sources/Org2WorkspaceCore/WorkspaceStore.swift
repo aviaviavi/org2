@@ -6866,12 +6866,24 @@ public final class WorkspaceStore {
     } catch { if corpusRoot == root { projectStatus = error.localizedDescription }; return false }
   }
 
-  func updateProject(_ project: WorkspaceProjectNote, threadID: UUID? = nil, color: String? = nil) async {
-    guard let root = corpusRoot, !projectMutationIDs.contains(project.id) else { return }
+  @discardableResult
+  func updateProject(
+    _ project: WorkspaceProjectNote,
+    threadID: UUID? = nil,
+    color: String? = nil
+  ) async -> Bool {
+    guard let root = corpusRoot else {
+      projectStatus = "Select a corpus before changing a project."
+      return false
+    }
+    guard !projectMutationIDs.contains(project.id) else {
+      projectStatus = "That project is already being updated."
+      return false
+    }
     if selectedEntrySource?.file == project.file,
        liveFileEditorHasUnsavedChanges || entryEditorHasUnsavedChanges || activeEditingBlock != nil {
       projectStatus = "Save the project note before changing its chat links or color."
-      return
+      return false
     }
     projectMutationIDs.insert(project.id)
     defer { projectMutationIDs.remove(project.id) }
@@ -6883,11 +6895,30 @@ public final class WorkspaceStore {
       }
       if let color { args += ["--color", color] }
       let _: WorkspaceProjectEdit = try await cli.runJSON(args)
-      guard corpusRoot == root, !Task.isCancelled else { return }
+      guard corpusRoot == root, !Task.isCancelled else { return false }
       let _: WorkspaceProjectEdit = try await cli.runJSON(args + ["--apply"])
-      guard corpusRoot == root else { return }
+      guard corpusRoot == root else { return false }
       await refreshProjects()
-    } catch { if corpusRoot == root { projectStatus = error.localizedDescription } }
+      return corpusRoot == root && !Task.isCancelled
+    } catch {
+      if corpusRoot == root { projectStatus = error.localizedDescription }
+      return false
+    }
+  }
+
+  func setProjectMembership(
+    _ isMember: Bool,
+    projectID: String,
+    threadID: UUID
+  ) async -> Bool {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }),
+          let project = projectNotes.first(where: { $0.id == projectID })
+    else {
+      projectStatus = "That project or chat is no longer available."
+      return false
+    }
+    guard project.contains(threadID) != isMember else { return true }
+    return await updateProject(project, threadID: threadID)
   }
 
   func createChatInProject(_ project: WorkspaceProjectNote) async {
@@ -28351,9 +28382,14 @@ public final class WorkspaceStore {
 
   @discardableResult
   public func createAIChatRemoteThread(destinationID: String) -> UUID {
+    createAIChatRemoteThread(destinationID: destinationID, id: UUID())
+  }
+
+  private func createAIChatRemoteThread(destinationID: String, id: UUID) -> UUID {
     let destination = aiChatDestination(id: destinationID)
       ?? AIChatDestinationConfiguration.defaults[0]
     return createOpenClawChatThread(
+      id: id,
       title: "New Chat",
       statusText: "",
       runtime: destination.runtime,
@@ -28361,6 +28397,19 @@ public final class WorkspaceStore {
       defersPersistence: true,
       selectsThread: false
     ).id
+  }
+
+  func createAIChatRemoteThread(
+    destinationID: String,
+    projectID: String
+  ) async -> UUID? {
+    guard let project = projectNotes.first(where: { $0.id == projectID }) else {
+      projectStatus = "That project is no longer available."
+      return nil
+    }
+    let id = UUID()
+    guard await updateProject(project, threadID: id) else { return nil }
+    return createAIChatRemoteThread(destinationID: destinationID, id: id)
   }
 
   @discardableResult
@@ -28528,6 +28577,7 @@ public final class WorkspaceStore {
 
   @discardableResult
   private func createOpenClawChatThread(
+    id: UUID = UUID(),
     title: String,
     statusText: String,
     resource: OpenClawResourceReference? = nil,
@@ -28564,6 +28614,7 @@ public final class WorkspaceStore {
       ? enabledAIChatDestinations.map(\.id)
       : []
     let thread = OpenClawChatThread(
+      id: id,
       title: title,
       runtime: runtime,
       destinationID: resolvedDestinationID,
