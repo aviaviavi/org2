@@ -2,6 +2,16 @@ import Foundation
 import XCTest
 @testable import Org2WorkspaceCore
 
+private actor WorkspaceProjectRefreshRecorder {
+  private(set) var callCount = 0
+
+  func load() async throws -> WorkspaceProjectList {
+    callCount += 1
+    try await Task.sleep(for: .milliseconds(100))
+    return WorkspaceProjectList(projects: [], diagnostics: [])
+  }
+}
+
 final class WorkspaceProjectTests: XCTestCase {
   private func project(threadID: UUID, brief: String = "* TODO Ship the thing") -> WorkspaceProjectNote {
     WorkspaceProjectNote(id: UUID().uuidString, title: "Launch", color: "blue", file: "/local/launch.org", relativePath: "launch.org", revision: "sha256:fixture", threadIDs: [threadID.uuidString.lowercased()], brief: brief, briefTruncated: false)
@@ -44,6 +54,59 @@ final class WorkspaceProjectTests: XCTestCase {
 
   func testEmptyProjectListHasNoPromptOverhead() {
     XCTAssertEqual(WorkspaceProjectContext.presentation(projects: [], threadID: UUID()), "")
+  }
+
+  func testProjectHeaderButtonsKeepStableHitGeometry() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot
+        .appendingPathComponent("Sources/Org2WorkspaceCore/WorkspaceProjects.swift"),
+      encoding: .utf8
+    )
+    let buttonSource = try XCTUnwrap(
+      source.range(of: "private struct WorkspaceProjectHeaderButton")
+    )
+    let followingSource = try XCTUnwrap(
+      source.range(of: "private struct WorkspaceProjectColorPicker")
+    )
+    let implementation = source[buttonSource.lowerBound..<followingSource.lowerBound]
+
+    XCTAssertTrue(implementation.contains(".frame(width: 24, height: 24)"))
+    XCTAssertTrue(implementation.contains(".contentShape(Rectangle())"))
+    XCTAssertTrue(implementation.contains(".buttonStyle(WorkspaceQuietPressStyle())"))
+    XCTAssertTrue(implementation.contains(".fixedSize()"))
+  }
+
+  @MainActor
+  func testProjectRefreshPublishesProgressAndCoalescesRepeatedRequests() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = WorkspaceProjectRefreshRecorder()
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.projectListLoaderForTesting = { _ in try await recorder.load() }
+
+    let first = Task { await store.refreshProjectsIfIdle() }
+    await Task.yield()
+
+    XCTAssertTrue(store.isRefreshingProjects)
+
+    let repeated = Task { await store.refreshProjectsIfIdle() }
+    await repeated.value
+    await first.value
+
+    let callCount = await recorder.callCount
+    XCTAssertFalse(store.isRefreshingProjects)
+    XCTAssertEqual(callCount, 1)
   }
 
   @MainActor

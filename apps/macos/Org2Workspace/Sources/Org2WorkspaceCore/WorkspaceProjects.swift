@@ -147,24 +147,60 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
         Text(store.projectStatus).font(.caption).foregroundStyle(.secondary)
       }
     } header: {
-      HStack {
+      HStack(spacing: 2) {
         Text("Projects")
         Spacer()
-        Button { Task { await store.refreshProjects() } } label: {
-          Image(systemName: "arrow.clockwise")
-        }.buttonStyle(.plain).help("Refresh projects").accessibilityLabel("Refresh projects")
-        Button { presentedSheet = .create } label: {
-          Image(systemName: "plus")
-        }.buttonStyle(.plain).help("New project").accessibilityLabel("New project")
+        WorkspaceProjectHeaderButton(
+          title: "Refresh projects",
+          systemImage: "arrow.clockwise",
+          isLoading: store.isRefreshingProjects
+        ) {
+          Task { await store.refreshProjectsIfIdle() }
+        }
+        WorkspaceProjectHeaderButton(
+          title: "New project",
+          systemImage: "plus"
+        ) {
+          presentedSheet = .create
+        }
       }
     }
-    .task(id: store.corpusRoot?.path) { expandedProjects = []; await store.refreshProjects() }
+    .task(id: store.corpusRoot?.path) { expandedProjects = []; await store.refreshProjectsIfIdle() }
     .onChange(of: store.projectNotes) {
       guard let selected = store.selectedOpenClawChatThreadID else { return }
       for project in store.projectNotes where project.contains(selected) {
         expandedProjects.insert(project.id)
       }
     }
+  }
+}
+
+private struct WorkspaceProjectHeaderButton: View {
+  let title: String
+  let systemImage: String
+  var isLoading = false
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Group {
+        if isLoading {
+          WorkspaceActivityIndicator(size: .mini)
+        } else {
+          Image(systemName: systemImage)
+        }
+      }
+      .font(.system(size: 13, weight: .medium))
+      .frame(width: 24, height: 24)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(WorkspaceQuietPressStyle())
+    .fixedSize()
+    .layoutPriority(1)
+    .foregroundStyle(.secondary)
+    .disabled(isLoading)
+    .help(title)
+    .accessibilityLabel(title)
   }
 }
 

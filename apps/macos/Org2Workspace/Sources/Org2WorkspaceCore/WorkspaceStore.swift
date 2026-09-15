@@ -2224,6 +2224,7 @@ public final class WorkspaceStore {
   private var suppressNextAgendaSelectionActivation = false
   var projectNotes: [WorkspaceProjectNote] = []
   var projectStatus = ""
+  private(set) var isRefreshingProjects = false
   private var projectRefreshID = UUID()
   private var projectMutationIDs: Set<String> = []
   public var corpusRoot: URL?
@@ -3167,6 +3168,7 @@ public final class WorkspaceStore {
   @ObservationIgnored private var currentNodeBriefArtifactGeneration: UInt64 = 0
   @ObservationIgnored private var currentNodeBriefArtifactTask: Task<Void, Never>?
   @ObservationIgnored var nodeBriefArtifactReadForTesting: (@Sendable (Bool) -> Void)?
+  @ObservationIgnored var projectListLoaderForTesting: (@Sendable (URL) async throws -> WorkspaceProjectList)?
   private var postOpenClawWorkspaceRefreshTask: Task<Void, Never>?
   private var corpusSessionGeneration: UInt64 = 0
   @ObservationIgnored let documentMutationLane = WorkspaceDocumentMutationLane()
@@ -4400,6 +4402,7 @@ public final class WorkspaceStore {
     resetCorpusFileDerivedState()
     projectNotes = []
     projectStatus = ""
+    isRefreshingProjects = false
     projectRefreshID = UUID()
     corpusRoot = standardized
     automationOwnerHostRef = nil
@@ -6780,8 +6783,19 @@ public final class WorkspaceStore {
     guard let root = corpusRoot else { projectNotes = []; return }
     let requestID = UUID()
     projectRefreshID = requestID
+    isRefreshingProjects = true
+    defer {
+      if corpusRoot == root, projectRefreshID == requestID {
+        isRefreshingProjects = false
+      }
+    }
     do {
-      let payload: WorkspaceProjectList = try await cli.runJSON(["project", "list", "--dir", root.path, "--json"])
+      let payload: WorkspaceProjectList
+      if let projectListLoaderForTesting {
+        payload = try await projectListLoaderForTesting(root)
+      } else {
+        payload = try await cli.runJSON(["project", "list", "--dir", root.path, "--json"])
+      }
       guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
       applyProjectList(payload)
     } catch {
@@ -6789,6 +6803,11 @@ public final class WorkspaceStore {
       projectNotes = []
       projectStatus = "Could not load projects: \(error.localizedDescription)"
     }
+  }
+
+  func refreshProjectsIfIdle() async {
+    guard !isRefreshingProjects else { return }
+    await refreshProjects()
   }
 
   func openProjectNote(_ project: WorkspaceProjectNote) {
