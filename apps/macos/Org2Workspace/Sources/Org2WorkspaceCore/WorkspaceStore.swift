@@ -21626,6 +21626,25 @@ public final class WorkspaceStore {
     )
   }
 
+  func cachedAutomationModelOptions(
+    forDestinationID destinationID: String
+  ) -> [AIChatModelOption] {
+    if let models = aiChatConfigurationCatalogCache[destinationID]?.models,
+       !models.isEmpty {
+      return models
+    }
+    guard let model = aiChatDestination(id: destinationID)?.model else { return [] }
+    return [AIChatModelOption(id: model, label: model, isDefault: true)]
+  }
+
+  func refreshAutomationModelOptions(
+    forDestinationID destinationID: String
+  ) async throws -> [AIChatModelOption] {
+    let models = try await modelsForAIChatDestination(destinationID)
+    cacheAIChatModelCatalog(destinationID: destinationID, models: models)
+    return models
+  }
+
   func cacheAIChatConfigurationForTesting(
     destinationID: String,
     requestedModel: String? = nil,

@@ -3,6 +3,35 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testAutomationSheetsUseDestinationBackedModelAndReasoningPickers() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot.appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+    let fieldsStart = try XCTUnwrap(
+      source.range(of: "private struct AutomationAIConfigurationFields: View")
+    )
+    let editorStart = try XCTUnwrap(
+      source.range(
+        of: "private struct AutomationScheduleEditor: View",
+        range: fieldsStart.upperBound..<source.endIndex
+      )
+    )
+    let fields = source[fieldsStart.lowerBound..<editorStart.lowerBound]
+
+    XCTAssertTrue(fields.contains(#"Picker("Model", selection: $model)"#))
+    XCTAssertTrue(fields.contains(#"Picker("Reasoning effort", selection: $reasoningEffort)"#))
+    XCTAssertTrue(fields.contains("store.cachedAutomationModelOptions"))
+    XCTAssertTrue(fields.contains("store.refreshAutomationModelOptions"))
+    XCTAssertFalse(fields.contains(#"TextField("Model"#))
+    XCTAssertFalse(fields.contains(#"TextField("Reasoning effort"#))
+  }
+
   func testFirstRunLeadsWithAgentConnectionAndKeepsCorpusOptionsSecondary() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

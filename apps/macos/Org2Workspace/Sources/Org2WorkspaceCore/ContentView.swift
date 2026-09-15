@@ -5737,17 +5737,11 @@ private struct NewAutomationSheet: View {
       Form {
         TextField("Name", text: $title)
 
-        Picker("AI destination", selection: $destinationID) {
-          ForEach(store.enabledAIChatDestinations) { destination in
-            Label(destination.title, systemImage: destination.systemImage)
-              .tag(destination.id)
-          }
-        }
-
-        TextField("Model (destination default)", text: $model)
-          .help("Exact model identifier stored in the automation file. Leave blank to use the destination default.")
-        TextField("Reasoning effort (destination default)", text: $reasoningEffort)
-          .help("Exact reasoning level stored in the automation file, such as low, medium, high, or xhigh. Leave blank to use the destination default.")
+        AutomationAIConfigurationFields(
+          destinationID: $destinationID,
+          model: $model,
+          reasoningEffort: $reasoningEffort
+        )
 
         Picker("Agent", selection: $agentRef) {
           Text("Destination default").tag("")
@@ -5873,16 +5867,11 @@ private struct WorkflowScheduleSheet: View {
       Text("Schedule \(workflow.title)").font(.title2.weight(.semibold))
       Text("OpenOrg checks this schedule while the app is running and sends each occurrence to the selected AI destination. The definition remains plain text.")
         .foregroundStyle(.secondary)
-      Picker("AI destination", selection: $destinationID) {
-        ForEach(store.enabledAIChatDestinations) { destination in
-          Label(destination.title, systemImage: destination.systemImage)
-            .tag(destination.id)
-        }
-      }
-      TextField("Model (destination default)", text: $model)
-        .help("Exact model identifier stored in the automation file. Leave blank to use the destination default.")
-      TextField("Reasoning effort (destination default)", text: $reasoningEffort)
-        .help("Exact reasoning level stored in the automation file. Leave blank to use the destination default.")
+      AutomationAIConfigurationFields(
+        destinationID: $destinationID,
+        model: $model,
+        reasoningEffort: $reasoningEffort
+      )
       Toggle("Enable schedule", isOn: $enabled)
       if enabled {
         AutomationScheduleEditor(expression: $cron, timezone: $timezone)
@@ -5943,6 +5932,156 @@ private struct WorkflowScheduleSheet: View {
     .onAppear {
       if destinationID.isEmpty {
         destinationID = store.enabledAIChatDestinations.first?.id ?? ""
+      }
+    }
+  }
+}
+
+private struct AutomationAIConfigurationFields: View {
+  @Environment(WorkspaceStore.self) private var store
+  @Binding var destinationID: String
+  @Binding var model: String
+  @Binding var reasoningEffort: String
+  @State private var modelOptions: [AIChatModelOption] = []
+  @State private var isLoadingModels = false
+  @State private var modelLoadError: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Picker("AI destination", selection: $destinationID) {
+        ForEach(store.enabledAIChatDestinations) { destination in
+          Label(destination.title, systemImage: destination.systemImage)
+            .tag(destination.id)
+        }
+      }
+
+      Picker("Model", selection: $model) {
+        Text("Destination default").tag("")
+        ForEach(displayedModelOptions) { option in
+          Text(option.label).tag(option.id)
+        }
+      }
+      .disabled(destinationID.isEmpty)
+      .help("The selected model identifier is stored in the automation file. Choose Destination default to leave it unset.")
+
+      Picker("Reasoning effort", selection: $reasoningEffort) {
+        Text(defaultReasoningLabel).tag("")
+        ForEach(displayedReasoningOptions) { option in
+          Text(option.label).tag(option.id)
+        }
+      }
+      .disabled(destinationID.isEmpty)
+      .help("The selected reasoning level is stored in the automation file. Choose Destination default to leave it unset.")
+
+      if isLoadingModels && modelOptions.isEmpty {
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.small)
+          Text("Loading models…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let modelLoadError, modelOptions.isEmpty {
+        Label(modelLoadError, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+      }
+    }
+    .onChange(of: destinationID) { previousDestinationID, currentDestinationID in
+      guard previousDestinationID != currentDestinationID else { return }
+      model = ""
+      reasoningEffort = ""
+      modelOptions = store.cachedAutomationModelOptions(
+        forDestinationID: currentDestinationID
+      )
+      modelLoadError = nil
+    }
+    .onChange(of: model) { previousModel, currentModel in
+      guard previousModel != currentModel else { return }
+      reasoningEffort = ""
+    }
+    .task(id: destinationID) {
+      await loadModels()
+    }
+  }
+
+  private var displayedModelOptions: [AIChatModelOption] {
+    guard !model.isEmpty,
+          !modelOptions.contains(where: { $0.id == model })
+    else {
+      return modelOptions
+    }
+    return modelOptions + [AIChatModelOption(id: model, label: "Current: \(model)")]
+  }
+
+  private var selectedModelOption: AIChatModelOption? {
+    if !model.isEmpty {
+      return modelOptions.first(where: { $0.id == model })
+    }
+    if let configuredModel = store.aiChatDestination(id: destinationID)?.model,
+       let configured = modelOptions.first(where: { $0.id == configuredModel }) {
+      return configured
+    }
+    return modelOptions.first(where: \.isDefault)
+  }
+
+  private var displayedReasoningOptions: [AIChatReasoningOption] {
+    let options = selectedModelOption?.reasoningOptions ?? []
+    guard !reasoningEffort.isEmpty,
+          !options.contains(where: { $0.id == reasoningEffort })
+    else {
+      return options
+    }
+    return options + [AIChatReasoningOption(
+      id: reasoningEffort,
+      label: "Current: \(reasoningEffort)"
+    )]
+  }
+
+  private var defaultReasoningLabel: String {
+    guard let defaultEffort = selectedModelOption?.defaultReasoningEffort,
+          !defaultEffort.isEmpty
+    else {
+      return "Destination default"
+    }
+    let label = selectedModelOption?.reasoningOptions
+      .first(where: { $0.id == defaultEffort })?.label ?? defaultEffort
+    return "Destination default (\(label))"
+  }
+
+  private func loadModels() async {
+    guard !destinationID.isEmpty else {
+      modelOptions = []
+      modelLoadError = nil
+      isLoadingModels = false
+      return
+    }
+
+    let requestedDestinationID = destinationID
+    modelOptions = store.cachedAutomationModelOptions(
+      forDestinationID: requestedDestinationID
+    )
+    modelLoadError = nil
+    isLoadingModels = true
+    defer {
+      if destinationID == requestedDestinationID {
+        isLoadingModels = false
+      }
+    }
+    do {
+      let refreshed = try await store.refreshAutomationModelOptions(
+        forDestinationID: requestedDestinationID
+      )
+      try Task.checkCancellation()
+      guard destinationID == requestedDestinationID else { return }
+      if !refreshed.isEmpty {
+        modelOptions = refreshed
+      }
+    } catch is CancellationError {
+      return
+    } catch {
+      if destinationID == requestedDestinationID && modelOptions.isEmpty {
+        modelLoadError = error.localizedDescription
       }
     }
   }

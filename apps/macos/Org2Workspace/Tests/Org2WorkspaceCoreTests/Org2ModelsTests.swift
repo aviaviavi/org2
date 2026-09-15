@@ -2369,6 +2369,44 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutomationModelPickerUsesThePersistentDestinationCatalog() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-automation-models-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-workspace-automation-models-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let first = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+    )
+    first.cacheAIChatConfigurationForTesting(
+      destinationID: "managed-remote-codex",
+      models: [
+        AIChatModelOption(id: "gpt-5.6-sol", label: "GPT-5.6 Sol", isDefault: true),
+        AIChatModelOption(id: "gpt-6-astra", label: "GPT-6 Astra")
+      ],
+      effectiveModel: "gpt-5.6-sol",
+      reasoningOptions: [],
+      defaultReasoningEffort: nil
+    )
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+    )
+
+    XCTAssertEqual(
+      restored.cachedAutomationModelOptions(forDestinationID: "managed-remote-codex").map(\.id),
+      ["gpt-5.6-sol", "gpt-6-astra"]
+    )
+  }
+
+  @MainActor
   func testSelectingChatThreadNeverRewritesFullTranscriptAndStillRestoresSelection() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-fast-chat-selection-\(UUID().uuidString)", isDirectory: true)
