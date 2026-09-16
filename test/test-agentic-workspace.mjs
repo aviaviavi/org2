@@ -185,7 +185,38 @@ try {
   ], { encoding: "utf8" });
   assert.notEqual(driftedMutation.status, 0);
   assert.match(driftedMutation.stderr, /out-of-band readable-state changes/);
-  fs.writeFileSync(guardedFile, afterGuardedUpdate.raw, "utf8");
+
+  const reconciliationPreview = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "reconcile-source", guardedRun.id,
+    "--if-revision", driftedSnapshot.revision, "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(reconciliationPreview.status, 0, reconciliationPreview.stderr || reconciliationPreview.stdout);
+  const preview = JSON.parse(reconciliationPreview.stdout);
+  assert.equal(preview.schema, "org2:run-source-reconciliation:v1");
+  assert.equal(preview.applied, false);
+  assert.equal(preview.changed, true);
+  assert.deepEqual(preview.sourceIssues.map((issue) => issue.field), ["status"]);
+  assert.deepEqual(preview.remainingSourceIssues.map((issue) => issue.field), ["status"]);
+  assert.deepEqual(loadAgentRunSnapshot(root, guardedRun.id).sourceIssues.map((issue) => issue.field), ["status"]);
+
+  const staleReconciliation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "reconcile-source", guardedRun.id,
+    "--if-revision", "sha256:stale", "--apply", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.notEqual(staleReconciliation.status, 0);
+  assert.match(staleReconciliation.stderr, /run revision changed/);
+
+  const reconciliation = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "reconcile-source", guardedRun.id,
+    "--if-revision", driftedSnapshot.revision, "--apply", "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(reconciliation.status, 0, reconciliation.stderr || reconciliation.stdout);
+  const reconciled = JSON.parse(reconciliation.stdout);
+  assert.equal(reconciled.applied, true);
+  assert.equal(reconciled.changed, true);
+  assert.deepEqual(reconciled.remainingSourceIssues, []);
+  assert.deepEqual(loadAgentRunSnapshot(root, guardedRun.id).sourceIssues, []);
+  assert.match(fs.readFileSync(guardedFile, "utf8"), /^:RUN_STATUS: queued$/m);
 
   const lockedSnapshot = loadAgentRunSnapshot(root, guardedRun.id);
   fs.writeFileSync(`${guardedFile}.lock`, "{}\n", "utf8");

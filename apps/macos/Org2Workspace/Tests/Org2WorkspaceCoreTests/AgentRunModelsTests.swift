@@ -615,6 +615,75 @@ final class AgentRunModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRunApprovalSourceDriftOffersRepairAndRetriesTheOriginalAction() async throws {
+    struct RunSourceDrift: LocalizedError {
+      var errorDescription: String? {
+        "run source has out-of-band readable-state changes (title); run org2 doctor and reconcile the source before writing"
+      }
+    }
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-source-repair-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let waitingRun = try makeRun(
+      id: "source-drift-run",
+      status: "waiting-approval",
+      approvalStatus: "pending"
+    )
+    let runningRun = try makeRun(
+      id: "source-drift-run",
+      status: "running",
+      approvalStatus: "approved"
+    )
+    let approval = try XCTUnwrap(waitingRun.approvals.first)
+    let item = approvalQueueItem(run: waitingRun, approval: approval, root: root)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([waitingRun])
+    store.replaceApprovalItemsForTesting([item])
+
+    var decisionAttempts = 0
+    store.agentRunApprovalDecisionForTesting = { _, _, decision, _ in
+      XCTAssertEqual(decision, "approved")
+      decisionAttempts += 1
+      if decisionAttempts == 1 { throw RunSourceDrift() }
+      return runningRun
+    }
+    var repairedRunIDs: [String] = []
+    store.agentRunSourceReconciliationForTesting = { runID in
+      repairedRunIDs.append(runID)
+    }
+    store.agentRunApprovalContinuationForTesting = { run in
+      OpenClawApprovedRunContinuation(
+        runID: run.id,
+        sessionKey: nil,
+        prompt: "already sent",
+        kind: "run",
+        alreadyResumed: true
+      )
+    }
+
+    await store.approve(item)
+
+    XCTAssertEqual(decisionAttempts, 1)
+    XCTAssertTrue(store.canRepairApprovalSource(item))
+    XCTAssertTrue(store.approvalActionError(item)?.contains("out-of-band") == true)
+    XCTAssertFalse(store.isRepairingApprovalSource(item))
+
+    await store.repairApprovalSourceAndRetry(item)
+
+    XCTAssertEqual(repairedRunIDs, [waitingRun.id])
+    XCTAssertEqual(decisionAttempts, 2)
+    XCTAssertFalse(store.canRepairApprovalSource(item))
+    XCTAssertNil(store.approvalActionError(item))
+    XCTAssertFalse(store.isRepairingApprovalSource(item))
+    XCTAssertTrue(store.approvalItems.isEmpty)
+    XCTAssertEqual(store.agentRuns.first?.status, "running")
+  }
+
+  @MainActor
   func testFailedAutomaticApprovalContinuationDurablyBlocksRun() async throws {
     struct DispatchFailure: LocalizedError {
       var errorDescription: String? { "OpenClaw gateway is unavailable" }

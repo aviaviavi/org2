@@ -100,7 +100,7 @@ public struct Org2CLI: Sendable {
     "plugin.sync", "plugin.trust", "plugin.doctor", "plugin.exec", "plugin.template",
     "run.list", "run.show", "run.validate", "run.start", "run.resume", "run.retry",
     "run.cancel", "run.complete", "run.complete-external", "run.reopen-external",
-    "run.fail", "run.block", "run.fork", "run.normalize", "run.assign", "run.comment",
+    "run.fail", "run.block", "run.fork", "run.normalize", "run.reconcile-source", "run.assign", "run.comment",
     "run.outcome", "run.runtime", "run.step", "run.artifact", "run.artifact-review",
     "run.validation", "run.approval-request", "run.approval-decide", "source.list",
     "source.status", "source.doctor", "source.import", "source.sync", "table.recalculate", "todo.set",

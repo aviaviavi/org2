@@ -1895,6 +1895,13 @@ private enum ApprovalActionKind {
   case externalCompletion
 }
 
+private enum ApprovalSourceRepairRetry {
+  case approve
+  case reject(endStatus: TodoEditStatus, reason: String)
+  case externalCompletion(summary: String)
+  case requestChanges(feedback: String)
+}
+
 private struct AIChatSendOrigin {
   let corpusRoot: URL?
   let transcriptURL: URL
@@ -2312,7 +2319,9 @@ public final class WorkspaceStore {
   public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   public private(set) var externallyCompletingApprovalItemIDs: Set<ApprovalItem.ID> = []
+  public private(set) var repairingApprovalSourceItemIDs: Set<ApprovalItem.ID> = []
   public private(set) var approvalActionErrorsByItemID: [ApprovalItem.ID: String] = [:]
+  @ObservationIgnored private var approvalSourceRepairRetriesByItemID: [ApprovalItem.ID: ApprovalSourceRepairRetry] = [:]
   public var corpusFiles: [CorpusFile] = [] {
     didSet {
       corpusFilesGeneration &+= 1
@@ -3323,6 +3332,7 @@ public final class WorkspaceStore {
     _ decision: String,
     _ note: String?
   ) async throws -> AgentRunItem)?
+  var agentRunSourceReconciliationForTesting: ((_ runID: String) async throws -> Void)?
   var agentRunListLoaderForTesting: (() async throws -> [AgentRunItem])?
   var workspaceSearchLoaderForTesting: ((String, [String]) async throws -> SearchPayload)?
   var runReviewPageRefreshOperationForTesting: ((RunsAndReviewPage) async -> Void)?
@@ -4554,7 +4564,9 @@ public final class WorkspaceStore {
     approvingApprovalItemIDs = []
     rejectingApprovalItemIDs = []
     externallyCompletingApprovalItemIDs = []
+    repairingApprovalSourceItemIDs = []
     approvalActionErrorsByItemID = [:]
+    approvalSourceRepairRetriesByItemID = [:]
     mutatingAgentGoalIDs = []
     mutatingAgentProfileIDs = []
     isLoadingAgentGoals = false
@@ -8950,7 +8962,12 @@ public final class WorkspaceStore {
       }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
-      recordApprovalActionFailure(item, error: error, status: "Approve handoff failed")
+      recordApprovalActionFailure(
+        item,
+        error: error,
+        status: "Approve handoff failed",
+        repairRetry: item.isRunApproval ? .approve : nil
+      )
     }
   }
 
@@ -9023,7 +9040,12 @@ public final class WorkspaceStore {
       }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
-      recordApprovalActionFailure(item, error: error, status: "Reject approval failed")
+      recordApprovalActionFailure(
+        item,
+        error: error,
+        status: "Reject approval failed",
+        repairRetry: item.isRunApproval ? .reject(endStatus: endStatus, reason: reason) : nil
+      )
     }
   }
 
@@ -9090,7 +9112,12 @@ public final class WorkspaceStore {
       }
     } catch {
       if let standaloneContext, !isCurrentDocumentCorpusContext(standaloneContext) { return }
-      recordApprovalActionFailure(item, error: error, status: "External completion failed")
+      recordApprovalActionFailure(
+        item,
+        error: error,
+        status: "External completion failed",
+        repairRetry: item.isRunApproval ? .externalCompletion(summary: normalizedSummary) : nil
+      )
     }
   }
 
@@ -9104,6 +9131,10 @@ public final class WorkspaceStore {
 
   public func isCompletingApprovalExternally(_ item: ApprovalItem) -> Bool {
     externallyCompletingApprovalItemIDs.contains(item.id)
+  }
+
+  public func isRepairingApprovalSource(_ item: ApprovalItem) -> Bool {
+    repairingApprovalSourceItemIDs.contains(item.id)
   }
 
   public func isApprovalActionInProgress(_ item: ApprovalItem) -> Bool {
@@ -9125,10 +9156,69 @@ public final class WorkspaceStore {
     approvingApprovalItemIDs.contains(itemID)
       || rejectingApprovalItemIDs.contains(itemID)
       || externallyCompletingApprovalItemIDs.contains(itemID)
+      || repairingApprovalSourceItemIDs.contains(itemID)
   }
 
   public func approvalActionError(_ item: ApprovalItem) -> String? {
     approvalActionErrorsByItemID[item.id]
+  }
+
+  public func canRepairApprovalSource(_ item: ApprovalItem) -> Bool {
+    item.isRunApproval && approvalSourceRepairRetriesByItemID[item.id] != nil
+  }
+
+  public func repairApprovalSourceAndRetry(_ item: ApprovalItem) async {
+    guard let runID = item.runId,
+          let corpusRoot,
+          let retry = approvalSourceRepairRetriesByItemID[item.id],
+          !isApprovalActionInProgress(item)
+    else {
+      return
+    }
+
+    var repairingIDs = repairingApprovalSourceItemIDs
+    repairingIDs.insert(item.id)
+    repairingApprovalSourceItemIDs = repairingIDs
+    do {
+      if let agentRunSourceReconciliationForTesting {
+        try await agentRunSourceReconciliationForTesting(runID)
+      } else {
+        let result: AgentRunSourceReconciliationResult = try await cli.runJSON([
+          "run", "reconcile-source", runID,
+          "--apply",
+          "--dir", corpusRoot.path,
+          "--json"
+        ])
+        guard result.remainingSourceIssues.isEmpty else {
+          let fields = result.remainingSourceIssues.map(\.field).joined(separator: ", ")
+          throw CocoaError(
+            .fileWriteUnknown,
+            userInfo: [NSLocalizedDescriptionKey: "The run still has conflicting readable fields: \(fields)."]
+          )
+        }
+      }
+
+      finishApprovalSourceRepair(item.id)
+      statusText = "Repaired run source; retrying \(item.title)"
+      switch retry {
+      case .approve:
+        await approve(item)
+      case let .reject(endStatus, reason):
+        await rejectApproval(item, endStatus: endStatus, reason: reason)
+      case let .externalCompletion(summary):
+        await completeApprovalExternally(item, summary: summary)
+      case let .requestChanges(feedback):
+        await requestChanges(item, feedback: feedback)
+      }
+    } catch {
+      finishApprovalSourceRepair(item.id, clearsRetry: false)
+      recordApprovalActionFailure(
+        item,
+        error: error,
+        status: "Run source repair failed",
+        repairRetry: retry
+      )
+    }
   }
 
   public func requestChanges(_ item: ApprovalItem, feedback: String) async {
@@ -9147,7 +9237,12 @@ public final class WorkspaceStore {
       scheduleApprovalsRefresh()
       await continueOpenClawAfterApprovalBoundary(updated)
     } catch {
-      recordApprovalActionFailure(item, error: error, status: "Revision request failed")
+      recordApprovalActionFailure(
+        item,
+        error: error,
+        status: "Revision request failed",
+        repairRetry: .requestChanges(feedback: feedback)
+      )
     }
   }
 
@@ -9344,6 +9439,7 @@ public final class WorkspaceStore {
       errors.removeValue(forKey: itemID)
       approvalActionErrorsByItemID = errors
     }
+    approvalSourceRepairRetriesByItemID.removeValue(forKey: itemID)
     switch kind {
     case .approve:
       var ids = approvingApprovalItemIDs
@@ -9363,13 +9459,40 @@ public final class WorkspaceStore {
   private func recordApprovalActionFailure(
     _ item: ApprovalItem,
     error: Error,
-    status: String
+    status: String,
+    repairRetry: ApprovalSourceRepairRetry? = nil
   ) {
     var errors = approvalActionErrorsByItemID
     errors[item.id] = error.localizedDescription
     approvalActionErrorsByItemID = errors
+    if item.isRunApproval,
+       let repairRetry,
+       Self.isAgentRunSourceDriftError(error.localizedDescription) {
+      approvalSourceRepairRetriesByItemID[item.id] = repairRetry
+    } else {
+      approvalSourceRepairRetriesByItemID.removeValue(forKey: item.id)
+    }
     errorText = error.localizedDescription
     statusText = status
+  }
+
+  nonisolated static func isAgentRunSourceDriftError(_ message: String) -> Bool {
+    message.localizedCaseInsensitiveContains("run source has out-of-band readable-state changes")
+  }
+
+  private func finishApprovalSourceRepair(
+    _ itemID: ApprovalItem.ID,
+    clearsRetry: Bool = true
+  ) {
+    var repairingIDs = repairingApprovalSourceItemIDs
+    repairingIDs.remove(itemID)
+    repairingApprovalSourceItemIDs = repairingIDs
+    if clearsRetry {
+      approvalSourceRepairRetriesByItemID.removeValue(forKey: itemID)
+      var errors = approvalActionErrorsByItemID
+      errors.removeValue(forKey: itemID)
+      approvalActionErrorsByItemID = errors
+    }
   }
 
   private func waitForAgentRunMutationAvailability(_ runID: AgentRunItem.ID) async throws {
@@ -9410,6 +9533,13 @@ public final class WorkspaceStore {
     let nextErrors = approvalActionErrorsByItemID.filter { itemIDs.contains($0.key) }
     if nextErrors != approvalActionErrorsByItemID {
       approvalActionErrorsByItemID = nextErrors
+    }
+    approvalSourceRepairRetriesByItemID = approvalSourceRepairRetriesByItemID.filter {
+      itemIDs.contains($0.key)
+    }
+    let nextRepairingIDs = repairingApprovalSourceItemIDs.intersection(itemIDs)
+    if nextRepairingIDs != repairingApprovalSourceItemIDs {
+      repairingApprovalSourceItemIDs = nextRepairingIDs
     }
   }
 

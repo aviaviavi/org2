@@ -7616,6 +7616,7 @@ private struct ApprovalsView: View {
             isApproving: store.isApprovingApproval(item),
             isRejecting: store.isRejectingApproval(item),
             isCompletingExternally: store.isCompletingApprovalExternally(item),
+            isRepairingSource: store.isRepairingApprovalSource(item),
             actionError: store.approvalActionError(item),
             toggleBulkSelection: { store.toggleApprovalItemBulkSelection(item) },
             approve: { Task { await store.approve(item) } },
@@ -7629,6 +7630,7 @@ private struct ApprovalsView: View {
             } : nil,
             reject: { store.promptAndRejectApproval(item) },
             copy: { store.copyApprovalDiscussionText(item) },
+            repairSource: repairSourceAction(for: item),
             discuss: {
               discussionMessage = "I need to discuss this approval item before deciding."
               discussionItem = item
@@ -7718,6 +7720,13 @@ private struct ApprovalsView: View {
     modifiers: NSEvent.ModifierFlags = []
   ) {
     store.handleApprovalItemClick(item, modifiers: modifiers)
+  }
+
+  private func repairSourceAction(for item: ApprovalItem) -> (() -> Void)? {
+    guard store.canRepairApprovalSource(item) else { return nil }
+    return {
+      Task { await store.repairApprovalSourceAndRetry(item) }
+    }
   }
 }
 
@@ -7884,6 +7893,7 @@ private struct ApprovalRow: View {
   let isApproving: Bool
   let isRejecting: Bool
   let isCompletingExternally: Bool
+  let isRepairingSource: Bool
   let actionError: String?
   let toggleBulkSelection: () -> Void
   let approve: () -> Void
@@ -7891,10 +7901,11 @@ private struct ApprovalRow: View {
   let requestChanges: (() -> Void)?
   let reject: () -> Void
   let copy: () -> Void
+  let repairSource: (() -> Void)?
   let discuss: () -> Void
 
   private var isActionInProgress: Bool {
-    isApproving || isRejecting || isCompletingExternally
+    isApproving || isRejecting || isCompletingExternally || isRepairingSource
   }
 
   var body: some View {
@@ -8021,10 +8032,33 @@ private struct ApprovalRow: View {
       .controlSize(.small)
 
       if let actionError {
-        Label(actionError, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(.red)
-          .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 6) {
+          Label(actionError, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+          if let repairSource {
+            HStack(spacing: 8) {
+              Button {
+                repairSource()
+              } label: {
+                if isRepairingSource {
+                  HStack(spacing: 6) {
+                    WorkspaceActivityIndicator(size: .mini)
+                    Text("Repairing")
+                  }
+                } else {
+                  Label("Repair & Retry", systemImage: "wrench.and.screwdriver")
+                }
+              }
+              .buttonStyle(WorkspaceActionButtonStyle())
+              .disabled(isActionInProgress)
+              Text("Restores generated run fields from canonical machine state, then retries this action.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
       }
     }
     .workspaceSelectableRow(isSelected: isSelected, verticalPadding: 8)

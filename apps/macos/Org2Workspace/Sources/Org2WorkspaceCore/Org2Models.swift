@@ -1208,6 +1208,24 @@ public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct AgentRunSourceConsistencyIssue: Decodable, Hashable, Sendable {
+  public let field: String
+  public let readable: String?
+  public let canonical: String
+}
+
+public struct AgentRunSourceReconciliationResult: Decodable, Sendable {
+  public let schema: String
+  public let applied: Bool
+  public let changed: Bool
+  public let file: String
+  public let previousRevision: String
+  public let revision: String
+  public let sourceIssues: [AgentRunSourceConsistencyIssue]
+  public let remainingSourceIssues: [AgentRunSourceConsistencyIssue]
+  public let run: AgentRunItem
+}
+
 public enum RunsAndReviewPage: String, CaseIterable, Identifiable, Sendable {
   case runs = "Runs"
   case review = "Review"

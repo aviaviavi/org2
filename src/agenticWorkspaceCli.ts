@@ -27,6 +27,7 @@ import {
   normalizeLegacyAgentRuns,
   reopenExternallyCompletedApprovalRun,
   requestAgentRunApproval,
+  renderAgentRunOrg,
   saveAgentRun,
   supersedeAgentRunApproval,
   transitionAgentRun,
@@ -189,7 +190,7 @@ const HELP = `Agentic workspace commands:
   org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
   org2 run create --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
-  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|artifact-review
+  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|artifact-review
   org2 run block ID --reason "Specific clarification needed" [--separate-from-approval]
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
@@ -1192,6 +1193,35 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
     return;
   }
   if (action === "validate") { const result = validateAgentRun(existingSnapshot.run); output(parsed, result, result.valid ? `${id}: valid` : result.issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")); if (!result.valid) process.exitCode = 1; return; }
+  if (action === "reconcile-source") {
+    const expectedRevision = flag(parsed, "if-revision");
+    if (expectedRevision && expectedRevision !== existingSnapshot.revision) {
+      throw new Error(`run revision changed; expected ${expectedRevision}, found ${existingSnapshot.revision}: ${existingSnapshot.file}`);
+    }
+    const apply = enabled(parsed, "apply");
+    const changed = renderAgentRunOrg(existingSnapshot.run) !== existingSnapshot.raw;
+    if (apply && changed) {
+      saveAgentRun(corpus, existingSnapshot.run, { expectedRevision: existingSnapshot.revision });
+    }
+    const reconciled = apply && changed ? loadAgentRunSnapshot(corpus, id) : existingSnapshot;
+    const result = {
+      schema: "org2:run-source-reconciliation:v1",
+      applied: apply,
+      changed,
+      file: existingSnapshot.file,
+      previousRevision: existingSnapshot.revision,
+      revision: reconciled.revision,
+      sourceIssues: existingSnapshot.sourceIssues,
+      remainingSourceIssues: reconciled.sourceIssues,
+      run: reconciled.run,
+    };
+    output(
+      parsed,
+      result,
+      `${apply ? "reconciled" : changed ? "would reconcile" : "already reconciled"} ${id}`,
+    );
+    return;
+  }
   assertRequestedRunRevision(parsed, existingSnapshot);
   const existing = existingSnapshot.run;
   let run = existing;
