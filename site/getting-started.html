@@ -4,31 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Getting started</title>
-<meta name="subtitle" content="Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta name="subtitle" content="Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta name="description" content="Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <link rel="canonical" href="https://openorg.so/getting-started.html" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="OpenOrg" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="Getting started" />
-<meta property="og:description" content="Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta property="og:description" content="Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <meta property="og:url" content="https://openorg.so/getting-started.html" />
 <meta property="og:image" content="https://openorg.so/assets/og/getting-started.png" />
 <meta property="og:image:secure_url" content="https://openorg.so/assets/og/getting-started.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Getting started — Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta property="og:image:alt" content="Getting started — Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Getting started" />
-<meta name="twitter:description" content="Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta name="twitter:description" content="Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <meta name="twitter:url" content="https://openorg.so/getting-started.html" />
 <meta name="twitter:image" content="https://openorg.so/assets/og/getting-started.png" />
-<meta name="twitter:image:alt" content="Getting started — Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop." />
+<meta name="twitter:image:alt" content="Getting started — Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -64,18 +64,66 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">Getting started</h1>
-<p class="org2-document-subtitle" role="doc-subtitle">Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop.</p>
+<p class="org2-document-subtitle" role="doc-subtitle">Install OpenOrg, write today's note, capture a task, and see it in Agenda.</p>
 </header>
 <section class="org2-page-intro">
-  <p>Start with the OpenOrg Mac app: connect an agent you already use, ask a question from Home, and keep today's note beside the conversation. You do not need Emacs, prior Org mode experience, or an OpenOrg account.</p>
+  <p>Start with a small loop: open the app, write in today's note, capture one task, and see it appear in Agenda. You do not need to connect an agent, know Org mode, or create an OpenOrg account.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Connect a runtime.</strong><span>Use a supported agent harness you already have, whether it runs locally or remotely.</span></div>
-    <div><strong>Start from Home.</strong><span>A familiar chat box and today's note are ready immediately.</span></div>
-    <div><strong>Review what needs you.</strong><span>Approvals, questions, and finished work return to one inspectable queue.</span></div>
+    <div><strong>Install OpenOrg.</strong><span>Download the Mac app and open the starter workspace.</span></div>
+    <div><strong>Write today's note.</strong><span>Capture an idea in an ordinary local plain-text file.</span></div>
+    <div><strong>See one task in Agenda.</strong><span>Add a scheduled commitment and find it without copying it anywhere else.</span></div>
   </div>
 </section>
 <section class="org2-headline level-1">
-<h1 id="first-the-mental-model">First, the mental model</h1>
+<h1 id="1-install-the-mac-app">1) Install the Mac app</h1>
+<ol>
+<li><p>Download the latest <code>OpenOrg.dmg</code> from the <a href="downloads.html">downloads page</a>.</p></li>
+<li><p>Open the disk image and drag <code>OpenOrg.app</code> into <code>Applications</code>.</p></li>
+<li><p>Open the app. Connect an agent you already use, or choose to continue without one.</p></li>
+<li><p>Choose <strong>Continue to Home</strong>.</p></li>
+</ol>
+<p>OpenOrg creates a small workspace automatically, then opens Home with today's note and an optional chat box. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
+<p>If you already keep notes in another folder, expand <strong>Workspace options</strong> during setup or open it later. Use <strong>OpenOrg → Settings… → Workspace</strong> to rename the corpus identity, reveal its folder, or switch locations.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="2-write-todays-note">2) Write today's note</h1>
+<p>Type a thought, decision, or rough plan directly into today's note on Home. The note is an ordinary local file, and you can bring it into an agent conversation later if useful.</p>
+<p>If you connected an agent, you can also try:</p>
+<blockquote>Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.</blockquote>
+</section>
+<section class="org2-headline level-1">
+<h1 id="3-capture-one-scheduled-commitment">3) Capture one scheduled commitment</h1>
+<p>Open <strong>Capture</strong>, keep <strong>Task</strong> selected, give the commitment a concrete title, and leave <strong>Scheduled</strong> enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.</p>
+<p>Open <strong>Agenda</strong> and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.</p>
+<p>You can also click <strong>New Note</strong> and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.</p>
+<p>Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Plan the launch
+
+The goal is to publish a clear announcement and onboarding guide.
+
+** TODO Draft the announcement
+SCHEDULED: &lt;2030-01-15 Tue&gt;
+
+** Decisions
+
+- Start with a small private beta.
+- Collect feedback after the first week.</code></pre>
+<p>Only a few conventions matter at first:</p>
+<ul>
+<li><p>A line beginning with <code>*</code> is a title; <code>**</code> is a section inside it.</p></li>
+<li><p><code>TODO</code> makes a heading actionable.</p></li>
+<li><p><code>SCHEDULED:</code> gives the task a date so it appears in Agenda.</p></li>
+<li><p>Ordinary paragraphs and lists are just text.</p></li>
+</ul>
+<p>You can use the app's controls for everyday work and open the readable source whenever you want it.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="4-use-today-and-agenda">4) Use Today and Agenda</h1>
+<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose <strong>Daily → Choose Date…</strong> in the sidebar or press <code>Cmd-Shift-7</code>; OpenOrg opens the existing note or creates it in the configured daily folder.</p>
+<p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="when-youre-ready-the-mental-model">When you're ready: the mental model</h1>
 <p>OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your <strong>corpus</strong>—the ordinary folder of <code>.org</code>, <code>.org2</code>, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.</p>
 <p>The agent harness you connect is a <strong>runtime</strong>: the engine that actually reasons and acts. Codex, Claude Code, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.</p>
 <p>A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools OpenOrg exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.</p>
@@ -142,56 +190,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 </section>
 <section class="org2-headline level-1">
-<h1 id="1-install-the-mac-app-and-connect-an-agent">1) Install the Mac app and connect an agent</h1>
-<p>OpenOrg is the recommended starting point. It gives you a simple Home view first, with deeper notes, planning, search, meetings, and Agent Work available when you need them.</p>
-<ol>
-<li><p>Download the latest <code>OpenOrg.dmg</code> from the <a href="downloads.html">downloads page</a>.</p></li>
-<li><p>Open the disk image and drag <code>OpenOrg.app</code> into <code>Applications</code>.</p></li>
-<li><p>Open the app and choose an agent already installed on your Mac.</p></li>
-<li><p>Sign in if needed, then choose <strong>Continue to Home</strong>.</p></li>
-</ol>
-<p>OpenOrg creates a small workspace automatically, then opens Home with a chat box and today's note. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
-<p>You can continue without an agent. If you already keep notes in another folder, expand <strong>Workspace options</strong> during setup or open it later. Use <strong>OpenOrg → Settings… → Workspace</strong> to rename the corpus identity, reveal its folder, or switch locations.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="2-ask-something-or-write-todays-note">2) Ask something or write today's note</h1>
-<p>Home is deliberately familiar: type into the chat box to ask the connected agent a question, or type directly into today's note beside it. The note is ordinary text, and you can bring it into the conversation whenever it is useful context.</p>
-<p>Try a concrete first request:</p>
-<blockquote>Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.</blockquote>
-</section>
-<section class="org2-headline level-1">
-<h1 id="3-capture-one-scheduled-commitment">3) Capture one scheduled commitment</h1>
-<p>Open <strong>Capture</strong>, keep <strong>Task</strong> selected, give the commitment a concrete title, and leave <strong>Scheduled</strong> enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.</p>
-<p>Open <strong>Agenda</strong> and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.</p>
-<p>You can also click <strong>New Note</strong> and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.</p>
-<p>Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Plan the launch
-
-The goal is to publish a clear announcement and onboarding guide.
-
-** TODO Draft the announcement
-SCHEDULED: &lt;2030-01-15 Tue&gt;
-
-** Decisions
-
-- Start with a small private beta.
-- Collect feedback after the first week.</code></pre>
-<p>Only a few conventions matter at first:</p>
-<ul>
-<li><p>A line beginning with <code>*</code> is a title; <code>**</code> is a section inside it.</p></li>
-<li><p><code>TODO</code> makes a heading actionable.</p></li>
-<li><p><code>SCHEDULED:</code> gives the task a date so it appears in Agenda.</p></li>
-<li><p>Ordinary paragraphs and lists are just text.</p></li>
-</ul>
-<p>You can use the app's controls for everyday work and open the readable source whenever you want it.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="4-use-today-and-agenda">4) Use Today and Agenda</h1>
-<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose <strong>Daily → Choose Date…</strong> in the sidebar or press <code>Cmd-Shift-7</code>; OpenOrg opens the existing note or creates it in the configured daily folder.</p>
-<p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="5-review-approvals-and-agent-work">5) Review approvals and agent work</h1>
+<h1 id="review-approvals-and-agent-work">Review approvals and agent work</h1>
 <p>For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.</p>
 <p>Open <strong>Agent Work</strong> for one queue across every configured runtime. Inspect what is blocked, answer clarifying questions, and review the run status, cited inputs, artifacts, and validation before you approve, revise, or reject consequential work.</p>
 <p>Finally, reveal the workspace in Finder and open the resulting <code>.org</code> file in another editor. The first useful loop ends with portable work you control.</p>

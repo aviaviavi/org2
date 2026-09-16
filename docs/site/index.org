@@ -1,9 +1,8 @@
-#+TITLE: OpenOrg
-#+SUBTITLE: Build your knowledge locally and put it to work.
+#+TITLE: A workspace for your life, work, and AI agents.
+#+SUBTITLE: Keep your notes, tasks, and projects in local plain-text files you own. Organize your day, develop ideas, and put your knowledge to work with the agents you choose.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <p>OpenOrg is a local-first workspace where your notes, decisions, commitments, and agent work become durable follow-through. Use the agent, model, or provider you choose while your knowledge stays in files you control.</p>
   <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
     <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="openorg-and-org2.html">How OpenOrg and Org2 fit <span aria-hidden="true">→</span></a>
@@ -171,7 +170,7 @@ The result is deliberately boring composability: inspectable files that can driv
 
 * Start here
 
-OpenOrg Alpha is for technical founders, operators, and knowledge workers who want agents working over files they own. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace.
+OpenOrg Alpha is for people who want notes, tasks, projects, and AI agents working from local files they own. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace.
 
 - [[file:getting-started.org][Getting started]]
 - [[file:openorg-and-org2.org][OpenOrg and Org2 architecture]]

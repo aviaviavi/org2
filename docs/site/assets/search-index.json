@@ -1,7 +1,7 @@
 [
-  {"title":"Home","url":"index.html","description":"Org2 as a local-first, plain-text context layer for people, organizations, and agents."},
+  {"title":"Home","url":"index.html","description":"A local-first workspace for your life, work, and AI agents, built around plain-text Org files you own."},
   {"title":"Features","url":"features.html","description":"Context records, planning, graph maintenance, agent workflows, data-backed reports, publishing, and editor support."},
-  {"title":"Getting started","url":"getting-started.html","description":"Start with the Mac app, create a local corpus, add notes and tasks, or use the VS Code and Emacs onramps."},
+  {"title":"Getting started","url":"getting-started.html","description":"Install OpenOrg, write today's note, capture a task, and see it in Agenda before exploring deeper agent workflows."},
   {"title":"Reference overview","url":"reference.html","description":"Entry point for the Org2 reference pages."},
   {"title":"Corpus flow","url":"corpus-flow.html","description":"Raw, notes, compiled, views, and publish zones for an Org2 workspace."},
   {"title":"Language reference","url":"language-reference.html","description":"Org2 syntax, TODOs, tags, planning, drawers, links, blocks, tables, and IDs."},

@@ -159,7 +159,7 @@ if (/\b(?:Codex|OpenClaw)\b/.test(homepage) || /\b(?:Codex|OpenClaw)\b/.test(fea
   fail("homepage and feature positioning must remain agent- and model-neutral");
 }
 if (
-  !homepage.includes("agent, model, or provider you choose")
+  !homepage.includes("agents you choose")
   || !features.includes("models and agent harnesses you already use")
   || !features.includes("Slack and Notion")
   || !features.includes("local, remote, hosted, or self-hosted destination")
@@ -170,12 +170,27 @@ if (
   fail("public onboarding must explain the provider-neutral agent boundary");
 }
 if (
-  !homepage.includes("#+TITLE: OpenOrg")
-  || !homepage.includes("Build your knowledge locally and put it to work.")
+  !homepage.includes("#+TITLE: A workspace for your life, work, and AI agents.")
+  || !homepage.includes("Org2 provides the independently specified compiler/runtime")
   || !productArchitecture.includes("A local-first workspace built on ordinary files and an open toolkit.")
   || !productArchitecture.includes("=@aviaviavi/org2=")
 ) {
   fail("product site must distinguish OpenOrg from the Org2 substrate");
+}
+const installStart = gettingStarted.indexOf("* 1) Install the Mac app");
+const noteStart = gettingStarted.indexOf("* 2) Write today's note");
+const captureStart = gettingStarted.indexOf("* 3) Capture one scheduled commitment");
+const agendaStart = gettingStarted.indexOf("* 4) Use Today and Agenda");
+const mentalModelStart = gettingStarted.indexOf("* When you're ready: the mental model");
+if (
+  installStart < 0
+  || noteStart < installStart
+  || captureStart < noteStart
+  || agendaStart < captureStart
+  || mentalModelStart < agendaStart
+  || !gettingStarted.includes("choose to continue without one")
+) {
+  fail("getting-started must foreground the no-agent-required first useful loop");
 }
 if (
   !gettingStarted.includes("* Know what leaves your Mac")

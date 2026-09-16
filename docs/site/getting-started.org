@@ -1,18 +1,78 @@
 #+TITLE: Getting started
-#+SUBTITLE: Learn where notes, agents, workflows, and schedules fit—then reach the first useful loop.
+#+SUBTITLE: Install OpenOrg, write today's note, capture a task, and see it in Agenda.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
-  <p>Start with the OpenOrg Mac app: connect an agent you already use, ask a question from Home, and keep today's note beside the conversation. You do not need Emacs, prior Org mode experience, or an OpenOrg account.</p>
+  <p>Start with a small loop: open the app, write in today's note, capture one task, and see it appear in Agenda. You do not need to connect an agent, know Org mode, or create an OpenOrg account.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Connect a runtime.</strong><span>Use a supported agent harness you already have, whether it runs locally or remotely.</span></div>
-    <div><strong>Start from Home.</strong><span>A familiar chat box and today's note are ready immediately.</span></div>
-    <div><strong>Review what needs you.</strong><span>Approvals, questions, and finished work return to one inspectable queue.</span></div>
+    <div><strong>Install OpenOrg.</strong><span>Download the Mac app and open the starter workspace.</span></div>
+    <div><strong>Write today's note.</strong><span>Capture an idea in an ordinary local plain-text file.</span></div>
+    <div><strong>See one task in Agenda.</strong><span>Add a scheduled commitment and find it without copying it anywhere else.</span></div>
   </div>
 </section>
 #+END_EXPORT
 
-* First, the mental model
+* 1) Install the Mac app
+
+1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
+2. Open the disk image and drag =OpenOrg.app= into =Applications=.
+3. Open the app. Connect an agent you already use, or choose to continue without one.
+4. Choose *Continue to Home*.
+
+OpenOrg creates a small workspace automatically, then opens Home with today's note and an optional chat box. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
+
+If you already keep notes in another folder, expand *Workspace options* during setup or open it later. Use *OpenOrg → Settings… → Workspace* to rename the corpus identity, reveal its folder, or switch locations.
+
+* 2) Write today's note
+
+Type a thought, decision, or rough plan directly into today's note on Home. The note is an ordinary local file, and you can bring it into an agent conversation later if useful.
+
+If you connected an agent, you can also try:
+
+#+begin_quote
+Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.
+#+end_quote
+
+* 3) Capture one scheduled commitment
+
+Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
+
+Open *Agenda* and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.
+
+You can also click *New Note* and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
+
+Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:
+
+#+begin_src org
+* Plan the launch
+
+The goal is to publish a clear announcement and onboarding guide.
+
+** TODO Draft the announcement
+SCHEDULED: <2030-01-15 Tue>
+
+** Decisions
+
+- Start with a small private beta.
+- Collect feedback after the first week.
+#+end_src
+
+Only a few conventions matter at first:
+
+- A line beginning with =*= is a title; =**= is a section inside it.
+- =TODO= makes a heading actionable.
+- =SCHEDULED:= gives the task a date so it appears in Agenda.
+- Ordinary paragraphs and lists are just text.
+
+You can use the app's controls for everyday work and open the readable source whenever you want it.
+
+* 4) Use Today and Agenda
+
+Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; OpenOrg opens the existing note or creates it in the configured daily folder.
+
+Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
+
+* When you're ready: the mental model
 
 OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus*—the ordinary folder of =.org=, =.org2=, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
 
@@ -88,69 +148,7 @@ Help me set up a weekday startup review. First inspect this corpus and the insta
 
 This uses chat as the setup conversation while making the corpus records—not the agent's memory—the lasting configuration.
 
-* 1) Install the Mac app and connect an agent
-
-OpenOrg is the recommended starting point. It gives you a simple Home view first, with deeper notes, planning, search, meetings, and Agent Work available when you need them.
-
-1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
-2. Open the disk image and drag =OpenOrg.app= into =Applications=.
-3. Open the app and choose an agent already installed on your Mac.
-4. Sign in if needed, then choose *Continue to Home*.
-
-OpenOrg creates a small workspace automatically, then opens Home with a chat box and today's note. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
-
-You can continue without an agent. If you already keep notes in another folder, expand *Workspace options* during setup or open it later. Use *OpenOrg → Settings… → Workspace* to rename the corpus identity, reveal its folder, or switch locations.
-
-* 2) Ask something or write today's note
-
-Home is deliberately familiar: type into the chat box to ask the connected agent a question, or type directly into today's note beside it. The note is ordinary text, and you can bring it into the conversation whenever it is useful context.
-
-Try a concrete first request:
-
-#+begin_quote
-Help me turn today's rough notes into a short plan. Show me the proposed structure before changing any files.
-#+end_quote
-
-* 3) Capture one scheduled commitment
-
-Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
-
-Open *Agenda* and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.
-
-You can also click *New Note* and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
-
-Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:
-
-#+begin_src org
-* Plan the launch
-
-The goal is to publish a clear announcement and onboarding guide.
-
-** TODO Draft the announcement
-SCHEDULED: <2030-01-15 Tue>
-
-** Decisions
-
-- Start with a small private beta.
-- Collect feedback after the first week.
-#+end_src
-
-Only a few conventions matter at first:
-
-- A line beginning with =*= is a title; =**= is a section inside it.
-- =TODO= makes a heading actionable.
-- =SCHEDULED:= gives the task a date so it appears in Agenda.
-- Ordinary paragraphs and lists are just text.
-
-You can use the app's controls for everyday work and open the readable source whenever you want it.
-
-* 4) Use Today and Agenda
-
-Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; OpenOrg opens the existing note or creates it in the configured daily folder.
-
-Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
-
-* 5) Review approvals and agent work
+* Review approvals and agent work
 
 For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
 
