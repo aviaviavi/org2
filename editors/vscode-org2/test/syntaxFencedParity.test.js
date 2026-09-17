@@ -42,6 +42,10 @@ async function createRegistry() {
       if (scopeName === 'source.python') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
       if (scopeName === 'source.shell') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
       if (scopeName === 'source.yaml') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
+      // Generic fallback so any embedded `source.*` grammar referenced by org2.tmLanguage.json
+      // resolves to a minimal-but-real grammar instead of null, letting tests assert that an
+      // `include` actually fired (as opposed to silently no-opping).
+      if (scopeName.startsWith('source.')) return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
       return null;
     }
   });
@@ -165,4 +169,90 @@ test('table formula lines receive a dedicated expression scope', async () => {
   const result = grammar.tokenizeLine(line, null);
   assert(result.tokens.some((token) => token.scopes.includes('keyword.control.table-formula.org2')));
   assert(result.tokens.some((token) => token.scopes.includes('meta.expression.table-formula.org2')));
+});
+
+test('#+begin_src blocks embed their language grammar for every declared language, not just the ones listed before the generic fallback rule', async () => {
+  // Regression test: `blocks.patterns` is a flat, order-sensitive list. A generic
+  // `#+begin_src <word>` catch-all rule (meta.block.src.org2) used to sit ahead of the
+  // haskell/java/c/cpp/csharp/ruby/php/kotlin/swift/scala/lua rules in that array. Since
+  // TextMate breaks same-position ties by array order, the catch-all always won for those
+  // eleven languages and their `include: source.<lang>` never fired, so their #+begin_src
+  // bodies stayed unhighlighted plain text while every other language worked fine.
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+
+  const languages = [
+    ['haskell', 'meta.block.src.haskell.org2'],
+    ['java', 'meta.block.src.java.org2'],
+    ['c', 'meta.block.src.c.org2'],
+    ['cpp', 'meta.block.src.cpp.org2'],
+    ['csharp', 'meta.block.src.csharp.org2', 'cs'], // embeds source.cs, not source.csharp
+    ['ruby', 'meta.block.src.ruby.org2'],
+    ['php', 'meta.block.src.php.org2'],
+    ['kotlin', 'meta.block.src.kotlin.org2'],
+    ['swift', 'meta.block.src.swift.org2'],
+    ['scala', 'meta.block.src.scala.org2'],
+    ['lua', 'meta.block.src.lua.org2'],
+  ];
+
+  for (const [lang, expectedBlockScope, embeddedScope] of languages) {
+    const embedLang = embeddedScope || lang;
+    let ruleStack = null;
+    const beginLine = `#+begin_src ${lang}`;
+    let result = grammar.tokenizeLine(beginLine, ruleStack);
+    ruleStack = result.ruleStack;
+    assert(
+      result.tokens.some((t) => t.scopes.includes(expectedBlockScope)),
+      `expected ${expectedBlockScope} on "${beginLine}", got ${JSON.stringify(result.tokens.map((t) => t.scopes))}`
+    );
+
+    const bodyLine = 'placeholder_token';
+    result = grammar.tokenizeLine(bodyLine, ruleStack);
+    assert(
+      result.tokens.some((t) => t.scopes.includes(`source.${embedLang}.identifier`)),
+      `expected embedded source.${embedLang} grammar to tokenize the body of a "${lang}" #+begin_src block, got ${JSON.stringify(result.tokens.map((t) => t.scopes))}`
+    );
+  }
+});
+
+test('#+begin_src language aliases route to the right embedded grammar, including symbol-bearing aliases like c++', async () => {
+  // Regression test: the cpp rule ended its language alternation with `\b`, but the `c++`
+  // alias ends in a non-word character, so `\b` could not hold at end-of-line and the cpp
+  // rule never matched `#+begin_src c++`. The looser `c` rule (`(?:c)\b`, where the boundary
+  // between `c` and `+` *is* valid) then captured it, silently giving C++ blocks plain C
+  // highlighting. The fenced (```) variant was unaffected because it anchors with `\s*$`.
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+
+  const aliases = [
+    ['c', 'source.c'],
+    ['cpp', 'source.cpp'],
+    ['c++', 'source.cpp'],
+    ['cc', 'source.cpp'],
+    ['cxx', 'source.cpp'],
+    ['cs', 'source.cs'],
+    ['csharp', 'source.cs'],
+    ['hs', 'source.haskell'],
+    ['kt', 'source.kotlin'],
+    ['rb', 'source.ruby'],
+  ];
+
+  for (const [alias, expectedEmbed] of aliases) {
+    let result = grammar.tokenizeLine(`#+begin_src ${alias}`, null);
+    result = grammar.tokenizeLine('placeholder_token', result.ruleStack);
+    const scopes = result.tokens.map((t) => t.scopes).flat();
+    assert(
+      scopes.some((s) => s === `${expectedEmbed}.identifier`),
+      `expected "${alias}" to embed ${expectedEmbed}, got ${JSON.stringify(scopes)}`
+    );
+  }
+});
+
+test('#+begin_src cpp keeps embedding source.cpp when header arguments follow the language', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  let result = grammar.tokenizeLine('#+begin_src cpp :results output :exports both', null);
+  result = grammar.tokenizeLine('placeholder_token', result.ruleStack);
+  const scopes = result.tokens.map((t) => t.scopes).flat();
+  assert(scopes.some((s) => s === 'source.cpp.identifier'), JSON.stringify(scopes));
 });

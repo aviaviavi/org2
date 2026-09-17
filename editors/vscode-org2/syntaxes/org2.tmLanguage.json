@@ -1172,98 +1172,6 @@
           ]
         },
         {
-          "name": "meta.block.src.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+([A-Za-z0-9_\\-]+)\\b.*$",
-          "beginCaptures": {
-            "0": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "2": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "3": {
-              "name": "comment.line.number-sign.org2"
-            }
-          },
-          "end": "^(\\s*)(#\\+end_src)\\b.*$",
-          "endCaptures": {
-            "0": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "2": {
-              "name": "comment.line.number-sign.org2"
-            }
-          },
-          "patterns": [
-            {
-              "include": "#timestamps"
-            },
-            {
-              "include": "#emphasis"
-            },
-            {
-              "include": "#links"
-            },
-            {
-              "name": "text.plain.org2",
-              "match": ".+"
-            }
-          ]
-        },
-        {
-          "name": "meta.block.export.html.org2",
-          "begin": "^(\\s*)(#\\+[Bb][Ee][Gg][Ii][Nn]_[Ee][Xx][Pp][Oo][Rr][Tt])\\s+([Hh][Tt][Mm][Ll])\\b.*$",
-          "beginCaptures": {
-            "2": {
-              "name": "keyword.other.block.begin.org2"
-            },
-            "3": {
-              "name": "entity.name.tag.language.org2"
-            }
-          },
-          "end": "^(\\s*)(#\\+[Ee][Nn][Dd]_[Ee][Xx][Pp][Oo][Rr][Tt])\\b.*$",
-          "endCaptures": {
-            "2": {
-              "name": "keyword.other.block.end.org2"
-            }
-          },
-          "patterns": [
-            {
-              "include": "text.html.basic"
-            }
-          ]
-        },
-        {
-          "name": "meta.block.org2",
-          "begin": "^(?:\\s*)#\\+begin_[A-Za-z0-9_\\-]+.*$",
-          "beginCaptures": {
-            "0": {
-              "name": "keyword.other.block.begin.org2"
-            }
-          },
-          "end": "^(?:\\s*)#\\+end_[A-Za-z0-9_\\-]+.*$",
-          "endCaptures": {
-            "0": {
-              "name": "keyword.other.block.end.org2"
-            }
-          },
-          "patterns": [
-            {
-              "include": "#timestamps"
-            },
-            {
-              "include": "#emphasis"
-            },
-            {
-              "include": "#links"
-            },
-            {
-              "name": "text.plain.org2",
-              "match": ".+"
-            }
-          ]
-        },
-        {
           "name": "meta.block.src.haskell.org2",
           "begin": "^(\\s*)(#\\+begin_src)\\s+((?:hs|haskell))\\b.*$",
           "beginCaptures": {
@@ -1322,6 +1230,35 @@
           ]
         },
         {
+          "name": "meta.block.src.cpp.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:cpp|c\\+\\+|cc|cxx))(?=\\s|$).*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.cpp"
+            }
+          ]
+        },
+        {
           "name": "meta.block.src.c.org2",
           "begin": "^(\\s*)(#\\+begin_src)\\s+((?:c))\\b.*$",
           "beginCaptures": {
@@ -1347,35 +1284,6 @@
           "patterns": [
             {
               "include": "source.c"
-            }
-          ]
-        },
-        {
-          "name": "meta.block.src.cpp.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:cpp|c\\+\\+|cc|cxx))\\b.*$",
-          "beginCaptures": {
-            "0": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "2": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "3": {
-              "name": "comment.line.number-sign.org2"
-            }
-          },
-          "end": "^(\\s*)(#\\+end_src)\\b.*$",
-          "endCaptures": {
-            "0": {
-              "name": "comment.line.number-sign.org2"
-            },
-            "2": {
-              "name": "comment.line.number-sign.org2"
-            }
-          },
-          "patterns": [
-            {
-              "include": "source.cpp"
             }
           ]
         },
@@ -1579,6 +1487,98 @@
           "patterns": [
             {
               "include": "source.lua"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+([A-Za-z0-9_\\-]+)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.export.html.org2",
+          "begin": "^(\\s*)(#\\+[Bb][Ee][Gg][Ii][Nn]_[Ee][Xx][Pp][Oo][Rr][Tt])\\s+([Hh][Tt][Mm][Ll])\\b.*$",
+          "beginCaptures": {
+            "2": {
+              "name": "keyword.other.block.begin.org2"
+            },
+            "3": {
+              "name": "entity.name.tag.language.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+[Ee][Nn][Dd]_[Ee][Xx][Pp][Oo][Rr][Tt])\\b.*$",
+          "endCaptures": {
+            "2": {
+              "name": "keyword.other.block.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "text.html.basic"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.org2",
+          "begin": "^(?:\\s*)#\\+begin_[A-Za-z0-9_\\-]+.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.other.block.begin.org2"
+            }
+          },
+          "end": "^(?:\\s*)#\\+end_[A-Za-z0-9_\\-]+.*$",
+          "endCaptures": {
+            "0": {
+              "name": "keyword.other.block.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
             }
           ]
         }
