@@ -4,6 +4,25 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.2 - 2026-09-17
+
+OpenOrg 0.8.2 makes the local workspace faster, more expressive, and easier to operate across Mac, iPhone, and always-on hosts.
+
+- Documents and AI chats now open dramatically faster through persistent rendering, concurrent parsing, incremental transcript loading, and in-place updates for rendered checkboxes.
+- Projects now organize notes and active chats together. iPhone project views can create chats and manage project membership, while settled chats stay out of the active project list.
+- New local knowledge tools include editable property views, JSON Canvas workspaces, graph neighborhoods, unlinked mentions, live note and heading embeds, and browser article or selection capture.
+- Mac tabs keep their own navigation, filters, selections, editor drafts, cursor positions, view modes, and scroll state. Review navigation and approval handling are more reliable, including an explicit Repair & Retry path for safe run-source reconciliation.
+- Automations can pin their destination, model, and reasoning effort; scheduling uses populated model pickers and preserves those choices independently of interactive chats.
+- iPhone adds an editable phone-call transcript import flow using Apple transcripts or saved audio, plus more capable project-aware chat navigation.
+- PDF previews refresh after file changes, screenshot attachments render inline again, and chat reasoning updates no longer flicker between plain and rich rendering.
+- Local Mac builds, workspace refreshes, document rendering, and chat loading received substantial performance improvements.
+
+The Mac release includes signed and notarized installers for Apple Silicon and Intel. macOS 14 or newer is required.
+
+The coordinated iOS release is OpenOrg 0.8.2 build 35 for TestFlight.
+
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.1...0.8.2
+
 ## 0.8.1 - 2026-09-10
 
 OpenOrg 0.8.1 improves chat reliability, document export, and everyday workspace controls.
