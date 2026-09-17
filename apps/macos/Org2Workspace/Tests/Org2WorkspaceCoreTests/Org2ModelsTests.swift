@@ -5334,6 +5334,50 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testSystemAudioCaptureStateCanRecoverWithoutLosingInterruption() {
+    var state = MeetingSystemAudioCaptureState()
+    state.didStart()
+    state.didStopUnexpectedly("ScreenCaptureKit lost the audio stream.")
+
+    XCTAssertTrue(state.needsRecovery)
+    XCTAssertTrue(state.didRecover(afterInterruptionCount: state.interruptionCount))
+
+    XCTAssertTrue(state.isRunning)
+    XCTAssertFalse(state.needsRecovery)
+    XCTAssertEqual(
+      state.resolvedFailure(explicitStopFailure: nil),
+      "ScreenCaptureKit lost the audio stream."
+    )
+
+    state.didStopNormally()
+    XCTAssertFalse(state.needsRecovery)
+  }
+
+  func testSystemAudioCaptureStateRejectsAReplacementThatAlsoFailed() {
+    var state = MeetingSystemAudioCaptureState()
+    state.didStart()
+    state.didStopUnexpectedly("The original stream stopped.")
+    let interruptionCountBeforeReplacement = state.interruptionCount
+
+    state.didStopUnexpectedly("The replacement stream stopped during startup.")
+
+    XCTAssertFalse(state.didRecover(afterInterruptionCount: interruptionCountBeforeReplacement))
+    XCTAssertTrue(state.needsRecovery)
+    XCTAssertEqual(state.firstFailureDescription, "The original stream stopped.")
+  }
+
+  func testSystemAudioStartRetrySkipsPermissionFailures() {
+    XCTAssertFalse(WorkspaceStore.shouldRetryMeetingSystemAudioStart(
+      after: "The user declined TCCs for application, window, display capture"
+    ))
+    XCTAssertFalse(WorkspaceStore.shouldRetryMeetingSystemAudioStart(
+      after: "Screen capture permission is not authorized"
+    ))
+    XCTAssertTrue(WorkspaceStore.shouldRetryMeetingSystemAudioStart(
+      after: "ScreenCaptureKit connection was interrupted"
+    ))
+  }
+
   func testMeetingTranscriptRetainsCaptureFailureAlongsidePartialSystemAudio() {
     let transcript = MeetingTranscriptResult.combined(
       microphone: MeetingTranscriptResult(

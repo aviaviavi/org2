@@ -3187,7 +3187,14 @@ public final class WorkspaceStore {
   private var activeOpenClawVoiceNoteURL: URL?
   private var activeAIChatDictationOrigin: AIChatDictationOrigin?
   private var meetingMeterTask: Task<Void, Never>?
+  private var meetingSystemAudioRecoveryTask: Task<Void, Never>?
+  private var meetingSystemAudioRecoverySuppressed = false
   nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
+  nonisolated static let meetingSystemAudioRecoveryDelaysNanoseconds: [UInt64] = [
+    0,
+    350_000_000,
+    1_000_000_000
+  ]
   nonisolated static let meetingMeterPublishThreshold = 0.03
   nonisolated static let meetingTranscriptionProgressPublishIntervalNanoseconds: UInt64 = 500_000_000
   private var meetingTranscriptionProgressTask: Task<Void, Never>?
@@ -10265,10 +10272,16 @@ public final class WorkspaceStore {
       // fully started. Exclude that path immediately so a concurrent meeting
       // refresh cannot mistake the live file for an interrupted recording.
       meetingRecordingRecoveryExclusionPaths = paths
+      cancelMeetingSystemAudioRecovery()
+      meetingSystemAudioRecoverySuppressed = false
+      // A prior interrupted stop must never poison the next meeting. Explicitly
+      // tear down any leftover ScreenCaptureKit stream and writer before
+      // starting the microphone or creating the new system-audio artifact.
+      await meetingSystemAudioRecorder.discardRecording()
       try await meetingRecorder.startRecording(to: paths.audioURL)
       let systemAudioStartError: String?
       do {
-        try await meetingSystemAudioRecorder.startRecording(to: paths.systemAudioURL)
+        try await startMeetingSystemAudioRecordingWithRetry(to: paths.systemAudioURL)
         isCapturingSystemAudio = true
         meetingSystemAudioStatusText = "System audio recording"
         systemAudioStartError = nil
@@ -10310,6 +10323,7 @@ public final class WorkspaceStore {
       return
     }
     let context = captureAIChatCorpusContext()
+    cancelMeetingSystemAudioRecovery()
 
     do {
       let duration = try meetingRecorder.stopRecording()
@@ -10382,9 +10396,12 @@ public final class WorkspaceStore {
     } catch {
       isRecordingMeeting = false
       isMeetingRecordingPaused = false
-      if isCapturingSystemAudio {
-        _ = try? await meetingSystemAudioRecorder.stopRecording()
-      }
+      // Recorder state is authoritative here. The UI flag is cleared as soon
+      // as an interruption is detected, so conditioning cleanup on that flag
+      // can strand a failed SCStream until the app is relaunched.
+      await meetingSystemAudioRecorder.discardRecording()
+      self.activeMeetingRecording = nil
+      meetingRecordingRecoveryExclusionPaths = nil
       isCapturingSystemAudio = false
       stopMeetingInputMetering()
       guard isCurrentAIChatCorpusContext(context) else { return }
@@ -10402,6 +10419,7 @@ public final class WorkspaceStore {
       return
     }
 
+    cancelMeetingSystemAudioRecovery()
     do {
       try meetingRecorder.pauseRecording()
       if activeMeetingRecording.capturesSystemAudio {
@@ -10425,10 +10443,15 @@ public final class WorkspaceStore {
       return
     }
 
+    meetingSystemAudioRecoverySuppressed = false
     do {
       try meetingRecorder.resumeRecording()
       if activeMeetingRecording.capturesSystemAudio {
         try await meetingSystemAudioRecorder.resumeRecording()
+        isCapturingSystemAudio = true
+        meetingSystemAudioStatusText = meetingSystemAudioRecorder.captureErrorDescription == nil
+          ? "System audio recording"
+          : "System audio recording (recovered)"
       }
       isMeetingRecordingPaused = false
       startMeetingInputMetering()
@@ -41929,12 +41952,100 @@ public final class WorkspaceStore {
   private func updateMeetingInputMeter(force: Bool = false) {
     let snapshot = meetingRecorder.inputMeterSnapshot
     let systemSnapshot = meetingSystemAudioRecorder.inputMeterSnapshot
-    if isCapturingSystemAudio,
+    if meetingSystemAudioRecorder.needsRecovery,
        let captureError = meetingSystemAudioRecorder.captureErrorDescription {
       isCapturingSystemAudio = false
-      meetingSystemAudioStatusText = "System audio stopped: \(captureError)"
+      scheduleMeetingSystemAudioRecovery(after: captureError)
     }
     publishMeetingMeterLevels(microphone: snapshot, systemAudio: systemSnapshot, force: force)
+  }
+
+  private func startMeetingSystemAudioRecordingWithRetry(to audioURL: URL) async throws {
+    do {
+      try await meetingSystemAudioRecorder.startRecording(to: audioURL)
+    } catch {
+      let initialFailure = error.localizedDescription
+      guard Self.shouldRetryMeetingSystemAudioStart(after: initialFailure) else {
+        throw error
+      }
+      await meetingSystemAudioRecorder.discardRecording()
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      do {
+        try await meetingSystemAudioRecorder.startRecording(to: audioURL)
+      } catch {
+        throw MeetingSystemAudioRecorderError.startFailed(
+          "\(error.localizedDescription) Retried after: \(initialFailure)"
+        )
+      }
+    }
+  }
+
+  nonisolated static func shouldRetryMeetingSystemAudioStart(after description: String) -> Bool {
+    let normalized = description.lowercased()
+    let terminalFragments = [
+      "declined tcc",
+      "permission",
+      "not authorized",
+      "not permitted",
+      "no display is available"
+    ]
+    return !terminalFragments.contains(where: normalized.contains)
+  }
+
+  private func scheduleMeetingSystemAudioRecovery(after captureError: String) {
+    guard meetingSystemAudioRecoveryTask == nil,
+          !meetingSystemAudioRecoverySuppressed,
+          isRecordingMeeting,
+          !isMeetingRecordingPaused,
+          let recordingPath = activeMeetingRecording?.paths.systemAudioURL.path
+    else {
+      return
+    }
+
+    meetingSystemAudioStatusText = "System audio interrupted; reconnecting..."
+    meetingSystemAudioRecoveryTask = Task { [weak self] in
+      guard let self else { return }
+      var lastFailure = captureError
+
+      for delay in Self.meetingSystemAudioRecoveryDelaysNanoseconds {
+        if delay > 0 {
+          do {
+            try await Task.sleep(nanoseconds: delay)
+          } catch {
+            self.meetingSystemAudioRecoveryTask = nil
+            return
+          }
+        }
+        guard !Task.isCancelled,
+              self.isRecordingMeeting,
+              !self.isMeetingRecordingPaused,
+              self.activeMeetingRecording?.paths.systemAudioURL.path == recordingPath
+        else {
+          self.meetingSystemAudioRecoveryTask = nil
+          return
+        }
+
+        do {
+          if try await self.meetingSystemAudioRecorder.recoverRecording() {
+            self.isCapturingSystemAudio = true
+            self.meetingSystemAudioStatusText = "System audio recording (recovered)"
+            self.meetingSystemAudioRecoveryTask = nil
+            return
+          }
+        } catch {
+          lastFailure = error.localizedDescription
+        }
+      }
+
+      self.meetingSystemAudioRecoverySuppressed = true
+      self.meetingSystemAudioStatusText = "System audio stopped: \(lastFailure)"
+      self.meetingSystemAudioRecoveryTask = nil
+    }
+  }
+
+  private func cancelMeetingSystemAudioRecovery() {
+    meetingSystemAudioRecoveryTask?.cancel()
+    meetingSystemAudioRecoveryTask = nil
   }
 
   nonisolated static func fileHasContent(_ url: URL) -> Bool {

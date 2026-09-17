@@ -135,10 +135,14 @@ public struct MeetingInputMeterSnapshot: Equatable, Sendable {
 struct MeetingSystemAudioCaptureState: Equatable, Sendable {
   private(set) var isRunning = false
   private(set) var firstFailureDescription: String?
+  private(set) var interruptionCount = 0
+  private(set) var needsRecovery = false
 
   mutating func reset() {
     isRunning = false
     firstFailureDescription = nil
+    interruptionCount = 0
+    needsRecovery = false
   }
 
   mutating func didStart() {
@@ -146,14 +150,27 @@ struct MeetingSystemAudioCaptureState: Equatable, Sendable {
     // completion handler. Do not revive a stream that has already failed.
     guard firstFailureDescription == nil else { return }
     isRunning = true
+    needsRecovery = false
+  }
+
+  mutating func didRecover(afterInterruptionCount expectedInterruptionCount: Int) -> Bool {
+    // Retain the interruption so the final meeting artifact can disclose a
+    // possible gap, while allowing the replacement stream to remain active.
+    guard interruptionCount == expectedInterruptionCount else { return false }
+    isRunning = true
+    needsRecovery = false
+    return true
   }
 
   mutating func didStopNormally() {
     isRunning = false
+    needsRecovery = false
   }
 
   mutating func didStopUnexpectedly(_ description: String) {
     isRunning = false
+    interruptionCount += 1
+    needsRecovery = true
     if firstFailureDescription == nil {
       firstFailureDescription = description
     }
@@ -1400,6 +1417,10 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
     stateLock.withLock { captureState.firstFailureDescription }
   }
 
+  public var needsRecovery: Bool {
+    stateLock.withLock { captureState.needsRecovery }
+  }
+
   public func startRecording(to audioURL: URL) async throws {
     let alreadyRecording = stateLock.withLock { self.stream != nil }
     guard !alreadyRecording else { throw MeetingSystemAudioRecorderError.alreadyRecording }
@@ -1428,25 +1449,13 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
     }
     writer.add(writerInput)
 
-    let content = try await SCShareableContent.current
-    guard let display = content.displays.first else {
-      throw MeetingSystemAudioRecorderError.noDisplayAvailable
+    let stream: SCStream
+    do {
+      stream = try await makeStream()
+    } catch {
+      writer.cancelWriting()
+      throw error
     }
-
-    let configuration = SCStreamConfiguration()
-    configuration.width = 2
-    configuration.height = 2
-    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-    configuration.queueDepth = 3
-    configuration.showsCursor = false
-    configuration.capturesAudio = true
-    configuration.sampleRate = 48_000
-    configuration.channelCount = 2
-    configuration.excludesCurrentProcessAudio = true
-
-    let filter = SCContentFilter(display: display, excludingWindows: [])
-    let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-    try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
 
     stateLock.withLock {
       self.stream = stream
@@ -1502,6 +1511,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
         explicitStopFailure = error.localizedDescription
       }
     }
+    detachAudioOutput(from: stream)
     return try await finishWriting(
       writer: writer,
       writerInput: writerInput,
@@ -1527,20 +1537,85 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       (
         stream: stream,
         isCaptureRunning: captureState.isRunning,
-        captureErrorDescription: captureState.firstFailureDescription
+        needsRecovery: captureState.needsRecovery
       )
     }
     guard let stream = state.stream else { throw MeetingSystemAudioRecorderError.notRecording }
     guard !state.isCaptureRunning else { return }
-    if let captureErrorDescription = state.captureErrorDescription {
-      throw MeetingSystemAudioRecorderError.startFailed(
-        "The previous system audio stream stopped unexpectedly: \(captureErrorDescription)"
-      )
+    if state.needsRecovery {
+      guard try await recoverRecording() else {
+        throw MeetingSystemAudioRecorderError.startFailed(
+          "The interrupted system audio stream could not be recreated."
+        )
+      }
+      return
     }
     try await startCapture(stream)
     stateLock.withLock {
       captureState.didStart()
     }
+  }
+
+  @discardableResult
+  public func recoverRecording() async throws -> Bool {
+    let state = stateLock.withLock {
+      (
+        stream: stream,
+        writer: writer,
+        shouldRecover: captureState.needsRecovery,
+        interruptionCount: captureState.interruptionCount
+      )
+    }
+    guard let writer = state.writer else {
+      throw MeetingSystemAudioRecorderError.notRecording
+    }
+    guard state.shouldRecover else {
+      return false
+    }
+
+    if let previousStream = state.stream {
+      detachAudioOutput(from: previousStream)
+    }
+
+    let replacement = try await makeStream()
+    let installed = stateLock.withLock {
+      guard self.writer === writer, captureState.needsRecovery else { return false }
+      stream = replacement
+      return true
+    }
+    guard installed else {
+      detachAudioOutput(from: replacement)
+      return false
+    }
+
+    do {
+      try await startCapture(replacement)
+      let accepted = stateLock.withLock {
+        guard self.writer === writer, stream === replacement else { return false }
+        return captureState.didRecover(afterInterruptionCount: state.interruptionCount)
+      }
+      if !accepted {
+        try? await stopCapture(replacement)
+        detachAudioOutput(from: replacement)
+      }
+      return accepted
+    } catch {
+      detachAudioOutput(from: replacement)
+      throw error
+    }
+  }
+
+  public func discardRecording() async {
+    let state = stateLock.withLock {
+      (stream: stream, isCaptureRunning: captureState.isRunning)
+    }
+    if let stream = state.stream {
+      if state.isCaptureRunning {
+        try? await stopCapture(stream)
+      }
+      detachAudioOutput(from: stream)
+    }
+    resetState(cancelWriter: true)
   }
 
   public nonisolated func stream(
@@ -1615,6 +1690,36 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
         }
       }
     }
+  }
+
+  private func makeStream() async throws -> SCStream {
+    // Fetch a fresh content snapshot for every stream. Reusing a snapshot
+    // across display, sleep, or audio-device changes can leave ScreenCaptureKit
+    // tied to a capture graph that no longer produces audio.
+    let content = try await SCShareableContent.current
+    guard let display = content.displays.first else {
+      throw MeetingSystemAudioRecorderError.noDisplayAvailable
+    }
+
+    let configuration = SCStreamConfiguration()
+    configuration.width = 2
+    configuration.height = 2
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+    configuration.queueDepth = 3
+    configuration.showsCursor = false
+    configuration.capturesAudio = true
+    configuration.sampleRate = 48_000
+    configuration.channelCount = 2
+    configuration.excludesCurrentProcessAudio = true
+
+    let filter = SCContentFilter(display: display, excludingWindows: [])
+    let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+    try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+    return stream
+  }
+
+  private func detachAudioOutput(from stream: SCStream) {
+    try? stream.removeStreamOutput(self, type: .audio)
   }
 
   private func stopCapture(_ stream: SCStream) async throws {
@@ -1693,9 +1798,10 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
   }
 
   private func resetState(cancelWriter: Bool) {
-    let writer = stateLock.withLock {
+    let resources = stateLock.withLock {
       let writer = self.writer
-      stream = nil
+      let stream = self.stream
+      self.stream = nil
       self.writer = nil
       writerInput = nil
       firstPresentationTime = nil
@@ -1704,11 +1810,14 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       sampleCount = 0
       latestSnapshot = .silent
       captureState.reset()
-      return writer
+      return (stream: stream, writer: writer)
     }
 
+    if let stream = resources.stream {
+      detachAudioOutput(from: stream)
+    }
     if cancelWriter {
-      writer?.cancelWriting()
+      resources.writer?.cancelWriting()
     }
   }
 
