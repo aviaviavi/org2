@@ -514,7 +514,16 @@ struct OpenClawDeviceIdentity: Sendable {
       .joined()
   }
 
-  static func loadOrCreate() throws -> OpenClawDeviceIdentity {
+  static func loadOrCreate(fileURL: URL? = nil) throws -> OpenClawDeviceIdentity {
+    if let fileURL {
+      if let data = try readPrivateKey(fileURL: fileURL),
+         let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: data) {
+        return OpenClawDeviceIdentity(privateKey: key)
+      }
+      let identity = OpenClawDeviceIdentity(privateKey: Curve25519.Signing.PrivateKey())
+      try savePrivateKey(identity.privateKey.rawRepresentation, fileURL: fileURL)
+      return identity
+    }
     if let data = try readPrivateKey(account: account),
        let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: data) {
       return OpenClawDeviceIdentity(privateKey: key)
@@ -530,6 +539,25 @@ struct OpenClawDeviceIdentity: Sendable {
     let identity = OpenClawDeviceIdentity(privateKey: Curve25519.Signing.PrivateKey())
     try savePrivateKey(identity.privateKey.rawRepresentation, account: account)
     return identity
+  }
+
+  private static func readPrivateKey(fileURL: URL) throws -> Data? {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+    return try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+  }
+
+  private static func savePrivateKey(_ data: Data, fileURL: URL) throws {
+    let directory = fileURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(
+      at: directory,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700]
+    )
+    try data.write(to: fileURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: fileURL.path
+    )
   }
 
   func signature(for payload: String) throws -> String {
@@ -1545,7 +1573,9 @@ public actor OpenClawGatewayClient {
     scopes: [String] = ["operator.read", "operator.write"]
   ) async throws {
     let requestID = UUID().uuidString.lowercased()
-    let identity = try OpenClawDeviceIdentity.loadOrCreate()
+    let identity = try OpenClawDeviceIdentity.loadOrCreate(
+      fileURL: settings.deviceIdentityFileURL
+    )
     deviceID = identity.deviceID
     let signedAt = Int(Date().timeIntervalSince1970 * 1_000)
     let signatureToken = settings.bearerToken ?? ""

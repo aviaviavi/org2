@@ -70,7 +70,14 @@ struct OpenOrgServer {
       defaults.set("off", forKey: "Org2Workspace.aiChat.messageSound.v1")
       defaults.set(false, forKey: "Org2Workspace.openClawLocalEditsEnabled.v1")
       let cli = Org2CLI(repoRoot: URL(fileURLWithPath: config.repoRoot), nodePath: config.nodePath)
-      let store = WorkspaceStore(cli: cli, defaults: defaults, legacyDefaultsDomains: [])
+      let store = WorkspaceStore(
+        cli: cli,
+        defaults: defaults,
+        legacyDefaultsDomains: [],
+        openClawDeviceIdentityFileURL: stateDirectory.appendingPathComponent(
+          "openclaw-device-identity.key"
+        )
+      )
       // Headless hosts have a separate preferences domain from the desktop app.
       // Carry this policy in their machine-local configuration so iOS turns do
       // not silently fall back to the workspace-write default.

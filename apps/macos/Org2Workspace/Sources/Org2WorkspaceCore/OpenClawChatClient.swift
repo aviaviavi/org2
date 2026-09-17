@@ -6,18 +6,26 @@ public struct OpenClawGatewaySettings: Sendable {
   public let endpoint: URL
   public let bearerToken: String?
   public let chatCompletionsEnabled: Bool?
+  public let deviceIdentityFileURL: URL?
 
-  public init(endpoint: URL, bearerToken: String?, chatCompletionsEnabled: Bool?) {
+  public init(
+    endpoint: URL,
+    bearerToken: String?,
+    chatCompletionsEnabled: Bool?,
+    deviceIdentityFileURL: URL? = nil
+  ) {
     self.endpoint = endpoint
     self.bearerToken = bearerToken
     self.chatCompletionsEnabled = chatCompletionsEnabled
+    self.deviceIdentityFileURL = deviceIdentityFileURL
   }
 
   public static func resolve(
     environment: [String: String] = ProcessInfo.processInfo.environment,
     configURL: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".clawdbot/clawdbot.json"),
     userEndpoint: String? = nil,
-    userBearerToken: String? = nil
+    userBearerToken: String? = nil,
+    deviceIdentityFileURL: URL? = nil
   ) -> OpenClawGatewaySettings {
     let config = ClawdbotConfig.load(from: configURL)
     let endpoint = endpointURL(environment: environment, config: config, userEndpoint: userEndpoint)
@@ -28,7 +36,8 @@ public struct OpenClawGatewaySettings: Sendable {
     return OpenClawGatewaySettings(
       endpoint: endpoint,
       bearerToken: bearerToken,
-      chatCompletionsEnabled: config?.gateway?.http?.endpoints?.chatCompletions?.enabled
+      chatCompletionsEnabled: config?.gateway?.http?.endpoints?.chatCompletions?.enabled,
+      deviceIdentityFileURL: deviceIdentityFileURL
     )
   }
 

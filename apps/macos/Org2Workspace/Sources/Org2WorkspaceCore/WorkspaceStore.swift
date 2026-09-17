@@ -3047,6 +3047,7 @@ public final class WorkspaceStore {
   private let openClawRecoveryHandler: (@Sendable (OpenClawPendingTurn, String) async throws -> String)?
   private let codexSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)?
   private let claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)?
+  private let openClawDeviceIdentityFileURL: URL?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var isApplyingOpenClawThreadMessages = false
@@ -3553,7 +3554,8 @@ public final class WorkspaceStore {
     claudeSendHandlerForTesting: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> ClaudeCodeTurnResult)? = nil,
     legacyDefaultsDomains: [String]? = nil,
     automaticStarterCorpusURL: URL? = nil,
-    localDocumentPublicationHost: LocalDocumentPublicationHost? = nil
+    localDocumentPublicationHost: LocalDocumentPublicationHost? = nil,
+    openClawDeviceIdentityFileURL: URL? = nil
   ) {
     let initialWorkspaceTab = WorkspaceTab(
       title: WorkspaceSurface.home.title,
@@ -3581,6 +3583,7 @@ public final class WorkspaceStore {
     self.openClawRecoveryHandler = openClawRecoveryHandler
     self.codexSendHandlerForTesting = codexSendHandlerForTesting
     self.claudeSendHandlerForTesting = claudeSendHandlerForTesting
+    self.openClawDeviceIdentityFileURL = openClawDeviceIdentityFileURL
     self.cli = cli
       ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
       ?? Org2CLI(repoRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
@@ -37528,7 +37531,8 @@ public final class WorkspaceStore {
 
     return OpenClawGatewaySettings.resolve(
       userEndpoint: openClawEndpointText,
-      userBearerToken: openClawBearerToken
+      userBearerToken: openClawBearerToken,
+      deviceIdentityFileURL: openClawDeviceIdentityFileURL
     )
   }
 
@@ -37550,7 +37554,8 @@ public final class WorkspaceStore {
       : nil
     return OpenClawGatewaySettings.resolve(
       userEndpoint: destination.endpoint,
-      userBearerToken: token
+      userBearerToken: token,
+      deviceIdentityFileURL: openClawDeviceIdentityFileURL
     )
   }
 

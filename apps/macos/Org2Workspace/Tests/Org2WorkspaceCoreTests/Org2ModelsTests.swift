@@ -2098,6 +2098,45 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testOpenClawDeviceIdentityCanUsePrivateHeadlessFile() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-headless-identity-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let identityURL = root.appendingPathComponent("openclaw-device-identity.key")
+
+    let first = try OpenClawDeviceIdentity.loadOrCreate(fileURL: identityURL)
+    let second = try OpenClawDeviceIdentity.loadOrCreate(fileURL: identityURL)
+
+    XCTAssertEqual(first.deviceID, second.deviceID)
+    XCTAssertEqual(try Data(contentsOf: identityURL).count, 32)
+    let attributes = try FileManager.default.attributesOfItem(atPath: identityURL.path)
+    XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+  }
+
+  func testOpenClawGatewaySettingsPreserveHeadlessIdentityFile() {
+    let identityURL = URL(fileURLWithPath: "/tmp/openorg-server-identity.key")
+    let settings = OpenClawGatewaySettings.resolve(
+      environment: [:],
+      configURL: URL(fileURLWithPath: "/tmp/missing-openclaw-config.json"),
+      deviceIdentityFileURL: identityURL
+    )
+
+    XCTAssertEqual(settings.deviceIdentityFileURL, identityURL)
+  }
+
+  func testLiveOpenClawGatewayWithHeadlessIdentityWhenRequested() async throws {
+    guard let rawIdentityURL = ProcessInfo.processInfo.environment["OPENORG_TEST_HEADLESS_IDENTITY_FILE"] else {
+      throw XCTSkip("Set OPENORG_TEST_HEADLESS_IDENTITY_FILE to run the live Gateway check.")
+    }
+    let settings = OpenClawGatewaySettings.resolve(
+      deviceIdentityFileURL: URL(fileURLWithPath: rawIdentityURL)
+    )
+
+    let models = try await OpenClawGatewayClient(settings: settings).listModels()
+
+    XCTAssertFalse(models.isEmpty)
+  }
+
   func testOpenClawGatewaySettingsNormalizeBearerTokenInputs() throws {
     let missingConfig = URL(fileURLWithPath: "/tmp/missing-clawdbot-\(UUID().uuidString).json")
     let userSettings = OpenClawGatewaySettings.resolve(
