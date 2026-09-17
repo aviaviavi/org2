@@ -1,4 +1,5 @@
 import type { Node } from "./ast.js";
+import { extractOwnedCheckboxIssues, type CheckboxProgressIssue } from "./checkboxProgress.js";
 import { isLineInOpaqueElement, parseOrgToCanonicalAst } from "./parser.js";
 
 export type CheckboxState = "unchecked" | "indeterminate" | "checked";
@@ -55,4 +56,37 @@ export function updateCheckboxInText(text: string, line: number, state?: Checkbo
     text: changed ? text.slice(0, offset) + checkboxMarkers[newState] + text.slice(offset + 1) : text,
     line, column, oldState, newState, changed,
   };
+}
+
+/** Recalculate stale progress cookies while preserving all unrelated source bytes. */
+export function updateCheckboxProgressCookiesInText(text: string) {
+  const issues = extractOwnedCheckboxIssues(text.split(/\r\n|\n|\r/));
+  if (issues.length === 0) return { text, changed: false, edits: [] as CheckboxProgressIssue[] };
+
+  const issuesByLine = new Map<number, CheckboxProgressIssue[]>();
+  for (const issue of issues) issuesByLine.set(issue.line, [...(issuesByLine.get(issue.line) || []), issue]);
+
+  const lineBounds: Array<{ start: number; end: number }> = [];
+  let start = 0;
+  for (const ending of text.matchAll(/\r\n|\n|\r/g)) {
+    lineBounds.push({ start, end: ending.index! });
+    start = ending.index! + ending[0].length;
+  }
+  lineBounds.push({ start, end: text.length });
+
+  const replacements: Array<{ start: number; end: number; text: string }> = [];
+  for (const [line, lineIssues] of issuesByLine) {
+    const bounds = lineBounds[line - 1];
+    if (!bounds) throw new Error(`Progress cookie line ${line} is outside the source document.`);
+    const source = text.slice(bounds.start, bounds.end);
+    let updated = source;
+    for (const issue of lineIssues) updated = updated.split(issue.raw).join(issue.expectedRaw);
+    if (updated !== source) replacements.push({ ...bounds, text: updated });
+  }
+
+  let updatedText = text;
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+    updatedText = updatedText.slice(0, replacement.start) + replacement.text + updatedText.slice(replacement.end);
+  }
+  return { text: updatedText, changed: updatedText !== text, edits: issues };
 }

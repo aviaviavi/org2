@@ -17,6 +17,7 @@ assert.equal(first.indexState.parsedFiles, 2);
 assert.equal(first.indexState.reusedFiles, 0);
 assert.equal(first.stats.nodes, full.stats.nodes);
 assert.deepEqual(first.nodes.map((n) => n.key), full.nodes.map((n) => n.key));
+assert.equal(JSON.parse(fs.readFileSync(cache, 'utf8')).schemaVersion, 'org2-incremental-corpus-cache/v6');
 assert.ok(first.index.ids['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'].length >= 1);
 assert.ok(first.index.tags.work.length >= 1);
 assert.ok(first.index.dates['2026-05-20'].length >= 1);

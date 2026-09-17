@@ -51,7 +51,7 @@ import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { renderPresentationToBeamer } from "./presentation.js";
 import { compileBeamerPdf } from "./beamerCompile.js";
-import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
+import { compileCorpus, compileCorpusIncremental, extractOwnedCheckboxIssues, renderCompiledCorpus } from "./corpusCompile.js";
 import { queryNodeActions } from "./nodeActions.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, isStaleOpenAgentTodo, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
@@ -4245,16 +4245,14 @@ function agendaHabitStreak(closedDates: string[], currentDate: string): number {
 
 
 function appendCheckboxProgressLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
-  const lines = String(raw || "").replace(/\r\n/g, "\n").split("\n");
-  const progress = extractCheckboxProgress(lines, 0, lines.length);
-  for (const cookie of progress.cookies) {
-    if (!cookie.stale) continue;
+  const lines = String(raw || "").split(/\r\n|\n|\r/);
+  for (const cookie of extractOwnedCheckboxIssues(lines)) {
     issues.push({
       severity: "warning",
       rule: "checkbox-progress-cookie-stale",
       file: filePath,
       line: cookie.line,
-      message: `Progress cookie ${cookie.raw} is stale; expected ${cookie.expectedRaw} for ${progress.checked}/${progress.total} checked boxes.`,
+      message: `Progress cookie ${cookie.raw} is stale; expected ${cookie.expectedRaw} for ${cookie.checked}/${cookie.total} checked boxes.`,
     });
   }
 }
@@ -9261,7 +9259,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
   org2 embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]
-  org2 checkbox [cycle|toggle|set] --file FILE --line N [--status STATE] [--apply]
+  org2 checkbox [cycle|toggle|set|fix-cookies] --file FILE [--line N] [--status STATE] [--apply]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]

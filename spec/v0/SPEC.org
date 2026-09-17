@@ -408,7 +408,7 @@ Progress cookies are recognized as structured inline state:
 - =[n/m]= → fraction progress cookie
 - =[p%]= → percentage progress cookie
 
-Org2 compile outputs also compute checkbox rollups over file/headline ranges and lint stale progress cookies whose displayed value no longer matches the checked checkbox count.
+Org2 compile outputs also compute checkbox rollups over file/headline ranges and lint stale progress cookies whose displayed value no longer matches the checked checkbox count. A top-level stale-cookie issue MUST use the narrowest heading range containing that cookie's line, or the file preamble before the first heading. A wider ancestor's recursive rollup MUST NOT override the cookie owner's evaluation.
 
 An optional =[@N]= counter cookie before the checkbox MUST be stored as =counter: N=. A =term :: definition= item MUST store the parsed term in =descriptionTag= and the definition as its ordinary children.
 

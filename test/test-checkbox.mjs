@@ -88,5 +88,50 @@ try {
   const same = run("set", "--file", file, "--line", "2", "--status", "checked", "--apply", "--json");
   assert.equal(JSON.parse(same.stdout).changed, false);
   assert.equal(JSON.parse(same.stdout).applied, false);
+
+  const cookieFile = path.join(temp, "progress.org");
+  const cookieOriginal = "* TODO Grandparent [0/3]\r\n** TODO Parent [1/2]\r\n- [x] item a\r\n- [ ] item b\r\n** TODO Sibling [99%]\r\n- [ ] item c\r\n";
+  fs.writeFileSync(cookieFile, cookieOriginal, { mode: 0o640 });
+  const cookiePreview = run("fix-cookies", "--file", cookieFile, "--json");
+  assert.equal(cookiePreview.status, 0, cookiePreview.stderr);
+  const cookieResult = JSON.parse(cookiePreview.stdout);
+  assert.equal(cookieResult.schema, "org2:checkbox-cookie-fix:v1");
+  assert.equal(cookieResult.changed, true);
+  assert.equal(cookieResult.applied, false);
+  assert.deepEqual(cookieResult.edits.map(({ line, raw, expectedRaw, checked, total }) => ({ line, raw, expectedRaw, checked, total })), [
+    { line: 1, raw: "[0/3]", expectedRaw: "[1/3]", checked: 1, total: 3 },
+    { line: 5, raw: "[99%]", expectedRaw: "[0%]", checked: 0, total: 1 },
+  ]);
+  assert.equal(fs.readFileSync(cookieFile, "utf8"), cookieOriginal);
+  const cookieDiff = run("fix-cookies", "--file", cookieFile);
+  assert.equal(cookieDiff.status, 0, cookieDiff.stderr);
+  assert.match(cookieDiff.stdout, /-\* TODO Grandparent \[0\/3\]/);
+  assert.match(cookieDiff.stdout, /\+\* TODO Grandparent \[1\/3\]/);
+  const cookieApplied = run("fix-cookies", "--file", cookieFile, "--if-revision", cookieResult.revision, "--apply", "--json");
+  assert.equal(cookieApplied.status, 0, cookieApplied.stderr);
+  assert.equal(JSON.parse(cookieApplied.stdout).applied, true);
+  const cookieExpected = cookieOriginal.replace("[0/3]", "[1/3]").replace("[99%]", "[0%]");
+  assert.equal(fs.readFileSync(cookieFile, "utf8"), cookieExpected);
+  assert.equal(fs.statSync(cookieFile).mode & 0o777, 0o640);
+  const cookieStaleRevision = run("fix-cookies", "--file", cookieFile, "--if-revision", cookieResult.revision, "--apply");
+  assert.notEqual(cookieStaleRevision.status, 0);
+  assert.match(cookieStaleRevision.stderr, /changed since/);
+  const cookieNoop = run("fix-cookies", "--file", cookieFile, "--apply", "--json");
+  assert.equal(cookieNoop.status, 0, cookieNoop.stderr);
+  assert.equal(JSON.parse(cookieNoop.stdout).changed, false);
+  assert.equal(JSON.parse(cookieNoop.stdout).applied, false);
+  for (const args of [["fix-cookies", "--line", "1"], ["fix-cookies", "--status", "checked"]]) {
+    const invalid = run(...args, "--file", cookieFile, "--apply");
+    assert.notEqual(invalid.status, 0);
+    assert.equal(fs.readFileSync(cookieFile, "utf8"), cookieExpected);
+  }
+
+  const opaqueCookieFile = path.join(temp, "opaque-progress.org");
+  const opaqueCookieSource = "* Safe [1/1]\n#+begin_src org\n* Literal [0/1]\n- [ ] literal\n#+end_src\n- [X] real\n";
+  fs.writeFileSync(opaqueCookieFile, opaqueCookieSource);
+  const opaqueCookieFix = run("fix-cookies", "--file", opaqueCookieFile, "--apply", "--json");
+  assert.equal(opaqueCookieFix.status, 0, opaqueCookieFix.stderr);
+  assert.equal(JSON.parse(opaqueCookieFix.stdout).changed, false);
+  assert.equal(fs.readFileSync(opaqueCookieFile, "utf8"), opaqueCookieSource);
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 console.log("✓ Checkbox cycles, targeted source edits, guarded CLI preview/apply, and invalid targets");

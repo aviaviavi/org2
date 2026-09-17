@@ -5,6 +5,17 @@ import v8 from "node:v8";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
 import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, isTerminalTodoKeyword, type TodoSequence } from "./todo.js";
 import { extractClockReport, type OrgClockInterval, type OrgClockIssue, type OrgClockSummary } from "./clock.js";
+import {
+  checkboxHeadingEndExclusive,
+  checkboxOpaqueLineIndexes,
+  createCheckboxIssueCollector,
+  extractCheckboxProgress,
+  type CheckboxProgress,
+  type CheckboxProgressIssue,
+} from "./checkboxProgress.js";
+
+export { extractCheckboxProgress, extractOwnedCheckboxIssues } from "./checkboxProgress.js";
+export type { CheckboxProgress, CheckboxProgressIssue } from "./checkboxProgress.js";
 
 export type CompiledCorpusLink = {
   type: "id" | "wiki" | "file" | "url" | "other";
@@ -58,14 +69,6 @@ export type CompiledCorpusRelation = {
   evidence: string;
   confidence: "explicit" | "inferred-pattern";
   method: string;
-};
-
-export type CheckboxProgress = {
-  total: number;
-  checked: number;
-  unchecked: number;
-  percent: number;
-  cookies: Array<{ raw: string; line: number; format: "fraction" | "percent"; done?: number; total?: number; percent?: number; stale: boolean; expectedRaw: string }>;
 };
 
 export type CompiledCorpusNode = {
@@ -148,7 +151,7 @@ export type CompiledCorpus = {
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
   checkboxProgress: CheckboxProgress;
-  checkboxIssues: Array<{ type: "stale-progress-cookie"; file: string; line: number; raw: string; expectedRaw: string; checked: number; total: number }>;
+  checkboxIssues: Array<CheckboxProgressIssue & { file: string }>;
   clockSummary: ReturnType<typeof extractClockReport>["summary"];
   effortSummary: {
     totalMinutes: number;
@@ -284,11 +287,6 @@ function findFilePropertyDrawer(lines: string[]): { properties: Record<string, s
   return null;
 }
 
-function headingLevel(line: string): number {
-  const match = /^(\*+)\s+/.exec(line);
-  return match ? (match[1] || "").length : 0;
-}
-
 function stripTags(raw: string): { title: string; tags: string[] } {
   const match = /\s+(:[A-Za-z0-9_@#%:]+:)\s*$/.exec(raw);
   if (!match) return { title: raw.trim(), tags: [] };
@@ -331,7 +329,8 @@ function parseHeading(line: string, sequences: readonly TodoSequence[] = []): { 
 
 function headingEndExclusive(lines: string[], startIndex: number, level: number): number {
   for (let i = startIndex + 1; i < lines.length; i += 1) {
-    const nextLevel = headingLevel(lines[i] || "");
+    const next = /^(\*+)\s+/.exec(lines[i] || "");
+    const nextLevel = next ? (next[1] || "").length : 0;
     if (nextLevel > 0 && nextLevel <= level) return i;
   }
   return lines.length;
@@ -372,45 +371,6 @@ function linkType(target: string): CompiledCorpusLink["type"] {
   if (lower.startsWith("http://") || lower.startsWith("https://")) return "url";
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && value && !value.startsWith("/") && !value.startsWith("./") && !value.startsWith("../") && !value.startsWith("#")) return "wiki";
   return "other";
-}
-
-
-export function extractCheckboxProgress(lines: string[], startIndex: number, endExclusive: number): CheckboxProgress {
-  let checked = 0;
-  let unchecked = 0;
-  const found: Array<Omit<CheckboxProgress["cookies"][number], "stale" | "expectedRaw">> = [];
-  for (let i = startIndex; i < endExclusive; i += 1) {
-    const line = lines[i] || "";
-    const item = /^\s*(?:[-+*]|\d+[.)])\s+\[([ Xx])\]/.exec(line);
-    if (item) {
-      if ((item[1] || "") === " ") unchecked += 1;
-      else checked += 1;
-    }
-    const re = /\[(\d+)\/(\d+)\]|\[(\d{1,3})%\]/g;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(line)) !== null) {
-      const format = match[1] !== undefined ? "fraction" : "percent";
-      const raw = match[0] || "";
-      const doneValue = match[1] !== undefined ? Number.parseInt(match[1] || "0", 10) : undefined;
-      const totalValue = match[2] !== undefined ? Number.parseInt(match[2] || "0", 10) : undefined;
-      const percentValue = match[3] !== undefined ? Number.parseInt(match[3] || "0", 10) : (totalValue && totalValue > 0 && doneValue !== undefined ? Math.round((doneValue / totalValue) * 100) : 0);
-      found.push({
-        raw,
-        line: i + 1,
-        format,
-        ...(doneValue !== undefined ? { done: doneValue } : {}),
-        ...(totalValue !== undefined ? { total: totalValue } : {}),
-        percent: percentValue,
-      });
-    }
-  }
-  const total = checked + unchecked;
-  const percent = total > 0 ? Math.round((checked / total) * 100) : 0;
-  const cookies = found.map((cookie) => {
-    const expectedRaw = cookie.format === "fraction" ? `[${checked}/${total}]` : `[${percent}%]`;
-    return { ...cookie, stale: cookie.raw !== expectedRaw, expectedRaw };
-  });
-  return { total, checked, unchecked, percent, cookies };
 }
 
 
@@ -670,6 +630,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const raw = fs.readFileSync(filePath, "utf8");
     const content = normalizeText(raw);
     const lines = content.split("\n");
+    const opaqueLines = checkboxOpaqueLineIndexes(lines);
     const file = relativePath(rootDir, filePath);
     const title = parseKeywordValue(lines, "title", 80) || path.basename(filePath).replace(/\.(org2|org)$/i, "");
     const fileDrawer = findFilePropertyDrawer(lines);
@@ -687,16 +648,22 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       } catch { /* Invalid project notes are reported by project discovery. */ }
     }
     const headingPropertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
+    const checkboxIssueCollector = createCheckboxIssueCollector();
     const firstHeadingIndex = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
+    const firstOwnedHeadingIndex = lines.findIndex((line, index) => !opaqueLines.has(index) && /^\*+\s+/.test(line || ""));
+    const ownedPreambleEndExclusive = firstOwnedHeadingIndex === -1 ? lines.length : firstOwnedHeadingIndex;
     const fileLinks = extractLinks(lines, 0, preambleEndExclusive);
     const fileSnippet = extractSnippetWithLine(lines, 0, preambleEndExclusive);
-    const fullFileCheckboxProgress = extractCheckboxProgress(lines, 0, lines.length);
+    const fullFileCheckboxProgress = extractCheckboxProgress(lines, 0, lines.length, opaqueLines);
     corpusCheckboxProgress.total += fullFileCheckboxProgress.total;
     corpusCheckboxProgress.checked += fullFileCheckboxProgress.checked;
     corpusCheckboxProgress.unchecked += fullFileCheckboxProgress.unchecked;
-    const fileCheckboxProgress = extractCheckboxProgress(lines, 0, preambleEndExclusive);
-    for (const cookie of fileCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: fileCheckboxProgress.checked, total: fileCheckboxProgress.total });
+    const fileCheckboxProgress = extractCheckboxProgress(lines, 0, preambleEndExclusive, opaqueLines);
+    const ownedPreambleProgress = ownedPreambleEndExclusive === preambleEndExclusive
+      ? fileCheckboxProgress
+      : extractCheckboxProgress(lines, 0, ownedPreambleEndExclusive, opaqueLines);
+    checkboxIssueCollector.add(ownedPreambleProgress, 0, ownedPreambleEndExclusive);
 
     corpusFiles.push({ file, absolutePath: filePath, sha256: sha256(content), lineCount: lines.length, title, id });
     const fileKey = `file:${file}`;
@@ -727,6 +694,9 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const heading = parseHeading(lines[i] || "", sequences);
       if (!heading) continue;
       const endExclusive = headingEndExclusive(lines, i, heading.level);
+      const checkboxEndExclusive = opaqueLines.has(i)
+        ? endExclusive
+        : checkboxHeadingEndExclusive(lines, i, heading.level, opaqueLines);
       while (headingPropertyStack.length && (headingPropertyStack[headingPropertyStack.length - 1]?.level || 0) >= heading.level) headingPropertyStack.pop();
       const inheritedBase = headingPropertyStack[headingPropertyStack.length - 1]?.effectiveProperties || properties;
       const drawer = propertyDrawerAfterHeading(lines, i);
@@ -736,8 +706,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
       const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
-      const headingCheckboxProgress = extractCheckboxProgress(lines, i, endExclusive);
-      for (const cookie of headingCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: headingCheckboxProgress.checked, total: headingCheckboxProgress.total });
+      const headingCheckboxProgress = extractCheckboxProgress(lines, i, checkboxEndExclusive, opaqueLines);
+      if (!opaqueLines.has(i)) checkboxIssueCollector.add(headingCheckboxProgress, i, checkboxEndExclusive);
       const headingKey = `heading:${file}:${i + 1}`;
       const node: CompiledCorpusNode = {
         key: headingKey,
@@ -771,6 +741,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       nodes.push(node);
       headingPropertyStack.push({ level: heading.level, effectiveProperties: headingEffectiveProperties });
     }
+    for (const issue of checkboxIssueCollector.issues()) checkboxIssuesByKey.set(`${file}:${issue.line}:${issue.raw}`, { file, ...issue });
   }
 
   return finalizeCompiledCorpus({
@@ -813,7 +784,7 @@ type IncrementalCorpusFragment = {
 };
 
 type IncrementalCorpusCache = {
-  schemaVersion: "org2-incremental-corpus-cache/v5";
+  schemaVersion: "org2-incremental-corpus-cache/v6";
   rootDir: string;
   files: IncrementalCorpusFileFingerprint[];
   checkboxProgressByFile: Record<string, CheckboxProgress>;
@@ -1270,7 +1241,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
     if (fs.existsSync(cacheFile)) {
       const parsed = readIncrementalCorpusCache(cacheFile);
       if (
-        parsed.schemaVersion === "org2-incremental-corpus-cache/v5"
+        parsed.schemaVersion === "org2-incremental-corpus-cache/v6"
         && parsed.rootDir === rootDir
         && Array.isArray(parsed.files)
         && parsed.checkboxProgressByFile
@@ -1366,7 +1337,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
 
   try {
     writeIncrementalCorpusCache(cacheFile, {
-      schemaVersion: "org2-incremental-corpus-cache/v5",
+      schemaVersion: "org2-incremental-corpus-cache/v6",
       rootDir,
       files: current,
       checkboxProgressByFile,
