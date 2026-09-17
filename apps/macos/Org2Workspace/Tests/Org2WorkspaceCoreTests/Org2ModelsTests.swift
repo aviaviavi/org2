@@ -13261,11 +13261,157 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
+    store.automaticDailyNoteCreationDisabled = true
     store.openDailyNote(.today)
     await store.waitForDailyNoteNavigationForTesting()
 
     XCTAssertEqual(store.selectedLocation?.file, legacy.path)
     XCTAssertFalse(FileManager.default.fileExists(atPath: dailies.appendingPathComponent("\(baseName).org").path))
+  }
+
+  @MainActor
+  func testDisabledAutomaticDailyNoteCreationShowsMissingStateUntilExplicitCreation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-manual-daily-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.automaticDailyNoteCreationDisabled = true
+    let originalTabID = store.selectedWorkspaceTabID
+
+    for target in DailyNoteTarget.allCases {
+      store.openDailyNote(target)
+      await store.waitForDailyNoteNavigationForTesting()
+
+      let missing = try XCTUnwrap(store.missingDailyNote)
+      XCTAssertNil(store.selectedLocation)
+      XCTAssertTrue(store.hasWorkspaceDetailContent)
+      XCTAssertEqual(store.statusText, "No daily file found")
+      XCTAssertFalse(FileManager.default.fileExists(atPath: missing.file))
+    }
+
+    store.presentDailyNoteDatePicker()
+    store.dailyNotePickerDate = try XCTUnwrap(Calendar.current.date(
+      from: DateComponents(year: 2024, month: 2, day: 29)
+    ))
+    store.openDailyNoteFromDatePicker()
+    await store.waitForDailyNoteNavigationForTesting()
+
+    let missing = try XCTUnwrap(store.missingDailyNote)
+    XCTAssertTrue(missing.file.hasSuffix("/daily/2024-02-29.org"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: missing.file))
+
+    let secondTabID = store.newWorkspaceTab()
+    XCTAssertNotEqual(secondTabID, originalTabID)
+    XCTAssertNil(store.missingDailyNote)
+    store.selectWorkspaceTab(originalTabID)
+    XCTAssertEqual(store.missingDailyNote, missing)
+
+    store.createMissingDailyNote()
+    await store.waitForDailyNoteNavigationForTesting()
+
+    XCTAssertNil(store.missingDailyNote)
+    XCTAssertFalse(store.isCreatingMissingDailyNote)
+    XCTAssertEqual(store.selectedLocation?.file, missing.file)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: missing.file))
+  }
+
+  @MainActor
+  func testDisabledAutomaticDailyNoteCreationAppliesToHome() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-manual-home-daily-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.automaticDailyNoteCreationDisabled = true
+    store.openHome()
+    await store.waitForDailyNoteNavigationForTesting()
+
+    let missing = try XCTUnwrap(store.missingDailyNote)
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertNil(store.selectedLocation)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: missing.file))
+
+    store.createMissingDailyNote()
+    await store.waitForDailyNoteNavigationForTesting()
+
+    XCTAssertNil(store.missingDailyNote)
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertEqual(store.selectedLocation?.file, missing.file)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: missing.file))
+  }
+
+  @MainActor
+  func testPendingDisabledDailyNoteNavigationCannotPolluteAnotherTab() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-manual-daily-tab-race-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let resolver = ControlledDailyNoteDirectoryResolver(
+      firstDirectoryName: "daily",
+      laterDirectoryName: "daily"
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.dailyNoteDirectoryResolverForTesting = { root in resolver.resolve(root) }
+    store.setCorpusRoot(root)
+    store.automaticDailyNoteCreationDisabled = true
+    let originalTabID = store.selectedWorkspaceTabID
+    store.openDailyNote(.tomorrow)
+    await Task.yield()
+    XCTAssertTrue(resolver.waitUntilFirstResolutionStarts())
+
+    let secondTabID = store.newWorkspaceTab()
+    resolver.releaseFirstResolution()
+    try await Task.sleep(for: .milliseconds(100))
+
+    XCTAssertEqual(store.selectedWorkspaceTabID, secondTabID)
+    XCTAssertNil(store.missingDailyNote)
+    XCTAssertNil(store.selectedLocation)
+    store.selectWorkspaceTab(originalTabID)
+    XCTAssertNil(store.missingDailyNote)
+    XCTAssertNil(store.selectedLocation)
+  }
+
+  @MainActor
+  func testAutomaticDailyNoteCreationPreferenceIsPerCorpusAndDefaultsToEnabled() throws {
+    let suiteName = "org2-workspace-daily-creation-setting-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let firstRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-setting-first-\(UUID().uuidString)", isDirectory: true)
+    let secondRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-setting-second-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: firstRoot)
+      try? FileManager.default.removeItem(at: secondRoot)
+    }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    store.setCorpusRoot(firstRoot)
+    XCTAssertFalse(store.automaticDailyNoteCreationDisabled)
+    store.automaticDailyNoteCreationDisabled = true
+
+    store.setCorpusRoot(secondRoot)
+    XCTAssertFalse(store.automaticDailyNoteCreationDisabled)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    restored.setCorpusRoot(firstRoot)
+    XCTAssertTrue(restored.automaticDailyNoteCreationDisabled)
+    restored.setCorpusRoot(secondRoot)
+    XCTAssertFalse(restored.automaticDailyNoteCreationDisabled)
   }
 
   @MainActor

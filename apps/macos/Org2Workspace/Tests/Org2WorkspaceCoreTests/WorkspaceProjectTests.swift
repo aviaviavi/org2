@@ -91,6 +91,84 @@ final class WorkspaceProjectTests: XCTestCase {
     )
   }
 
+  func testProjectSidebarPresentationNamespacesRepeatedThreadRows() {
+    let sharedThreadID = UUID()
+    let first = project(threadID: sharedThreadID)
+    let second = project(threadID: sharedThreadID)
+    let summary = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+      id: sharedThreadID,
+      title: "Shared",
+      sessionKey: "shared"
+    ))
+
+    let items = WorkspaceProjectSidebarPresentation.items(
+      projects: [first, second],
+      summaries: [summary],
+      expandedProjectIDs: [first.id, second.id]
+    )
+
+    XCTAssertEqual(items.count, 4)
+    XCTAssertEqual(Set(items.map(\.id)).count, items.count)
+    XCTAssertEqual(
+      items.compactMap { item -> UUID? in
+        guard case .thread(let thread) = item.content else { return nil }
+        return thread.id
+      },
+      [sharedThreadID, sharedThreadID]
+    )
+  }
+
+  func testProjectSidebarPresentationStaysFlatAcrossRapidRefreshAndCollapse() {
+    let threadIDs = (0..<8).map { _ in UUID() }
+    let summaries = threadIDs.map { id in
+      OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+        id: id,
+        title: id.uuidString,
+        sessionKey: id.uuidString
+      ))
+    }
+    let projects = (0..<12).map { index in
+      WorkspaceProjectNote(
+        id: "project-\(index)",
+        title: "Project \(index)",
+        color: "blue",
+        file: "/local/project-\(index).org",
+        relativePath: "project-\(index).org",
+        revision: "sha256:\(index)",
+        threadIDs: threadIDs.map { $0.uuidString.lowercased() },
+        brief: "",
+        briefTruncated: false
+      )
+    }
+
+    for revision in 0..<500 {
+      let expanded = revision.isMultiple(of: 2)
+        ? Set(projects.map(\.id))
+        : Set<String>()
+      let items = WorkspaceProjectSidebarPresentation.items(
+        projects: revision.isMultiple(of: 3) ? projects : Array(projects.reversed()),
+        summaries: summaries,
+        expandedProjectIDs: expanded
+      )
+      XCTAssertEqual(Set(items.map(\.id)).count, items.count)
+    }
+  }
+
+  func testProjectSidebarAvoidsSwiftUIHierarchicalDisclosureRows() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot
+        .appendingPathComponent("Sources/Org2WorkspaceCore/WorkspaceProjects.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertFalse(source.contains("DisclosureGroup("))
+    XCTAssertTrue(source.contains("ForEach(sidebarItems)"))
+  }
+
   func testProjectHeaderButtonsKeepStableHitGeometry() throws {
     let packageRoot = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()

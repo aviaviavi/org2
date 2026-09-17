@@ -52,6 +52,56 @@ enum WorkspaceProjectThreadVisibility {
   }
 }
 
+struct WorkspaceProjectSidebarItem: Identifiable, Hashable {
+  enum Content: Hashable {
+    case project(WorkspaceProjectNote)
+    case thread(OpenClawSidebarThreadSummary)
+    case empty
+  }
+
+  let id: String
+  let projectID: String
+  let content: Content
+}
+
+enum WorkspaceProjectSidebarPresentation {
+  static func items(
+    projects: [WorkspaceProjectNote],
+    summaries: [OpenClawSidebarThreadSummary],
+    expandedProjectIDs: Set<String>
+  ) -> [WorkspaceProjectSidebarItem] {
+    var items: [WorkspaceProjectSidebarItem] = []
+    for project in projects {
+      items.append(WorkspaceProjectSidebarItem(
+        id: "project:\(project.id)",
+        projectID: project.id,
+        content: .project(project)
+      ))
+      guard expandedProjectIDs.contains(project.id) else { continue }
+      let threads = WorkspaceProjectThreadVisibility.activeSummaries(
+        for: project,
+        from: summaries
+      )
+      if threads.isEmpty {
+        items.append(WorkspaceProjectSidebarItem(
+          id: "project:\(project.id):empty",
+          projectID: project.id,
+          content: .empty
+        ))
+      } else {
+        items.append(contentsOf: threads.map { summary in
+          WorkspaceProjectSidebarItem(
+            id: "project:\(project.id):thread:\(summary.id.uuidString.lowercased())",
+            projectID: project.id,
+            content: .thread(summary)
+          )
+        })
+      }
+    }
+    return items
+  }
+}
+
 enum WorkspaceProjectPalette {
   static let names = ["blue", "teal", "green", "orange", "red", "purple", "gray"]
   static func tint(_ name: String) -> Color {
@@ -106,53 +156,10 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
 
   var body: some View {
     Section {
-      ForEach(store.projectNotes) { project in
-        DisclosureGroup(isExpanded: Binding(
-          get: { expandedProjects.contains(project.id) },
-          set: { if $0 { expandedProjects.insert(project.id) } else { expandedProjects.remove(project.id) } }
-        )) {
-          let threads = WorkspaceProjectThreadVisibility.activeSummaries(
-            for: project,
-            from: store.sidebarOpenClawChatThreadSummaries
-          )
-          ForEach(threads) { summary in threadRow(summary) }
-          if threads.isEmpty {
-            Text("No active chats").font(.caption).foregroundStyle(.secondary)
-          }
-        } label: {
-          HStack(spacing: 7) {
-            if project.color == "none" {
-              Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
-            } else {
-              Circle().fill(project.tint).frame(width: 8, height: 8)
-            }
-            Text(project.title).lineLimit(1)
-            Spacer(minLength: 0)
-            Button { store.openProjectNote(project) } label: { Image(systemName: "doc.text") }
-              .buttonStyle(.plain).help("Open project note")
-            Button {
-              expandedProjects.insert(project.id)
-              Task { await store.createChatInProject(project) }
-            } label: { Image(systemName: "plus") }
-              .buttonStyle(.plain).help("New chat in \(project.title)")
-          }
-          .padding(.leading, 12)
-        }
-        .listRowBackground(Color.clear)
-        .contextMenu {
-          Button("Open project note") { store.openProjectNote(project) }
-          Button("Choose color…") { presentedSheet = .color(project) }
-          Button("No color") { Task { await store.updateProject(project, color: "none") } }
-          Menu("Quick colors") {
-            ForEach(WorkspaceProjectPalette.names, id: \.self) { color in
-              Button { Task { await store.updateProject(project, color: color) } } label: {
-                Label { Text(color.capitalized) } icon: {
-                  Image(systemName: "circle.fill").foregroundStyle(WorkspaceProjectPalette.tint(color))
-                }
-              }
-            }
-          }
-        }
+      ForEach(sidebarItems) { item in
+        sidebarRow(item)
+          .id(item.id)
+          .listRowBackground(Color.clear)
       }
       if !store.projectStatus.isEmpty {
         Text(store.projectStatus).font(.caption).foregroundStyle(.secondary)
@@ -182,6 +189,84 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
       for project in store.projectNotes where project.contains(selected) {
         expandedProjects.insert(project.id)
       }
+    }
+  }
+
+  private var sidebarItems: [WorkspaceProjectSidebarItem] {
+    WorkspaceProjectSidebarPresentation.items(
+      projects: store.projectNotes,
+      summaries: store.sidebarOpenClawChatThreadSummaries,
+      expandedProjectIDs: expandedProjects
+    )
+  }
+
+  @ViewBuilder
+  private func sidebarRow(_ item: WorkspaceProjectSidebarItem) -> some View {
+    switch item.content {
+    case .project(let project):
+      projectRow(project)
+        .contextMenu {
+          Button("Open project note") { store.openProjectNote(project) }
+          Button("Choose color…") { presentedSheet = .color(project) }
+          Button("No color") { Task { await store.updateProject(project, color: "none") } }
+          Menu("Quick colors") {
+            ForEach(WorkspaceProjectPalette.names, id: \.self) { color in
+              Button { Task { await store.updateProject(project, color: color) } } label: {
+                Label { Text(color.capitalized) } icon: {
+                  Image(systemName: "circle.fill").foregroundStyle(WorkspaceProjectPalette.tint(color))
+                }
+              }
+            }
+          }
+        }
+    case .thread(let summary):
+      threadRow(summary)
+        .padding(.leading, 18)
+    case .empty:
+      Text("No active chats")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.leading, 30)
+    }
+  }
+
+  private func projectRow(_ project: WorkspaceProjectNote) -> some View {
+    HStack(spacing: 7) {
+      Button {
+        toggleProject(project.id)
+      } label: {
+        Image(systemName: "chevron.right")
+          .font(.caption2.weight(.semibold))
+          .rotationEffect(.degrees(expandedProjects.contains(project.id) ? 90 : 0))
+          .frame(width: 12, height: 18)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(expandedProjects.contains(project.id) ? "Hide project chats" : "Show project chats")
+
+      if project.color == "none" {
+        Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
+      } else {
+        Circle().fill(project.tint).frame(width: 8, height: 8)
+      }
+      Text(project.title).lineLimit(1)
+      Spacer(minLength: 0)
+      Button { store.openProjectNote(project) } label: { Image(systemName: "doc.text") }
+        .buttonStyle(.plain).help("Open project note")
+      Button {
+        expandedProjects.insert(project.id)
+        Task { await store.createChatInProject(project) }
+      } label: { Image(systemName: "plus") }
+        .buttonStyle(.plain).help("New chat in \(project.title)")
+    }
+    .padding(.leading, 2)
+  }
+
+  private func toggleProject(_ id: String) {
+    if expandedProjects.contains(id) {
+      expandedProjects.remove(id)
+    } else {
+      expandedProjects.insert(id)
     }
   }
 }

@@ -29,6 +29,14 @@ public enum OrgDocumentDefaults {
   }
 }
 
+public struct WorkspaceMissingDailyNote: Hashable, Sendable {
+  public let file: String
+  public let relativePath: String
+  public let title: String
+  fileprivate let opensHome: Bool
+  fileprivate let surface: WorkspaceSurface
+}
+
 public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
   case org2 = "org2"
   case systemAlert = "system-alert"
@@ -1139,6 +1147,7 @@ private enum OrgCryptRecipientScanResult: Sendable {
 
 private struct WorkspaceNavigationSnapshot: Hashable {
   let location: WorkspaceLocation?
+  let missingDailyNote: WorkspaceMissingDailyNote?
   let agentRunDetailID: AgentRunItem.ID?
   let selectedSurface: WorkspaceSurface
   let activeWorkspacePane: WorkspacePaneFocus
@@ -2619,6 +2628,14 @@ public final class WorkspaceStore {
       }
     }
   }
+  public var automaticDailyNoteCreationDisabled = false {
+    didSet {
+      guard automaticDailyNoteCreationDisabled != oldValue,
+            let corpusRoot
+      else { return }
+      persistAutomaticDailyNoteCreationPreference(for: corpusRoot)
+    }
+  }
   public var openClawBriefsStartNewThread = true {
     didSet {
       defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
@@ -2697,6 +2714,8 @@ public final class WorkspaceStore {
       updateSelectedFileDataNotebookState(for: selectedLocation?.file, sourceText: nil)
     }
   }
+  public private(set) var missingDailyNote: WorkspaceMissingDailyNote?
+  public private(set) var isCreatingMissingDailyNote = false
   public var selectedEntrySource: EntrySource? {
     didSet {
       sourceEditorPreparationTask?.cancel()
@@ -2957,6 +2976,8 @@ public final class WorkspaceStore {
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
   private let experimentalFeaturesEnabledKey = "Org2Workspace.experimentalFeatures.enabled.v1"
+  private let automaticDailyNoteCreationDisabledByCorpusKey =
+    "Org2Workspace.dailyNotes.automaticCreationDisabledByCorpus.v1"
   private let launchGuideCompletedKey = "Org2Workspace.openOrgLaunchGuideCompleted.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
@@ -4430,6 +4451,9 @@ public final class WorkspaceStore {
     isRefreshingProjects = false
     projectRefreshID = UUID()
     corpusRoot = standardized
+    automaticDailyNoteCreationDisabled = restoreAutomaticDailyNoteCreationPreference(
+      for: standardized
+    )
     automationOwnerHostRef = nil
     prepareDailyNoteDirectory(for: standardized)
     appHTMLStylesheetSnapshotTask?.cancel()
@@ -4520,6 +4544,8 @@ public final class WorkspaceStore {
     workspaceHealthChecks = cachedWorkspace?.workspaceHealthChecks ?? []
     refreshOrgCryptManagedRecipientFiles()
     selectedLocation = nil
+    missingDailyNote = nil
+    isCreatingMissingDailyNote = false
     cancelSourceEditorPreviewRender(clearStatus: true)
     workspaceNavigationBackStack = []
     selectedEntrySource = nil
@@ -10740,7 +10766,10 @@ public final class WorkspaceStore {
   }
 
   public var hasWorkspaceDetailContent: Bool {
-    presentedAgentRun != nil || selectedLocation != nil || selectedEntrySource != nil
+    presentedAgentRun != nil
+      || selectedLocation != nil
+      || selectedEntrySource != nil
+      || missingDailyNote != nil
   }
 
   public var presentedAgentRun: AgentRunItem? {
@@ -11779,6 +11808,15 @@ public final class WorkspaceStore {
     if let runID = snapshot.agentRunDetailID,
        agentRunsByID[runID] != nil {
       activateAgentRunDetail(runID, recordsHistory: false)
+    } else if let missingDailyNote = snapshot.missingDailyNote,
+              let corpusRoot {
+      presentMissingDailyNote(
+        at: URL(fileURLWithPath: missingDailyNote.file),
+        corpusRoot: corpusRoot,
+        opensHome: missingDailyNote.opensHome,
+        surface: snapshot.selectedSurface,
+        recordsHistory: false
+      )
     } else if let location = snapshot.location {
       activateDetailLocation(
         location,
@@ -11838,6 +11876,7 @@ public final class WorkspaceStore {
   private func activateWorkspaceTab(_ tabID: WorkspaceTab.ID) {
     guard workspaceTabs.contains(where: { $0.id == tabID }) else { return }
     let state = workspaceTabStates[tabID] ?? initialWorkspaceTabState()
+    _ = supersedeDailyNoteNavigation()
     cancelWorkspaceTabEditorRestore()
     // A tab switch is a session boundary even when both tabs point at the
     // same file. Tear down the outgoing detail first so editor drafts,
@@ -11938,6 +11977,7 @@ public final class WorkspaceStore {
     WorkspaceTabState(
       navigation: WorkspaceNavigationSnapshot(
         location: nil,
+        missingDailyNote: nil,
         agentRunDetailID: nil,
         selectedSurface: .home,
         activeWorkspacePane: .surface,
@@ -12105,6 +12145,8 @@ public final class WorkspaceStore {
       }
     } else if let presentedAgentRun {
       rawTitle = presentedAgentRun.goal
+    } else if let missingDailyNote {
+      rawTitle = missingDailyNote.title
     } else if let selectedLocation {
       rawTitle = selectedLocation.title
     } else {
@@ -12135,6 +12177,7 @@ public final class WorkspaceStore {
     recordsHistory: Bool
   ) {
     cancelPendingDailyNoteNavigation()
+    missingDailyNote = nil
     let checkpointedDocumentIdentities = OrgSyntaxTextEditorLifecycle.checkpointPendingTextChanges()
     let nextMode = resolvedEntrySourceMode(for: location, requestedMode: mode)
     let nextSurface = surface ?? selectedSurface
@@ -12243,6 +12286,7 @@ public final class WorkspaceStore {
 
     return WorkspaceNavigationSnapshot(
       location: selectedLocation,
+      missingDailyNote: missingDailyNote,
       agentRunDetailID: presentedAgentRunID,
       selectedSurface: selectedSurface,
       activeWorkspacePane: activeWorkspacePane,
@@ -12348,6 +12392,7 @@ public final class WorkspaceStore {
     persistLiveFileEditorDraftBeforeNavigation()
     cancelLiveFileEditorAutosave(resetStatus: false)
     selectedLocation = nil
+    missingDailyNote = nil
     presentedAgentRunID = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
     cancelLinkedPDFPreview(clearStatus: true)
@@ -18238,6 +18283,22 @@ public final class WorkspaceStore {
     defaults.set(storage, forKey: pinnedFilesByCorpusKey)
   }
 
+  private func restoreAutomaticDailyNoteCreationPreference(for corpusRoot: URL) -> Bool {
+    let storage = defaults.dictionary(forKey: automaticDailyNoteCreationDisabledByCorpusKey) ?? [:]
+    return storage[corpusRoot.standardizedFileURL.path] as? Bool ?? false
+  }
+
+  private func persistAutomaticDailyNoteCreationPreference(for corpusRoot: URL) {
+    var storage = defaults.dictionary(forKey: automaticDailyNoteCreationDisabledByCorpusKey) ?? [:]
+    let key = corpusRoot.standardizedFileURL.path
+    if automaticDailyNoteCreationDisabled {
+      storage[key] = true
+    } else {
+      storage.removeValue(forKey: key)
+    }
+    defaults.set(storage, forKey: automaticDailyNoteCreationDisabledByCorpusKey)
+  }
+
   private func reconcilePinnedFiles(for corpusRoot: URL) async {
     guard self.corpusRoot?.path == corpusRoot.path else { return }
     schedulePinnedCorpusFileProjection()
@@ -20380,12 +20441,40 @@ public final class WorkspaceStore {
     generation: UInt64
   ) async {
     let url = await dailyNotePath(corpusRoot: corpusRoot, date: date)
+    await openDailyNote(
+      at: url,
+      corpusRoot: corpusRoot,
+      context: context,
+      generation: generation,
+      allowsCreation: !automaticDailyNoteCreationDisabled
+    )
+  }
+
+  private func openDailyNote(
+    at url: URL,
+    corpusRoot: URL,
+    context: WorkspaceDocumentCorpusContext,
+    generation: UInt64,
+    allowsCreation: Bool
+  ) async {
     guard !Task.isCancelled,
           dailyNoteNavigationGeneration == generation,
           isCurrentDocumentCorpusContext(context)
     else { return }
     do {
-      try await ensureDailyNoteExists(at: url, context: context)
+      if allowsCreation {
+        try await ensureDailyNoteExists(at: url, context: context)
+      } else if !(await dailyNoteExists(at: url)) {
+        dailyNoteActivationTask = nil
+        presentMissingDailyNote(
+          at: url,
+          corpusRoot: corpusRoot,
+          opensHome: false,
+          surface: selectedSurface,
+          recordsHistory: true
+        )
+        return
+      }
       let file = await Task.detached(priority: .userInitiated) {
         Self.corpusFileOffMain(for: url, corpusRoot: corpusRoot)
       }.value
@@ -20450,14 +20539,28 @@ public final class WorkspaceStore {
     url: URL,
     corpusRoot: URL,
     context: WorkspaceDocumentCorpusContext,
-    generation: UInt64
+    generation: UInt64,
+    allowsCreation: Bool? = nil
   ) async {
     guard !Task.isCancelled,
           dailyNoteNavigationGeneration == generation,
           isCurrentDocumentCorpusContext(context)
     else { return }
     do {
-      try await ensureDailyNoteExists(at: url, context: context)
+      let shouldCreate = allowsCreation ?? !automaticDailyNoteCreationDisabled
+      if shouldCreate {
+        try await ensureDailyNoteExists(at: url, context: context)
+      } else if !(await dailyNoteExists(at: url)) {
+        homeActivationTask = nil
+        presentMissingDailyNote(
+          at: url,
+          corpusRoot: corpusRoot,
+          opensHome: true,
+          surface: .home,
+          recordsHistory: true
+        )
+        return
+      }
       let file = await Task.detached(priority: .userInitiated) {
         Self.corpusFileOffMain(for: url, corpusRoot: corpusRoot)
       }.value
@@ -20503,6 +20606,46 @@ public final class WorkspaceStore {
     }
   }
 
+  public func createMissingDailyNote() {
+    guard !isCreatingMissingDailyNote,
+          let missingDailyNote,
+          let corpusRoot,
+          let context = captureDocumentCorpusContext()
+    else { return }
+
+    let url = URL(fileURLWithPath: missingDailyNote.file).standardizedFileURL
+    if selectedSurface != missingDailyNote.surface {
+      selectedSurface = missingDailyNote.surface
+    }
+    let generation = supersedeDailyNoteNavigation()
+    isCreatingMissingDailyNote = true
+    if missingDailyNote.opensHome {
+      homeActivationTask = Task { @MainActor [weak self] in
+        guard let self else { return }
+        defer { self.isCreatingMissingDailyNote = false }
+        await self.finishOpeningHome(
+          url: url,
+          corpusRoot: corpusRoot,
+          context: context,
+          generation: generation,
+          allowsCreation: true
+        )
+      }
+    } else {
+      dailyNoteActivationTask = Task { @MainActor [weak self] in
+        guard let self else { return }
+        defer { self.isCreatingMissingDailyNote = false }
+        await self.openDailyNote(
+          at: url,
+          corpusRoot: corpusRoot,
+          context: context,
+          generation: generation,
+          allowsCreation: true
+        )
+      }
+    }
+  }
+
   public func ensureHomeDetailReady() {
     if expandedWorkspaceSurface != nil { expandedWorkspaceSurface = nil }
     if isWorkspaceSurfacePaneClosed { isWorkspaceSurfacePaneClosed = false }
@@ -20516,6 +20659,10 @@ public final class WorkspaceStore {
   }
 
   private var isTodayHomeDetailSelected: Bool {
+    if selectedSurface == .home,
+       missingDailyNote?.opensHome == true {
+      return true
+    }
     guard selectedSurface == .home,
           selectedEntrySourceMode == .page,
           let selectedLocation,
@@ -44182,6 +44329,53 @@ public final class WorkspaceStore {
     return await Task.detached(priority: .userInitiated) {
       OrgDocumentDefaults.url(in: directory, baseName: baseName)
     }.value
+  }
+
+  private func dailyNoteExists(at url: URL) async -> Bool {
+    await Task.detached(priority: .userInitiated) {
+      var isDirectory: ObjCBool = false
+      return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        && !isDirectory.boolValue
+    }.value
+  }
+
+  private func presentMissingDailyNote(
+    at url: URL,
+    corpusRoot: URL,
+    opensHome: Bool,
+    surface: WorkspaceSurface,
+    recordsHistory: Bool
+  ) {
+    let missing = WorkspaceMissingDailyNote(
+      file: url.standardizedFileURL.path,
+      relativePath: Self.relativePath(for: url.path, root: corpusRoot),
+      title: url.deletingPathExtension().lastPathComponent,
+      opensHome: opensHome,
+      surface: surface
+    )
+    if recordsHistory,
+       missingDailyNote != missing,
+       hasWorkspaceDetailContent || selectedSurface != surface {
+      recordCurrentNavigationDestination()
+    }
+    clearDetailForNavigation()
+    selectedSurface = surface
+    selectedEntrySourceMode = .page
+    selectedCorpusFileID = nil
+    expandedWorkspaceSurface = nil
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
+    if opensHome {
+      currentHomeDailyNotePath = nil
+      selectedOpenClawThreadID = nil
+      isWorkspaceSurfacePaneClosed = false
+    } else if surface == .files {
+      isWorkspaceSurfacePaneClosed = true
+    }
+    missingDailyNote = missing
+    activeWorkspacePane = .detail
+    statusText = "No daily file found"
   }
 
   func waitForDailyNoteDirectoryPreparationForTesting(corpusRoot: URL) async {

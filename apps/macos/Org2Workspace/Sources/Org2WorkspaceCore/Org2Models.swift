@@ -2034,6 +2034,36 @@ public struct CorpusFileTreeNode: Identifiable, Hashable, Sendable {
   public var isDirectory: Bool { file == nil }
 }
 
+struct CorpusFileTreePresentationRow: Identifiable, Hashable, Sendable {
+  let node: CorpusFileTreeNode
+  let depth: Int
+
+  var id: String { node.id }
+}
+
+enum CorpusFileTreePresentation {
+  static func visibleRows(
+    in roots: [CorpusFileTreeNode],
+    expandedDirectoryIDs: Set<String>
+  ) -> [CorpusFileTreePresentationRow] {
+    var rows: [CorpusFileTreePresentationRow] = []
+
+    func append(_ nodes: [CorpusFileTreeNode], depth: Int) {
+      for node in nodes {
+        rows.append(CorpusFileTreePresentationRow(node: node, depth: depth))
+        guard node.isDirectory,
+              expandedDirectoryIDs.contains(node.id),
+              let children = node.children
+        else { continue }
+        append(children, depth: depth + 1)
+      }
+    }
+
+    append(roots, depth: 0)
+    return rows
+  }
+}
+
 public struct OrgCryptRecipientFile: Identifiable, Hashable, Sendable {
   public let path: String
   public let relativePath: String

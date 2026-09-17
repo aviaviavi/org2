@@ -142,6 +142,18 @@ private struct CorpusSettingsView: View {
       }
       if store.corpusRoot != nil {
         Section {
+          Toggle("Disable automatic daily note creation", isOn: Binding(
+            get: { store.automaticDailyNoteCreationDisabled },
+            set: { store.automaticDailyNoteCreationDisabled = $0 }
+          ))
+        } header: {
+          Label("Daily Notes", systemImage: "calendar")
+        } footer: {
+          Text("When enabled, Daily links open existing files only. If a note is missing, OpenOrg shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
+        }
+      }
+      if store.corpusRoot != nil {
+        Section {
           LabeledContent("Scheduler") {
             Label(
               scheduler.title.replacingOccurrences(of: "Scheduler: ", with: ""),

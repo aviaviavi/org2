@@ -14,6 +14,74 @@ private actor RunReviewPageRefreshRecorder {
 }
 
 final class WorkspaceDisplayCacheTests: XCTestCase {
+  func testCorpusFileTreePresentationProducesFlatStableRows() {
+    let files = [
+      CorpusFile(
+        path: "/tmp/corpus/daily/2026/09/17.org",
+        relativePath: "daily/2026/09/17.org",
+        modifiedAt: nil,
+        byteCount: 12
+      ),
+      CorpusFile(
+        path: "/tmp/corpus/notes/alpha.org",
+        relativePath: "notes/alpha.org",
+        modifiedAt: nil,
+        byteCount: 24
+      )
+    ]
+    let tree = WorkspaceStore.makeCorpusFileTree(files)
+
+    XCTAssertEqual(
+      CorpusFileTreePresentation.visibleRows(in: tree, expandedDirectoryIDs: []).map(\.node.name),
+      ["daily", "notes"]
+    )
+
+    let expanded = CorpusFileTreePresentation.visibleRows(
+      in: tree,
+      expandedDirectoryIDs: ["directory:daily", "directory:daily/2026", "directory:daily/2026/09"]
+    )
+    XCTAssertEqual(expanded.map(\.node.name), ["daily", "2026", "09", "17.org", "notes"])
+    XCTAssertEqual(expanded.map(\.depth), [0, 1, 2, 3, 0])
+    XCTAssertEqual(Set(expanded.map(\.id)).count, expanded.count)
+  }
+
+  func testCorpusFileTreePresentationStaysUniqueAcrossRapidRefreshAndCollapse() {
+    for revision in 0..<500 {
+      let files = (0..<20).map { index in
+        CorpusFile(
+          path: "/tmp/corpus/notes/group-\(index % 4)/item-\(revision)-\(index).org",
+          relativePath: "notes/group-\(index % 4)/item-\(revision)-\(index).org",
+          modifiedAt: nil,
+          byteCount: nil
+        )
+      }
+      let tree = WorkspaceStore.makeCorpusFileTree(files)
+      let expanded: Set<String> = revision.isMultiple(of: 2)
+        ? ["directory:notes", "directory:notes/group-0", "directory:notes/group-1"]
+        : []
+      let rows = CorpusFileTreePresentation.visibleRows(
+        in: tree,
+        expandedDirectoryIDs: expanded
+      )
+      XCTAssertEqual(Set(rows.map(\.id)).count, rows.count)
+    }
+  }
+
+  func testDynamicFileTreesDoNotUseSwiftUIOutlineGroup() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot
+        .appendingPathComponent("Sources/Org2WorkspaceCore/ContentView.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertFalse(source.contains("OutlineGroup("))
+    XCTAssertTrue(source.contains("CorpusFileTreePresentation.visibleRows"))
+  }
+
   @MainActor
   func testCorpusFileDisplayCacheInvalidatesForFileAndQueryChanges() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))

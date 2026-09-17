@@ -13,7 +13,7 @@ If you already keep notes in another folder, choose it from the workspace option
 
 Global capture works anywhere on your Mac while OpenOrg is running. Press =Cmd-Ctrl-Return= to add a note or task to today's daily note, including dates, tags, links, files, or images.
 
-OpenOrg stores daily notes in the corpus's =daily/= zone by default. Set =roam.dailiesDir= in =org2.json= to a valid absolute path or a directory relative to the corpus root to use a different location; missing or invalid values fall back to =daily/= rather than the corpus root.
+OpenOrg stores daily notes in the corpus's =daily/= zone by default. Set =roam.dailiesDir= in =org2.json= to a valid absolute path or a directory relative to the corpus root to use a different location; missing or invalid values fall back to =daily/= rather than the corpus root. OpenOrg creates a missing daily note when you navigate to it by default. To let another job own creation, enable *Disable automatic daily note creation* in *Settings → Workspace*. Daily links then open existing files only and offer *Create Daily Note* when the target is missing.
 
 * The workspace
 
@@ -187,7 +187,7 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 - =Cmd-1= through =Cmd-6= open the main workspace surfaces.
 - =Cmd-P= opens Quick Open. =Cmd-K= also opens Quick Open outside the Source editor; inside it, =Cmd-K= inserts a link.
 - =Cmd-Ctrl-Return= opens global capture.
-- =Cmd-7=, =Cmd-8=, and =Cmd-9= open today's, yesterday's, and tomorrow's daily notes in the document pane. The Daily sidebar links and *Choose Date…* (=Cmd-Shift-7=) use the same behavior: they preserve the current first pane, including the selected AI chat and its draft, and do not open the Files list. If the document pane is closed, it reopens; an already closed first pane stays closed.
+- =Cmd-7=, =Cmd-8=, and =Cmd-9= open today's, yesterday's, and tomorrow's daily notes in the document pane. The Daily sidebar links and *Choose Date…* (=Cmd-Shift-7=) use the same behavior: they preserve the current first pane, including the selected AI chat and its draft, and do not open the Files list. If the document pane is closed, it reopens; an already closed first pane stays closed. With automatic daily note creation disabled for the workspace, a missing target shows an explicit creation button instead of writing a file.
 - =Cmd-A= selects visible items in Agenda, Files, Runs, or Review; =Shift-Up/Down= extends the selection.
 - =Cmd-F= searches the active pane.
 - =Cmd-R= refreshes the workspace when you need a manual reconciliation. Full refreshes of large corpora may take longer than 15 seconds; OpenOrg lets them continue without reporting a timeout error. Press =Cmd-R= again or click the stop control to cancel. Actual refresh errors are still reported.

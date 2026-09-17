@@ -2000,7 +2000,9 @@ private struct DailyNoteDatePickerSheet: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("Open Daily Note")
           .font(.title2.weight(.semibold))
-        Text("Choose a date to open or create its note in this workspace's daily folder.")
+        Text(store.automaticDailyNoteCreationDisabled
+          ? "Choose a date to open its note. If it does not exist, you can create it explicitly."
+          : "Choose a date to open or create its note in this workspace's daily folder.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -2386,6 +2388,7 @@ private struct SidebarView: View {
   @State private var chatRenameRequest: OpenClawThreadRenameRequest?
   @State private var chatRenameDraft = ""
   @State private var showsFileTree = false
+  @State private var expandedSidebarFileDirectoryIDs: Set<String> = []
   @State private var projectSheet: WorkspaceProjectSheet?
 
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
@@ -2503,19 +2506,14 @@ private struct SidebarView: View {
         }
 
         Section {
-          DisclosureGroup(isExpanded: $showsFileTree) {
-            if store.corpusFileTree.isEmpty {
-              Text(store.isScanningCorpusFiles ? "Scanning files…" : "No files")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.vertical, 3)
-            } else {
-              OutlineGroup(store.corpusFileTree, children: \.children) { node in
-                SidebarCorpusFileTreeRow(node: node)
-              }
-            }
+          Button {
+            showsFileTree.toggle()
           } label: {
             HStack(spacing: 7) {
+              Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .rotationEffect(.degrees(showsFileTree ? 90 : 0))
+                .frame(width: 12)
               Image(systemName: "folder")
                 .foregroundStyle(WorkspaceDesign.structuralAccent)
               Text("Files")
@@ -2525,8 +2523,29 @@ private struct SidebarView: View {
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.tertiary)
             }
+            .contentShape(Rectangle())
           }
-          .help("Browse the corpus as a collapsible file tree")
+          .buttonStyle(.plain)
+          .help(showsFileTree ? "Hide corpus files" : "Browse the corpus as a collapsible file tree")
+
+          if showsFileTree {
+            if store.corpusFileTree.isEmpty {
+              Text(store.isScanningCorpusFiles ? "Scanning files…" : "No files")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 18)
+                .padding(.vertical, 3)
+            } else {
+              ForEach(visibleSidebarFileRows) { row in
+                SidebarCorpusFileTreeRow(
+                  row: row,
+                  isExpanded: expandedSidebarFileDirectoryIDs.contains(row.id),
+                  toggleDirectory: { toggleSidebarFileDirectory(row.id) }
+                )
+                .id("sidebar-file:\(row.id)")
+              }
+            }
+          }
         }
 
         WorkspaceProjectSidebar(presentedSheet: $projectSheet) { summary in chatThreadRow(summary) }
@@ -2606,6 +2625,10 @@ private struct SidebarView: View {
         settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
         chatRenameRequest = nil
       }
+    }
+    .onChange(of: store.corpusRoot?.path) {
+      showsFileTree = false
+      expandedSidebarFileDirectoryIDs = []
     }
     .onChange(of: settledThreads.count) {
       guard isChatThreadListExpanded else { return }
@@ -2837,18 +2860,37 @@ private struct SidebarView: View {
     chatRenameDraft = thread.title
     chatRenameRequest = OpenClawThreadRenameRequest(threadID: threadID)
   }
+
+  private var visibleSidebarFileRows: [CorpusFileTreePresentationRow] {
+    CorpusFileTreePresentation.visibleRows(
+      in: store.corpusFileTree,
+      expandedDirectoryIDs: expandedSidebarFileDirectoryIDs
+    )
+  }
+
+  private func toggleSidebarFileDirectory(_ id: String) {
+    if expandedSidebarFileDirectoryIDs.contains(id) {
+      expandedSidebarFileDirectoryIDs.remove(id)
+    } else {
+      expandedSidebarFileDirectoryIDs.insert(id)
+    }
+  }
 }
 
 private struct SidebarCorpusFileTreeRow: View {
   @Environment(WorkspaceStore.self) private var store
-  let node: CorpusFileTreeNode
+  let row: CorpusFileTreePresentationRow
+  let isExpanded: Bool
+  let toggleDirectory: () -> Void
 
   var body: some View {
+    let node = row.node
     if let file = node.file {
       Button {
         store.openSidebarFile(file)
       } label: {
         CorpusFileTreeNodeLabel(node: node, compact: true)
+          .padding(.leading, CGFloat(row.depth + 1) * 14)
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -2857,7 +2899,16 @@ private struct SidebarCorpusFileTreeRow: View {
       }
       .help(file.relativePath)
     } else {
-      CorpusFileTreeNodeLabel(node: node, compact: true)
+      Button(action: toggleDirectory) {
+        CorpusFileTreeNodeLabel(
+          node: node,
+          compact: true,
+          directoryIsExpanded: isExpanded
+        )
+        .padding(.leading, CGFloat(row.depth) * 14)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
         .help("\(node.descendantFileCount) file\(node.descendantFileCount == 1 ? "" : "s")")
     }
   }
@@ -3582,6 +3633,7 @@ private struct FilesView: View {
   @FocusState private var filterFocused: Bool
   @State private var filterDraft = ""
   @State private var pendingFilterUpdate: Task<Void, Never>?
+  @State private var expandedFileDirectoryIDs: Set<String> = []
 
   var body: some View {
     VStack(spacing: 0) {
@@ -3644,20 +3696,31 @@ private struct FilesView: View {
         ScrollView {
           LazyVStack(spacing: 2) {
             if filterDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-              OutlineGroup(store.filteredCorpusFileTree, children: \.children) { node in
-                CorpusFileTreeRow(node: node)
+              ForEach(visibleFileRows) { row in
+                CorpusFileTreeRow(
+                  row: row,
+                  isExpanded: expandedFileDirectoryIDs.contains(row.id),
+                  toggleDirectory: { toggleFileDirectory(row.id) }
+                )
                   .frame(minHeight: 44)
               }
             } else {
               ForEach(store.filteredCorpusFiles) { file in
-                CorpusFileTreeRow(node: CorpusFileTreeNode(
-                  id: file.id,
-                  name: file.name,
-                  relativePath: file.relativePath,
-                  file: file,
-                  children: nil,
-                  descendantFileCount: 1
-                ))
+                CorpusFileTreeRow(
+                  row: CorpusFileTreePresentationRow(
+                    node: CorpusFileTreeNode(
+                      id: file.id,
+                      name: file.name,
+                      relativePath: file.relativePath,
+                      file: file,
+                      children: nil,
+                      descendantFileCount: 1
+                    ),
+                    depth: 0
+                  ),
+                  isExpanded: false,
+                  toggleDirectory: {}
+                )
                 .frame(height: 52)
               }
             }
@@ -3687,7 +3750,25 @@ private struct FilesView: View {
         filterDraft = store.corpusFileFilter
       }
     }
+    .onChange(of: store.corpusRoot?.path) {
+      expandedFileDirectoryIDs = []
+    }
     .onDisappear { pendingFilterUpdate?.cancel() }
+  }
+
+  private var visibleFileRows: [CorpusFileTreePresentationRow] {
+    CorpusFileTreePresentation.visibleRows(
+      in: store.filteredCorpusFileTree,
+      expandedDirectoryIDs: expandedFileDirectoryIDs
+    )
+  }
+
+  private func toggleFileDirectory(_ id: String) {
+    if expandedFileDirectoryIDs.contains(id) {
+      expandedFileDirectoryIDs.remove(id)
+    } else {
+      expandedFileDirectoryIDs.insert(id)
+    }
   }
 
   private func scheduleFilterUpdate() {
@@ -3712,11 +3793,15 @@ private struct FilesView: View {
 
 private struct CorpusFileTreeRow: View {
   @Environment(WorkspaceStore.self) private var store
-  let node: CorpusFileTreeNode
+  let row: CorpusFileTreePresentationRow
+  let isExpanded: Bool
+  let toggleDirectory: () -> Void
 
   var body: some View {
+    let node = row.node
     if let file = node.file {
       CorpusFileTreeNodeLabel(node: node)
+        .padding(.leading, CGFloat(row.depth + 1) * 18)
         .contentShape(Rectangle())
         .onTapGesture {
           let modifiers = NSApp.currentEvent?.modifierFlags ?? []
@@ -3728,7 +3813,12 @@ private struct CorpusFileTreeRow: View {
           CorpusFileContextMenu(file: file)
         }
     } else {
-      CorpusFileTreeNodeLabel(node: node)
+      Button(action: toggleDirectory) {
+        CorpusFileTreeNodeLabel(node: node, directoryIsExpanded: isExpanded)
+          .padding(.leading, CGFloat(row.depth) * 18)
+          .contentShape(Rectangle())
+      }
+        .buttonStyle(.plain)
         .listRowBackground(Color.clear)
     }
   }
@@ -3737,9 +3827,26 @@ private struct CorpusFileTreeRow: View {
 private struct CorpusFileTreeNodeLabel: View {
   let node: CorpusFileTreeNode
   var compact = false
+  var directoryIsExpanded: Bool?
+
+  init(
+    node: CorpusFileTreeNode,
+    compact: Bool = false,
+    directoryIsExpanded: Bool? = nil
+  ) {
+    self.node = node
+    self.compact = compact
+    self.directoryIsExpanded = directoryIsExpanded
+  }
 
   var body: some View {
     HStack(spacing: compact ? 6 : 8) {
+      if let directoryIsExpanded, node.isDirectory {
+        Image(systemName: "chevron.right")
+          .font(.caption2.weight(.semibold))
+          .rotationEffect(.degrees(directoryIsExpanded ? 90 : 0))
+          .frame(width: compact ? 10 : 12)
+      }
       Image(systemName: node.isDirectory ? "folder" : "doc.text")
         .foregroundStyle(node.isDirectory ? WorkspaceDesign.structuralAccent : WorkspaceDesign.secondaryText)
         .frame(width: compact ? 14 : 18)
@@ -11353,6 +11460,8 @@ private struct DetailView: View {
     VStack(alignment: .leading, spacing: 0) {
       if let run = store.presentedAgentRun {
         RunCenterDetail(run: run)
+      } else if let missingDailyNote = store.missingDailyNote {
+        MissingDailyNoteView(note: missingDailyNote)
       } else if let location = store.selectedLocation {
         DetailHeader(
           sourceEditorInteraction: store.sourceEditorInteraction,
@@ -11397,6 +11506,47 @@ private struct DetailView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
+}
+
+private struct MissingDailyNoteView: View {
+  @Environment(WorkspaceStore.self) private var store
+  let note: WorkspaceMissingDailyNote
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Spacer()
+      WorkspaceIconBadge(
+        systemImage: "calendar.badge.exclamationmark",
+        tint: .secondary,
+        fill: WorkspaceDesign.subtleFill
+      )
+      .scaleEffect(1.25)
+      Text("No Daily File Found")
+        .font(.headline)
+      Text("OpenOrg did not find \(note.relativePath). Automatic daily note creation is disabled for this workspace.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .textSelection(.enabled)
+        .padding(.horizontal, 24)
+      Button {
+        store.createMissingDailyNote()
+      } label: {
+        if store.isCreatingMissingDailyNote {
+          HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Creating…")
+          }
+        } else {
+          Text("Create Daily Note")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .disabled(store.isCreatingMissingDailyNote)
+      Spacer()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
 }
 
 private struct NodeEntityTypeMenu: View {

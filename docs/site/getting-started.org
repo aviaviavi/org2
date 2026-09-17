@@ -68,7 +68,7 @@ You can use the app's controls for everyday work and open the readable source wh
 
 * 4) Use Today and Agenda
 
-Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; OpenOrg opens the existing note or creates it in the configured daily folder.
+Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; OpenOrg opens the existing note or creates it in the configured daily folder. If an external job creates your daily files, enable *Disable automatic daily note creation* in *Settings → Workspace*. A missing date will then show a message and a *Create Daily Note* button without writing anything automatically.
 
 Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
 
