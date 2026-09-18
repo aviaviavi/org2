@@ -160,7 +160,8 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 </section>
 <section class="org2-headline level-1">
 <h1 id="durable-delegation-example">Durable delegation example</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --goal &quot;Prepare a cited launch briefing&quot; \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --title &quot;Prepare a cited launch briefing&quot; \
+  --goal &quot;Prepare the briefing with source citations and a reviewed PDF&quot; \
   --accept &quot;A reviewed briefing and PDF exist&quot; \
   --context notes/launch.org2 --capability agent-context --capability publish \
   --owner avi --dir ~/notes --json

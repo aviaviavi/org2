@@ -83,6 +83,22 @@ private func selectionKeyDown(
 }
 
 final class AgentRunModelsTests: XCTestCase {
+  func testLegacyRunDisplayTitleExtractsTaskFromExecutionBrief() throws {
+    let run = try makeRun(goal: """
+    Execute this newly approved engineering task exactly once.
+
+    Task: Reduce OpenOrg per-turn context overhead across persistent Codex/OpenClaw sessions, stateless provider fallbacks, and shared AI rooms; add token telemetry and regression budgets.
+    Repository: https://github.com/aviaviavi/org2
+    Source: file:daily/2026-09-18.org::1
+    """)
+
+    XCTAssertTrue(run.displayTitle.hasPrefix("Reduce OpenOrg per-turn context overhead"))
+    XCTAssertTrue(run.displayTitle.hasSuffix("…"))
+    XCTAssertLessThanOrEqual(run.displayTitle.count, 120)
+    XCTAssertFalse(run.displayTitle.contains("Repository:"))
+    XCTAssertFalse(run.displayTitle.contains("Execute this newly approved"))
+  }
+
   func testRunCenterResolvesSelectedApprovalWithinPresentedRun() {
     XCTAssertEqual(
       RunCenterPresentation.approvalID(
@@ -2156,6 +2172,51 @@ final class AgentRunModelsTests: XCTestCase {
       "Use agent run “Prepare a cited briefing” at /remote/org2/.org2/runs/run-1.org2:1 as context.\n\n"
     )
     XCTAssertEqual(store.openClawStatusText, "Added .org2/runs/run-1.org2:1 to OpenClaw")
+  }
+
+  @MainActor
+  func testAskAIAboutDispatchedAgentRunKeepsContextPillConcise() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-run-long-context-title-\(UUID().uuidString)", isDirectory: true)
+    let runs = root.appendingPathComponent(".org2/runs", isDirectory: true)
+    try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try "#+TITLE: Durable run\n".write(
+      to: runs.appendingPathComponent("run-1.org2"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let run = try makeRun(goal: """
+    Execute this newly approved engineering task exactly once.
+
+    Task: Reduce OpenOrg per-turn context overhead across persistent Codex/OpenClaw sessions, stateless provider fallbacks, and shared AI rooms; add token telemetry and regression budgets.
+    Repository: https://github.com/aviaviavi/org2
+    Source: file:daily/2026-09-18.org::1
+    """)
+    let suiteName = "org2-run-long-context-title-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.openClawRemoteCorpusPath = "/remote/org2"
+
+    store.askOpenClawAboutAgentRun(run)
+
+    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    let title = try XCTUnwrap(presentation.contexts.first?.title)
+    XCTAssertTrue(title.hasPrefix("Reduce OpenOrg per-turn context overhead"))
+    XCTAssertTrue(title.hasSuffix("…"))
+    XCTAssertLessThanOrEqual(title.count, 80)
+    XCTAssertFalse(title.contains("Repository:"))
+    XCTAssertFalse(title.contains("Execute this newly approved"))
+    XCTAssertEqual(presentation.userText, "")
+    let threadTitle = try XCTUnwrap(store.openClawChatThreads.first?.title)
+    XCTAssertTrue(threadTitle.hasPrefix("Run: Reduce OpenOrg per-turn context overhead"))
+    XCTAssertLessThanOrEqual(threadTitle.count, 80)
   }
 
   @MainActor

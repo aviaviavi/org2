@@ -160,7 +160,7 @@ export function workflowFromRun(run: AgentRun, options: { id?: string; title?: s
     schema: ORG2_WORKFLOW_SCHEMA,
     id: safeIdentifier(options.id || `workflow-${run.id}`, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }),
     version: options.version || "1.0.0",
-    title: options.title || run.goal,
+    title: options.title || run.title || run.goal,
     description: `Reusable workflow captured from run ${run.id}.`,
     state: "draft",
     instructions: run.goal,
@@ -302,6 +302,7 @@ export function instantiateWorkflow(workflow: AgentWorkflow, inputs: Record<stri
   if (missing.length) throw new Error(`missing required workflow inputs: ${missing.map((input) => input.id).join(", ")}`);
   const resolved = Object.fromEntries(workflow.inputs.map((input) => [input.id, inputs[input.id] ?? input.default ?? ""]));
   return createAgentRun({
+    title: applyTemplate(workflow.title, resolved),
     goal: applyTemplate(workflow.instructions || workflow.title, resolved),
     acceptanceCriteria: workflow.outputs.map((output) => `Produce ${applyTemplate(output.path, resolved)}`).concat(workflow.validations.map((name) => `Pass validation: ${name}`)),
     riskClass: workflow.riskClass,

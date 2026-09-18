@@ -37108,7 +37108,7 @@ public final class WorkspaceStore {
       return nil
     }
 
-    let title = Org2Display.cleanInline(run.goal)
+    let title = Self.agentRunContextTitle(run)
     return OpenClawContextPointer(
       kind: "agent run",
       displayTitle: title,
@@ -37116,6 +37116,13 @@ public final class WorkspaceStore {
       displayReference: "\(relativePath):1",
       threadTitle: "Run: \(title)"
     )
+  }
+
+  nonisolated private static func agentRunContextTitle(_ run: AgentRunItem) -> String {
+    let title = run.displayTitle
+    return title.count <= 80
+      ? title
+      : String(title.prefix(79)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
   }
 
   private func openClawContextPointer(for item: ApprovalItem) -> OpenClawContextPointer {

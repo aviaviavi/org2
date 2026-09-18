@@ -469,8 +469,29 @@ public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
   public let failure: String?
 
   public var displayTitle: String {
-    let title = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return title.isEmpty ? goal : title
+    let explicitTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let raw = explicitTitle.isEmpty ? goal : explicitTitle
+    let normalized = Org2Display.cleanInline(raw)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    var candidate = normalized
+    if let marker = candidate.range(
+      of: #"\bTask:\s*"#,
+      options: [.regularExpression, .caseInsensitive]
+    ) {
+      candidate = String(candidate[marker.upperBound...])
+    }
+    if let metadata = candidate.range(
+      of: #"\s+(?:Repository|Source|TODO|Dispatch ID|Acceptance criteria|Protected exclusions|Origin thread):\s*"#,
+      options: [.regularExpression, .caseInsensitive]
+    ) {
+      candidate = String(candidate[..<metadata.lowerBound])
+    }
+    candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+    if candidate.isEmpty { candidate = "Agent run" }
+    return candidate.count <= 120
+      ? candidate
+      : String(candidate.prefix(119)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
   }
 
   public var pendingApprovalCount: Int { pendingApprovals.count }

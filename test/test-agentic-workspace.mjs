@@ -107,12 +107,29 @@ try {
     capabilities: ["agent-context", "publish"], context: [{ ref: "notes/board.org2", citation: "notes/board.org2:1" }],
     plan: [{ id: "draft", title: "Draft briefing", kind: "agent" }, { id: "review", title: "Review release", kind: "approval" }],
   });
+  assert.equal(run.title, "Prepare a cited board briefing");
+  const dispatchedRun = createAgentRun({
+    goal: "Execute this newly approved engineering task exactly once. Task: Reduce OpenOrg per-turn context overhead across persistent sessions. Repository: https://github.com/aviaviavi/org2 Source: file:daily/2026-09-18.org::1",
+  });
+  assert.equal(dispatchedRun.title, "Reduce OpenOrg per-turn context overhead across persistent sessions");
+  assert.throws(
+    () => createAgentRun({ title: "x".repeat(121), goal: "Keep details in the goal" }),
+    /run title must be at most 120 characters; put execution details in --goal/,
+  );
   assert.equal(validateAgentRun(run).valid, true);
   assert.deepEqual(parseAgentRunOrg(renderAgentRunOrg(run)), run);
   assert.match(renderAgentRunOrg(run), /:AGENT_REF: scarf-support/);
   assert.match(renderAgentRunOrg(run), /:GOAL_REF: grow-revenue/);
   saveAgentRun(root, run);
   assert.equal(loadAgentRun(root, run.id).goal, run.goal);
+  const cliTitledRun = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "run", "create", "--id", "cli-titled-run",
+    "--title", "Concise CLI title", "--goal", "A complete execution brief that stays out of the display title.",
+    "--dir", root, "--json",
+  ], { encoding: "utf8" });
+  assert.equal(cliTitledRun.status, 0, cliTitledRun.stderr || cliTitledRun.stdout);
+  assert.equal(JSON.parse(cliTitledRun.stdout).run.title, "Concise CLI title");
+  fs.unlinkSync(path.join(root, ".org2", "runs", "cli-titled-run.org2"));
 
   const guardedRun = createAgentRun({ id: "guarded-write", goal: "Preserve concurrent source changes" });
   const guardedFile = saveAgentRun(root, guardedRun, { expectedRevision: null });
@@ -704,6 +721,7 @@ try {
   assert.equal(parseWorkflowOrg(renderedAutomation).model, "claude-opus-4-1");
   assert.equal(parseWorkflowOrg(renderedAutomation).reasoningEffort, "high");
   const automationRun = instantiateWorkflow(scheduledAutomation, {});
+  assert.equal(automationRun.title, scheduledAutomation.title);
   assert.equal(automationRun.destinationRef, "builtin.claude");
   assert.match(renderAgentRunOrg(automationRun), /:AI_DESTINATION_REF: builtin\.claude/);
   saveWorkflow(root, scheduledAutomation, { expectedRevision: null });
@@ -898,6 +916,7 @@ try {
   assert.notEqual(invalidEvent.status, 0);
   assert.match(invalidEvent.stderr, /invalid workflow event: captured; expected one of: capture, meeting-import/);
   const instantiated = instantiateWorkflow(workflow, { quarter: "Q3" });
+  assert.equal(instantiated.title, workflow.title);
   assert.equal(instantiated.goal, "Prepare the Q3 board briefing");
   assert.equal(instantiated.workflowId, "board-briefing");
   const attemptOne = instantiateWorkflow(workflow, { quarter: "Q3" }, {

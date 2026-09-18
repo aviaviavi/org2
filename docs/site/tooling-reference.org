@@ -579,7 +579,7 @@ An agent profile may declare responsibilities, capabilities, skills, reporting a
 #+begin_src sh
 org2 agent-profile resolve --runtime openclaw \
   --runtime-agent-id customer-support --dir ~/notes --json
-org2 run create --goal "Resolve the customer issue" \
+org2 run create --title "Resolve the customer issue" --goal "Investigate and resolve the customer issue" \
   --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
 org2 todo assign --file notes/support.org --line 12 --assignee "Customer Support" \
   --agent-ref customer-support --goal-ref customer-trust --apply
@@ -590,7 +590,8 @@ The resolved =agentRef= is the portable worker ID; OpenClaw, Codex, and Claude C
 =org2 run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
 
 #+begin_src sh
-org2 run create --goal "Prepare the weekly operating review" \
+org2 run create --title "Prepare the weekly operating review" \
+  --goal "Prepare the review with cited claims and a validated PDF export" \
   --accept "Claims retain citations" --accept "PDF passes export validation" \
   --risk local-draft --owner avi --assignee analyst \
   --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
@@ -618,6 +619,8 @@ org2 run complete RUN_ID \
   --summary "Prepared the cited operating review and validated its PDF export." \
   --highlight "All claims retain citations" --next-action "Share after owner review" --dir ~/notes
 #+end_src
+
+=--title= is concise display metadata, limited to 120 characters. Put the complete task brief and execution instructions in =--goal=. When an older caller omits =--title=, Org2 derives and stores a bounded title from the goal; workflow runs always preserve the workflow title separately from its instructions.
 
 Other lifecycle operations include =resume=, =retry=, =block=, =fail=, =cancel=, =complete-external=, =reopen-external=, =fork=, =assign=, =comment=, =outcome=, =runtime=, =artifact=, and =artifact-review=. Retrying a canceled or failed run that still carries pending approvals reopens it directly in =waiting-approval= so the review queue cannot be bypassed or left hidden. =run approval-reconcile= previews historical provider-key duplicates and requires =--apply= before canceling their stale pending approvals and dedicated projection runs. =run reconcile-source RUN_ID= reports direct readable-projection drift and its canonical values without writing; add =--if-revision REVISION --apply= to restore the generated title, status, goal, approval summary, and other readable fields from the unchanged machine-state block. OpenOrg exposes this guarded operation as *Repair & Retry* after a run approval encounters that exact conflict. =run runtime= records observable provider/model identity and optional token, cost, or elapsed usage without storing credentials. =run artifact-review= records a human review decision on an existing artifact and, for a linked Org/Org2 file inside the corpus, updates its =ORG2_REVIEW_STATUS= metadata at the same time; it also repairs stale review state on historical completed records. Normal completion requires =--summary= with a human-readable result and refuses pending approvals or =review-required= artifacts; repeat =--highlight= and =--next-action= to populate the reviewer-facing outcome. When a person confirms that an unfinished run's outcome was completed outside this workflow, =run complete-external RUN_ID --summary "Where or how it was completed" --actor NAME= records an explicit =completed-externally= audit event, marks unfinished workflow steps skipped, and closes the run while preserving unresolved approvals, artifact review states, and validations as history. Agents must not infer external completion on their own. =run reopen-external RUN_ID --summary "Corrected open-run outcome" --actor NAME= is the narrow repair for a run mistakenly completed externally from =waiting-approval=; it restores that same run and its retained approval IDs to the pending queue. =run outcome= may record or revise an outcome before completion. Blocking requires =--reason= with the specific clarification or next action; Org2 rejects an unactionable reasonless blocked state. =run normalize= converts legacy =AGENT_RUN_ID= headings into shared records while retaining a citation to their source location.
 

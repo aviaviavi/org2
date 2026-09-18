@@ -113,7 +113,8 @@ The same plugin registers the Mac app's optional local-edit node policy. When *R
 * Durable delegation example
 
 #+begin_src sh
-org2 run create --goal "Prepare a cited launch briefing" \
+org2 run create --title "Prepare a cited launch briefing" \
+  --goal "Prepare the briefing with source citations and a reviewed PDF" \
   --accept "A reviewed briefing and PDF exist" \
   --context notes/launch.org2 --capability agent-context --capability publish \
   --owner avi --dir ~/notes --json

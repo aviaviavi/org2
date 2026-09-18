@@ -11,6 +11,7 @@ import { defaultRunApprovalIndexPath } from "./indexPaths.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
+export const AGENT_RUN_TITLE_MAX_LENGTH = 120;
 
 export const AGENT_RUN_STATUSES = [
   "queued",
@@ -325,6 +326,32 @@ function optional(raw: unknown): string | undefined {
   return value || undefined;
 }
 
+export function deriveAgentRunTitle(rawGoal: string): string {
+  const normalized = String(rawGoal || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "Agent run";
+  const task = /\bTask:\s*/i.exec(normalized);
+  let candidate = task ? normalized.slice(task.index + task[0].length) : normalized;
+  const metadata = /\s+(?:Repository|Source|TODO|Dispatch ID|Acceptance criteria|Protected exclusions|Origin thread):\s*/i.exec(candidate);
+  if (metadata) candidate = candidate.slice(0, metadata.index);
+  if (!task) {
+    const sentence = /^(.+?[.!?])(?:\s|$)/.exec(candidate);
+    if (sentence) candidate = sentence[1];
+  }
+  candidate = candidate.trim().replace(/[\s:;,.-]+$/, "");
+  if (!candidate) candidate = "Agent run";
+  if (candidate.length <= AGENT_RUN_TITLE_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, AGENT_RUN_TITLE_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function explicitAgentRunTitle(raw: unknown): string | undefined {
+  const title = optional(raw)?.replace(/\s+/g, " ");
+  if (!title) return undefined;
+  if (title.length > AGENT_RUN_TITLE_MAX_LENGTH) {
+    throw new Error(`run title must be at most ${AGENT_RUN_TITLE_MAX_LENGTH} characters; put execution details in --goal`);
+  }
+  return title;
+}
+
 export function agentRunBlockReasonLooksLikeApprovalBoundary(reasonRaw: unknown): boolean {
   const reason = String(reasonRaw || "").toLowerCase();
   return reason === AGENT_RUN_APPROVAL_BLOCK_REASON.toLowerCase()
@@ -388,6 +415,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   const id = safeIdentifier(input.id || crypto.randomUUID(), { label: "run id" });
   const goal = String(input.goal || "").trim();
   if (!goal) throw new Error("run goal is required");
+  const title = explicitAgentRunTitle(input.title) || deriveAgentRunTitle(goal);
   const status = input.status || "queued";
   if (!AGENT_RUN_STATUSES.includes(status)) throw new Error(`invalid run status: ${status}`);
   const riskClass = input.riskClass || "local-draft";
@@ -420,7 +448,7 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
   const run: AgentRun = {
     schema: ORG2_AGENT_RUN_SCHEMA,
     id,
-    ...(optional(input.title) ? { title: optional(input.title) } : {}),
+    title,
     goal,
     acceptanceCriteria: unique(input.acceptanceCriteria),
     status,
