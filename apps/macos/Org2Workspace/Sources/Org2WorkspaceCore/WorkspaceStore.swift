@@ -3705,6 +3705,7 @@ public final class WorkspaceStore {
     if let openClawTranscriptLoadTask { await openClawTranscriptLoadTask.value }
     startPendingOpenClawTurnRecovery()
     setWorkspaceRealtimeRefreshActive(true)
+    await refreshProjects()
     await refreshAgenda()
     await refreshRunReviewData()
   }

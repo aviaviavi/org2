@@ -223,6 +223,32 @@ final class WorkspaceProjectTests: XCTestCase {
   }
 
   @MainActor
+  func testHeadlessBootstrapLoadsProjectsForMobileClients() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-headless-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "WorkspaceProjectTests.Headless.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let expected = project(threadID: UUID())
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.projectListLoaderForTesting = { _ in
+      WorkspaceProjectList(projects: [expected], diagnostics: [])
+    }
+
+    await store.bootstrapHeadless(corpusRoot: root, hostRef: "test", destinations: [])
+    defer { store.setWorkspaceRealtimeRefreshActive(false) }
+
+    XCTAssertEqual(store.projectNotes, [expected])
+  }
+
+  @MainActor
   func testForkedThreadRetainsProjectMembership() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-project-fork-\(UUID().uuidString)", isDirectory: true)
