@@ -1,5 +1,5 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { cronKey, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import { cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
 import { registerOrg2WorkspaceNodePolicy } from "./lib/local-edit-node.js";
 
@@ -246,7 +246,7 @@ export default definePluginEntry({
       const agentId = runtimeAgentId(event);
       const sessionKey = cronSessionKey(event, agentId);
       if (event.action === "started") {
-        const marker = workflowMarker(event.job?.payload?.text);
+        const marker = workflowMarker(cronPayloadText(event.job?.payload));
         if (marker) {
           await lifecycle.serialize(() => lifecycle.ensureWorkflow(key, marker.workflowId, marker.inputs, {
             triggerId: marker.triggerId || "schedule",

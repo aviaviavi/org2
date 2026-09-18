@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { approvedRunContinuationPrompt, clarificationContinuationPrompt, conciseGoal, cronKey, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
+import { approvedRunContinuationPrompt, clarificationContinuationPrompt, conciseGoal, cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
@@ -58,6 +58,12 @@ test("derives the agent-scoped OpenClaw session for cron continuations", () => {
     "agent:custom:cron:one",
   );
   assert.equal(cronSessionKey({ jobId: "job-1" }, undefined), undefined);
+});
+
+test("reads current and legacy OpenClaw cron prompt payloads", () => {
+  assert.equal(cronPayloadText({ kind: "agentTurn", message: "current" }), "current");
+  assert.equal(cronPayloadText({ kind: "agentTurn", text: "legacy" }), "legacy");
+  assert.equal(cronPayloadText(undefined), "");
 });
 
 test("recognizes prepared Org2 workflow runs", () => {
@@ -247,7 +253,12 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   const added = [];
   const cron = {
     list: async () => [],
-    add: async (input) => { added.push(input); return { id: "job-1" }; },
+    add: async (input) => {
+      assert.equal(typeof input.payload.message, "string");
+      assert.equal(input.payload.text, undefined);
+      added.push(input);
+      return { id: "job-1" };
+    },
     update: async () => {},
     remove: async () => ({ removed: true }),
   };
@@ -269,12 +280,12 @@ test("reconciles an active Org2 schedule into OpenClaw cron", async () => {
   assert.equal(added.length, 1);
   assert.equal(added[0].schedule.expr, "0 9 * * 1");
   assert.equal(added[0].schedule.tz, "America/Los_Angeles");
-  assert.equal(workflowMarker(added[0].payload.text).workflowId, "weekly-review");
-  assert.equal(workflowMarker(added[0].payload.text).triggerId, "schedule");
+  assert.equal(workflowMarker(added[0].payload.message).workflowId, "weekly-review");
+  assert.equal(workflowMarker(added[0].payload.message).triggerId, "schedule");
   assert.equal(added[0].payload.model, "openai/gpt-5.6-sol");
   assert.equal(added[0].payload.thinking, "high");
-  assert.match(added[0].payload.text, /ORG2_MODEL: openai\/gpt-5\.6-sol/);
-  assert.match(added[0].payload.text, /ORG2_REASONING_EFFORT: high/);
+  assert.match(added[0].payload.message, /ORG2_MODEL: openai\/gpt-5\.6-sol/);
+  assert.match(added[0].payload.message, /ORG2_REASONING_EFFORT: high/);
 });
 
 test("continues to reconcile the legacy OpenClaw schedule trigger", async () => {
@@ -300,7 +311,7 @@ test("continues to reconcile the legacy OpenClaw schedule trigger", async () => 
   await lifecycle.init();
   await lifecycle.reconcile();
   assert.equal(added.length, 1);
-  assert.equal(workflowMarker(added[0].payload.text).triggerId, "openclaw-schedule");
+  assert.equal(workflowMarker(added[0].payload.message).triggerId, "openclaw-schedule");
 });
 
 test("records an ineligible scheduled workflow attempt as skipped without creating a run", async () => {

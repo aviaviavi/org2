@@ -214,6 +214,10 @@ export function cronSessionKey(event, runtimeAgentId) {
   return agentId && jobId ? `agent:${agentId}:cron:${jobId}` : undefined;
 }
 
+export function cronPayloadText(payload) {
+  return String(payload?.message || payload?.text || "");
+}
+
 export function clarificationContinuationPrompt(run, response) {
   return [
     `ORG2_RUN_ID: ${run.id}`,
@@ -939,7 +943,7 @@ export class Org2Lifecycle {
         wakeMode: "now",
         payload: {
           kind: "agentTurn",
-          text: workflowExecutionPrompt(workflow, {}, undefined, trigger.id),
+          message: workflowExecutionPrompt(workflow, {}, undefined, trigger.id),
           ...(workflow.model ? { model: workflow.model } : {}),
           ...(workflow.reasoningEffort ? { thinking: workflow.reasoningEffort } : {}),
         },
