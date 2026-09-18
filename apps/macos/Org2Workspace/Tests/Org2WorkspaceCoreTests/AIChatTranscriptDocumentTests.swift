@@ -257,7 +257,18 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       activities: [OpenClawRunActivity(
         id: "tool-1", runID: "run", kind: .tool, title: "Read source",
         detail: "/tmp/ContentView.swift", status: .succeeded
-      )]
+      )],
+      usage: AIChatTokenUsage(
+        inputTokens: 120,
+        cachedInputTokens: 80,
+        outputTokens: 30,
+        totalTokens: 150
+      ),
+      context: OpenOrgContextTelemetry(
+        mode: .delta,
+        staticTokens: 10,
+        projectTokens: 5
+      )
     ))
     let changeSummary = AIChatTranscriptHTML.ChangeSummary(OpenClawCorpusChangeSummary(files: [
       OpenClawCorpusFileChange(relativePath: "ContentView.swift", status: .modified, insertions: 4, deletions: 2)
@@ -278,6 +289,8 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertEqual(result?["copyLabel"] as? String, "Copy message")
     XCTAssertTrue((result?["trace"] as? String)?.contains("Approach") == true)
     XCTAssertTrue((result?["trace"] as? String)?.contains("Read source") == true)
+    XCTAssertTrue((result?["trace"] as? String)?.contains("Provider tokens") == true)
+    XCTAssertTrue((result?["trace"] as? String)?.contains("OpenOrg context") == true)
     XCTAssertTrue((result?["changes"] as? String)?.contains("ContentView.swift") == true)
     XCTAssertEqual(result?["details"] as? Bool, false)
   }

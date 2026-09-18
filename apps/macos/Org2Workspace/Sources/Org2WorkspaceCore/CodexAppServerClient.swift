@@ -191,6 +191,7 @@ public struct CodexTurnResult: Sendable {
   public let status: Status
   public let reply: String
   public let errorMessage: String?
+  public let usage: AIChatTokenUsage?
 }
 
 public enum CodexAppServerEvent: Sendable {
@@ -208,6 +209,7 @@ public enum CodexAppServerEvent: Sendable {
     detail: String?,
     status: OpenClawRunActivity.Status
   )
+  case contextCompacted(threadID: String, turnID: String)
   case warning(threadID: String?, message: String)
 }
 
@@ -313,6 +315,7 @@ public actor CodexAppServerClient {
     var streamedReplyChunks: [String] = []
     var streamedItemID: String?
     var errorMessage: String?
+    var usage: AIChatTokenUsage?
     var continuation: CheckedContinuation<CodexTurnResult, Never>?
     var completedResult: CodexTurnResult?
 
@@ -1243,7 +1246,8 @@ public actor CodexAppServerClient {
         turnID: turnID,
         status: .failed,
         reply: pending.finalReply.isEmpty ? pending.streamedReply : pending.finalReply,
-        errorMessage: message
+        errorMessage: message,
+        usage: pending.usage
       )
       if let continuation = pending.continuation {
         continuation.resume(returning: result)
@@ -1484,6 +1488,18 @@ public actor CodexAppServerClient {
         params,
         completed: method == "item/completed"
       )
+    case "thread/tokenUsage/updated":
+      guard let turnID = params["turnId"]?.stringValue,
+            let last = params["tokenUsage"]?["last"]
+      else { return }
+      let pending = pendingTurns[turnID] ?? PendingTurn()
+      pending.usage = AIChatTokenUsage(
+        inputTokens: Self.integer(last["inputTokens"] ?? .integer(0)) ?? 0,
+        cachedInputTokens: Self.integer(last["cachedInputTokens"] ?? .integer(0)) ?? 0,
+        outputTokens: Self.integer(last["outputTokens"] ?? .integer(0)) ?? 0,
+        totalTokens: Self.integer(last["totalTokens"] ?? .integer(0))
+      )
+      pendingTurns[turnID] = pending
     case "error":
       let turnID = params["turnId"]?.stringValue
       let message = params["error"]?["message"]?.stringValue ?? "Codex turn error"
@@ -1518,6 +1534,10 @@ public actor CodexAppServerClient {
           let itemID = item["id"]?.stringValue,
           let type = item["type"]?.stringValue
     else {
+      return
+    }
+    if type == "contextCompaction" {
+      await eventHandler(.contextCompacted(threadID: threadID, turnID: turnID))
       return
     }
     if completed, type == "agentMessage",
@@ -1563,7 +1583,8 @@ public actor CodexAppServerClient {
       turnID: turnID,
       status: status,
       reply: pending.finalReply.isEmpty ? pending.streamedReply : pending.finalReply,
-      errorMessage: errorMessage
+      errorMessage: errorMessage,
+      usage: pending.usage
     )
     if let continuation = pending.continuation {
       pendingTurns.removeValue(forKey: turnID)
@@ -1581,7 +1602,8 @@ public actor CodexAppServerClient {
         turnID: turnID,
         status: .interrupted,
         reply: "",
-        errorMessage: nil
+        errorMessage: nil,
+        usage: nil
       )
     }
     if let completed = pendingTurns[turnID]?.completedResult {
@@ -1596,7 +1618,8 @@ public actor CodexAppServerClient {
             turnID: turnID,
             status: .interrupted,
             reply: "",
-            errorMessage: nil
+            errorMessage: nil,
+            usage: nil
           ))
           return
         }
@@ -1627,7 +1650,8 @@ public actor CodexAppServerClient {
       turnID: turnID,
       status: .interrupted,
       reply: pending.finalReply.isEmpty ? pending.streamedReply : pending.finalReply,
-      errorMessage: nil
+      errorMessage: nil,
+      usage: pending.usage
     )
     if let continuation = pending.continuation {
       pendingTurns.removeValue(forKey: turnID)

@@ -498,6 +498,59 @@ final class AIChatSharedRoomTests: XCTestCase {
     XCTAssertFalse(prompt.contains("I would simplify it."))
   }
 
+  func testSharedRoomUsesDestinationCursorSummaryAndBoundedUnseenMessages() {
+    let codexID = AIChatDestinationConfiguration.localCodexID
+    let openClawID = AIChatDestinationConfiguration.openClawID
+    let firstUser = OpenClawChatMessage(
+      role: .user,
+      content: "First room question",
+      audienceDestinationIDs: [codexID, openClawID]
+    )
+    let codexReply = OpenClawChatMessage(
+      role: .assistant,
+      content: "Codex answered the first question",
+      authorDestinationID: codexID
+    )
+    let openClawReply = OpenClawChatMessage(
+      role: .assistant,
+      content: "OpenClaw answered the first question",
+      authorDestinationID: openClawID
+    )
+    let latest = OpenClawChatMessage(
+      role: .user,
+      content: "Second room question",
+      audienceDestinationIDs: [codexID, openClawID]
+    )
+    let messages = [firstUser, codexReply, openClawReply, latest]
+
+    let codexPrompt = WorkspaceStore.sharedRoomRequestMessages(
+      messages,
+      targetDestinationName: "Codex",
+      targetDestinationID: codexID,
+      through: latest.id
+    ).last?.content ?? ""
+    let openClawPrompt = WorkspaceStore.sharedRoomRequestMessages(
+      messages,
+      targetDestinationName: "OpenClaw",
+      targetDestinationID: openClawID,
+      through: latest.id
+    ).last?.content ?? ""
+
+    XCTAssertTrue(codexPrompt.contains(codexReply.id.uuidString.lowercased()))
+    XCTAssertTrue(openClawPrompt.contains(openClawReply.id.uuidString.lowercased()))
+    XCTAssertTrue(codexPrompt.contains("Rolling summary"))
+    XCTAssertTrue(codexPrompt.contains("Unseen transcript"))
+    XCTAssertTrue(codexPrompt.contains("OpenClaw answered the first question"))
+    XCTAssertTrue(codexPrompt.contains("Second room question"))
+    XCTAssertFalse(openClawPrompt.contains("Codex answered the first question\n\nOpenClaw answered"))
+    XCTAssertLessThanOrEqual(
+      AIChatContextBudget.estimatedTokens(codexPrompt),
+      AIChatContextBudget.sharedRoomSummaryTokenBudget
+        + AIChatContextBudget.sharedRoomUnseenTokenBudget
+        + 300
+    )
+  }
+
   func testRoomRoutingRequiresExplicitMentionsAndExpandsAll() {
     XCTAssertEqual(AIChatRoomRouting("Context for later").audience, .thread)
     XCTAssertEqual(

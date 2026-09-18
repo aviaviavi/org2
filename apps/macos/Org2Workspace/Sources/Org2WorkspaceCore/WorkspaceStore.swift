@@ -1391,6 +1391,17 @@ private struct AssignedWorkSearchRow: Sendable {
   let searchText: String
 }
 
+private struct AIChatPersistentContextKey: Hashable {
+  let threadID: UUID
+  let destinationID: String
+  let runtimeSessionID: String
+}
+
+private struct AIChatDestinationTurnKey: Hashable {
+  let threadID: UUID
+  let destinationID: String
+}
+
 private struct AgendaDisplayBuckets: Sendable {
   var overdue: [AgendaItem] = []
   var today: [AgendaItem] = []
@@ -3076,6 +3087,11 @@ public final class WorkspaceStore {
   private static let externalThreadDetailCacheLimit = 6
   private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var codexLocalThreadIDsByRuntimeThreadID: [String: UUID] = [:]
+  private var aiChatPersistentContextSections: [AIChatPersistentContextKey: [String: String]] = [:]
+  private var aiChatPersistentContextRecoveryRequired: Set<AIChatPersistentContextKey> = []
+  private var aiChatActivePersistentContextKeyByDestinationTurn: [AIChatDestinationTurnKey: AIChatPersistentContextKey] = [:]
+  private var aiChatUsageByDestinationTurn: [AIChatDestinationTurnKey: AIChatTokenUsage] = [:]
+  private var aiChatContextByDestinationTurn: [AIChatDestinationTurnKey: OpenOrgContextTelemetry] = [:]
   private var staleCodexRuntimeThreadIDs: Set<UUID> = []
   private var activeSharedRoomRuntimeByThreadID: [UUID: AIChatRuntime] = [:]
   private var activeSharedRoomDestinationByThreadID: [UUID: String] = [:]
@@ -25243,6 +25259,87 @@ public final class WorkspaceStore {
 
   private var activeBundledAgentThreadID: UUID?
 
+  private func aiChatDestinationTurnKey(
+    threadID: UUID,
+    destinationID: String
+  ) -> AIChatDestinationTurnKey {
+    AIChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+  }
+
+  private func persistentContextEnvelope(
+    threadID: UUID,
+    destinationID: String,
+    runtimeSessionID: String,
+    fullPrompt: String,
+    includesTranscript: Bool,
+    roomPrompt: String,
+    attachments: [OpenClawChatAttachment]
+  ) -> (key: AIChatPersistentContextKey, envelope: AIChatPersistentContextEnvelope) {
+    let key = AIChatPersistentContextKey(
+      threadID: threadID,
+      destinationID: destinationID,
+      runtimeSessionID: runtimeSessionID
+    )
+    let forceRecovery = aiChatPersistentContextRecoveryRequired.remove(key) != nil
+    let envelope = AIChatContextBudget.persistentEnvelope(
+      fullPrompt: fullPrompt,
+      previousSections: aiChatPersistentContextSections[key],
+      forceRecovery: forceRecovery,
+      includesTranscript: includesTranscript,
+      roomPrompt: roomPrompt,
+      attachments: attachments
+    )
+    aiChatContextByDestinationTurn[
+      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+    ] = envelope.telemetry
+    aiChatActivePersistentContextKeyByDestinationTurn[
+      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+    ] = key
+    return (key, envelope)
+  }
+
+  private func commitPersistentContext(
+    _ envelope: AIChatPersistentContextEnvelope,
+    for key: AIChatPersistentContextKey
+  ) {
+    aiChatActivePersistentContextKeyByDestinationTurn.removeValue(
+      forKey: aiChatDestinationTurnKey(
+        threadID: key.threadID,
+        destinationID: key.destinationID
+      )
+    )
+    guard !aiChatPersistentContextRecoveryRequired.contains(key) else { return }
+    aiChatPersistentContextSections[key] = envelope.sectionSnapshot
+  }
+
+  private func requirePersistentContextRecovery(
+    threadID: UUID,
+    destinationID: String
+  ) {
+    var keys = Set(aiChatPersistentContextSections.keys.filter {
+      $0.threadID == threadID && $0.destinationID == destinationID
+    })
+    if let activeKey = aiChatActivePersistentContextKeyByDestinationTurn[
+      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+    ] {
+      keys.insert(activeKey)
+    }
+    if keys.isEmpty,
+       let runtimeSessionID = openClawChatThreads.first(where: { $0.id == threadID })?
+        .runtimeThreadID(forDestinationID: destinationID) {
+      aiChatPersistentContextRecoveryRequired.insert(AIChatPersistentContextKey(
+        threadID: threadID,
+        destinationID: destinationID,
+        runtimeSessionID: runtimeSessionID
+      ))
+      return
+    }
+    for key in keys {
+      aiChatPersistentContextRecoveryRequired.insert(key)
+      aiChatPersistentContextSections.removeValue(forKey: key)
+    }
+  }
+
   private func sendDirectProviderRequest(
     messages: [OpenClawChatMessage],
     threadID: UUID,
@@ -25310,6 +25407,12 @@ public final class WorkspaceStore {
         turnID: localEditTurnID, corpusRoot: corpusRoot, cli: cli, broker: localEditBroker(),
         approve: { text in await BundledAgentWorkspaceTools.review(text) }
       )
+      let bundledMessages = AIChatContextBudget.boundedHistory(
+        thread.isSharedRoom
+          ? requestMessages.filter { $0.id == userMessage.id }
+          : requestMessages
+      )
+      let bundledWorkspaceContext = sendOrigin.workspaceContext.replacingThreadContinuation(nil)
       let system = """
       You are \(destination.name), running in OpenOrg's bundled foreground agent.
       Use the provided workspace tools for corpus questions and requested edits.
@@ -25322,10 +25425,19 @@ public final class WorkspaceStore {
       You have no shell, browser, external-service tools, scheduling, or background execution.
       Cite file paths and line numbers. Do not claim to run unavailable CLI commands.
 
-      \(sendOrigin.workspaceContext.systemPrompt(runtime: "bundled", runtimeAgentID: destination.name))
+      \(bundledWorkspaceContext.systemPrompt(runtime: "bundled", runtimeAgentID: destination.name))
       """
+      aiChatContextByDestinationTurn[
+        aiChatDestinationTurnKey(threadID: threadID, destinationID: destination.id)
+      ] = AIChatContextBudget.statelessTelemetry(
+        systemPrompt: system,
+        history: bundledMessages,
+        roomPrompt: thread.isSharedRoom
+          ? (requestMessages.last(where: { $0.id == userMessage.id })?.content ?? "")
+          : ""
+      )
       return try await BundledAgentClient(cli: cli).send(
-        settings: settings, model: model, messages: requestMessages, system: system,
+        settings: settings, model: model, messages: bundledMessages, system: system,
         tools: BundledAgentWorkspaceTools.definitions,
         onEvent: { [weak self] event in
           await self?.handleBundledAgentEvent(event, threadID: threadID)
@@ -25333,14 +25445,23 @@ public final class WorkspaceStore {
         execute: { name, args in try await workspaceTools.execute(name, arguments: args) }
       )
     }
-    let reply = try await AIProviderChatClient(settings: settings).send(
-      messages: requestMessages,
+    let providerMessages = thread.isSharedRoom
+      ? requestMessages.filter { $0.id == userMessage.id }
+      : requestMessages
+    let result = try await AIProviderChatClient(settings: settings).sendResult(
+      messages: providerMessages,
       model: model,
       workspaceContext: sendOrigin.workspaceContext,
       destinationName: destination.name
     )
+    let telemetryKey = aiChatDestinationTurnKey(
+      threadID: threadID,
+      destinationID: destination.id
+    )
+    aiChatContextByDestinationTurn[telemetryKey] = result.contextTelemetry
+    if let usage = result.usage { aiChatUsageByDestinationTurn[telemetryKey] = usage }
     try Task.checkCancellation()
-    return reply
+    return result.reply
   }
 
   private func handleBundledAgentEvent(_ event: JSONValue, threadID: UUID) {
@@ -25549,27 +25670,33 @@ public final class WorkspaceStore {
       openClawStatusText = "\(destination.name) is working"
     }
 
-    var workspacePrompt = sendOrigin.workspaceContext.codexSystemPrompt()
+    var fullWorkspacePrompt = sendOrigin.workspaceContext.codexSystemPrompt()
     if threadResolution.replacedStaleThread {
-      workspacePrompt += """
+      fullWorkspacePrompt += """
 
+      ---
 
-      OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the conversation context below. Do not repeat already completed work unless the latest user message asks you to.
-
-      \(Self.codexRecoveryConversationContext(
-        requestMessages,
-        excludingMessageID: requestUserMessage.id
-      ))
+      OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the bounded thread continuation above. Do not repeat already completed work unless the latest user message asks you to.
       """
     }
     if destination.adapter == .codexRemote
         || destination.adapter == .codexManagedRemote {
-      workspacePrompt += """
+      fullWorkspacePrompt += """
 
+      ---
 
       Remote execution note: this Codex destination runs with `\(destinationRoot.path)` as its filesystem working directory. Paths in the Org2 context may describe the Mac hosting Org2; use the remote working directory for direct filesystem operations. The `org2_workspace_*` tools still operate on the active corpus through Org2 on that Mac.
       """
     }
+    let contextDelivery = persistentContextEnvelope(
+      threadID: threadID,
+      destinationID: destinationID,
+      runtimeSessionID: runtimeThreadID,
+      fullPrompt: fullWorkspacePrompt,
+      includesTranscript: !thread.isSharedRoom,
+      roomPrompt: thread.isSharedRoom ? requestUserMessage.content : "",
+      attachments: requestUserMessage.attachments
+    )
 
     let result = try await client.runTurn(
       threadID: runtimeThreadID,
@@ -25578,7 +25705,7 @@ public final class WorkspaceStore {
         requestUserMessage,
         corpusSkills: corpusAgentSkillCommands
       ).content,
-      workspaceContext: workspacePrompt,
+      workspaceContext: contextDelivery.envelope.prompt,
       attachments: requestUserMessage.attachments,
       cwd: destinationRoot,
       clientUserMessageID: requestUserMessage.id,
@@ -25586,28 +25713,16 @@ public final class WorkspaceStore {
       reasoningEffort: selectedReasoningEffort,
       sandboxAccess: codexSandboxAccess
     )
+    commitPersistentContext(contextDelivery.envelope, for: contextDelivery.key)
+    if let usage = result.usage {
+      aiChatUsageByDestinationTurn[
+        aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+      ] = usage
+    }
     let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
     return reply.isEmpty
       ? "Codex completed the turn without a text response."
       : reply
-  }
-
-  nonisolated private static func codexRecoveryConversationContext(
-    _ messages: [OpenClawChatMessage],
-    excludingMessageID: UUID
-  ) -> String {
-    let transcript = messages.compactMap { message -> String? in
-      guard message.id != excludingMessageID,
-            !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            message.role == .user || message.role == .assistant
-      else { return nil }
-      let speaker = message.role == .user ? "User" : "Assistant"
-      return "\(speaker): \(message.content)"
-    }.joined(separator: "\n\n")
-    guard !transcript.isEmpty else { return "No earlier chat messages were available." }
-    let limit = 32_000
-    guard transcript.count > limit else { return transcript }
-    return "[Earlier messages omitted]\n\n" + String(transcript.suffix(limit))
   }
 
   private func localCodexClient() -> CodexAppServerClient {
@@ -26134,6 +26249,15 @@ public final class WorkspaceStore {
         activities.append(activity)
       }
       openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
+    case .contextCompacted(let runtimeThreadID, _):
+      guard let threadID = localChatThreadID(
+        forRuntimeThreadID: runtimeThreadID,
+        destinationID: destinationID
+      ) else { return }
+      requirePersistentContextRecovery(
+        threadID: threadID,
+        destinationID: destinationID
+      )
     case .warning(let runtimeThreadID, let message):
       if let runtimeThreadID,
          let threadID = localChatThreadID(
@@ -26217,6 +26341,18 @@ public final class WorkspaceStore {
     if let openClawSendHandler {
       return try await openClawSendHandler(requestMessages, agentID, sessionKey, workspaceContext)
     }
+    let contextDelivery = isGatewayCommand ? nil : persistentContextEnvelope(
+      threadID: threadID,
+      destinationID: destinationID,
+      runtimeSessionID: sessionKey,
+      fullPrompt: workspaceContext.systemPrompt(
+        runtime: "openclaw",
+        runtimeAgentID: agentID
+      ),
+      includesTranscript: threadConfiguration?.isSharedRoom != true,
+      roomPrompt: threadConfiguration?.isSharedRoom == true ? latestUserMessage.content : "",
+      attachments: latestUserMessage.attachments
+    )
     let settings = openClawSettings(
       forDestinationID: destinationID,
       allowKeychainRead: true
@@ -26228,9 +26364,8 @@ public final class WorkspaceStore {
 
     let gatewayMessage = Self.openClawGatewayMessage(
       userMessage: latestUserMessage.content,
-      workspaceContext: workspaceContext,
-      isGatewayCommand: isGatewayCommand,
-      runtimeAgentID: agentID
+      workspacePrompt: contextDelivery?.envelope.prompt,
+      isGatewayCommand: isGatewayCommand
     )
     let pendingTurn = OpenClawPendingTurn(
       userMessageID: latestUserMessage.id,
@@ -26248,7 +26383,7 @@ public final class WorkspaceStore {
     openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
 
     do {
-      return try await gateway.send(
+      let reply = try await gateway.send(
         message: gatewayMessage,
         attachments: latestUserMessage.attachments,
         agentID: agentID,
@@ -26264,6 +26399,10 @@ public final class WorkspaceStore {
           destinationID: destinationID
         )
       }
+      if let contextDelivery {
+        commitPersistentContext(contextDelivery.envelope, for: contextDelivery.key)
+      }
+      return reply
     } catch let error as OpenClawGatewayError where automationRunIDsByThreadID[threadID] == nil
       && Self.shouldRetryAIChatWithDefaults(
       after: error,
@@ -26283,7 +26422,7 @@ public final class WorkspaceStore {
         openClawStatusText = "Saved AI settings unavailable; retrying with defaults"
       }
       do {
-        return try await gateway.send(
+        let reply = try await gateway.send(
           message: gatewayMessage,
           attachments: latestUserMessage.attachments,
           agentID: agentID,
@@ -26299,6 +26438,10 @@ public final class WorkspaceStore {
             destinationID: destinationID
           )
         }
+        if let contextDelivery {
+          commitPersistentContext(contextDelivery.envelope, for: contextDelivery.key)
+        }
+        return reply
       } catch {
         aiChatConfigurationFallbackNoticesByThreadID.removeValue(forKey: threadID)
         if !Self.openClawRunMayStillBeWorking(after: error) {
@@ -26351,12 +26494,22 @@ public final class WorkspaceStore {
         openClawStatusText = "Using HTTP compatibility for this turn"
       }
       let client = OpenClawChatClient(settings: settings)
-      return try await client.send(
-        messages: requestMessages,
+      let fallbackMessages = threadConfiguration?.isSharedRoom == true
+        ? requestMessages.filter { $0.id == originalUserMessage.id }
+        : requestMessages
+      let result = try await client.sendResult(
+        messages: fallbackMessages,
         agentID: agentID,
         sessionKey: sessionKey,
         workspaceContext: sendOrigin.workspaceContext
       )
+      let telemetryKey = aiChatDestinationTurnKey(
+        threadID: threadID,
+        destinationID: destinationID
+      )
+      aiChatContextByDestinationTurn[telemetryKey] = result.contextTelemetry
+      if let usage = result.usage { aiChatUsageByDestinationTurn[telemetryKey] = usage }
+      return result.reply
     } catch {
       if !Self.openClawRunMayStillBeWorking(after: error) {
         clearOpenClawPendingTurn(
@@ -26457,13 +26610,28 @@ public final class WorkspaceStore {
     isGatewayCommand: Bool,
     runtimeAgentID: String? = nil
   ) -> String {
+    openClawGatewayMessage(
+      userMessage: userMessage,
+      workspacePrompt: workspaceContext?.systemPrompt(
+        runtime: "openclaw",
+        runtimeAgentID: runtimeAgentID
+      ),
+      isGatewayCommand: isGatewayCommand
+    )
+  }
+
+  nonisolated static func openClawGatewayMessage(
+    userMessage: String,
+    workspacePrompt: String?,
+    isGatewayCommand: Bool
+  ) -> String {
     if isGatewayCommand { return userMessage }
-    guard let workspaceContext else { return userMessage }
+    guard let workspacePrompt, !workspacePrompt.isEmpty else { return userMessage }
     return """
     <org2-workspace-context>
     The following is application-provided working context. Sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining sections as context.
 
-    \(workspaceContext.systemPrompt(runtime: "openclaw", runtimeAgentID: runtimeAgentID))
+    \(workspacePrompt)
     </org2-workspace-context>
 
     <user-message>
@@ -26543,6 +26711,18 @@ public final class WorkspaceStore {
          activity.status == .running {
         openClawStatusText = activity.title
       }
+    case .usage(let usage):
+      aiChatUsageByDestinationTurn[
+        aiChatDestinationTurnKey(
+          threadID: threadID,
+          destinationID: resolvedDestinationID
+        )
+      ] = usage
+    case .contextCompacted:
+      requirePersistentContextRecovery(
+        threadID: threadID,
+        destinationID: resolvedDestinationID
+      )
     }
   }
 
@@ -26642,10 +26822,8 @@ public final class WorkspaceStore {
     guard let targetIndex = messages.firstIndex(where: { $0.id == userMessageID }) else {
       return messages
     }
-    let visibleTranscript = messages[...targetIndex].filter { !$0.isRoomDispatchCopy }
-    var transcriptLines: [String] = []
-    var remainingCharacters = 24_000
-    for message in visibleTranscript.reversed() {
+    let visibleTranscript = Array(messages[...targetIndex].filter { !$0.isRoomDispatchCopy })
+    func speaker(for message: OpenClawChatMessage) -> String {
       let speaker: String
       switch message.role {
       case .user:
@@ -26664,20 +26842,77 @@ public final class WorkspaceStore {
       case .system:
         speaker = "Org2"
       }
-      let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !content.isEmpty else { continue }
-      let row = "\(speaker):\n\(content)"
-      guard row.count <= remainingCharacters || transcriptLines.isEmpty else { break }
-      transcriptLines.append(String(row.suffix(max(0, remainingCharacters))))
-      remainingCharacters -= min(row.count, remainingCharacters)
-      guard remainingCharacters > 0 else { break }
+      return speaker
     }
-    let transcript = transcriptLines.reversed().joined(separator: "\n\n")
+    let rows = visibleTranscript.compactMap { message -> (message: OpenClawChatMessage, text: String)? in
+      let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !content.isEmpty else { return nil }
+      return (message, "\(speaker(for: message)):\n\(content)")
+    }
+    let cursorIndex = rows.lastIndex {
+      $0.message.role == .assistant
+        && $0.message.authorDestinationID == targetDestinationID
+    }
+    let summaryRows: ArraySlice<(message: OpenClawChatMessage, text: String)>
+    var unseenRows: ArraySlice<(message: OpenClawChatMessage, text: String)>
+    if let cursorIndex {
+      summaryRows = rows[...cursorIndex]
+      unseenRows = rows.dropFirst(cursorIndex + 1)
+    } else {
+      summaryRows = rows[0..<0]
+      unseenRows = rows[...]
+    }
+
+    func boundedTail(_ source: ArraySlice<(message: OpenClawChatMessage, text: String)>, tokens: Int) -> [String] {
+      var output: [String] = []
+      var remaining = tokens
+      for row in source.reversed() {
+        let rowTokens = AIChatContextBudget.estimatedTokens(row.text) + 4
+        if output.isEmpty, rowTokens > remaining {
+          output.append(AIChatContextBudget.boundedSuffix(row.text, tokenBudget: remaining))
+          break
+        }
+        guard rowTokens <= remaining else { break }
+        output.append(row.text)
+        remaining -= rowTokens
+      }
+      return output.reversed()
+    }
+
+    var unseen = boundedTail(
+      unseenRows,
+      tokens: AIChatContextBudget.sharedRoomUnseenTokenBudget
+    )
+    var rollingRows = summaryRows
+    if unseen.count < unseenRows.count {
+      rollingRows = rows.prefix(rows.count - unseen.count)
+    }
+    let compactSummaryRows = rollingRows.map { row -> (message: OpenClawChatMessage, text: String) in
+      let compact = row.text
+        .replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      return (row.message, String(compact.prefix(320)))
+    }
+    let summary = boundedTail(
+      compactSummaryRows[...],
+      tokens: AIChatContextBudget.sharedRoomSummaryTokenBudget
+    )
+    if unseen.isEmpty, let latest = rows.last {
+      unseen = [AIChatContextBudget.boundedSuffix(
+        latest.text,
+        tokenBudget: AIChatContextBudget.sharedRoomUnseenTokenBudget
+      )]
+    }
+    let cursor = cursorIndex.map { rows[$0].message.id.uuidString.lowercased() } ?? "start"
     let prompt = """
     <org2-shared-ai-room>
-    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. The transcript below is the authoritative shared room state. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to Avi's latest message as \(targetDestinationName), and make any proposed handoff explicit rather than silently invoking it.
+    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. OpenOrg maintains a separate durable delivery cursor for each destination. This delivery starts after cursor \(cursor). The rolling summary and bounded unseen transcript below are the authoritative room state for this destination. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to Avi's latest message as \(targetDestinationName), and make any proposed handoff explicit rather than silently invoking it.
 
-    \(transcript)
+    Rolling summary:
+    \(summary.isEmpty ? "No earlier room messages." : summary.joined(separator: "\n"))
+
+    Unseen transcript:
+    \(unseen.joined(separator: "\n\n"))
     </org2-shared-ai-room>
     """
     var result = messages
@@ -27004,9 +27239,18 @@ public final class WorkspaceStore {
     let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
     var messages = openClawMessages(for: threadID, transcriptURL: targetTranscriptURL)
     let roomRoundID = messages.first(where: { $0.id == userMessageID })?.roomRoundID
+    let traceDestinationID = authorDestinationID
+      ?? openClawChatThread(threadID, transcriptURL: targetTranscriptURL)?.destinationID
+      ?? AIChatDestinationConfiguration.openClawID
+    let telemetryKey = aiChatDestinationTurnKey(
+      threadID: threadID,
+      destinationID: traceDestinationID
+    )
     let trace = OpenClawResponseTrace(
       reasoning: openClawLiveState.reasoning(for: threadID),
-      activities: openClawRunActivitiesByThreadID[threadID] ?? []
+      activities: openClawRunActivitiesByThreadID[threadID] ?? [],
+      usage: aiChatUsageByDestinationTurn.removeValue(forKey: telemetryKey),
+      context: aiChatContextByDestinationTurn.removeValue(forKey: telemetryKey)
     )
     let assistantMessage = OpenClawChatMessage(
       role: .assistant,

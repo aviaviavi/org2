@@ -121,14 +121,34 @@ public struct OpenClawChatClient: Sendable {
     sessionKey: String,
     workspaceContext: OpenClawWorkspaceContext? = nil
   ) async throws -> String {
+    try await sendResult(
+      messages: messages,
+      agentID: agentID,
+      sessionKey: sessionKey,
+      workspaceContext: workspaceContext
+    ).reply
+  }
+
+  public func sendResult(
+    messages: [OpenClawChatMessage],
+    agentID: String,
+    sessionKey: String,
+    workspaceContext: OpenClawWorkspaceContext? = nil
+  ) async throws -> OpenClawChatResult {
     let agentHeaderValue = Self.openClawAgentHeaderValue(for: agentID)
+    let history = AIChatContextBudget.boundedHistory(messages)
+    let statelessContext = workspaceContext?.replacingThreadContinuation(nil)
+    let systemPrompt = statelessContext?.systemPrompt(
+      runtime: "openclaw",
+      runtimeAgentID: agentHeaderValue
+    ) ?? ""
     let encodedBody = try await Task.detached(priority: .userInitiated) {
       let requestBody = OpenAIChatCompletionRequest(
         model: Self.openClawModelName(for: agentID),
         user: sessionKey,
         messages: try Self.requestMessages(
-          from: messages,
-          workspaceContext: workspaceContext,
+          from: history,
+          workspaceContext: statelessContext,
           agentID: agentHeaderValue
         )
       )
@@ -159,7 +179,25 @@ public struct OpenClawChatClient: Sendable {
       guard !text.isEmpty else {
         throw OpenClawChatError.emptyResponse
       }
-      return text
+      let roomPrompt = history.last(where: {
+        $0.content.contains("<org2-shared-ai-room>")
+      })?.content ?? ""
+      return OpenClawChatResult(
+        reply: text,
+        usage: payload.usage.map {
+          AIChatTokenUsage(
+            inputTokens: $0.promptTokens ?? 0,
+            cachedInputTokens: $0.promptTokensDetails?.cachedTokens ?? 0,
+            outputTokens: $0.completionTokens ?? 0,
+            totalTokens: $0.totalTokens
+          )
+        },
+        contextTelemetry: AIChatContextBudget.statelessTelemetry(
+          systemPrompt: systemPrompt,
+          history: history,
+          roomPrompt: roomPrompt
+        )
+      )
     } catch let error as OpenClawChatError {
       throw error
     } catch {
@@ -209,7 +247,7 @@ public struct OpenClawChatClient: Sendable {
       output.append(OpenAIChatMessage(role: "system", content: .text(workspaceContext.systemPrompt(runtime: "openclaw", runtimeAgentID: agentID))))
     }
 
-    output += try messages.suffix(16).map { message in
+    output += try messages.map { message in
       OpenAIChatMessage(role: message.role.rawValue, content: try .from(message))
     }
     return output
@@ -220,6 +258,22 @@ public struct OpenClawChatClient: Sendable {
       return nil
     }
     return payload.error.message
+  }
+}
+
+public struct OpenClawChatResult: Sendable {
+  public let reply: String
+  public let usage: AIChatTokenUsage?
+  public let contextTelemetry: OpenOrgContextTelemetry
+
+  public init(
+    reply: String,
+    usage: AIChatTokenUsage?,
+    contextTelemetry: OpenOrgContextTelemetry
+  ) {
+    self.reply = reply
+    self.usage = usage
+    self.contextTelemetry = contextTelemetry
   }
 }
 
@@ -311,6 +365,32 @@ public struct OpenClawWorkspaceContext: Sendable {
     self.chatAgentProfile = chatAgentProfile
     self.projectContext = projectContext
     self.threadContinuation = threadContinuation
+  }
+
+  public func replacingThreadContinuation(
+    _ continuation: AIChatThreadContinuation?
+  ) -> OpenClawWorkspaceContext {
+    OpenClawWorkspaceContext(
+      localCorpusRoot: localCorpusRoot,
+      remoteCorpusRoot: remoteCorpusRoot,
+      selectedSurface: selectedSurface,
+      selectedLocation: selectedLocation,
+      selectedEntrySource: selectedEntrySource,
+      backlinks: backlinks,
+      agenda: agenda,
+      searchQuery: searchQuery,
+      searchResults: searchResults,
+      agentThreadDirectories: agentThreadDirectories,
+      sourceProfiles: sourceProfiles,
+      sourceRuntimeStatuses: sourceRuntimeStatuses,
+      localEdit: localEdit,
+      authorizedCorpora: authorizedCorpora,
+      customInstructions: customInstructions,
+      projectContext: projectContext,
+      chatAgentRef: chatAgentRef,
+      chatAgentProfile: chatAgentProfile,
+      threadContinuation: continuation
+    )
   }
 
   private var chatAgentContext: String? {

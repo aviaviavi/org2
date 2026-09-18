@@ -32,6 +32,22 @@ public struct AIProviderChatSettings: Sendable {
   }
 }
 
+public struct AIProviderChatResult: Sendable {
+  public let reply: String
+  public let usage: AIChatTokenUsage?
+  public let contextTelemetry: OpenOrgContextTelemetry
+
+  public init(
+    reply: String,
+    usage: AIChatTokenUsage?,
+    contextTelemetry: OpenOrgContextTelemetry
+  ) {
+    self.reply = reply
+    self.usage = usage
+    self.contextTelemetry = contextTelemetry
+  }
+}
+
 public struct AIProviderChatClient: Sendable {
   public let settings: AIProviderChatSettings
   private let session: URLSession
@@ -71,14 +87,30 @@ public struct AIProviderChatClient: Sendable {
     workspaceContext: OpenClawWorkspaceContext,
     destinationName: String
   ) async throws -> String {
+    try await sendResult(
+      messages: messages,
+      model: model,
+      workspaceContext: workspaceContext,
+      destinationName: destinationName
+    ).reply
+  }
+
+  public func sendResult(
+    messages: [OpenClawChatMessage],
+    model: String,
+    workspaceContext: OpenClawWorkspaceContext,
+    destinationName: String
+  ) async throws -> AIProviderChatResult {
     let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedModel.isEmpty else { throw AIProviderChatError.modelRequired }
-    try validateAttachments(in: messages)
+    let requestMessages = AIChatContextBudget.boundedHistory(messages)
+    try validateAttachments(in: requestMessages)
+    let statelessContext = workspaceContext.replacingThreadContinuation(nil)
 
     let system = """
     You are connected directly to OpenOrg as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex, Claude Code, or OpenClaw.
 
-    \(workspaceContext.systemPrompt(runtime: settings.adapter.rawValue, runtimeAgentID: destinationName))
+    \(statelessContext.systemPrompt(runtime: settings.adapter.rawValue, runtimeAgentID: destinationName))
     """
 
     var request = URLRequest(url: endpoint(chatComponent))
@@ -87,7 +119,7 @@ public struct AIProviderChatClient: Sendable {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try await Task.detached(priority: .userInitiated) {
       let bodyObject = try self.requestBody(
-        messages: Array(messages.suffix(30)),
+        messages: requestMessages,
         model: normalizedModel,
         system: system
       )
@@ -113,7 +145,18 @@ public struct AIProviderChatClient: Sendable {
     }
     let normalizedReply = reply?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard !normalizedReply.isEmpty else { throw AIProviderChatError.emptyResponse }
-    return normalizedReply
+    let roomPrompt = requestMessages.last(where: {
+      $0.content.contains("<org2-shared-ai-room>")
+    })?.content ?? ""
+    return AIProviderChatResult(
+      reply: normalizedReply,
+      usage: tokenUsage(from: object),
+      contextTelemetry: AIChatContextBudget.statelessTelemetry(
+        systemPrompt: system,
+        history: requestMessages,
+        roomPrompt: roomPrompt
+      )
+    )
   }
 
   private var chatComponent: String {
@@ -235,6 +278,37 @@ public struct AIProviderChatClient: Sendable {
     }) {
       throw AIProviderChatError.unsupportedAttachment(attachment.fileName)
     }
+  }
+
+  private func tokenUsage(from object: [String: Any]) -> AIChatTokenUsage? {
+    let usage = object["usage"] as? [String: Any]
+    let promptDetails = usage?["prompt_tokens_details"] as? [String: Any]
+    let input = Self.integer(
+      usage?["prompt_tokens"] ?? usage?["input_tokens"] ?? object["prompt_eval_count"]
+    )
+    let cached = Self.integer(
+      promptDetails?["cached_tokens"]
+        ?? usage?["cache_read_input_tokens"]
+        ?? usage?["cached_input_tokens"]
+    )
+    let output = Self.integer(
+      usage?["completion_tokens"] ?? usage?["output_tokens"] ?? object["eval_count"]
+    )
+    let total = Self.integer(usage?["total_tokens"])
+    guard input != nil || cached != nil || output != nil || total != nil else { return nil }
+    return AIChatTokenUsage(
+      inputTokens: input ?? 0,
+      cachedInputTokens: cached ?? 0,
+      outputTokens: output ?? 0,
+      totalTokens: total
+    )
+  }
+
+  private static func integer(_ value: Any?) -> Int? {
+    if let value = value as? Int { return value }
+    if let value = value as? NSNumber { return value.intValue }
+    if let value = value as? String { return Int(value) }
+    return nil
   }
 
   private func send(_ request: URLRequest) async throws -> [String: Any] {

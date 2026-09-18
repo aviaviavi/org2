@@ -2408,6 +2408,39 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(accumulatedTextByItemID.isEmpty)
   }
 
+  func testGatewayExtractsProviderTokenUsageFromFinalMessage() throws {
+    let usage = try XCTUnwrap(OpenClawGatewayClient.tokenUsage(from: [
+      "message": [
+        "content": "Done",
+        "usage": [
+          "input": 450,
+          "cacheRead": 300,
+          "output": 25,
+          "totalTokens": 475,
+        ],
+      ],
+    ]))
+    XCTAssertEqual(usage.inputTokens, 450)
+    XCTAssertEqual(usage.cachedInputTokens, 300)
+    XCTAssertEqual(usage.outputTokens, 25)
+    XCTAssertEqual(usage.totalTokens, 475)
+  }
+
+  func testGatewayRecognizesContextCompactionLifecycleEvents() {
+    XCTAssertTrue(OpenClawGatewayClient.isContextCompaction([
+      "stream": "compaction",
+      "data": ["phase": "start"],
+    ]))
+    XCTAssertTrue(OpenClawGatewayClient.isContextCompaction([
+      "stream": "compaction",
+      "data": ["phase": "end", "completed": true],
+    ]))
+    XCTAssertFalse(OpenClawGatewayClient.isContextCompaction([
+      "stream": "lifecycle",
+      "data": ["phase": "finishing"],
+    ]))
+  }
+
   func testActivityFeedHidesOversizedStructuredToolResults() throws {
     let payload = """
       {"content":[{"text":"\(String(repeating: "Fetched page content. ", count: 30))"}],"status":200,"contentType":"text/html"}
