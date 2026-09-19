@@ -311,6 +311,7 @@ public actor CodexAppServerClient {
     @Sendable (CodexDynamicToolCall) async -> CodexDynamicToolResult
 
   private final class PendingTurn {
+    var threadID: String?
     var finalReply = ""
     var streamedReplyChunks: [String] = []
     var streamedItemID: String?
@@ -357,6 +358,7 @@ public actor CodexAppServerClient {
   private var pendingRequestTimeoutTasks: [String: Task<Void, Never>] = [:]
   private var cancelledRequestKeys = Set<String>()
   private var pendingTurns: [String: PendingTurn] = [:]
+  private var managedRemoteRecoveryTask: Task<Void, Never>?
   private var cancelledTurnIDs = Set<String>()
   private var ignoredCompletedTurnIDs = Set<String>()
   private var loadedThreadIDs = Set<String>()
@@ -394,6 +396,7 @@ public actor CodexAppServerClient {
     }
     webSocketReceiveTask?.cancel()
     webSocketTask?.cancel(with: .goingAway, reason: nil)
+    managedRemoteRecoveryTask?.cancel()
   }
 
   nonisolated public static func resolveExecutableURL(
@@ -448,14 +451,138 @@ public actor CodexAppServerClient {
       "-o", "ServerAliveInterval=15",
       "-o", "ServerAliveCountMax=12",
       sshHost,
-      Self.managedRemoteCommand
+      Self.managedRemoteCommand()
     ]
   }
 
-  // This client consumes newline-delimited JSON over stdio. The app-server
-  // proxy command relays the Unix-socket transport and is not a JSONL adapter.
-  private nonisolated static let managedRemoteCommand =
-    #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; exec codex app-server --listen stdio://'"#
+  // The managed daemon speaks WebSocket frames on its private Unix socket,
+  // while this client speaks JSONL over the SSH process pipes. Codex's proxy
+  // command currently forwards neither framing reliably, so a fixed adapter
+  // performs only that framing conversion. The daemon owns the turn; losing
+  // this SSH process therefore no longer terminates work on the remote Mac.
+  private nonisolated static func managedRemoteCommand() -> String {
+    let adapter = Data(managedRemoteJSONLAdapter.utf8).base64EncodedString()
+    return #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Managed Remote Codex requires python3 on the remote Mac." >&2; exit 127; }; codex app-server daemon start >/dev/null || exit $?; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(adapter)\"),\"<openorg-codex-adapter>\",\"exec\"))"'"#
+  }
+
+  private nonisolated static let managedRemoteJSONLAdapter = #"""
+import base64
+import hashlib
+import os
+import socket
+import struct
+import sys
+import threading
+
+codex_home = os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex"))
+socket_path = os.path.join(codex_home, "app-server-control", "app-server-control.sock")
+connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+connection.connect(socket_path)
+
+key = base64.b64encode(os.urandom(16)).decode("ascii")
+upgrade = (
+    "GET / HTTP/1.1\r\n"
+    "Host: localhost\r\n"
+    "Upgrade: websocket\r\n"
+    "Connection: Upgrade\r\n"
+    "Sec-WebSocket-Key: %s\r\n"
+    "Sec-WebSocket-Version: 13\r\n\r\n" % key
+).encode("ascii")
+connection.sendall(upgrade)
+
+buffer = b""
+while b"\r\n\r\n" not in buffer:
+    chunk = connection.recv(4096)
+    if not chunk:
+        raise RuntimeError("Codex daemon closed during WebSocket upgrade")
+    buffer += chunk
+header, buffer = buffer.split(b"\r\n\r\n", 1)
+if not header.startswith(b"HTTP/1.1 101"):
+    raise RuntimeError("Codex daemon rejected WebSocket upgrade: %s" % header.decode("utf-8", "replace"))
+expected_accept = base64.b64encode(
+    hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+).decode("ascii")
+if ("sec-websocket-accept: " + expected_accept).lower().encode("ascii") not in header.lower():
+    raise RuntimeError("Codex daemon returned an invalid WebSocket accept value")
+
+send_lock = threading.Lock()
+
+def send_frame(opcode, payload):
+    length = len(payload)
+    if length < 126:
+        prefix = bytes([0x80 | opcode, 0x80 | length])
+    elif length <= 0xffff:
+        prefix = bytes([0x80 | opcode, 0xfe]) + struct.pack("!H", length)
+    else:
+        prefix = bytes([0x80 | opcode, 0xff]) + struct.pack("!Q", length)
+    mask = os.urandom(4)
+    masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+    with send_lock:
+        connection.sendall(prefix + mask + masked)
+
+def forward_stdin():
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return
+        payload = line.rstrip(b"\r\n")
+        if payload:
+            send_frame(0x1, payload)
+
+threading.Thread(target=forward_stdin, daemon=True).start()
+
+def read_exact(count):
+    global buffer
+    while len(buffer) < count:
+        chunk = connection.recv(max(4096, count - len(buffer)))
+        if not chunk:
+            raise EOFError()
+        buffer += chunk
+    result, buffer = buffer[:count], buffer[count:]
+    return result
+
+fragment_opcode = None
+fragments = []
+while True:
+    try:
+        first, second = read_exact(2)
+    except EOFError:
+        break
+    finished = (first & 0x80) != 0
+    opcode = first & 0x0f
+    masked = (second & 0x80) != 0
+    length = second & 0x7f
+    if length == 126:
+        length = struct.unpack("!H", read_exact(2))[0]
+    elif length == 127:
+        length = struct.unpack("!Q", read_exact(8))[0]
+    if length > 256 * 1024 * 1024:
+        raise RuntimeError("Codex daemon WebSocket frame is too large")
+    mask = read_exact(4) if masked else None
+    payload = read_exact(length)
+    if mask is not None:
+        payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+    if opcode == 0x8:
+        break
+    if opcode == 0x9:
+        send_frame(0xA, payload)
+        continue
+    if opcode == 0xA:
+        continue
+    if opcode in (0x1, 0x2):
+        fragment_opcode = opcode
+        fragments = [payload]
+    elif opcode == 0x0 and fragment_opcode is not None:
+        fragments.append(payload)
+    else:
+        continue
+    if finished:
+        message = b"".join(fragments)
+        sys.stdout.buffer.write(message.rstrip(b"\r\n") + b"\n")
+        sys.stdout.buffer.flush()
+        fragment_opcode = None
+        fragments = []
+"""#
 
   public func accountState() async throws -> CodexAccountState {
     let result = try await request(
@@ -878,6 +1005,8 @@ public actor CodexAppServerClient {
   }
 
   public func shutdown() {
+    managedRemoteRecoveryTask?.cancel()
+    managedRemoteRecoveryTask = nil
     let processToStop = process
     process = nil
     standardOutput?.readabilityHandler = nil
@@ -1238,6 +1367,15 @@ public actor CodexAppServerClient {
     startupTask = nil
     loadedThreadIDs.removeAll()
     failPendingRequests(CodexAppServerError.disconnected(message))
+    if case .managedRemote = transport,
+       pendingTurns.values.contains(where: { $0.completedResult == nil }) {
+      scheduleManagedRemoteTurnRecovery()
+      await eventHandler(.connectionChanged(
+        isConnected: false,
+        detail: "\(message). The remote turn is still owned by Codex and will reconnect."
+      ))
+      return
+    }
     for turnID in Array(pendingTurns.keys) {
       guard let pending = pendingTurns[turnID] else { continue }
       guard pending.completedResult == nil else { continue }
@@ -1257,6 +1395,68 @@ public actor CodexAppServerClient {
       }
     }
     await eventHandler(.connectionChanged(isConnected: false, detail: message))
+  }
+
+  private func scheduleManagedRemoteTurnRecovery() {
+    guard managedRemoteRecoveryTask == nil else { return }
+    managedRemoteRecoveryTask = Task { [weak self] in
+      guard let self else { return }
+      await self.recoverManagedRemoteTurns()
+      await self.clearManagedRemoteRecoveryTask()
+    }
+  }
+
+  private func clearManagedRemoteRecoveryTask() {
+    managedRemoteRecoveryTask = nil
+  }
+
+  private func recoverManagedRemoteTurns() async {
+    var delayNanoseconds: UInt64 = 1_000_000_000
+    while !Task.isCancelled {
+      let recoverable = pendingTurns.compactMap { turnID, pending -> (String, String)? in
+        guard pending.completedResult == nil, let threadID = pending.threadID else { return nil }
+        return (threadID, turnID)
+      }
+      guard !recoverable.isEmpty else { return }
+
+      do {
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+        try Task.checkCancellation()
+        for (threadID, turnID) in recoverable {
+          guard pendingTurns[turnID]?.completedResult == nil else { continue }
+          let result = try await request(
+            method: "thread/read",
+            params: .object([
+              "threadId": .string(threadID),
+              "includeTurns": .bool(true)
+            ])
+          )
+          guard let turn = result["thread"]?["turns"]?.arrayValue?.first(where: {
+            $0["id"]?.stringValue == turnID
+          }) else {
+            continue
+          }
+          let status = turn["status"]?.stringValue ?? ""
+          guard status != "inProgress" else { continue }
+          guard let pending = pendingTurns[turnID], pending.completedResult == nil else {
+            continue
+          }
+          completeTurn(.object([
+            "threadId": .string(threadID),
+            "turn": turn
+          ]))
+        }
+        delayNanoseconds = 2_000_000_000
+      } catch is CancellationError {
+        return
+      } catch {
+        await eventHandler(.connectionChanged(
+          isConnected: false,
+          detail: "The remote turn is still saved; reconnecting after \(error.localizedDescription)"
+        ))
+        delayNanoseconds = min(delayNanoseconds * 2, 30_000_000_000)
+      }
+    }
   }
 
   private func request(method: String, params: JSONValue) async throws -> JSONValue {
@@ -1455,7 +1655,9 @@ public actor CodexAppServerClient {
     case "turn/started":
       if let threadID = params["threadId"]?.stringValue,
          let turnID = params["turn"]?["id"]?.stringValue {
-        pendingTurns[turnID] = pendingTurns[turnID] ?? PendingTurn()
+        let pending = pendingTurns[turnID] ?? PendingTurn()
+        pending.threadID = threadID
+        pendingTurns[turnID] = pending
         await eventHandler(.turnStarted(threadID: threadID, turnID: turnID))
       }
     case "item/agentMessage/delta":
@@ -1578,11 +1780,14 @@ public actor CodexAppServerClient {
     let status = CodexTurnResult.Status(rawValue: turn["status"]?.stringValue ?? "")
       ?? .failed
     let errorMessage = turn["error"]?["message"]?.stringValue ?? pending.errorMessage
+    let recoveredReply = Self.recoveredTurnReply(turn)
     let result = CodexTurnResult(
       threadID: threadID,
       turnID: turnID,
       status: status,
-      reply: pending.finalReply.isEmpty ? pending.streamedReply : pending.finalReply,
+      reply: pending.finalReply.isEmpty
+        ? (recoveredReply ?? pending.streamedReply)
+        : pending.finalReply,
       errorMessage: errorMessage,
       usage: pending.usage
     )
@@ -1628,6 +1833,7 @@ public actor CodexAppServerClient {
           pendingTurns.removeValue(forKey: turnID)
           continuation.resume(returning: completed)
         } else {
+          pending.threadID = threadID
           pending.continuation = continuation
           pendingTurns[turnID] = pending
         }
@@ -1637,6 +1843,17 @@ public actor CodexAppServerClient {
         await self?.cancelPendingTurn(threadID: threadID, turnID: turnID)
       }
     }
+  }
+
+  nonisolated private static func recoveredTurnReply(_ turn: JSONValue) -> String? {
+    let agentMessages = (turn["items"]?.arrayValue ?? []).compactMap { item -> (String, String?)? in
+      guard item["type"]?.stringValue == "agentMessage",
+            let text = normalizedExternalText(item["text"]?.stringValue)
+      else { return nil }
+      return (text, item["phase"]?.stringValue)
+    }
+    return agentMessages.last(where: { $0.1 == "final_answer" })?.0
+      ?? agentMessages.last?.0
   }
 
   private func cancelPendingTurn(threadID: String, turnID: String) {

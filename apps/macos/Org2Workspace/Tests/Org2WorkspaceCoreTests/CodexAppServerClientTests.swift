@@ -573,7 +573,10 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(arguments.contains("ServerAliveInterval=15"))
     XCTAssertTrue(arguments.contains("ServerAliveCountMax=12"))
     XCTAssertEqual(arguments[arguments.count - 2], "avi@scarfs-macbook-air")
-    XCTAssertTrue(arguments.last?.contains("codex app-server --listen stdio://") == true)
+    XCTAssertTrue(arguments.last?.contains("codex app-server daemon start") == true)
+    XCTAssertTrue(arguments.last?.contains("openorg-codex-adapter") == true)
+    XCTAssertTrue(arguments.last?.contains("base64.b64decode") == true)
+    XCTAssertFalse(arguments.last?.contains("codex app-server --listen stdio://") == true)
     XCTAssertFalse(arguments.last?.contains("codex app-server proxy") == true)
     XCTAssertThrowsError(
       try CodexAppServerClient.managedRemoteSSHArguments(
@@ -1049,7 +1052,7 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
-  func testManagedRemoteClientUsesSSHStdioJSONLTransport() async throws {
+  func testManagedRemoteClientUsesSSHDaemonJSONLAdapterTransport() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-managed-remote-client-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(
@@ -1077,6 +1080,80 @@ final class CodexAppServerClientTests: XCTestCase {
     let account = try await client.accountState()
 
     XCTAssertEqual(account, .chatGPT(email: "test@example.com", plan: "plus"))
+    await client.shutdown()
+  }
+
+  func testManagedRemoteTurnRecoversAfterSSHTransportEnds() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let connectionCount = temporaryDirectory.appendingPathComponent("connection-count")
+    let fakeSSH = temporaryDirectory.appendingPathComponent("fake-ssh")
+    let script = #"""
+    #!/bin/sh
+    count_file='\#(connectionCount.path)'
+    count=0
+    if [ -f "$count_file" ]; then
+      count=$(/usr/bin/sed -n '1p' "$count_file")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$count_file"
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/start"'*)
+          printf '{"id":%s,"result":{"thread":{"id":"thr-durable"}}}\n' "$request_id"
+          ;;
+        *'"method":"turn/start"'*)
+          printf '{"id":%s,"result":{"turn":{"id":"turn-durable"}}}\n' "$request_id"
+          printf '%s\n' '{"method":"turn/started","params":{"threadId":"thr-durable","turn":{"id":"turn-durable","status":"inProgress","items":[]}}}'
+          exit 0
+          ;;
+        *'"method":"thread/read"'*)
+          printf '{"id":%s,"result":{"thread":{"id":"thr-durable","turns":[{"id":"turn-durable","status":"completed","items":[{"id":"agent-final","type":"agentMessage","phase":"final_answer","text":"Recovered after wake"}]}]}}}\n' "$request_id"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: fakeSSH, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeSSH.path)
+
+    let client = CodexAppServerClient(
+      executableURL: nil,
+      sshExecutableURL: fakeSSH,
+      transport: .managedRemote(sshHost: "remote.example"),
+      requestTimeoutNanoseconds: 5_000_000_000,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+    let threadID = try await client.ensureThread(
+      existingThreadID: nil,
+      cwd: temporaryDirectory
+    )
+
+    let result = try await client.runTurn(
+      threadID: threadID,
+      turnID: "local-turn",
+      message: "Keep working while the laptop sleeps.",
+      attachments: [],
+      cwd: temporaryDirectory,
+      clientUserMessageID: UUID()
+    )
+
+    XCTAssertEqual(result.status, .completed)
+    XCTAssertEqual(result.reply, "Recovered after wake")
+    XCTAssertEqual(
+      try String(contentsOf: connectionCount, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      "2"
+    )
     await client.shutdown()
   }
 

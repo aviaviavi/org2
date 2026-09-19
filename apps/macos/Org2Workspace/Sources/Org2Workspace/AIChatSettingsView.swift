@@ -491,7 +491,7 @@ private struct AIChatDestinationEditor: View {
     case .codexRemote:
       return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost; the workspace path is resolved on the remote machine."
     case .codexManagedRemote:
-      return "Attaches through SSH to Codex's managed App Server daemon. Use a host already configured in Codex or ~/.ssh/config; no WebSocket, tunnel, or bearer token is required."
+      return "Attaches through SSH to Codex's managed App Server daemon. Accepted turns survive laptop sleep and reconnect after wake; client-hosted workspace tools wait for the Mac. Use a host already configured in Codex or ~/.ssh/config; no WebSocket, tunnel, or bearer token is required."
     case .openClaw:
       return isBuiltInOpenClaw
         ? "This default destination uses the existing OpenClaw Gateway configuration."
