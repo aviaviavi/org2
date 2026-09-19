@@ -2256,6 +2256,7 @@ public final class WorkspaceStore {
   var projectStatus = ""
   private(set) var isRefreshingProjects = false
   private var projectRefreshID = UUID()
+  @ObservationIgnored private var projectRefreshTask: (id: UUID, task: Task<Void, Never>)?
   private var projectMutationIDs: Set<String> = []
   public var corpusRoot: URL?
   public private(set) var mountedCorpora: [WorkspaceCorpusMount] = []
@@ -4469,6 +4470,8 @@ public final class WorkspaceStore {
     resetCorpusFileDerivedState()
     projectNotes = []
     projectStatus = ""
+    projectRefreshTask?.task.cancel()
+    projectRefreshTask = nil
     isRefreshingProjects = false
     projectRefreshID = UUID()
     corpusRoot = standardized
@@ -6858,30 +6861,68 @@ public final class WorkspaceStore {
     let requestID = UUID()
     projectRefreshID = requestID
     isRefreshingProjects = true
+    if projectStatus.hasPrefix("Could not load projects:") {
+      projectStatus = ""
+    }
     defer {
       if corpusRoot == root, projectRefreshID == requestID {
         isRefreshingProjects = false
       }
     }
-    do {
-      let payload: WorkspaceProjectList
-      if let projectListLoaderForTesting {
-        payload = try await projectListLoaderForTesting(root)
-      } else {
-        payload = try await cli.runJSON(["project", "list", "--dir", root.path, "--json"])
+    var lastError: Error?
+    for attempt in 0..<2 {
+      do {
+        let payload: WorkspaceProjectList
+        if let projectListLoaderForTesting {
+          payload = try await projectListLoaderForTesting(root)
+        } else {
+          payload = try await cli.runJSON(["project", "list", "--dir", root.path, "--json"])
+        }
+        guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
+        applyProjectList(payload)
+        return
+      } catch is CancellationError {
+        return
+      } catch {
+        guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
+        lastError = error
+        if attempt == 0 {
+          do {
+            try await Task.sleep(for: .milliseconds(150))
+          } catch {
+            return
+          }
+          guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
+        }
       }
-      guard corpusRoot == root, projectRefreshID == requestID, !Task.isCancelled else { return }
-      applyProjectList(payload)
-    } catch {
-      guard corpusRoot == root, projectRefreshID == requestID else { return }
-      projectNotes = []
-      projectStatus = "Could not load projects: \(error.localizedDescription)"
     }
+    guard let lastError,
+          corpusRoot == root,
+          projectRefreshID == requestID,
+          !Task.isCancelled
+    else { return }
+    projectStatus = "Could not load projects: \(lastError.localizedDescription)"
+  }
+
+  private func finishProjectRefreshTask(id: UUID) {
+    guard projectRefreshTask?.id == id else { return }
+    projectRefreshTask = nil
   }
 
   func refreshProjectsIfIdle() async {
+    if let active = projectRefreshTask {
+      await active.task.value
+      return
+    }
     guard !isRefreshingProjects else { return }
-    await refreshProjects()
+    let id = UUID()
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.refreshProjects()
+    }
+    projectRefreshTask = (id, task)
+    await task.value
+    finishProjectRefreshTask(id: id)
   }
 
   func openProjectNote(_ project: WorkspaceProjectNote) {

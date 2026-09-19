@@ -12,6 +12,26 @@ private actor WorkspaceProjectRefreshRecorder {
   }
 }
 
+private enum WorkspaceProjectRefreshTestError: Error {
+  case transient
+  case persistent
+}
+
+private actor WorkspaceProjectFlakyRefreshRecorder {
+  private(set) var callCount = 0
+  let project: WorkspaceProjectNote
+
+  init(project: WorkspaceProjectNote) {
+    self.project = project
+  }
+
+  func load() async throws -> WorkspaceProjectList {
+    callCount += 1
+    if callCount == 1 { throw WorkspaceProjectRefreshTestError.transient }
+    return WorkspaceProjectList(projects: [project], diagnostics: [])
+  }
+}
+
 final class WorkspaceProjectTests: XCTestCase {
   private func project(threadID: UUID, brief: String = "* TODO Ship the thing") -> WorkspaceProjectNote {
     WorkspaceProjectNote(id: UUID().uuidString, title: "Launch", color: "blue", file: "/local/launch.org", relativePath: "launch.org", revision: "sha256:fixture", threadIDs: [threadID.uuidString.lowercased()], brief: brief, briefTruncated: false)
@@ -209,7 +229,7 @@ final class WorkspaceProjectTests: XCTestCase {
     store.projectListLoaderForTesting = { _ in try await recorder.load() }
 
     let first = Task { await store.refreshProjectsIfIdle() }
-    await Task.yield()
+    try await Task.sleep(for: .milliseconds(10))
 
     XCTAssertTrue(store.isRefreshingProjects)
 
@@ -220,6 +240,84 @@ final class WorkspaceProjectTests: XCTestCase {
     let callCount = await recorder.callCount
     XCTAssertFalse(store.isRefreshingProjects)
     XCTAssertEqual(callCount, 1)
+  }
+
+  @MainActor
+  func testProjectRefreshSurvivesSidebarTaskCancellation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-refresh-cancellation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let expected = project(threadID: UUID())
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.projectListLoaderForTesting = { _ in
+      try await Task.sleep(for: .milliseconds(100))
+      return WorkspaceProjectList(projects: [expected], diagnostics: [])
+    }
+
+    let sidebarTask = Task { await store.refreshProjectsIfIdle() }
+    await Task.yield()
+    sidebarTask.cancel()
+    await sidebarTask.value
+
+    XCTAssertEqual(store.projectNotes, [expected])
+    XCTAssertEqual(store.projectStatus, "")
+    XCTAssertFalse(store.isRefreshingProjects)
+  }
+
+  @MainActor
+  func testProjectRefreshRetriesTransientFailure() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-refresh-retry-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let expected = project(threadID: UUID())
+    let recorder = WorkspaceProjectFlakyRefreshRecorder(project: expected)
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.projectListLoaderForTesting = { _ in try await recorder.load() }
+
+    await store.refreshProjects()
+
+    let callCount = await recorder.callCount
+    XCTAssertEqual(callCount, 2)
+    XCTAssertEqual(store.projectNotes, [expected])
+    XCTAssertEqual(store.projectStatus, "")
+  }
+
+  @MainActor
+  func testProjectRefreshKeepsLastGoodProjectsAfterPersistentFailure() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-refresh-preserve-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let expected = project(threadID: UUID())
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.projectListLoaderForTesting = { _ in
+      WorkspaceProjectList(projects: [expected], diagnostics: [])
+    }
+    await store.refreshProjects()
+    store.projectListLoaderForTesting = { _ in throw WorkspaceProjectRefreshTestError.persistent }
+
+    await store.refreshProjects()
+
+    XCTAssertEqual(store.projectNotes, [expected])
+    XCTAssertTrue(store.projectStatus.hasPrefix("Could not load projects:"))
+    XCTAssertFalse(store.isRefreshingProjects)
   }
 
   @MainActor
