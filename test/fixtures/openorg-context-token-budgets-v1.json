@@ -1,6 +1,11 @@
 {
   "schema": "org2:openorg-context-token-benchmark:v1",
   "turns": 20,
+  "scenario": {
+    "recoveryTurns": 2,
+    "projectDeltaTurns": 4,
+    "projectDeltaTokens": 400
+  },
   "representativeTokens": {
     "static": 6000,
     "project": 2000,

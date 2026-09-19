@@ -1392,12 +1392,14 @@ private struct AssignedWorkSearchRow: Sendable {
 }
 
 private struct AIChatPersistentContextKey: Hashable {
+  let transcriptPath: String
   let threadID: UUID
   let destinationID: String
   let runtimeSessionID: String
 }
 
 private struct AIChatDestinationTurnKey: Hashable {
+  let transcriptPath: String
   let threadID: UUID
   let destinationID: String
 }
@@ -24468,7 +24470,10 @@ public final class WorkspaceStore {
       aiChatSendOriginsByThreadID[threadID] = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: workspaceContext ?? threadScopedOpenClawWorkspaceContext(for: thread),
+        workspaceContext: workspaceContext ?? threadScopedOpenClawWorkspaceContext(
+          for: thread,
+          includesThreadContinuation: false
+        ),
         context: context
       )
     }
@@ -24688,7 +24693,10 @@ public final class WorkspaceStore {
       let currentOrigin = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread),
+        workspaceContext: threadScopedOpenClawWorkspaceContext(
+          for: thread,
+          includesThreadContinuation: false
+        ),
         context: captureAIChatCorpusContext()
       )
       aiChatSendOriginsByThreadID[threadID] = currentOrigin
@@ -25059,7 +25067,10 @@ public final class WorkspaceStore {
       let currentOrigin = AIChatSendOrigin(
         corpusRoot: corpusRoot?.standardizedFileURL,
         transcriptURL: openClawTranscriptURL.standardizedFileURL,
-        workspaceContext: threadScopedOpenClawWorkspaceContext(for: thread),
+        workspaceContext: threadScopedOpenClawWorkspaceContext(
+          for: thread,
+          includesThreadContinuation: false
+        ),
         context: captureAIChatCorpusContext()
       )
       aiChatSendOriginsByThreadID[threadID] = currentOrigin
@@ -25261,41 +25272,85 @@ public final class WorkspaceStore {
 
   private func aiChatDestinationTurnKey(
     threadID: UUID,
-    destinationID: String
+    destinationID: String,
+    transcriptURL: URL? = nil
   ) -> AIChatDestinationTurnKey {
-    AIChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+    let transcriptURL = transcriptURL
+      ?? aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+      ?? openClawTranscriptURL
+    return AIChatDestinationTurnKey(
+      transcriptPath: transcriptURL.standardizedFileURL.path,
+      threadID: threadID,
+      destinationID: destinationID
+    )
   }
 
   private func persistentContextEnvelope(
     threadID: UUID,
     destinationID: String,
     runtimeSessionID: String,
-    fullPrompt: String,
+    transcriptURL: URL,
+    fullPrompt: (_ requiresRecovery: Bool) -> String,
     includesTranscript: Bool,
     roomPrompt: String,
     attachments: [OpenClawChatAttachment]
   ) -> (key: AIChatPersistentContextKey, envelope: AIChatPersistentContextEnvelope) {
     let key = AIChatPersistentContextKey(
+      transcriptPath: transcriptURL.standardizedFileURL.path,
       threadID: threadID,
       destinationID: destinationID,
       runtimeSessionID: runtimeSessionID
     )
+    let staleKeys = aiChatPersistentContextSections.keys.filter {
+      $0.transcriptPath == key.transcriptPath
+        && $0.threadID == threadID
+        && $0.destinationID == destinationID
+        && $0 != key
+    }
+    for staleKey in staleKeys {
+      aiChatPersistentContextSections.removeValue(forKey: staleKey)
+      aiChatPersistentContextRecoveryRequired.remove(staleKey)
+    }
+    let previousSections = aiChatPersistentContextSections[key]
     let forceRecovery = aiChatPersistentContextRecoveryRequired.remove(key) != nil
+      || previousSections == nil
     let envelope = AIChatContextBudget.persistentEnvelope(
-      fullPrompt: fullPrompt,
-      previousSections: aiChatPersistentContextSections[key],
+      fullPrompt: fullPrompt(forceRecovery),
+      previousSections: previousSections,
       forceRecovery: forceRecovery,
       includesTranscript: includesTranscript,
       roomPrompt: roomPrompt,
       attachments: attachments
     )
     aiChatContextByDestinationTurn[
-      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+      aiChatDestinationTurnKey(
+        threadID: threadID,
+        destinationID: destinationID,
+        transcriptURL: transcriptURL
+      )
     ] = envelope.telemetry
     aiChatActivePersistentContextKeyByDestinationTurn[
-      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+      aiChatDestinationTurnKey(
+        threadID: threadID,
+        destinationID: destinationID,
+        transcriptURL: transcriptURL
+      )
     ] = key
     return (key, envelope)
+  }
+
+  private func resetAIChatTurnTelemetry(
+    threadID: UUID,
+    destinationID: String,
+    transcriptURL: URL
+  ) {
+    let key = aiChatDestinationTurnKey(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: transcriptURL
+    )
+    aiChatUsageByDestinationTurn.removeValue(forKey: key)
+    aiChatContextByDestinationTurn.removeValue(forKey: key)
   }
 
   private func commitPersistentContext(
@@ -25305,7 +25360,8 @@ public final class WorkspaceStore {
     aiChatActivePersistentContextKeyByDestinationTurn.removeValue(
       forKey: aiChatDestinationTurnKey(
         threadID: key.threadID,
-        destinationID: key.destinationID
+        destinationID: key.destinationID,
+        transcriptURL: URL(fileURLWithPath: key.transcriptPath)
       )
     )
     guard !aiChatPersistentContextRecoveryRequired.contains(key) else { return }
@@ -25314,20 +25370,29 @@ public final class WorkspaceStore {
 
   private func requirePersistentContextRecovery(
     threadID: UUID,
-    destinationID: String
+    destinationID: String,
+    transcriptURL: URL
   ) {
+    let transcriptPath = transcriptURL.standardizedFileURL.path
     var keys = Set(aiChatPersistentContextSections.keys.filter {
-      $0.threadID == threadID && $0.destinationID == destinationID
+      $0.transcriptPath == transcriptPath
+        && $0.threadID == threadID
+        && $0.destinationID == destinationID
     })
     if let activeKey = aiChatActivePersistentContextKeyByDestinationTurn[
-      aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+      aiChatDestinationTurnKey(
+        threadID: threadID,
+        destinationID: destinationID,
+        transcriptURL: transcriptURL
+      )
     ] {
       keys.insert(activeKey)
     }
     if keys.isEmpty,
-       let runtimeSessionID = openClawChatThreads.first(where: { $0.id == threadID })?
+       let runtimeSessionID = openClawChatThread(threadID, transcriptURL: transcriptURL)?
         .runtimeThreadID(forDestinationID: destinationID) {
       aiChatPersistentContextRecoveryRequired.insert(AIChatPersistentContextKey(
+        transcriptPath: transcriptPath,
         threadID: threadID,
         destinationID: destinationID,
         runtimeSessionID: runtimeSessionID
@@ -25357,6 +25422,11 @@ public final class WorkspaceStore {
     else {
       throw AIProviderChatError.invalidResponse
     }
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destination.id,
+      transcriptURL: sendOrigin.transcriptURL
+    )
     let requestMessages = thread.isSharedRoom
       ? Self.sharedRoomRequestMessages(
           messages,
@@ -25428,7 +25498,11 @@ public final class WorkspaceStore {
       \(bundledWorkspaceContext.systemPrompt(runtime: "bundled", runtimeAgentID: destination.name))
       """
       aiChatContextByDestinationTurn[
-        aiChatDestinationTurnKey(threadID: threadID, destinationID: destination.id)
+        aiChatDestinationTurnKey(
+          threadID: threadID,
+          destinationID: destination.id,
+          transcriptURL: sendOrigin.transcriptURL
+        )
       ] = AIChatContextBudget.statelessTelemetry(
         systemPrompt: system,
         history: bundledMessages,
@@ -25456,7 +25530,8 @@ public final class WorkspaceStore {
     )
     let telemetryKey = aiChatDestinationTurnKey(
       threadID: threadID,
-      destinationID: destination.id
+      destinationID: destination.id,
+      transcriptURL: sendOrigin.transcriptURL
     )
     aiChatContextByDestinationTurn[telemetryKey] = result.contextTelemetry
     if let usage = result.usage { aiChatUsageByDestinationTurn[telemetryKey] = usage }
@@ -25512,6 +25587,11 @@ public final class WorkspaceStore {
         )
       : messages
     let requestUserMessage = requestMessages.last(where: { $0.id == userMessage.id }) ?? userMessage
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: sendOrigin.transcriptURL
+    )
 
     openClawGatewayStateByThreadID[threadID] = .connecting
     openClawGatewayDetailByThreadID[threadID] = destination.name
@@ -25520,12 +25600,17 @@ public final class WorkspaceStore {
       openClawStatusText = "Connecting to \(destination.name)"
     }
 
+    let claudeWorkspaceContext = sendOrigin.workspaceContext.threadContinuation == nil
+      ? sendOrigin.workspaceContext.replacingThreadContinuation(
+          aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
+        )
+      : sendOrigin.workspaceContext
     let result: ClaudeCodeTurnResult
     if let claudeSendHandlerForTesting {
       result = try await claudeSendHandlerForTesting(
         requestMessages,
         threadID,
-        sendOrigin.workspaceContext
+        claudeWorkspaceContext
       )
     } else {
       result = try await localClaudeCodeClient().runTurn(
@@ -25535,7 +25620,7 @@ public final class WorkspaceStore {
           requestUserMessage,
           corpusSkills: corpusAgentSkillCommands
         ).content,
-        systemPrompt: sendOrigin.workspaceContext.localAgentSystemPrompt(
+        systemPrompt: claudeWorkspaceContext.localAgentSystemPrompt(
           runtime: "claude",
           runtimeTitle: "Claude Code"
         ),
@@ -25602,6 +25687,11 @@ public final class WorkspaceStore {
         )
       : messages
     let requestUserMessage = requestMessages.last(where: { $0.id == userMessage.id }) ?? userMessage
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: sendOrigin.transcriptURL
+    )
 
     if let codexSendHandlerForTesting {
       return try await codexSendHandlerForTesting(
@@ -25670,29 +25760,38 @@ public final class WorkspaceStore {
       openClawStatusText = "\(destination.name) is working"
     }
 
-    var fullWorkspacePrompt = sendOrigin.workspaceContext.codexSystemPrompt()
-    if threadResolution.replacedStaleThread {
-      fullWorkspacePrompt += """
-
-      ---
-
-      OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the bounded thread continuation above. Do not repeat already completed work unless the latest user message asks you to.
-      """
-    }
-    if destination.adapter == .codexRemote
-        || destination.adapter == .codexManagedRemote {
-      fullWorkspacePrompt += """
-
-      ---
-
-      Remote execution note: this Codex destination runs with `\(destinationRoot.path)` as its filesystem working directory. Paths in the Org2 context may describe the Mac hosting Org2; use the remote working directory for direct filesystem operations. The `org2_workspace_*` tools still operate on the active corpus through Org2 on that Mac.
-      """
-    }
+    let baseWorkspaceContext = sendOrigin.workspaceContext.replacingThreadContinuation(nil)
     let contextDelivery = persistentContextEnvelope(
       threadID: threadID,
       destinationID: destinationID,
       runtimeSessionID: runtimeThreadID,
-      fullPrompt: fullWorkspacePrompt,
+      transcriptURL: sendOrigin.transcriptURL,
+      fullPrompt: { [self] requiresRecovery in
+        let promptContext = requiresRecovery && !thread.isSharedRoom
+          ? baseWorkspaceContext.replacingThreadContinuation(
+              aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
+            )
+          : baseWorkspaceContext
+        var prompt = promptContext.codexSystemPrompt()
+        if threadResolution.replacedStaleThread {
+          prompt += """
+
+          ---
+
+          OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the bounded thread continuation above. Do not repeat already completed work unless the latest user message asks you to.
+          """
+        }
+        if destination.adapter == .codexRemote
+            || destination.adapter == .codexManagedRemote {
+          prompt += """
+
+          ---
+
+          Remote execution note: this Codex destination runs with `\(destinationRoot.path)` as its filesystem working directory. Paths in the Org2 context may describe the Mac hosting Org2; use the remote working directory for direct filesystem operations. The `org2_workspace_*` tools still operate on the active corpus through Org2 on that Mac.
+          """
+        }
+        return prompt
+      },
       includesTranscript: !thread.isSharedRoom,
       roomPrompt: thread.isSharedRoom ? requestUserMessage.content : "",
       attachments: requestUserMessage.attachments
@@ -25716,7 +25815,11 @@ public final class WorkspaceStore {
     commitPersistentContext(contextDelivery.envelope, for: contextDelivery.key)
     if let usage = result.usage {
       aiChatUsageByDestinationTurn[
-        aiChatDestinationTurnKey(threadID: threadID, destinationID: destinationID)
+        aiChatDestinationTurnKey(
+          threadID: threadID,
+          destinationID: destinationID,
+          transcriptURL: sendOrigin.transcriptURL
+        )
       ] = usage
     }
     let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -26256,7 +26359,9 @@ public final class WorkspaceStore {
       ) else { return }
       requirePersistentContextRecovery(
         threadID: threadID,
-        destinationID: destinationID
+        destinationID: destinationID,
+        transcriptURL: aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+          ?? openClawTranscriptURL
       )
     case .warning(let runtimeThreadID, let message):
       if let runtimeThreadID,
@@ -26309,6 +26414,11 @@ public final class WorkspaceStore {
     let workspaceContext = workspaceContext(
       sendOrigin.workspaceContext,
       localEditTurnID: localEditTurnID
+    ).replacingThreadContinuation(nil)
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: sendOrigin.transcriptURL
     )
     let expandedMessages = messages.map {
       Self.expandingOpenClawAgentCommand($0, corpusSkills: corpusAgentSkillCommands)
@@ -26339,16 +26449,37 @@ public final class WorkspaceStore {
       ? nil
       : threadConfiguration?.reasoningEffort
     if let openClawSendHandler {
-      return try await openClawSendHandler(requestMessages, agentID, sessionKey, workspaceContext)
+      let handlerContext = threadConfiguration.map {
+        workspaceContext.replacingThreadContinuation(
+          aiChatThreadContinuation(
+            for: $0,
+            excludingMessageID: originalUserMessage.id
+          )
+        )
+      } ?? workspaceContext
+      return try await openClawSendHandler(requestMessages, agentID, sessionKey, handlerContext)
     }
     let contextDelivery = isGatewayCommand ? nil : persistentContextEnvelope(
       threadID: threadID,
       destinationID: destinationID,
       runtimeSessionID: sessionKey,
-      fullPrompt: workspaceContext.systemPrompt(
-        runtime: "openclaw",
-        runtimeAgentID: agentID
-      ),
+      transcriptURL: sendOrigin.transcriptURL,
+      fullPrompt: { [self] requiresRecovery in
+        let promptContext = requiresRecovery && threadConfiguration?.isSharedRoom != true
+          ? workspaceContext.replacingThreadContinuation(
+              threadConfiguration.map {
+                aiChatThreadContinuation(
+                  for: $0,
+                  excludingMessageID: originalUserMessage.id
+                )
+              }
+            )
+          : workspaceContext
+        return promptContext.systemPrompt(
+          runtime: "openclaw",
+          runtimeAgentID: agentID
+        )
+      },
       includesTranscript: threadConfiguration?.isSharedRoom != true,
       roomPrompt: threadConfiguration?.isSharedRoom == true ? latestUserMessage.content : "",
       attachments: latestUserMessage.attachments
@@ -26493,6 +26624,11 @@ public final class WorkspaceStore {
       if isActiveAIChatSendOrigin(sendOrigin) {
         openClawStatusText = "Using HTTP compatibility for this turn"
       }
+      resetAIChatTurnTelemetry(
+        threadID: threadID,
+        destinationID: destinationID,
+        transcriptURL: sendOrigin.transcriptURL
+      )
       let client = OpenClawChatClient(settings: settings)
       let fallbackMessages = threadConfiguration?.isSharedRoom == true
         ? requestMessages.filter { $0.id == originalUserMessage.id }
@@ -26505,7 +26641,8 @@ public final class WorkspaceStore {
       )
       let telemetryKey = aiChatDestinationTurnKey(
         threadID: threadID,
-        destinationID: destinationID
+        destinationID: destinationID,
+        transcriptURL: sendOrigin.transcriptURL
       )
       aiChatContextByDestinationTurn[telemetryKey] = result.contextTelemetry
       if let usage = result.usage { aiChatUsageByDestinationTurn[telemetryKey] = usage }
@@ -26715,13 +26852,17 @@ public final class WorkspaceStore {
       aiChatUsageByDestinationTurn[
         aiChatDestinationTurnKey(
           threadID: threadID,
-          destinationID: resolvedDestinationID
+          destinationID: resolvedDestinationID,
+          transcriptURL: aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+            ?? openClawTranscriptURL
         )
       ] = usage
     case .contextCompacted:
       requirePersistentContextRecovery(
         threadID: threadID,
-        destinationID: resolvedDestinationID
+        destinationID: resolvedDestinationID,
+        transcriptURL: aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+          ?? openClawTranscriptURL
       )
     }
   }
@@ -26844,75 +26985,84 @@ public final class WorkspaceStore {
       }
       return speaker
     }
-    let rows = visibleTranscript.compactMap { message -> (message: OpenClawChatMessage, text: String)? in
+    func row(for message: OpenClawChatMessage, compact: Bool = false) -> String? {
       let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !content.isEmpty else { return nil }
-      return (message, "\(speaker(for: message)):\n\(content)")
+      let row = "\(speaker(for: message)):\n\(content)"
+      guard compact else { return row }
+      let flattened = row
+        .replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      return String(flattened.prefix(320))
     }
-    let cursorIndex = rows.lastIndex {
-      $0.message.role == .assistant
-        && $0.message.authorDestinationID == targetDestinationID
+    let currentMessage = messages[targetIndex]
+    let currentContent = currentMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    let currentRequest = "\(speaker(for: currentMessage)):\n\(currentContent.isEmpty ? "[Attachment-only request]" : currentContent)"
+    let historyMessages = visibleTranscript.filter { $0.id != userMessageID }
+    let cursorIndex = historyMessages.lastIndex {
+      $0.role == .assistant && $0.authorDestinationID == targetDestinationID
     }
-    let summaryRows: ArraySlice<(message: OpenClawChatMessage, text: String)>
-    var unseenRows: ArraySlice<(message: OpenClawChatMessage, text: String)>
+    let unseenMessages: ArraySlice<OpenClawChatMessage>
     if let cursorIndex {
-      summaryRows = rows[...cursorIndex]
-      unseenRows = rows.dropFirst(cursorIndex + 1)
+      unseenMessages = historyMessages.dropFirst(cursorIndex + 1)[...]
     } else {
-      summaryRows = rows[0..<0]
-      unseenRows = rows[...]
+      unseenMessages = historyMessages[...]
     }
 
-    func boundedTail(_ source: ArraySlice<(message: OpenClawChatMessage, text: String)>, tokens: Int) -> [String] {
+    func boundedTail(
+      _ source: ArraySlice<OpenClawChatMessage>,
+      tokens: Int,
+      compact: Bool = false
+    ) -> (rows: [String], firstIncludedIndex: Int?) {
       var output: [String] = []
       var remaining = tokens
-      for row in source.reversed() {
-        let rowTokens = AIChatContextBudget.estimatedTokens(row.text) + 4
+      var firstIncludedIndex: Int?
+      for index in source.indices.reversed() {
+        guard let formattedRow = row(for: source[index], compact: compact) else { continue }
+        let rowTokens = AIChatContextBudget.estimatedTokens(formattedRow) + 4
         if output.isEmpty, rowTokens > remaining {
-          output.append(AIChatContextBudget.boundedSuffix(row.text, tokenBudget: remaining))
+          output.append(AIChatContextBudget.boundedSuffix(formattedRow, tokenBudget: remaining))
+          firstIncludedIndex = index
           break
         }
         guard rowTokens <= remaining else { break }
-        output.append(row.text)
+        output.append(formattedRow)
+        firstIncludedIndex = index
         remaining -= rowTokens
       }
-      return output.reversed()
+      return (output.reversed(), firstIncludedIndex)
     }
 
-    var unseen = boundedTail(
-      unseenRows,
+    let unseen = boundedTail(
+      unseenMessages,
       tokens: AIChatContextBudget.sharedRoomUnseenTokenBudget
     )
-    var rollingRows = summaryRows
-    if unseen.count < unseenRows.count {
-      rollingRows = rows.prefix(rows.count - unseen.count)
-    }
-    let compactSummaryRows = rollingRows.map { row -> (message: OpenClawChatMessage, text: String) in
-      let compact = row.text
-        .replacingOccurrences(of: "\n", with: " ")
-        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-      return (row.message, String(compact.prefix(320)))
+    let summaryMessages: ArraySlice<OpenClawChatMessage>
+    if let firstIncludedIndex = unseen.firstIncludedIndex {
+      summaryMessages = historyMessages[..<firstIncludedIndex]
+    } else {
+      summaryMessages = historyMessages[...]
     }
     let summary = boundedTail(
-      compactSummaryRows[...],
-      tokens: AIChatContextBudget.sharedRoomSummaryTokenBudget
-    )
-    if unseen.isEmpty, let latest = rows.last {
-      unseen = [AIChatContextBudget.boundedSuffix(
-        latest.text,
-        tokenBudget: AIChatContextBudget.sharedRoomUnseenTokenBudget
-      )]
-    }
-    let cursor = cursorIndex.map { rows[$0].message.id.uuidString.lowercased() } ?? "start"
+      summaryMessages,
+      tokens: AIChatContextBudget.sharedRoomSummaryTokenBudget,
+      compact: true
+    ).rows
+    let cursor = cursorIndex.map {
+      historyMessages[$0].id.uuidString.lowercased()
+    } ?? "start"
     let prompt = """
     <org2-shared-ai-room>
-    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. OpenOrg maintains a separate durable delivery cursor for each destination. This delivery starts after cursor \(cursor). The rolling summary and bounded unseen transcript below are the authoritative room state for this destination. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to Avi's latest message as \(targetDestinationName), and make any proposed handoff explicit rather than silently invoking it.
+    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. OpenOrg maintains a separate durable delivery cursor for each destination. This delivery starts after cursor \(cursor). The rolling summary and bounded unseen transcript below are the authoritative prior room state for this destination. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to the verbatim current request as \(targetDestinationName), and make any proposed handoff explicit rather than silently invoking it.
 
     Rolling summary:
     \(summary.isEmpty ? "No earlier room messages." : summary.joined(separator: "\n"))
 
     Unseen transcript:
-    \(unseen.joined(separator: "\n\n"))
+    \(unseen.rows.isEmpty ? "No messages since this destination's cursor." : unseen.rows.joined(separator: "\n\n"))
+
+    Current request (verbatim; never truncated by the room-history budget):
+    \(currentRequest)
     </org2-shared-ai-room>
     """
     var result = messages
@@ -27244,7 +27394,8 @@ public final class WorkspaceStore {
       ?? AIChatDestinationConfiguration.openClawID
     let telemetryKey = aiChatDestinationTurnKey(
       threadID: threadID,
-      destinationID: traceDestinationID
+      destinationID: traceDestinationID,
+      transcriptURL: targetTranscriptURL
     )
     let trace = OpenClawResponseTrace(
       reasoning: openClawLiveState.reasoning(for: threadID),
@@ -39897,12 +40048,15 @@ public final class WorkspaceStore {
   /// multi-selection context is carried in the user message itself.
   private func threadScopedOpenClawWorkspaceContext(
     for thread: OpenClawChatThread,
-    localEditTurnID: String? = nil
+    localEditTurnID: String? = nil,
+    includesThreadContinuation: Bool = true
   ) -> OpenClawWorkspaceContext {
     currentOpenClawWorkspaceContext(
       localEditTurnID: localEditTurnID,
       includesNavigationContext: false,
-      threadContinuation: aiChatThreadContinuation(for: thread),
+      threadContinuation: includesThreadContinuation
+        ? aiChatThreadContinuation(for: thread)
+        : nil,
       projectContext: WorkspaceProjectContext.presentation(projects: projectNotes, threadID: thread.id, mappedPath: mappedPathForOpenClaw),
       chatAgentRef: thread.agentRef,
       chatAgentProfile: agentProfiles.first(where: { $0.id == thread.agentRef })
@@ -39910,7 +40064,8 @@ public final class WorkspaceStore {
   }
 
   private func aiChatThreadContinuation(
-    for thread: OpenClawChatThread
+    for thread: OpenClawChatThread,
+    excludingMessageID: UUID? = nil
   ) -> AIChatThreadContinuation {
     let maxMessages = 24
     let maxMessageCharacters = 4_000
@@ -39918,6 +40073,7 @@ public final class WorkspaceStore {
     var messages: [AIChatThreadContinuation.Message] = []
 
     for message in thread.messages.reversed() {
+      guard message.id != excludingMessageID else { continue }
       guard messages.count < maxMessages, remainingCharacters > 0 else { break }
       var content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
       if !message.attachments.isEmpty {
@@ -39956,7 +40112,9 @@ public final class WorkspaceStore {
     // Assistant citations are useful in the transcript, but treating them as
     // attachments lets one mistaken answer contaminate every later turn.
     for message in thread.messages.reversed()
-      where message.role == .user && references.count < 12 {
+      where message.id != excludingMessageID
+        && message.role == .user
+        && references.count < 12 {
       for reference in OpenClawFileReference.extract(from: message.content, limit: 12) {
         appendReference(reference)
       }

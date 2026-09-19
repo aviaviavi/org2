@@ -86,23 +86,22 @@ enum AIChatContextBudget {
     _ messages: [OpenClawChatMessage],
     tokenBudget: Int = statelessHistoryTokenBudget
   ) -> [OpenClawChatMessage] {
+    guard let currentMessage = messages.last else { return [] }
     let budget = max(1, tokenBudget)
-    var selected: [OpenClawChatMessage] = []
-    var used = 0
-    for message in messages.reversed() {
+    var selected = [currentMessage]
+    var used = estimatedTokens(currentMessage.content)
+      + estimatedAttachmentTokens(currentMessage.attachments)
+      + 8
+    guard used < budget else {
+      // The budget applies to history, never to the user's current request.
+      // Dropping the beginning of a large instruction is less safe than
+      // omitting all earlier turns for this request.
+      return selected
+    }
+    for message in messages.dropLast().reversed() {
       let messageTokens = estimatedTokens(message.content)
         + estimatedAttachmentTokens(message.attachments)
         + 8
-      if selected.isEmpty, messageTokens > budget {
-        let attachmentTokens = estimatedAttachmentTokens(message.attachments) + 8
-        let contentBudget = max(1, budget - attachmentTokens)
-        selected.append(replacingContent(
-          in: message,
-          with: boundedSuffix(message.content, tokenBudget: contentBudget)
-        ))
-        used = attachmentTokens + contentBudget
-        break
-      }
       guard used + messageTokens <= budget else { break }
       selected.append(message)
       used += messageTokens
@@ -115,12 +114,16 @@ enum AIChatContextBudget {
     let byteBudget = max(4, tokenBudget * 4)
     guard text.utf8.count > byteBudget else { return text }
     let marker = "[Earlier content omitted]\n\n"
-    let suffixBudget = max(1, byteBudget - marker.utf8.count)
-    var suffix = String(text.suffix(suffixBudget))
-    while suffix.utf8.count > suffixBudget, !suffix.isEmpty {
-      suffix.removeFirst()
-    }
-    return marker + suffix
+    let includesMarker = marker.utf8.count < byteBudget
+    let suffixBudget = includesMarker
+      ? byteBudget - marker.utf8.count
+      : byteBudget
+    let bytes = Array(text.utf8.suffix(suffixBudget))
+    let firstScalarBoundary = bytes.firstIndex(where: {
+      ($0 & 0b1100_0000) != 0b1000_0000
+    }) ?? bytes.endIndex
+    let suffix = String(decoding: bytes[firstScalarBoundary...], as: UTF8.self)
+    return includesMarker ? marker + suffix : suffix
   }
 
   static func persistentEnvelope(
@@ -132,7 +135,9 @@ enum AIChatContextBudget {
     attachments: [OpenClawChatAttachment] = []
   ) -> AIChatPersistentContextEnvelope {
     let sections = promptSections(fullPrompt)
-    let snapshot = Dictionary(uniqueKeysWithValues: sections.map { ($0.key, $0.text) })
+    let snapshot = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
+      isTranscriptSection(section.key) ? nil : (section.key, section.text)
+    })
     let isRecovery = forceRecovery || previousSections == nil
     let included: [(key: String, text: String)]
     if isRecovery {
@@ -147,9 +152,23 @@ enum AIChatContextBudget {
         return section
       }
     } else {
-      included = sections.filter { section in
+      let changed = sections.filter { section in
         !isTranscriptSection(section.key) && previousSections?[section.key] != section.text
       }
+      let removed = previousSections?.keys
+        .filter { snapshot[$0] == nil && !isTranscriptSection($0) }
+        .sorted()
+        .map { key in
+          (
+            key: key,
+            text: """
+            OpenOrg workspace context removal
+
+            The previously supplied section \(sectionTitle(for: key)) is no longer present. Treat that section as removed and do not rely on its earlier contents.
+            """
+          )
+        } ?? []
+      included = changed + removed
     }
 
     let body = included.map(\.text).joined(separator: "\n\n---\n\n")
@@ -187,7 +206,8 @@ enum AIChatContextBudget {
     roomPrompt: String = ""
   ) -> OpenOrgContextTelemetry {
     let sections = promptSections(systemPrompt)
-    let historyTokens = history.reduce(0) { total, message in
+    let earlierHistory = history.dropLast()
+    let historyTokens = earlierHistory.reduce(0) { total, message in
       let contentTokens = message.content == roomPrompt ? 0 : estimatedTokens(message.content)
       return total + contentTokens + 8
     }
@@ -225,6 +245,12 @@ enum AIChatContextBudget {
 
   private static func isProjectSection(_ key: String) -> Bool {
     key.hasPrefix("Project context#")
+      || key.hasPrefix("Project notes linked to this chat#")
+      || key.hasPrefix("Org2 workspace operating context#")
+      || key.hasPrefix("Org2 workspace UI snapshot#")
+      || key.hasPrefix("Authorized Org2 corpora#")
+      || key.hasPrefix("Org2 goals and agent identity#")
+      || key.hasPrefix("Connected Org2 sources#")
       || key.hasPrefix("User-selected chat agent#")
       || key.hasPrefix("Current UI selection#")
       || key.hasPrefix("Selected org2 ")
@@ -262,32 +288,7 @@ enum AIChatContextBudget {
     )
   }
 
-  private static func replacingContent(
-    in message: OpenClawChatMessage,
-    with content: String
-  ) -> OpenClawChatMessage {
-    OpenClawChatMessage(
-      id: message.id,
-      role: message.role,
-      content: content,
-      attachments: message.attachments,
-      createdAt: message.createdAt,
-      changeSummary: message.changeSummary,
-      responseTrace: message.responseTrace,
-      sendFailure: message.sendFailure,
-      deliveryStatus: message.deliveryStatus,
-      deliveryKind: message.deliveryKind,
-      authorRuntime: message.authorRuntime,
-      authorLabel: message.authorLabel,
-      authorAgentRef: message.authorAgentRef,
-      source: message.source,
-      audience: message.audience,
-      targetRuntime: message.targetRuntime,
-      authorDestinationID: message.authorDestinationID,
-      audienceDestinationIDs: message.audienceDestinationIDs,
-      targetDestinationID: message.targetDestinationID,
-      isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
-    )
+  private static func sectionTitle(for key: String) -> String {
+    key.replacingOccurrences(of: #"#\d+$"#, with: "", options: .regularExpression)
   }
 }

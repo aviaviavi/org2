@@ -540,6 +540,7 @@ final class AIChatSharedRoomTests: XCTestCase {
     XCTAssertTrue(openClawPrompt.contains(openClawReply.id.uuidString.lowercased()))
     XCTAssertTrue(codexPrompt.contains("Rolling summary"))
     XCTAssertTrue(codexPrompt.contains("Unseen transcript"))
+    XCTAssertTrue(codexPrompt.contains("Current request (verbatim"))
     XCTAssertTrue(codexPrompt.contains("OpenClaw answered the first question"))
     XCTAssertTrue(codexPrompt.contains("Second room question"))
     XCTAssertFalse(openClawPrompt.contains("Codex answered the first question\n\nOpenClaw answered"))
@@ -548,6 +549,39 @@ final class AIChatSharedRoomTests: XCTestCase {
       AIChatContextBudget.sharedRoomSummaryTokenBudget
         + AIChatContextBudget.sharedRoomUnseenTokenBudget
         + 300
+    )
+  }
+
+  func testSharedRoomPreservesLargeCurrentRequestOutsideHistoryBudgets() {
+    let earlier = OpenClawChatMessage(
+      role: .assistant,
+      content: String(repeating: "Earlier room context. ", count: 5_000),
+      authorDestinationID: AIChatDestinationConfiguration.openClawID
+    )
+    let currentContent = "BEGIN-CURRENT\n"
+      + String(repeating: "Keep this instruction intact. ", count: 3_000)
+      + "\nEND-CURRENT"
+    let current = OpenClawChatMessage(
+      role: .user,
+      content: currentContent,
+      audienceDestinationIDs: [AIChatDestinationConfiguration.localCodexID]
+    )
+
+    let prompt = WorkspaceStore.sharedRoomRequestMessages(
+      [earlier, current],
+      target: .codex,
+      through: current.id
+    ).last?.content ?? ""
+
+    XCTAssertTrue(prompt.contains(currentContent))
+    XCTAssertEqual(prompt.components(separatedBy: currentContent).count - 1, 1)
+    XCTAssertLessThanOrEqual(
+      AIChatContextBudget.estimatedTokens(
+        prompt.replacingOccurrences(of: currentContent, with: "")
+      ),
+      AIChatContextBudget.sharedRoomSummaryTokenBudget
+        + AIChatContextBudget.sharedRoomUnseenTokenBudget
+        + 400
     )
   }
 

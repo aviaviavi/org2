@@ -742,6 +742,10 @@ final class CodexAppServerClientTests: XCTestCase {
     )
     XCTAssertEqual(result.status, .completed)
     XCTAssertEqual(result.reply, "Final reply")
+    XCTAssertEqual(result.usage?.inputTokens, 123)
+    XCTAssertEqual(result.usage?.cachedInputTokens, 45)
+    XCTAssertEqual(result.usage?.outputTokens, 6)
+    XCTAssertEqual(result.usage?.totalTokens, 129)
 
     var toolCall = await recorder.toolCall
     for _ in 0..<50 where toolCall == nil {
@@ -752,6 +756,8 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(toolCall?.arguments["turnId"]?.stringValue, "local-turn")
     let streamedText = await recorder.streamedText
     XCTAssertEqual(streamedText, "Working…")
+    let contextCompactionCount = await recorder.contextCompactionCount
+    XCTAssertEqual(contextCompactionCount, 1)
 
     let models = try await client.listModels()
     XCTAssertEqual(models.map(\.id), ["gpt-test"])
@@ -1359,6 +1365,8 @@ final class CodexAppServerClientTests: XCTestCase {
         printf '%s\n' '{"method":"item/agentMessage/delta","params":{"threadId":"thr-test","turnId":"turn-test","itemId":"msg-test","delta":"Working…"}}'
         printf '%s\n' '{"id":"tool-request","method":"item/tool/call","params":{"callId":"call-test","threadId":"thr-test","turnId":"turn-test","tool":"org2_workspace_read","arguments":{"turnId":"local-turn","path":"notes/example.org2"}}}'
         printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr-test","turnId":"turn-test","completedAtMs":1,"item":{"type":"agentMessage","id":"msg-test","text":"Final reply","phase":"final_answer"}}}'
+        printf '%s\n' '{"method":"thread/tokenUsage/updated","params":{"threadId":"thr-test","turnId":"turn-test","tokenUsage":{"last":{"inputTokens":123,"cachedInputTokens":45,"outputTokens":6,"totalTokens":129}}}}'
+        printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr-test","turnId":"turn-test","completedAtMs":1,"item":{"type":"contextCompaction","id":"compact-test"}}}'
         printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thr-test","turn":{"id":"turn-test","status":"completed","items":[],"error":null}}}'
         ;;
       *'"method":"model/list"'*)
@@ -1466,10 +1474,14 @@ private actor OpenClawDestinationRoutingRecorder {
 private actor CodexTestRecorder {
   private(set) var toolCall: CodexDynamicToolCall?
   private(set) var streamedText = ""
+  private(set) var contextCompactionCount = 0
 
   func record(_ event: CodexAppServerEvent) {
     if case .agentMessageDelta(_, _, _, let delta) = event {
       streamedText += delta
+    }
+    if case .contextCompacted = event {
+      contextCompactionCount += 1
     }
   }
 
