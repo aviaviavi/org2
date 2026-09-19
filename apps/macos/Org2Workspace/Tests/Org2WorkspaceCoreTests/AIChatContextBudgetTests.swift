@@ -179,4 +179,154 @@ final class AIChatContextBudgetTests: XCTestCase {
       AIChatContextBudget.estimatedTokens("Earlier answer") + 8
     )
   }
+
+  func testPersistentContextStateCommitsSuccessfulTurnThenUsesEmptyDelta() {
+    var state = AIChatPersistentContextState()
+    let key = persistentKey()
+    let first = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(first.telemetry.mode, .recovery)
+
+    state.commit(first, for: key)
+    let second = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(second.telemetry.mode, .delta)
+    XCTAssertNil(second.prompt)
+  }
+
+  func testPersistentContextStateForcesExactlyOneRecoveryAfterCompaction() {
+    var state = AIChatPersistentContextState()
+    let key = persistentKey()
+    let first = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    state.commit(first, for: key)
+    state.requireRecovery(for: Set([key]))
+
+    let recovery = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(recovery.telemetry.mode, .recovery)
+    state.commit(recovery, for: key)
+
+    let next = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(next.telemetry.mode, .delta)
+    XCTAssertNil(next.prompt)
+  }
+
+  func testPersistentContextStateDoesNotCommitFailedTurn() {
+    var state = AIChatPersistentContextState()
+    let key = persistentKey()
+    let failed = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(failed.telemetry.mode, .recovery)
+
+    let retry = state.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(retry.telemetry.mode, .recovery)
+  }
+
+  func testPersistentContextStateIsolatesCorpusThreadDestinationAndRuntimeSession() {
+    var state = AIChatPersistentContextState()
+    let base = persistentKey()
+    let first = state.envelope(
+      for: base,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    state.commit(first, for: base)
+
+    let isolatedKeys = [
+      persistentKey(transcriptPath: "/corpus-b/chat.org"),
+      persistentKey(threadID: UUID()),
+      persistentKey(destinationID: "openclaw:reviewer"),
+    ]
+    for key in isolatedKeys {
+      let envelope = state.envelope(
+        for: key,
+        fullPrompt: { _ in self.persistentPrompt },
+        includesTranscript: true,
+        roomPrompt: "",
+        attachments: []
+      )
+      XCTAssertEqual(envelope.telemetry.mode, .recovery)
+    }
+
+    let unchangedBase = state.envelope(
+      for: base,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(unchangedBase.telemetry.mode, .delta)
+    XCTAssertNil(unchangedBase.prompt)
+
+    let replacementRuntime = persistentKey(runtimeSessionID: "runtime-2")
+    let replacement = state.envelope(
+      for: replacementRuntime,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+    XCTAssertEqual(replacement.telemetry.mode, .recovery)
+  }
+
+  private var persistentPrompt: String {
+    [
+      "Org2 working rules\n\nKeep citations stable.",
+      "Selected AI chat thread continuation\n\nEarlier turn.",
+    ].joined(separator: "\n\n---\n\n")
+  }
+
+  private func persistentKey(
+    transcriptPath: String = "/corpus-a/chat.org",
+    threadID: UUID = UUID(uuidString: "A13F4E0E-55C7-49E1-AC3D-333954411D17")!,
+    destinationID: String = "codex:local",
+    runtimeSessionID: String = "runtime-1"
+  ) -> AIChatPersistentContextKey {
+    AIChatPersistentContextKey(
+      transcriptPath: transcriptPath,
+      threadID: threadID,
+      destinationID: destinationID,
+      runtimeSessionID: runtimeSessionID
+    )
+  }
 }

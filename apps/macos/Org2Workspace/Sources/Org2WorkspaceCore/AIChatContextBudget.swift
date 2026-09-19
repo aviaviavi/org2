@@ -63,6 +63,74 @@ struct AIChatPersistentContextEnvelope: Sendable {
   let telemetry: OpenOrgContextTelemetry
 }
 
+struct AIChatPersistentContextKey: Hashable, Sendable {
+  let transcriptPath: String
+  let threadID: UUID
+  let destinationID: String
+  let runtimeSessionID: String
+}
+
+struct AIChatPersistentContextState: Sendable {
+  private var sections: [AIChatPersistentContextKey: [String: String]] = [:]
+  private var recoveryRequired: Set<AIChatPersistentContextKey> = []
+
+  mutating func envelope(
+    for key: AIChatPersistentContextKey,
+    fullPrompt: (_ requiresRecovery: Bool) -> String,
+    includesTranscript: Bool,
+    roomPrompt: String,
+    attachments: [OpenClawChatAttachment]
+  ) -> AIChatPersistentContextEnvelope {
+    let staleKeys = sections.keys.filter {
+      $0.transcriptPath == key.transcriptPath
+        && $0.threadID == key.threadID
+        && $0.destinationID == key.destinationID
+        && $0 != key
+    }
+    for staleKey in staleKeys {
+      sections.removeValue(forKey: staleKey)
+      recoveryRequired.remove(staleKey)
+    }
+    let previousSections = sections[key]
+    let forceRecovery = recoveryRequired.remove(key) != nil || previousSections == nil
+    return AIChatContextBudget.persistentEnvelope(
+      fullPrompt: fullPrompt(forceRecovery),
+      previousSections: previousSections,
+      forceRecovery: forceRecovery,
+      includesTranscript: includesTranscript,
+      roomPrompt: roomPrompt,
+      attachments: attachments
+    )
+  }
+
+  mutating func commit(
+    _ envelope: AIChatPersistentContextEnvelope,
+    for key: AIChatPersistentContextKey
+  ) {
+    guard !recoveryRequired.contains(key) else { return }
+    sections[key] = envelope.sectionSnapshot
+  }
+
+  mutating func requireRecovery(for keys: Set<AIChatPersistentContextKey>) {
+    for key in keys {
+      recoveryRequired.insert(key)
+      sections.removeValue(forKey: key)
+    }
+  }
+
+  func keys(
+    transcriptPath: String,
+    threadID: UUID,
+    destinationID: String
+  ) -> Set<AIChatPersistentContextKey> {
+    Set(sections.keys.filter {
+      $0.transcriptPath == transcriptPath
+        && $0.threadID == threadID
+        && $0.destinationID == destinationID
+    })
+  }
+}
+
 enum AIChatContextBudget {
   static let statelessHistoryTokenBudget = 12_000
   static let sharedRoomSummaryTokenBudget = 1_000

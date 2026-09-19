@@ -319,6 +319,8 @@ public actor CodexAppServerClient {
     var usage: AIChatTokenUsage?
     var continuation: CheckedContinuation<CodexTurnResult, Never>?
     var completedResult: CodexTurnResult?
+    var pendingCompletionResult: CodexTurnResult?
+    var completionTask: Task<Void, Never>?
 
     var streamedReply: String {
       streamedReplyChunks.joined()
@@ -364,6 +366,7 @@ public actor CodexAppServerClient {
   private var loadedThreadIDs = Set<String>()
   private var modelCatalogLoadedAt: Date?
   private var latestStderr = ""
+  private static let tokenUsageCompletionGraceNanoseconds: UInt64 = 250_000_000
 
   public init(
     executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
@@ -1379,6 +1382,10 @@ while True:
     for turnID in Array(pendingTurns.keys) {
       guard let pending = pendingTurns[turnID] else { continue }
       guard pending.completedResult == nil else { continue }
+      if pending.pendingCompletionResult != nil {
+        finalizePendingTurn(turnID)
+        continue
+      }
       let result = CodexTurnResult(
         threadID: "",
         turnID: turnID,
@@ -1699,9 +1706,12 @@ while True:
         inputTokens: Self.integer(last["inputTokens"] ?? .integer(0)) ?? 0,
         cachedInputTokens: Self.integer(last["cachedInputTokens"] ?? .integer(0)) ?? 0,
         outputTokens: Self.integer(last["outputTokens"] ?? .integer(0)) ?? 0,
-        totalTokens: Self.integer(last["totalTokens"] ?? .integer(0))
+        totalTokens: last["totalTokens"].flatMap { Self.integer($0) }
       )
       pendingTurns[turnID] = pending
+      if pending.pendingCompletionResult != nil {
+        finalizePendingTurn(turnID)
+      }
     case "error":
       let turnID = params["turnId"]?.stringValue
       let message = params["error"]?["message"]?.stringValue ?? "Codex turn error"
@@ -1773,7 +1783,7 @@ while True:
       return
     }
     if ignoredCompletedTurnIDs.remove(turnID) != nil {
-      pendingTurns.removeValue(forKey: turnID)
+      pendingTurns.removeValue(forKey: turnID)?.completionTask?.cancel()
       return
     }
     let pending = pendingTurns[turnID] ?? PendingTurn()
@@ -1790,6 +1800,36 @@ while True:
         : pending.finalReply,
       errorMessage: errorMessage,
       usage: pending.usage
+    )
+    pending.pendingCompletionResult = result
+    pendingTurns[turnID] = pending
+    if pending.usage != nil {
+      finalizePendingTurn(turnID)
+    } else {
+      pending.completionTask?.cancel()
+      pending.completionTask = Task { [weak self] in
+        try? await Task.sleep(nanoseconds: Self.tokenUsageCompletionGraceNanoseconds)
+        guard !Task.isCancelled else { return }
+        await self?.finalizePendingTurn(turnID)
+      }
+      pendingTurns[turnID] = pending
+    }
+  }
+
+  private func finalizePendingTurn(_ turnID: String) {
+    guard let pending = pendingTurns[turnID],
+          let completed = pending.pendingCompletionResult
+    else { return }
+    pending.completionTask?.cancel()
+    pending.completionTask = nil
+    pending.pendingCompletionResult = nil
+    let result = CodexTurnResult(
+      threadID: completed.threadID,
+      turnID: completed.turnID,
+      status: completed.status,
+      reply: completed.reply,
+      errorMessage: completed.errorMessage,
+      usage: pending.usage ?? completed.usage
     )
     if let continuation = pending.continuation {
       pendingTurns.removeValue(forKey: turnID)
@@ -1862,6 +1902,9 @@ while True:
       cancelledTurnIDs.insert(turnID)
       return
     }
+    pending.completionTask?.cancel()
+    pending.completionTask = nil
+    pending.pendingCompletionResult = nil
     let result = CodexTurnResult(
       threadID: threadID,
       turnID: turnID,

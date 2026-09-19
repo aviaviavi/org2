@@ -1391,13 +1391,6 @@ private struct AssignedWorkSearchRow: Sendable {
   let searchText: String
 }
 
-private struct AIChatPersistentContextKey: Hashable {
-  let transcriptPath: String
-  let threadID: UUID
-  let destinationID: String
-  let runtimeSessionID: String
-}
-
 private struct AIChatDestinationTurnKey: Hashable {
   let transcriptPath: String
   let threadID: UUID
@@ -3089,8 +3082,7 @@ public final class WorkspaceStore {
   private static let externalThreadDetailCacheLimit = 6
   private var codexActiveTurnsByThreadID: [UUID: (runtimeThreadID: String, turnID: String)] = [:]
   private var codexLocalThreadIDsByRuntimeThreadID: [String: UUID] = [:]
-  private var aiChatPersistentContextSections: [AIChatPersistentContextKey: [String: String]] = [:]
-  private var aiChatPersistentContextRecoveryRequired: Set<AIChatPersistentContextKey> = []
+  private var aiChatPersistentContextState = AIChatPersistentContextState()
   private var aiChatActivePersistentContextKeyByDestinationTurn: [AIChatDestinationTurnKey: AIChatPersistentContextKey] = [:]
   private var aiChatUsageByDestinationTurn: [AIChatDestinationTurnKey: AIChatTokenUsage] = [:]
   private var aiChatContextByDestinationTurn: [AIChatDestinationTurnKey: OpenOrgContextTelemetry] = [:]
@@ -25301,23 +25293,9 @@ public final class WorkspaceStore {
       destinationID: destinationID,
       runtimeSessionID: runtimeSessionID
     )
-    let staleKeys = aiChatPersistentContextSections.keys.filter {
-      $0.transcriptPath == key.transcriptPath
-        && $0.threadID == threadID
-        && $0.destinationID == destinationID
-        && $0 != key
-    }
-    for staleKey in staleKeys {
-      aiChatPersistentContextSections.removeValue(forKey: staleKey)
-      aiChatPersistentContextRecoveryRequired.remove(staleKey)
-    }
-    let previousSections = aiChatPersistentContextSections[key]
-    let forceRecovery = aiChatPersistentContextRecoveryRequired.remove(key) != nil
-      || previousSections == nil
-    let envelope = AIChatContextBudget.persistentEnvelope(
-      fullPrompt: fullPrompt(forceRecovery),
-      previousSections: previousSections,
-      forceRecovery: forceRecovery,
+    let envelope = aiChatPersistentContextState.envelope(
+      for: key,
+      fullPrompt: fullPrompt,
       includesTranscript: includesTranscript,
       roomPrompt: roomPrompt,
       attachments: attachments
@@ -25364,8 +25342,7 @@ public final class WorkspaceStore {
         transcriptURL: URL(fileURLWithPath: key.transcriptPath)
       )
     )
-    guard !aiChatPersistentContextRecoveryRequired.contains(key) else { return }
-    aiChatPersistentContextSections[key] = envelope.sectionSnapshot
+    aiChatPersistentContextState.commit(envelope, for: key)
   }
 
   private func requirePersistentContextRecovery(
@@ -25374,11 +25351,11 @@ public final class WorkspaceStore {
     transcriptURL: URL
   ) {
     let transcriptPath = transcriptURL.standardizedFileURL.path
-    var keys = Set(aiChatPersistentContextSections.keys.filter {
-      $0.transcriptPath == transcriptPath
-        && $0.threadID == threadID
-        && $0.destinationID == destinationID
-    })
+    var keys = aiChatPersistentContextState.keys(
+      transcriptPath: transcriptPath,
+      threadID: threadID,
+      destinationID: destinationID
+    )
     if let activeKey = aiChatActivePersistentContextKeyByDestinationTurn[
       aiChatDestinationTurnKey(
         threadID: threadID,
@@ -25391,18 +25368,14 @@ public final class WorkspaceStore {
     if keys.isEmpty,
        let runtimeSessionID = openClawChatThread(threadID, transcriptURL: transcriptURL)?
         .runtimeThreadID(forDestinationID: destinationID) {
-      aiChatPersistentContextRecoveryRequired.insert(AIChatPersistentContextKey(
+      keys.insert(AIChatPersistentContextKey(
         transcriptPath: transcriptPath,
         threadID: threadID,
         destinationID: destinationID,
         runtimeSessionID: runtimeSessionID
       ))
-      return
     }
-    for key in keys {
-      aiChatPersistentContextRecoveryRequired.insert(key)
-      aiChatPersistentContextSections.removeValue(forKey: key)
-    }
+    aiChatPersistentContextState.requireRecovery(for: keys)
   }
 
   private func sendDirectProviderRequest(

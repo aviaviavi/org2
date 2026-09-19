@@ -88,7 +88,7 @@
     "test:performance": "npm run build && npm run test:performance:built",
     "test:publish-document": "npm run build && node test/test-publish-document.mjs",
     "test:table": "npm run build && node test/test-table-formula.mjs",
-    "test:performance:built": "node test/test-workspace-agent-state.mjs --performance && node test/test-cli-performance.mjs && node test/test-approval-refresh-performance.mjs && node test/test-search-index-query-performance.mjs",
+    "test:performance:built": "node test/test-workspace-agent-state.mjs --performance && node test/test-cli-performance.mjs && node test/test-approval-refresh-performance.mjs && node test/test-search-index-query-performance.mjs && npm run benchmark:openorg-context",
     "test:macos-performance": "npm run build && node tools/test-macos-performance.mjs",
     "test": "npm run test:built",
     "test:built": "npm run test:prerequisites:built && npm run test:suite:built",

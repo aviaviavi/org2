@@ -1442,9 +1442,10 @@ final class CodexAppServerClientTests: XCTestCase {
         printf '%s\n' '{"method":"item/agentMessage/delta","params":{"threadId":"thr-test","turnId":"turn-test","itemId":"msg-test","delta":"Working…"}}'
         printf '%s\n' '{"id":"tool-request","method":"item/tool/call","params":{"callId":"call-test","threadId":"thr-test","turnId":"turn-test","tool":"org2_workspace_read","arguments":{"turnId":"local-turn","path":"notes/example.org2"}}}'
         printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr-test","turnId":"turn-test","completedAtMs":1,"item":{"type":"agentMessage","id":"msg-test","text":"Final reply","phase":"final_answer"}}}'
-        printf '%s\n' '{"method":"thread/tokenUsage/updated","params":{"threadId":"thr-test","turnId":"turn-test","tokenUsage":{"last":{"inputTokens":123,"cachedInputTokens":45,"outputTokens":6,"totalTokens":129}}}}'
         printf '%s\n' '{"method":"item/completed","params":{"threadId":"thr-test","turnId":"turn-test","completedAtMs":1,"item":{"type":"contextCompaction","id":"compact-test"}}}'
         printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thr-test","turn":{"id":"turn-test","status":"completed","items":[],"error":null}}}'
+        sleep 0.05
+        printf '%s\n' '{"method":"thread/tokenUsage/updated","params":{"threadId":"thr-test","turnId":"turn-test","tokenUsage":{"last":{"inputTokens":123,"cachedInputTokens":45,"outputTokens":6}}}}'
         ;;
       *'"method":"model/list"'*)
         printf '%s\n' '{"id":5,"result":{"data":[{"id":"gpt-test","model":"gpt-test","upgrade":null,"upgradeInfo":null,"availabilityNux":null,"displayName":"GPT Test","description":"Test model","hidden":false,"supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Fast"},{"reasoningEffort":"high","description":"Thorough"}],"defaultReasoningEffort":"low","inputModalities":["text"],"supportsPersonality":false,"additionalSpeedTiers":[],"serviceTiers":[],"defaultServiceTier":null,"isDefault":true}],"nextCursor":null}}'
