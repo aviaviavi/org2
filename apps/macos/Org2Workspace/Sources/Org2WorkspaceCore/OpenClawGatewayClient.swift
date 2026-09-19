@@ -318,6 +318,8 @@ public enum OpenClawGatewayRunEvent: Sendable {
   case text(String, replace: Bool)
   case reasoning(String, replace: Bool)
   case activity(OpenClawRunActivity)
+  case usage(AIChatTokenUsage)
+  case contextCompacted
 }
 
 public struct OpenClawAIChatSessionConfiguration: Sendable {
@@ -1064,6 +1066,9 @@ public actor OpenClawGatewayClient {
               assembledText = final
               await onEvent(.text(final, replace: true))
             }
+            if let usage = Self.tokenUsage(from: payload) {
+              await onEvent(.usage(usage))
+            }
             socket.cancel(with: .normalClosure, reason: nil)
             let output = assembledText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !output.isEmpty else { throw OpenClawGatewayError.emptyResponse }
@@ -1089,6 +1094,9 @@ public actor OpenClawGatewayClient {
           }
           if let event = Self.activity(from: payload) {
             await onEvent(.activity(event))
+          }
+          if Self.isContextCompaction(payload) {
+            await onEvent(.contextCompacted)
           }
           if let event = Self.commentaryActivity(
             from: payload,
@@ -1983,6 +1991,39 @@ public actor OpenClawGatewayClient {
       )
     }
     return nil
+  }
+
+  static func tokenUsage(from payload: [String: Any]) -> AIChatTokenUsage? {
+    let message = dictionary(payload["message"])
+    guard let usage = dictionary(payload["usage"])
+      ?? dictionary(message?["usage"])
+    else { return nil }
+    func tokens(_ names: [String]) -> Int {
+      for name in names {
+        if let value = milliseconds(usage[name]) { return max(0, Int(value)) }
+      }
+      return 0
+    }
+    let input = tokens(["input", "inputTokens", "promptTokens"])
+    let cached = tokens(["cacheRead", "cachedInputTokens", "cachedTokens"])
+    let output = tokens(["output", "outputTokens", "completionTokens"])
+    let total = tokens(["totalTokens", "total"])
+    guard input > 0 || cached > 0 || output > 0 || total > 0 else { return nil }
+    return AIChatTokenUsage(
+      inputTokens: input,
+      cachedInputTokens: cached,
+      outputTokens: output,
+      totalTokens: total > 0 ? total : nil
+    )
+  }
+
+  static func isContextCompaction(_ payload: [String: Any]) -> Bool {
+    let stream = string(payload["stream"]) ?? ""
+    let data = dictionary(payload["data"]) ?? [:]
+    if stream == "compaction" { return true }
+    guard stream == "lifecycle" else { return false }
+    if bool(data["contextCompacted"]) == true { return true }
+    return (string(data["phase"]) ?? "").lowercased().contains("compact")
   }
 
   static func commentaryActivity(

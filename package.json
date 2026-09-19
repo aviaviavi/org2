@@ -55,6 +55,7 @@
     "release:openorg": "node tools/release-openorg.mjs",
     "diagnostics:macos": "swift run --package-path apps/macos/Org2Workspace Org2WorkspaceDiagnostics",
     "benchmark:cli": "node tools/benchmark-cli.mjs",
+    "benchmark:openorg-context": "node test/test-openorg-context-token-budgets.mjs",
     "setup:macos-app:codex": "node tools/setup-macos-codex-workspace.mjs",
     "open:macos-app:codex": "node tools/open-macos-app-codex.mjs",
     "screenshots:macos": "node tools/capture-macos-workspace-screenshots.mjs",

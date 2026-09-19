@@ -128,6 +128,59 @@ final class AIProviderChatClientTests: XCTestCase {
     XCTAssertEqual(reply, "Router reply")
   }
 
+  func testStatelessRequestSendsHistoryOnceAndRecordsUsage() async throws {
+    AIProviderTestURLProtocol.setHandler { request in
+      let object = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: try self.requestBodyData(request)) as? [String: Any]
+      )
+      let messages = try XCTUnwrap(object["messages"] as? [[String: Any]])
+      let system = try XCTUnwrap(messages.first?["content"] as? String)
+      XCTAssertFalse(system.contains("history only in continuation"))
+      XCTAssertEqual(messages.filter { ($0["role"] as? String) != "system" }.count, 2)
+      return (200, [
+        "choices": [["message": ["content": "Measured reply"]]],
+        "usage": [
+          "prompt_tokens": 321,
+          "completion_tokens": 19,
+          "total_tokens": 340,
+          "prompt_tokens_details": ["cached_tokens": 200],
+        ],
+      ])
+    }
+    let continuation = AIChatThreadContinuation(
+      id: UUID(),
+      title: "Duplicate history guard",
+      messages: [.init(role: "user", content: "history only in continuation")],
+      org2References: []
+    )
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: nil,
+      remoteCorpusRoot: nil,
+      selectedSurface: "AI Chat",
+      selectedLocation: nil,
+      selectedEntrySource: nil,
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: [],
+      threadContinuation: continuation
+    )
+    let result = try await client(.openAI, apiKey: "secret").sendResult(
+      messages: [
+        OpenClawChatMessage(role: .user, content: "Earlier request"),
+        OpenClawChatMessage(role: .assistant, content: "Earlier reply"),
+      ],
+      model: "gpt-test",
+      workspaceContext: context,
+      destinationName: "OpenAI"
+    )
+
+    XCTAssertEqual(result.usage?.inputTokens, 321)
+    XCTAssertEqual(result.usage?.cachedInputTokens, 200)
+    XCTAssertEqual(result.usage?.outputTokens, 19)
+    XCTAssertEqual(result.contextTelemetry.mode, .stateless)
+  }
+
   func testOllamaUsesLocalChatContractAndListsInstalledModels() async throws {
     AIProviderTestURLProtocol.setHandler { request in
       if request.url?.path.hasSuffix("/tags") == true {

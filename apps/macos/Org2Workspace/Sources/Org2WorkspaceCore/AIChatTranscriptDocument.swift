@@ -646,12 +646,16 @@ enum AIChatTranscriptHTML {
     let reasoning: String?
     let reasoningHTML: String?
     let activities: [Activity]
+    let usage: AIChatTokenUsage?
+    let context: OpenOrgContextTelemetry?
 
     init?(_ trace: OpenClawResponseTrace, reasoningHTML: String? = nil) {
       guard !trace.isEmpty else { return nil }
       reasoning = OpenClawProgressPresentation.reasoningText(from: trace.reasoning)
       self.reasoningHTML = reasoningHTML
       activities = OpenClawActivityFeed.items(from: trace.activities).map(Activity.init)
+      usage = trace.usage
+      context = trace.context
     }
   }
 
@@ -1073,6 +1077,27 @@ enum AIChatTranscriptHTML {
           const value=document.createElement('div'); value.className='reasoning-text';
           setRenderedOrgText(value,e.responseTrace.reasoning,e.responseTrace.reasoningHTML);
           copy.append(title,value); row.append(copy); trace.append(row);
+        }
+        if(e.responseTrace.usage) {
+          const usage=e.responseTrace.usage;
+          const row=document.createElement('div'); row.className='activity-row';
+          const image=document.createElement('span'); image.className='activity-icon'; image.append(icon('clock'));
+          const copy=document.createElement('div'); copy.className='activity-copy';
+          const title=document.createElement('span'); title.className='activity-title'; title.textContent='Provider tokens';
+          const detail=document.createElement('span'); detail.className='activity-detail';
+          detail.textContent=`${usage.inputTokens} input · ${usage.cachedInputTokens} cached · ${usage.outputTokens} output · ${usage.totalTokens} total`;
+          copy.append(title,detail); row.append(image,copy); trace.append(row);
+        }
+        if(e.responseTrace.context) {
+          const context=e.responseTrace.context;
+          const total=context.staticTokens+context.projectTokens+context.transcriptTokens+context.roomTokens+context.attachmentTokens;
+          const row=document.createElement('div'); row.className='activity-row';
+          const image=document.createElement('span'); image.className='activity-icon'; image.append(icon('searchfile'));
+          const copy=document.createElement('div'); copy.className='activity-copy';
+          const title=document.createElement('span'); title.className='activity-title'; title.textContent='OpenOrg context';
+          const detail=document.createElement('span'); detail.className='activity-detail';
+          detail.textContent=`${context.mode} · ${total} estimated tokens (static ${context.staticTokens}, project ${context.projectTokens}, transcript ${context.transcriptTokens}, room ${context.roomTokens}, attachments ${context.attachmentTokens})`;
+          copy.append(title,detail); row.append(image,copy); trace.append(row);
         }
         const activities=e.responseTrace.activities;
         activities.forEach((activity,index)=>{

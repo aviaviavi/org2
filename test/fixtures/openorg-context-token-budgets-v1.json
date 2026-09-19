@@ -1,0 +1,21 @@
+{
+  "schema": "org2:openorg-context-token-benchmark:v1",
+  "turns": 20,
+  "scenario": {
+    "recoveryTurns": 2,
+    "projectDeltaTurns": 4,
+    "projectDeltaTokens": 400
+  },
+  "representativeTokens": {
+    "static": 6000,
+    "project": 2000,
+    "transcript": 8000
+  },
+  "budgets": {
+    "statelessHistory": 12000,
+    "recoveryTranscript": 6000,
+    "sharedRoomSummary": 1000,
+    "sharedRoomUnseen": 3000,
+    "minimumPersistentReductionPercent": 80
+  }
+}

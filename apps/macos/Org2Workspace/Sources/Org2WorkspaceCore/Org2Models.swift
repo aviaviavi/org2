@@ -2510,14 +2510,26 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
 public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
   public let reasoning: String
   public let activities: [OpenClawRunActivity]
+  public let usage: AIChatTokenUsage?
+  public let context: OpenOrgContextTelemetry?
 
-  public init(reasoning: String = "", activities: [OpenClawRunActivity] = []) {
+  public init(
+    reasoning: String = "",
+    activities: [OpenClawRunActivity] = [],
+    usage: AIChatTokenUsage? = nil,
+    context: OpenOrgContextTelemetry? = nil
+  ) {
     self.reasoning = reasoning
     self.activities = activities
+    self.usage = usage
+    self.context = context
   }
 
   public var isEmpty: Bool {
-    reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && activities.isEmpty
+    reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && activities.isEmpty
+      && usage == nil
+      && context == nil
   }
 }
 
@@ -3844,6 +3856,7 @@ public struct OpenClawCorpusFileChange: Identifiable, Hashable, Codable, Sendabl
 
 public struct OpenClawChatCompletionPayload: Decodable, Sendable {
   public let choices: [Choice]
+  public let usage: Usage?
 
   public struct Choice: Decodable, Sendable {
     public let message: Message?
@@ -3852,6 +3865,28 @@ public struct OpenClawChatCompletionPayload: Decodable, Sendable {
   public struct Message: Decodable, Sendable {
     public let role: String?
     public let content: String?
+  }
+
+  public struct Usage: Decodable, Sendable {
+    public let promptTokens: Int?
+    public let completionTokens: Int?
+    public let totalTokens: Int?
+    public let promptTokensDetails: PromptTokensDetails?
+
+    enum CodingKeys: String, CodingKey {
+      case promptTokens = "prompt_tokens"
+      case completionTokens = "completion_tokens"
+      case totalTokens = "total_tokens"
+      case promptTokensDetails = "prompt_tokens_details"
+    }
+  }
+
+  public struct PromptTokensDetails: Decodable, Sendable {
+    public let cachedTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+      case cachedTokens = "cached_tokens"
+    }
   }
 
   public var assistantText: String {
