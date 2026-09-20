@@ -82,20 +82,20 @@ export function extractCheckboxProgress(
   for (let i = startIndex; i < endExclusive; i += 1) {
     if (opaqueLines.has(i)) continue;
     const line = lines[i] || "";
-    const item = /^\s*(?:[-+*]|\d+[.)])\s+\[([ Xx])\]/.exec(line);
+    const item = /^\s*(?:[-+*]|\d+[.)])\s+\[([ Xx-])\]/.exec(line);
     if (item) {
-      if ((item[1] || "") === " ") unchecked += 1;
-      else checked += 1;
+      if (/^[Xx]$/.test(item[1] || "")) checked += 1;
+      else unchecked += 1;
     }
     if (headingLevel(line) === 0 && !/^\s*(?:[-+*]|\d+[.)])\s+/.test(line)) continue;
-    const re = /\[(\d+)\/(\d+)\]|\[(\d{1,3})%\]/g;
+    const re = /\[(?:(\d+)\/(\d+)|\/)\]|\[(\d{1,3})?%\]/g;
     let match: RegExpExecArray | null;
     while ((match = re.exec(line)) !== null) {
-      const format = match[1] !== undefined ? "fraction" : "percent";
+      const format = (match[0] || "").includes("/") ? "fraction" : "percent";
       const raw = match[0] || "";
       const doneValue = match[1] !== undefined ? Number.parseInt(match[1] || "0", 10) : undefined;
       const totalValue = match[2] !== undefined ? Number.parseInt(match[2] || "0", 10) : undefined;
-      const percentValue = match[3] !== undefined
+      const percentValue = format === "percent" && match[3] !== undefined
         ? Number.parseInt(match[3] || "0", 10)
         : (totalValue && totalValue > 0 && doneValue !== undefined ? Math.round((doneValue / totalValue) * 100) : 0);
       found.push({

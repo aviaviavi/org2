@@ -65,6 +65,20 @@ assert.equal(block.terminated, true);
 
 assert.equal(printCanonicalAstToOrg(ast), input.replace("- [x] Lowercase checked", "- [X] Lowercase checked"));
 
+const placeholderInput = "- [ ] [/] Fraction placeholder\n- [ ] [%] Percent placeholder\n";
+const placeholderAst = parseOrgToCanonicalAst(placeholderInput);
+assert.deepEqual(placeholderAst.children[0].items[0].progressCookie, {
+  type: "ProgressCookie",
+  raw: "[/]",
+  format: "fraction",
+});
+assert.deepEqual(placeholderAst.children[0].items[1].progressCookie, {
+  type: "ProgressCookie",
+  raw: "[%]",
+  format: "percent",
+});
+assert.equal(printCanonicalAstToOrg(placeholderAst), placeholderInput);
+
 const nestedListThenQuoteInput = `1. Deepgram
    - Gmail draft: draft-id
    - Subject: SDK follow-up

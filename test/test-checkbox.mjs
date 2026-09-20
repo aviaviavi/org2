@@ -126,6 +126,36 @@ try {
     assert.equal(fs.readFileSync(cookieFile, "utf8"), cookieExpected);
   }
 
+  const atomicFile = path.join(temp, "atomic-progress.org");
+  const atomicOriginal = "* Tasks [/] [%]\n- [-] Finish me\n- [-] Still working\n";
+  fs.writeFileSync(atomicFile, atomicOriginal);
+  const atomicPreview = run("cycle", "--file", atomicFile, "--line", "2", "--fix-cookies", "--json");
+  assert.equal(atomicPreview.status, 0, atomicPreview.stderr);
+  assert.equal(fs.readFileSync(atomicFile, "utf8"), atomicOriginal);
+  const atomicPreviewResult = JSON.parse(atomicPreview.stdout);
+  const atomic = run("cycle", "--file", atomicFile, "--line", "2", "--fix-cookies", "--if-revision", atomicPreviewResult.revision, "--apply", "--json");
+  assert.equal(atomic.status, 0, atomic.stderr);
+  const atomicResult = JSON.parse(atomic.stdout);
+  assert.equal(atomicResult.schema, "org2:checkbox-edit:v1");
+  assert.equal(atomicResult.oldState, "indeterminate");
+  assert.equal(atomicResult.newState, "checked");
+  assert.deepEqual(atomicResult.cookieEdits.map(({ raw, expectedRaw, checked, total }) => ({ raw, expectedRaw, checked, total })), [
+    { raw: "[/]", expectedRaw: "[1/2]", checked: 1, total: 2 },
+    { raw: "[%]", expectedRaw: "[50%]", checked: 1, total: 2 },
+  ]);
+  assert.equal(fs.readFileSync(atomicFile, "utf8"), "* Tasks [1/2] [50%]\n- [X] Finish me\n- [-] Still working\n");
+
+  const markerOnlyFile = path.join(temp, "marker-only-progress.org");
+  fs.writeFileSync(markerOnlyFile, atomicOriginal);
+  const markerOnly = run("cycle", "--file", markerOnlyFile, "--line", "2", "--apply", "--json");
+  assert.equal(markerOnly.status, 0, markerOnly.stderr);
+  assert.equal(JSON.parse(markerOnly.stdout).cookieEdits, undefined);
+  assert.equal(fs.readFileSync(markerOnlyFile, "utf8"), "* Tasks [/] [%]\n- [X] Finish me\n- [-] Still working\n");
+  for (const args of [["fix-cookies", "--fix-cookies"], ["cycle", "--line", "2", "--fix-cookies", "--fix-cookies"]]) {
+    const invalid = run(...args, "--file", atomicFile, "--apply");
+    assert.notEqual(invalid.status, 0);
+  }
+
   const opaqueCookieFile = path.join(temp, "opaque-progress.org");
   const opaqueCookieSource = "* Safe [1/1]\n#+begin_src org\n* Literal [0/1]\n- [ ] literal\n#+end_src\n- [X] real\n";
   fs.writeFileSync(opaqueCookieFile, opaqueCookieSource);

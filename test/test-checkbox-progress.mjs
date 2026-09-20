@@ -35,6 +35,20 @@ assert.equal(compiled.checkboxProgress.total, 5);
 assert.equal(compiled.checkboxProgress.checked, 2);
 assert.equal(compiled.checkboxIssues.length, 0);
 
+fs.writeFileSync(file, `* Partial work [/] [%]
+- [-] In progress
+- [X] Done
+`);
+const partial = JSON.parse(execFileSync('node', [cli, 'compile', 'corpus', '--file', file, '--format', 'json'], { encoding: 'utf8' }));
+const partialNode = partial.nodes.find((node) => node.title === 'Partial work [/] [%]');
+assert.equal(partialNode.checkboxProgress.total, 2);
+assert.equal(partialNode.checkboxProgress.checked, 1);
+assert.equal(partialNode.checkboxProgress.unchecked, 1);
+assert.deepEqual(partial.checkboxIssues.map(({ raw, expectedRaw }) => ({ raw, expectedRaw })), [
+  { raw: '[/]', expectedRaw: '[1/2]' },
+  { raw: '[%]', expectedRaw: '[50%]' },
+]);
+
 fs.writeFileSync(file, `#+TITLE: Tasks
 
 * Launch checklist [2/3]

@@ -18,6 +18,7 @@ Options:
   --format diff|text|json  Diff preview (default), full edited text, or JSON result
   --json                 Alias for --format json
   --if-revision SHA       Require the revision from a previous JSON preview
+  --fix-cookies           Recalculate progress cookies after cycle/set in the same edit
   --apply                Write the edit; preserves every unrelated source byte
   --help                 Show this help
 
@@ -34,9 +35,15 @@ export async function runCheckboxCommand(args: string[]): Promise<void> {
   if (!["cycle", "toggle", "set", "fix-cookies"].includes(action)) throw new Error(`Unknown checkbox action: ${action}`);
   const flags = new Map<string, string>();
   let apply = false;
+  let fixCookies = false;
   while (values.length) {
     const arg = values.shift()!;
     if (arg === "--apply") { apply = true; continue; }
+    if (arg === "--fix-cookies") {
+      if (fixCookies) throw new Error("Duplicate checkbox option: --fix-cookies");
+      fixCookies = true;
+      continue;
+    }
     if (arg === "--json") { flags.set("--format", "json"); continue; }
     const equal = arg.indexOf("=");
     const key = equal < 0 ? arg : arg.slice(0, equal);
@@ -53,6 +60,7 @@ export async function runCheckboxCommand(args: string[]): Promise<void> {
   const status = flags.get("--status");
   if (!file) throw new Error("Checkbox requires --file FILE.");
   if (action === "fix-cookies") {
+    if (fixCookies) throw new Error("checkbox fix-cookies does not accept the redundant --fix-cookies option.");
     if (line !== undefined || status !== undefined) throw new Error("checkbox fix-cookies accepts --file but not --line or --status.");
   } else {
     if (!line || !/^[1-9]\d*$/.test(line)) throw new Error("Checkbox cycle/set requires --line N (a positive integer).");
@@ -64,9 +72,22 @@ export async function runCheckboxCommand(args: string[]): Promise<void> {
   const snapshot = readGuardedFile(fs.realpathSync(file));
   const expected = flags.get("--if-revision");
   if (expected !== undefined && expected !== snapshot.revision) throw new Error("File changed since the checkbox preview. Preview again before applying.");
-  const result = action === "fix-cookies"
-    ? updateCheckboxProgressCookiesInText(snapshot.content)
+  const markerResult = action === "fix-cookies"
+    ? null
     : updateCheckboxInText(snapshot.content, Number(line), status as CheckboxState | undefined);
+  const cookieResult = action === "fix-cookies"
+    ? updateCheckboxProgressCookiesInText(snapshot.content)
+    : (fixCookies ? updateCheckboxProgressCookiesInText(markerResult!.text) : null);
+  const result = action === "fix-cookies"
+    ? cookieResult!
+    : cookieResult
+      ? {
+          ...markerResult!,
+          text: cookieResult.text,
+          changed: markerResult!.changed || cookieResult.changed,
+          cookieEdits: cookieResult.edits,
+        }
+      : markerResult!;
   const diff = format === "diff" ? buildUnifiedDiff(snapshot.content, result.text, {
     targetPath: snapshot.file, temporaryDirectoryPrefix: "org2-checkbox-", useLabels: true,
   }) : "";

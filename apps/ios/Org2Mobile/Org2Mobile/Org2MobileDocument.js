@@ -558,6 +558,12 @@ var Org2MobileDocument = (() => {
   function parseProgressCookieAt(value, startIndex) {
     if (value[startIndex] !== "[") return null;
     const rest = value.slice(startIndex);
+    if (rest.startsWith("[/]")) {
+      return { node: progressCookie({ raw: "[/]", format: "fraction" }), endIndex: startIndex + 3 };
+    }
+    if (rest.startsWith("[%]")) {
+      return { node: progressCookie({ raw: "[%]", format: "percent" }), endIndex: startIndex + 3 };
+    }
     const fraction = /^\[(\d+)\/(\d+)\]/.exec(rest);
     if (fraction) {
       const done = Number.parseInt(fraction[1] || "0", 10);

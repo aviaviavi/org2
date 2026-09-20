@@ -65,7 +65,7 @@ org2 agent bundle --query "billing migration" --scope project:billing --since 90
 
 The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for prompt assembly. =org2 compile corpus= emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. =org2 brief= produces a human-facing synthesis from the same context substrate.
 
-Use =org2 checkbox --file FILE --line N= to preview a three-state list-checkbox cycle, or =checkbox set --status checked= to choose a state. Use =checkbox fix-cookies --file FILE= to preview recalculation of stale =[n/m]= and =[p%]= cookies against their innermost heading totals. Add =--apply= to write; carry the JSON preview revision with =--if-revision= when applying later.
+Use =org2 checkbox --file FILE --line N= to preview a three-state list-checkbox cycle, or =checkbox set --status checked= to choose a state. Add =--fix-cookies= to either action to refresh progress cookies in the same guarded edit. Use =checkbox fix-cookies --file FILE= to preview recalculation of stale =[n/m]= and =[p%]= cookies, including empty =[/]= and =[%]= placeholders, against their innermost heading totals. Add =--apply= to write; carry the JSON preview revision with =--if-revision= when applying later.
 
 Corpus TODO defaults live in =org2.json= under =todo.sequences=; inspect or preview changes with =todo-config show/set=. Per-file overrides belong in file-local =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:= declarations. Respect =|= terminal states and use =todo set --keyword STATE= for exact custom state names; inspect the preview before applying.
 

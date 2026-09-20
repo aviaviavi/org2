@@ -9259,7 +9259,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
   org2 embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]
-  org2 checkbox [cycle|toggle|set|fix-cookies] --file FILE [--line N] [--status STATE] [--apply]
+  org2 checkbox [cycle|toggle|set|fix-cookies] --file FILE [--line N] [--status STATE] [--fix-cookies] [--apply]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]

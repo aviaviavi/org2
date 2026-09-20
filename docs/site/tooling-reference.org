@@ -319,6 +319,7 @@ File-local declarations take precedence over corpus defaults. Declare custom sta
 org2 checkbox --file notes.org --line 12
 org2 checkbox --file notes.org --line 12 --apply
 org2 checkbox set --file notes.org --line 12 --status checked --apply
+org2 checkbox cycle --file notes.org --line 12 --fix-cookies --apply
 org2 checkbox --file notes.org --line 12 --format json
 org2 checkbox fix-cookies --file notes.org
 org2 checkbox fix-cookies --file notes.org --apply
@@ -326,7 +327,7 @@ org2 checkbox fix-cookies --file notes.org --apply
 
 The default action, =cycle=, advances =[ ]= → =[-]= → =[X]= → =[ ]=. =toggle= is an alias for that three-state cycle. =set --status= accepts =unchecked=, =indeterminate=, or =checked=. The one-based =--line= must point to the list item itself; prose, headings, source/example blocks, and drawers are not checkbox targets. An invalid target or option exits with an error and leaves the file unchanged.
 
-Use =fix-cookies= to recalculate stale =[n/m]= and =[p%]= progress cookies across the file. Each cookie uses the checkbox total from its innermost containing heading; content before the first heading uses the file preamble. This prevents a recursive ancestor total from overwriting a correct descendant cookie. The ordinary =cycle= and =set= actions still change only the selected checkbox marker and do not recalculate cookies implicitly.
+Use =fix-cookies= to recalculate stale =[n/m]= and =[p%]= progress cookies across the file; empty =[/]= and =[%]= placeholders are filled at the same time. Each cookie uses the checkbox total from its innermost containing heading; checked items contribute to the completed and total counts, while unchecked and indeterminate items contribute only to the total. This prevents a recursive ancestor total from overwriting a correct descendant cookie. The ordinary =cycle= and =set= actions still change only the selected checkbox marker by default. Add =--fix-cookies= to either action to recalculate cookies from the new checkbox state within the same guarded preview or write.
 
 Writes require =--apply=. The default output is a diff, and =--format text= returns the complete edited source. For =cycle= and =set=, =--format json= returns an =org2:checkbox-edit:v1= envelope with the original =revision=, old/new states, and =changed=/=applied= flags. For =fix-cookies=, it returns =org2:checkbox-cookie-fix:v1= with the same revision guard plus the exact line, old value, expected value, and owned checkbox total for every edit. Pass the preview's =revision= as =--if-revision= when applying later to reject stale edits. =column= in a marker edit is the zero-based UTF-16 position of the marker character, suitable for LSP clients.
 
