@@ -127,10 +127,10 @@ test('timestamp repeaters and warnings stay within timestamp syntax highlighting
 test('checkbox progress cookies receive progress-cookie syntax highlighting', async () => {
   const registry = await createRegistry();
   const grammar = await registry.loadGrammar('source.org2');
-  const line = '- [ ] Project [1/3] [33%]';
+  const line = '- [ ] Project [1/3] [33%] [/] [%]';
   const result = grammar.tokenizeLine(line, null);
 
-  for (const fragment of ['[1/3]', '[33%]']) {
+  for (const fragment of ['[1/3]', '[33%]', '[/]', '[%]']) {
     const token = result.tokens.find((candidate) => line.slice(candidate.startIndex, candidate.endIndex) === fragment);
     assert(token, `expected token for ${fragment}`);
     assert(token.scopes.includes('constant.other.progress-cookie.org2'), `expected progress-cookie scope for ${fragment}`);
@@ -159,6 +159,38 @@ test('headline TODO aliases still receive TODO keyword syntax highlighting', asy
 
     assert(keywordToken, `expected token for ${keyword}`);
     assert(keywordToken.scopes.includes('keyword.other.todo.org2'), `expected TODO scope for ${keyword}`);
+  }
+});
+
+test('headline tags support shared colons and trailing whitespace without consuming the title', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  const cases = [
+    ['* Title :work:', ':work:'],
+    ['** TODO Title :work:   ', ':work:'],
+    ['*** Title :work:urgent:', ':work:urgent:'],
+    ['******* Title :one:two:three:  ', ':one:two:three:'],
+  ];
+
+  for (const [line, tags] of cases) {
+    const result = grammar.tokenizeLine(line, null);
+    const titleIndex = line.indexOf('Title');
+    const tagIndex = line.indexOf(tags);
+    const titleToken = result.tokens.find((token) => token.startIndex <= titleIndex && token.endIndex > titleIndex);
+    const tagToken = result.tokens.find((token) => token.startIndex <= tagIndex && token.endIndex > tagIndex);
+    assert(titleToken?.scopes.includes('entity.name.section.org2'), `expected headline title scope for ${line}`);
+    assert(!titleToken?.scopes.includes('entity.other.attribute-name.tag.org2'), `title was consumed as a tag for ${line}`);
+    assert(tagToken?.scopes.includes('entity.other.attribute-name.tag.org2'), `expected tag scope for ${tags}`);
+    if (line.endsWith(' ')) {
+      const trailingToken = result.tokens.find((token) => token.startIndex <= line.length - 1 && token.endIndex > line.length - 1);
+      assert(!trailingToken?.scopes.includes('entity.other.attribute-name.tag.org2'), `trailing whitespace was consumed as a tag for ${line}`);
+      assert(!trailingToken?.scopes.includes('entity.name.section.org2'), `trailing whitespace was consumed as title text for ${line}`);
+    }
+  }
+
+  for (const line of ['* Title', '* Namespace: remains title', '* Title :not-a-tag']) {
+    const result = grammar.tokenizeLine(line, null);
+    assert(!result.tokens.some((token) => token.scopes.includes('entity.other.attribute-name.tag.org2')), `unexpected tag scope for ${line}`);
   }
 });
 
