@@ -772,6 +772,66 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testTransportFailureConsumesPendingTurnContinuation() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-transport-end-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-transport-end")
+    let script = #"""
+    #!/bin/sh
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"thread/start"'*)
+          printf '{"id":%s,"result":{"thread":{"id":"thr-transport-end"}}}\n' "$request_id"
+          ;;
+        *'"method":"turn/start"'*)
+          printf '{"id":%s,"result":{"turn":{"id":"turn-transport-end"}}}\n' "$request_id"
+          printf '%s\n' '{"method":"turn/started","params":{"threadId":"thr-transport-end","turn":{"id":"turn-transport-end","status":"inProgress","items":[]}}}'
+          sleep 0.15
+          exit 0
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+    let threadID = try await client.ensureThread(
+      existingThreadID: nil,
+      cwd: temporaryDirectory
+    )
+
+    do {
+      _ = try await client.runTurn(
+        threadID: threadID,
+        turnID: "local-turn",
+        message: "Wait for the transport to close.",
+        attachments: [],
+        cwd: temporaryDirectory,
+        clientUserMessageID: UUID()
+      )
+      XCTFail("A closed transport should fail its active turn")
+    } catch {
+      XCTAssertEqual(error.localizedDescription, "Codex turn failed: connection closed")
+    }
+
+    let pendingTurnCount = await client.pendingTurnCountForTesting()
+    XCTAssertEqual(pendingTurnCount, 0)
+    await client.shutdown()
+  }
+
   func testAgedModelCatalogRestartsIdleAppServerBeforeRefresh() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-codex-model-refresh-\(UUID().uuidString)", isDirectory: true)

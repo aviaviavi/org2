@@ -1394,12 +1394,7 @@ while True:
         errorMessage: message,
         usage: pending.usage
       )
-      if let continuation = pending.continuation {
-        continuation.resume(returning: result)
-      } else {
-        pending.completedResult = result
-        pendingTurns[turnID] = pending
-      }
+      resolvePendingTurn(turnID, with: result)
     }
     await eventHandler(.connectionChanged(isConnected: false, detail: message))
   }
@@ -1831,7 +1826,20 @@ while True:
       errorMessage: completed.errorMessage,
       usage: pending.usage ?? completed.usage
     )
+    resolvePendingTurn(turnID, with: result)
+  }
+
+  private func resolvePendingTurn(_ turnID: String, with result: CodexTurnResult) {
+    guard let pending = pendingTurns[turnID] else { return }
+    pending.completionTask?.cancel()
+    pending.completionTask = nil
+    pending.pendingCompletionResult = nil
     if let continuation = pending.continuation {
+      // Remove ownership before resuming. Resuming schedules the waiting task,
+      // whose cancellation handler can immediately reenter this actor. Keeping
+      // the continuation in pendingTurns during that window lets the handler
+      // resume the same checked continuation twice and traps the process.
+      pending.continuation = nil
       pendingTurns.removeValue(forKey: turnID)
       continuation.resume(returning: result)
     } else {
@@ -1913,14 +1921,14 @@ while True:
       errorMessage: nil,
       usage: pending.usage
     )
-    if let continuation = pending.continuation {
-      pendingTurns.removeValue(forKey: turnID)
-      continuation.resume(returning: result)
-    } else {
-      pending.completedResult = result
-      pendingTurns[turnID] = pending
-    }
+    resolvePendingTurn(turnID, with: result)
   }
+
+#if DEBUG
+  func pendingTurnCountForTesting() -> Int {
+    pendingTurns.count
+  }
+#endif
 
   private func failPendingRequests(_ error: Error) {
     let timeoutTasks = pendingRequestTimeoutTasks.values
