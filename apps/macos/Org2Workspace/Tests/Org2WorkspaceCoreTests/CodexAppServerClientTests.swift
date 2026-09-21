@@ -827,8 +827,13 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertEqual(error.localizedDescription, "Codex turn failed: connection closed")
     }
 
+#if DEBUG
+    // The counter is an internal debug-only probe. Release-mode CI still runs
+    // this transport-close path, but must not reference a symbol omitted from
+    // production builds.
     let pendingTurnCount = await client.pendingTurnCountForTesting()
     XCTAssertEqual(pendingTurnCount, 0)
+#endif
     await client.shutdown()
   }
 
