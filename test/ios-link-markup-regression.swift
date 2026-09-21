@@ -21,6 +21,15 @@
     precondition(code.runs.allSatisfy { $0.link == nil }, "Source examples must remain literal")
     let web = MobileRemoteMessageMarkup.attributedString(for: "[[https://example.com/notes.org][Website]]")
     precondition(web.runs.compactMap { $0.link }.first?.scheme == "https", "Web link was intercepted as a corpus path")
-    print("Native chat markup renders tappable entry links, preserves labels/targets, and keeps source examples literal")
+    let tableBlocks = MobileRemoteMessageMarkup.renderedBlocks(for: "Before\n| Name | State |\n|------+-------|\n| iOS | Done |\nAfter")
+    precondition(tableBlocks.count == 3, "Org table was not split into a native render block")
+    guard case .table(let table) = tableBlocks[1] else {
+      preconditionFailure("Org table was left as plain text")
+    }
+    precondition(table.headerRowCount == 1, "Org table header rule was not recognized")
+    precondition(table.rows == [["Name", "State"], ["iOS", "Done"]], "Org table cells changed during parsing")
+    let literalBlocks = MobileRemoteMessageMarkup.renderedBlocks(for: "#+begin_src text\n| literal | source |\n#+end_src")
+    precondition(literalBlocks.count == 1, "Source block table text must remain literal")
+    print("Native chat markup renders links and Org tables while keeping source examples literal")
   }
 }

@@ -68,7 +68,12 @@ struct OpenOrgServer {
       }
       defaults.set(try JSONEncoder().encode(config.destinations), forKey: "Org2Workspace.aiChat.destinations.v1")
       defaults.set("off", forKey: "Org2Workspace.aiChat.messageSound.v1")
-      defaults.set(false, forKey: "Org2Workspace.openClawLocalEditsEnabled.v1")
+      let filesystemAccess = config.localAgentFilesystemAccess
+        .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
+      defaults.set(
+        filesystemAccess != .readOnly,
+        forKey: "Org2Workspace.openClawLocalEditsEnabled.v1"
+      )
       let cli = Org2CLI(repoRoot: URL(fileURLWithPath: config.repoRoot), nodePath: config.nodePath)
       let store = WorkspaceStore(
         cli: cli,
@@ -81,8 +86,7 @@ struct OpenOrgServer {
       // Headless hosts have a separate preferences domain from the desktop app.
       // Carry this policy in their machine-local configuration so iOS turns do
       // not silently fall back to the workspace-write default.
-      store.codexSandboxAccess = config.localAgentFilesystemAccess
-        .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
+      store.codexSandboxAccess = filesystemAccess
       // Explicitly disable built-ins that were not selected in the server config.
       let enabledIDs = Set(config.destinations.filter(\.isEnabled).map(\.id))
       for var destination in store.aiChatDestinations where !enabledIDs.contains(destination.id) {

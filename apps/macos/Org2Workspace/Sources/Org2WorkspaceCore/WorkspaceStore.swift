@@ -3715,6 +3715,9 @@ public final class WorkspaceStore {
     setCorpusRoot(corpusRoot, persistsDefault: false)
     if let openClawTranscriptLoadTask { await openClawTranscriptLoadTask.value }
     startPendingOpenClawTurnRecovery()
+    if openClawLocalEditsEnabled {
+      startOpenClawLocalEditNode()
+    }
     setWorkspaceRealtimeRefreshActive(true)
     await refreshProjects()
     await refreshAgenda()
@@ -21349,7 +21352,14 @@ public final class WorkspaceStore {
     (drainingOpenClawThreadIDs.contains(threadID)
       && isAIChatRuntimeStateVisible(for: threadID))
       || openClawSendingThreadIDs.contains(threadID)
-      || openClawChatThreads.first(where: { $0.id == threadID })?.pendingTurn != nil
+      || openClawChatThreads.first(where: { $0.id == threadID }).map { thread in
+        thread.pendingTurn != nil
+          || thread.messages.contains { message in
+            message.role == .user
+              && message.deliveryStatus == .sending
+              && message.deliveryKind != .followUp
+          }
+      } == true
   }
 
   public func aiChatConnectionState(for threadID: UUID) -> OpenClawGatewayConnectionState {
@@ -21659,7 +21669,7 @@ public final class WorkspaceStore {
 
   var canChangeChatAgent: Bool {
     guard let thread = openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID }) else { return false }
-    return !thread.isSharedRoom && thread.pendingTurn == nil && !openClawSendingThreadIDs.contains(thread.id)
+    return !thread.isSharedRoom && !isAIChatThreadRunning(thread.id)
   }
 
   func setSelectedChatAgent(_ profile: AgentProfileItem?) {

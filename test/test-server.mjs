@@ -8,6 +8,25 @@ import { acquireWorkflowDispatchLock, assignAutomationHost, automationHostRef } 
 import { initializeCorpusIdentity } from "../dist/corpusIdentity.js";
 import { loadAgentRun, saveAgentRun, transitionAgentRun } from "../dist/agentRun.js";
 
+const headlessServerSource = fs.readFileSync(
+  path.resolve("apps/macos/Org2Workspace/Sources/OpenOrgServer/main.swift"),
+  "utf8",
+);
+assert.match(
+  headlessServerSource,
+  /filesystemAccess != \.readOnly,[\s\S]*Org2Workspace\.openClawLocalEditsEnabled\.v1/,
+  "the headless filesystem policy must also control OpenClaw local edits",
+);
+const workspaceStoreSource = fs.readFileSync(
+  path.resolve("apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/WorkspaceStore.swift"),
+  "utf8",
+);
+assert.match(
+  workspaceStoreSource,
+  /bootstrapHeadless\([\s\S]*if openClawLocalEditsEnabled \{\s*startOpenClawLocalEditNode\(\)/,
+  "the headless bootstrap must start the enabled OpenClaw local edit bridge",
+);
+
 const temporary = fs.mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : os.tmpdir(), "org2-server-test-"));
 const corpus = path.join(temporary, "corpus");
 const cli = path.resolve("dist/cli.js");

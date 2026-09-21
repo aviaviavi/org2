@@ -22,6 +22,62 @@ private actor SyncedChatSendGate {
 
 final class SyncedAIChatTranscriptTests: XCTestCase {
   @MainActor
+  func testPersistedSendingTurnShowsRunningOnAnotherHostButFollowUpStaysQueued() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcriptURL = root.appendingPathComponent("chat.json")
+    let activeMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Started from iPhone",
+      deliveryStatus: .sending,
+      deliveryKind: .turn
+    )
+    let queuedMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Do this next",
+      deliveryStatus: .sending,
+      deliveryKind: .followUp
+    )
+    let active = OpenClawChatThread(
+      title: "Remote active turn",
+      runtime: .codex,
+      sessionKey: "remote-active"
+    )
+    let queuedOnly = OpenClawChatThread(
+      title: "Queued only",
+      runtime: .codex,
+      sessionKey: "remote-queued"
+    )
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [active, queuedOnly],
+      selectedThreadID: active.id,
+      settlementSettings: OpenClawThreadSettlementSettings()
+    ), legacyURL: transcriptURL)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [
+        active.replacingMessages([activeMessage, queuedMessage]),
+        queuedOnly.replacingMessages([queuedMessage])
+      ],
+      selectedThreadID: active.id,
+      settlementSettings: OpenClawThreadSettlementSettings()
+    ), legacyURL: transcriptURL)
+    let refreshed = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(refreshed)
+
+    XCTAssertTrue(store.isAIChatThreadRunning(active.id))
+    XCTAssertFalse(store.isAIChatThreadRunning(queuedOnly.id))
+    XCTAssertFalse(store.canChangeChatAgent)
+  }
+
+  @MainActor
   func testReadBadgesStayClearedAcrossRefreshAndRestartWithoutHidingNewReplies() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -2192,8 +2192,9 @@ struct MobileRemoteThreadView: View {
   }
 }
 
-// UITextView tiles long text inside its own scroll view. The transcript only
-// lays out a bounded preview; Copy still uses the complete original message.
+// The transcript only lays out a bounded preview; Copy still uses the complete
+// original message. The full-message sheet keeps UITextView's tiling for plain
+// long text, and switches to native blocks when an Org table needs layout.
 private struct MobileRemoteBoundedMessageText: View {
   let content: String
   @State private var isFullTextPresented = false
@@ -2201,8 +2202,7 @@ private struct MobileRemoteBoundedMessageText: View {
   var body: some View {
     let preview = MobileRemoteTranscriptPage.preview(content)
     VStack(alignment: .leading, spacing: 8) {
-      Text(MobileRemoteMessageMarkup.attributedString(for: preview.text))
-        .textSelection(.enabled)
+      MobileRemoteRenderedMessageText(content: preview.text)
       if preview.isTruncated {
         Button("Read full message") { isFullTextPresented = true }
           .font(.callout.weight(.medium))
@@ -2228,7 +2228,30 @@ private struct MobileRemoteBoundedMessageText: View {
   }
 }
 
-private struct MobileRemoteFullMessageTextView: UIViewRepresentable {
+private struct MobileRemoteFullMessageTextView: View {
+  let content: String
+
+  var body: some View {
+    if containsTable {
+      ScrollView {
+        MobileRemoteRenderedMessageText(content: content)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 16)
+      }
+    } else {
+      MobileRemoteFullPlainMessageTextView(content: content)
+    }
+  }
+
+  private var containsTable: Bool {
+    MobileRemoteMessageMarkup.renderedBlocks(for: content).contains {
+      if case .table = $0 { return true }
+      return false
+    }
+  }
+}
+
+private struct MobileRemoteFullPlainMessageTextView: UIViewRepresentable {
   let content: String
 
   func makeUIView(context: Context) -> UITextView {
@@ -2701,6 +2724,20 @@ struct CorpusFileBrowserView: View {
 }
 
 private enum MobileRemoteMessageMarkup {
+  struct Table: Equatable {
+    let rows: [[String]]
+    let headerRowCount: Int
+
+    var columnCount: Int {
+      rows.map(\.count).max() ?? 0
+    }
+  }
+
+  enum RenderedBlock: Equatable {
+    case text(String)
+    case table(Table)
+  }
+
   private static let markdownLinkPattern = try! NSRegularExpression(
     pattern: #"\[([^\]\n]+)\]\(([^)\n]+)\)"#
   )
@@ -2763,6 +2800,86 @@ private enum MobileRemoteMessageMarkup {
     let value = makeAttributedString(for: content)
     cache.setObject(CachedMarkup(value), forKey: key)
     return value
+  }
+
+  static func renderedBlocks(for content: String) -> [RenderedBlock] {
+    let lines = content
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    var blocks: [RenderedBlock] = []
+    var textLines: [String] = []
+    var isInsideLiteralBlock = false
+
+    func flushText() {
+      guard !textLines.isEmpty else { return }
+      blocks.append(.text(textLines.joined(separator: "\n")))
+      textLines.removeAll(keepingCapacity: true)
+    }
+
+    var index = 0
+    while index < lines.count {
+      let line = normalizedBlockDirective(lines[index])
+      let directive = line.trimmingCharacters(in: .whitespaces).lowercased()
+      if directive.hasPrefix("#+begin_src") || directive.hasPrefix("#+begin_example") {
+        isInsideLiteralBlock = true
+      }
+
+      if !isInsideLiteralBlock, isTableLine(line) {
+        var tableLines: [String] = []
+        while index < lines.count {
+          let candidate = normalizedBlockDirective(lines[index])
+          guard isTableLine(candidate) else { break }
+          tableLines.append(candidate)
+          index += 1
+        }
+        if let table = table(from: tableLines) {
+          flushText()
+          blocks.append(.table(table))
+          continue
+        }
+        textLines.append(contentsOf: tableLines)
+        continue
+      }
+
+      textLines.append(line)
+      if directive == "#+end_src" || directive == "#+end_example" {
+        isInsideLiteralBlock = false
+      }
+      index += 1
+    }
+    flushText()
+    return blocks
+  }
+
+  private static func isTableLine(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    return trimmed.hasPrefix("|") && trimmed.hasSuffix("|")
+  }
+
+  private static func table(from lines: [String]) -> Table? {
+    var rows: [[String]] = []
+    var headerRowCount = 0
+    var foundHeaderRule = false
+    for line in lines {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let inner = trimmed.dropFirst().dropLast()
+      if !inner.isEmpty,
+         inner.contains("-"),
+         inner.allSatisfy({ $0 == "-" || $0 == "+" || $0.isWhitespace }) {
+        if !foundHeaderRule {
+          headerRowCount = rows.count
+          foundHeaderRule = true
+        }
+        continue
+      }
+      rows.append(inner.split(separator: "|", omittingEmptySubsequences: false).map {
+        $0.trimmingCharacters(in: .whitespaces)
+      })
+    }
+    guard !rows.isEmpty, rows.contains(where: { !$0.allSatisfy(\.isEmpty) }) else { return nil }
+    return Table(rows: rows, headerRowCount: headerRowCount)
   }
 
   private static func makeAttributedString(for content: String) -> AttributedString {
@@ -3054,6 +3171,68 @@ private enum MobileRemoteMessageMarkup {
       components.queryItems?.append(URLQueryItem(name: "target", value: target))
     }
     return components.url
+  }
+}
+
+private struct MobileRemoteRenderedMessageText: View {
+  let content: String
+
+  var body: some View {
+    let blocks = MobileRemoteMessageMarkup.renderedBlocks(for: content)
+    VStack(alignment: .leading, spacing: 9) {
+      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        switch block {
+        case .text(let text):
+          Text(MobileRemoteMessageMarkup.attributedString(for: text))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case .table(let table):
+          MobileRemoteOrgTable(table: table)
+        }
+      }
+    }
+  }
+}
+
+private struct MobileRemoteOrgTable: View {
+  let table: MobileRemoteMessageMarkup.Table
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: true) {
+      Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+        ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
+          GridRow {
+            ForEach(0..<table.columnCount, id: \.self) { columnIndex in
+              Text(MobileRemoteMessageMarkup.attributedString(
+                for: columnIndex < row.count ? row[columnIndex] : ""
+              ))
+              .font(rowIndex < table.headerRowCount ? .body.weight(.semibold) : .body)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(minWidth: 72, maxWidth: 220, alignment: .leading)
+              .padding(.horizontal, 9)
+              .padding(.vertical, 7)
+              .background(
+                rowIndex < table.headerRowCount
+                  ? Color.secondary.opacity(0.14)
+                  : Color.clear
+              )
+              .overlay {
+                Rectangle()
+                  .stroke(Color.secondary.opacity(0.24), lineWidth: 0.5)
+              }
+            }
+          }
+        }
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+      .overlay {
+        RoundedRectangle(cornerRadius: 8)
+          .stroke(Color.secondary.opacity(0.28), lineWidth: 0.5)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Table")
   }
 }
 
