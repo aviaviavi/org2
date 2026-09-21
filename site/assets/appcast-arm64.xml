@@ -4,34 +4,32 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.2</title>
-            <pubDate>Thu, 17 Sep 2026 11:07:43 -0700</pubDate>
+            <title>0.8.3</title>
+            <pubDate>Mon, 21 Sep 2026 13:27:11 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.2</sparkle:version>
-            <sparkle:shortVersionString>0.8.2</sparkle:shortVersionString>
+            <sparkle:version>0.8.3</sparkle:version>
+            <sparkle:shortVersionString>0.8.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[OpenOrg 0.8.2 makes the local workspace faster, more expressive, and easier to operate across Mac, iPhone, and always-on hosts.
+            <description sparkle:format="markdown"><![CDATA[OpenOrg 0.8.3 focuses on reliable long-running AI work, sturdier workspace refreshes, and several everyday editing fixes.
 
-- Documents and AI chats now open dramatically faster through persistent rendering, concurrent parsing, incremental transcript loading, and in-place updates for rendered checkboxes.
-- Projects now organize notes and active chats together. iPhone project views can create chats and manage project membership, while settled chats stay out of the active project list.
-- New local knowledge tools include editable property views, JSON Canvas workspaces, graph neighborhoods, unlinked mentions, live note and heading embeds, and browser article or selection capture.
-- Mac tabs keep their own navigation, filters, selections, editor drafts, cursor positions, view modes, and scroll state. Review navigation and approval handling are more reliable, including an explicit Repair & Retry path for safe run-source reconciliation.
-- Automations can pin their destination, model, and reasoning effort; scheduling uses populated model pickers and preserves those choices independently of interactive chats.
-- iPhone adds an editable phone-call transcript import flow using Apple transcripts or saved audio, plus more capable project-aware chat navigation.
-- PDF previews refresh after file changes, screenshot attachments render inline again, and chat reasoning updates no longer flicker between plain and rich rendering.
-- Local Mac builds, workspace refreshes, document rendering, and chat loading received substantial performance improvements.
+- Managed Codex conversations now survive Mac sleep and reconnect cleanly without double-resuming a transport. AI context budgeting is tighter and covered by explicit regression fixtures, reducing prompt overhead while preserving the context a turn needs.
+- Project state now loads during headless server startup and refreshes resiliently when individual project records are malformed or temporarily unavailable.
+- Interrupted meetings can recover captured system audio, and headless OpenClaw operation now preserves device identity and sends valid workflow cron payloads.
+- Checkbox progress updates are atomic across the shared runtime and OpenOrg. A new preview-first repair command can resolve stale checkbox progress cookies at the correct heading scope.
+- Daily-note creation can be enabled when needed, sidebar trees remain stable during refreshes, heading tags highlight correctly, and agent-run titles stay concise.
+- VS Code source blocks now embed the correct grammar for all supported languages and aliases, including C++.
 
 The Mac release includes signed and notarized installers for Apple Silicon and Intel. macOS 14 or newer is required.
 
-The coordinated iOS release is OpenOrg 0.8.2 build 35 for TestFlight.
+The coordinated iOS release is OpenOrg 0.8.3 build 36 for TestFlight.
 
-Full changelog: https://github.com/aviaviavi/org2/compare/0.8.1...0.8.2
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.2...0.8.3
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.2/OpenOrg.dmg" length="231199492" type="application/octet-stream" sparkle:edSignature="2GINPNTbX2gck1Kv36QMJ5XnPMezyj5DWgJbw+XHVRVkDHrslv6DP+9G3vQa2sbG2Ox1e/3LMfEPejkebD97BQ=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.3/OpenOrg.dmg" length="231316310" type="application/octet-stream" sparkle:edSignature="5XJLwbozaFmB80oPy0hVk/q1OEhEFdVN/O7uEfjIShO9wkDMNgrnnuY2khd8CZ9Q5DipsGl6yZiqF1mN6icMCA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: gl3HZnC9EsB9/0Z6DGyYvEhwyIjtRyfdknRmzMDh1VJVAesw7k+kHqOf55zMgpL4leg8t64VQcPzMJR1xbI5BQ==
-length: 3077
+edSignature: F793W+e6pu7esMOTGvYW5qRedcY5tUQ5AL2H8HYG3Ei50RVQvzb9bjgNpxqlnEQ9ZSfcFDVDc/y1Iz/5zcTeCQ==
+length: 2671
 -->
