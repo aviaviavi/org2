@@ -4,6 +4,23 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.3 - 2026-09-21
+
+OpenOrg 0.8.3 focuses on reliable long-running AI work, sturdier workspace refreshes, and several everyday editing fixes.
+
+- Managed Codex conversations now survive Mac sleep and reconnect cleanly without double-resuming a transport. AI context budgeting is tighter and covered by explicit regression fixtures, reducing prompt overhead while preserving the context a turn needs.
+- Project state now loads during headless server startup and refreshes resiliently when individual project records are malformed or temporarily unavailable.
+- Interrupted meetings can recover captured system audio, and headless OpenClaw operation now preserves device identity and sends valid workflow cron payloads.
+- Checkbox progress updates are atomic across the shared runtime and OpenOrg. A new preview-first repair command can resolve stale checkbox progress cookies at the correct heading scope.
+- Daily-note creation can be enabled when needed, sidebar trees remain stable during refreshes, heading tags highlight correctly, and agent-run titles stay concise.
+- VS Code source blocks now embed the correct grammar for all supported languages and aliases, including C++.
+
+The Mac release includes signed and notarized installers for Apple Silicon and Intel. macOS 14 or newer is required.
+
+The coordinated iOS release is OpenOrg 0.8.3 build 36 for TestFlight.
+
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.2...0.8.3
+
 ## 0.8.2 - 2026-09-17
 
 OpenOrg 0.8.2 makes the local workspace faster, more expressive, and easier to operate across Mac, iPhone, and always-on hosts.
