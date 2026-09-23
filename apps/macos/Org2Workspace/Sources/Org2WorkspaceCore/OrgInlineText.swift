@@ -698,9 +698,14 @@ enum OrgInlineAttributedString {
       chunk.foregroundColor = .accentColor
       if let fileReference {
         chunk.link = fileReference.deepLinkURL
+        chunk.appKit.toolTip = OrgInlineLinkTooltip.text(
+          target: target,
+          fileReference: fileReference
+        )
       } else if let url = URL(string: target),
                 url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https" {
         chunk.link = url
+        chunk.appKit.toolTip = OrgInlineLinkTooltip.text(target: target, fileReference: nil)
       }
       return chunk
     }
@@ -724,4 +729,26 @@ enum OrgInlineAttributedString {
   }
 
   private static let searchHighlightColor = Color.yellow.opacity(0.45)
+}
+
+enum OrgInlineLinkTooltip {
+  static func text(target: String, fileReference: OpenClawFileReference?) -> String {
+    if let fileReference {
+      let path = (fileReference.path as NSString).abbreviatingWithTildeInPath
+      let extensionName = URL(fileURLWithPath: fileReference.path).pathExtension.lowercased()
+      let kind = extensionName == "org" || extensionName == "org2" ? "Org document" : "File"
+      let lineSuffix = fileReference.line.map { " · line \($0)" } ?? ""
+      return "\(kind)\n\(ellipsized(path))\(lineSuffix)"
+    }
+
+    return "External link\n\(ellipsized(target))"
+  }
+
+  static func ellipsized(_ value: String, limit: Int = 96) -> String {
+    guard limit > 1, value.count > limit else { return value }
+    let available = limit - 1
+    let prefixCount = (available * 3) / 5
+    let suffixCount = available - prefixCount
+    return "\(value.prefix(prefixCount))…\(value.suffix(suffixCount))"
+  }
 }

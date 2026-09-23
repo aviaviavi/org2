@@ -7635,6 +7635,42 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(map.link(atDisplayUTF16Location: 19)?.url, URL(string: "https://example.com/docs"))
   }
 
+  func testOrgInlineAttributedLinksDescribeTheirDestinationOnHover() throws {
+    let rendered = OrgInlineAttributedString.make([
+      .link(
+        label: "Project brief",
+        target: "id:project-brief",
+        fileReference: OpenClawFileReference(path: "/tmp/notes/project.org2", line: 17)
+      ),
+      .text(" and "),
+      .link(
+        label: "documentation",
+        target: "https://example.com/reference",
+        fileReference: nil
+      )
+    ])
+    let attributed = NSAttributedString(rendered)
+
+    XCTAssertEqual(
+      attributed.attribute(.toolTip, at: 0, effectiveRange: nil) as? String,
+      "Org document\n/tmp/notes/project.org2 · line 17"
+    )
+    XCTAssertEqual(
+      attributed.attribute(.toolTip, at: 18, effectiveRange: nil) as? String,
+      "External link\nhttps://example.com/reference"
+    )
+  }
+
+  func testOrgInlineLinkTooltipKeepsLongDestinationEndsVisible() {
+    let target = "https://example.com/" + String(repeating: "deep-path/", count: 16) + "destination.org2"
+    let tooltip = OrgInlineLinkTooltip.text(target: target, fileReference: nil)
+
+    XCTAssertTrue(tooltip.hasPrefix("External link\nhttps://example.com/"))
+    XCTAssertTrue(tooltip.contains("…"))
+    XCTAssertTrue(tooltip.hasSuffix("destination.org2"))
+    XCTAssertLessThanOrEqual(tooltip.split(separator: "\n").last?.count ?? .max, 96)
+  }
+
   func testOrgInlineParserExpandsCorpusLinearLinkAbbreviations() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-linear-links-\(UUID().uuidString)", isDirectory: true)
