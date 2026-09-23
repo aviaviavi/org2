@@ -21353,7 +21353,13 @@ public final class WorkspaceStore {
       && isAIChatRuntimeStateVisible(for: threadID))
       || openClawSendingThreadIDs.contains(threadID)
       || openClawChatThreads.first(where: { $0.id == threadID }).map { thread in
-        thread.pendingTurn != nil
+        thread.pendingTurn.map { pendingTurn in
+          thread.messages.contains { message in
+            message.id == pendingTurn.userMessageID
+              && message.role == .user
+              && message.deliveryStatus == .sending
+          }
+        } == true
           || thread.messages.contains { message in
             message.role == .user
               && message.deliveryStatus == .sending
@@ -25129,7 +25135,9 @@ public final class WorkspaceStore {
       return
     }
     guard let pendingUserMessage = thread.messages.first(where: {
-      $0.id == pendingTurn.userMessageID && $0.role == .user
+      $0.id == pendingTurn.userMessageID
+        && $0.role == .user
+        && $0.deliveryStatus == .sending
     }) else {
       clearOpenClawPendingTurn(
         pendingTurn.runID,
@@ -27455,6 +27463,15 @@ public final class WorkspaceStore {
           messages[insertionIndex].deliveryKind == .steer {
       insertionIndex = messages.index(after: insertionIndex)
     }
+    // A recovered or delayed reply belongs at the live end of the chat once
+    // any newer turn has progressed. Keep it before still-sending queued user
+    // messages (including older transcripts that label them as ordinary turns).
+    if messages[insertionIndex...].contains(where: { message in
+      message.role != .user
+        || message.deliveryStatus != .sending
+    }) {
+      insertionIndex = messages.endIndex
+    }
     messages.insert(assistantMessage, at: insertionIndex)
     updateOpenClawChatThread(
       threadID,
@@ -27689,8 +27706,11 @@ public final class WorkspaceStore {
     if activeOpenClawUserMessageIDByThreadID[threadID] == messageID {
       return true
     }
-    return openClawChatThreads.first(where: { $0.id == threadID })?
-      .pendingTurn?.userMessageID == messageID
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }),
+          thread.pendingTurn?.userMessageID == messageID else { return false }
+    return thread.messages.contains {
+      $0.id == messageID && $0.role == .user && $0.deliveryStatus == .sending
+    }
   }
 
   private func clearOpenClawSendFailure(

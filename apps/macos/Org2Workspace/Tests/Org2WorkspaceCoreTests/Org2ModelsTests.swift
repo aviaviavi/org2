@@ -3559,6 +3559,96 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testLateReplyStaysAfterNewerCompletedMessages() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-chat-late-reply-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let older = OpenClawChatMessage(
+      role: .user,
+      content: "Older request",
+      sendFailure: "Interrupted",
+      deliveryStatus: .interrupted
+    )
+    let thread = OpenClawChatThread(
+      title: "Late reply",
+      sessionKey: "agent:main:org2-workspace:late-reply",
+      messages: [
+        older,
+        OpenClawChatMessage(role: .user, content: "Newer request"),
+        OpenClawChatMessage(role: .assistant, content: "Newer answer")
+      ]
+    )
+    try JSONEncoder().encode(OpenClawTranscriptFixture(
+      version: 4,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )).write(to: transcript, options: .atomic)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in "Late answer" }
+    )
+
+    await store.retryOpenClawMessage(older.id)
+
+    XCTAssertEqual(store.openClawMessages.map(\.content), [
+      "Older request", "Newer request", "Newer answer", "Late answer"
+    ])
+  }
+
+  @MainActor
+  func testInterruptedPendingTurnDoesNotAppearRunningOrReconnect() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-chat-orphaned-turn-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let stopped = OpenClawChatMessage(
+      role: .user,
+      content: "Stopped request",
+      deliveryStatus: .sending
+    )
+    let thread = OpenClawChatThread(
+      title: "Orphaned pending turn",
+      sessionKey: "agent:main:org2-workspace:orphaned-turn",
+      messages: [stopped],
+      pendingTurn: OpenClawPendingTurn(
+        userMessageID: stopped.id,
+        runID: "orphaned-run",
+        agentID: "main",
+        gatewayMessage: "Do not reconnect"
+      )
+    )
+    try JSONEncoder().encode(OpenClawTranscriptFixture(
+      version: 4,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )).write(to: transcript, options: .atomic)
+    let recorder = OpenClawRecoveryRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript,
+      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+    )
+
+    XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
+    store.openClawMessages[0] = stopped.replacingDeliveryStatus(
+      .interrupted,
+      sendFailure: "Stopped by you"
+    )
+    XCTAssertNotNil(store.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
+    await store.recoverPendingOpenClawTurns()
+    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
+    let recoveredTurns = await recorder.recordedTurns()
+    XCTAssertTrue(recoveredTurns.isEmpty)
+  }
+
+  @MainActor
   func testOpenClawGatewayTurnReconnectsOnceAfterRelaunch() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-durable-turn-\(UUID().uuidString)", isDirectory: true)
