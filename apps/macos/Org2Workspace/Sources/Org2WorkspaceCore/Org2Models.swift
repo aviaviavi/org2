@@ -1355,6 +1355,10 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
     return runDecisionEffect
   }
 
+  public var displayBodyPreview: String {
+    Org2Display.cleanBlockPreview(body, maxCharacters: 220)
+  }
+
   public var discussionText: String {
     """
     OpenClaw approval thread:
@@ -6456,6 +6460,17 @@ public enum Org2Display {
       .map { cleanInline(String($0)) }
       .joined(separator: "\n")
       .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Cleans only a bounded prefix for collection-row previews. Approval bodies
+  /// can contain multi-megabyte run evidence, while their rows display just a
+  /// few lines; normalizing the entire body on every SwiftUI selection update
+  /// needlessly blocks the main thread.
+  public static func cleanBlockPreview(_ raw: String, maxCharacters: Int) -> String {
+    guard maxCharacters > 0 else { return "" }
+    let sourceLimit = max(maxCharacters, maxCharacters * 4)
+    let bounded = String(raw.prefix(sourceLimit))
+    return cleanBlock(bounded).trimmedForDisplay(maxCharacters: maxCharacters)
   }
 
   public static func shortID(_ raw: String) -> String {

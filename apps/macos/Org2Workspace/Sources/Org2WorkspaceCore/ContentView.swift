@@ -6705,6 +6705,20 @@ enum RunCenterDetailCollectionPresentation {
       visibleCount(total: total, requestedLimit: currentLimit) + pageItemCount
     )
   }
+
+  static func visiblePendingApprovalIDs(
+    _ approvalIDs: [AgentRunApprovalItem.ID],
+    selectedID: AgentRunApprovalItem.ID?,
+    requestedLimit: Int?
+  ) -> [AgentRunApprovalItem.ID] {
+    if let selectedID, approvalIDs.contains(selectedID) {
+      return [selectedID]
+    }
+    return Array(approvalIDs.prefix(visibleCount(
+      total: approvalIDs.count,
+      requestedLimit: requestedLimit
+    )))
+  }
 }
 
 private struct RunCenterDetail: View {
@@ -7353,23 +7367,18 @@ private struct RunCenterDetail: View {
   private func visiblePendingApprovals(
     _ approvals: [AgentRunApprovalItem]
   ) -> [AgentRunApprovalItem] {
-    var visible = Array(approvals.prefix(visibleCount(
-      for: .pendingApprovals,
-      total: approvals.count
-    )))
-    guard let selectedID = RunCenterPresentation.approvalID(
-      selectedApprovalItemID: store.selectedApprovalItemID,
-      runID: run.id
-    ),
-      !visible.contains(where: { $0.id == selectedID }),
-      let selected = approvals.first(where: { $0.id == selectedID })
-    else {
-      return visible
-    }
-    // Preserve direct navigation from Review without mounting every approval
-    // that precedes a late match in a very large durable run.
-    visible.append(selected)
-    return visible
+    let selectedID = store.runsAndReviewPage == .review
+      ? RunCenterPresentation.approvalID(
+          selectedApprovalItemID: store.selectedApprovalItemID,
+          runID: run.id
+        )
+      : nil
+    let visibleIDs = Set(RunCenterDetailCollectionPresentation.visiblePendingApprovalIDs(
+      approvals.map(\.id),
+      selectedID: selectedID,
+      requestedLimit: collectionDisplayLimits[.pendingApprovals]
+    ))
+    return approvals.filter { visibleIDs.contains($0.id) }
   }
 
   @ViewBuilder
@@ -8016,6 +8025,7 @@ private struct ApprovalRow: View {
   }
 
   var body: some View {
+    let bodyPreview = item.displayBodyPreview
     VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .center, spacing: 8) {
         Button {
@@ -8033,8 +8043,8 @@ private struct ApprovalRow: View {
           .lineLimit(2)
       }
 
-      if !item.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        Text(Org2Display.cleanBlock(item.body).trimmedForDisplay(maxCharacters: 220))
+      if !bodyPreview.isEmpty {
+        Text(bodyPreview)
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(3)

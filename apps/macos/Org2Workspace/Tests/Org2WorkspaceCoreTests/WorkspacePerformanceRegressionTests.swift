@@ -88,6 +88,49 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertTrue(detail.contains("run.plan.prefix(visibleCount"))
     XCTAssertTrue(detail.contains("run.context\n              .prefix(visibleCount"))
     XCTAssertTrue(detail.contains("run.comments.prefix(visibleCount"))
+    XCTAssertTrue(source.contains("let bodyPreview = item.displayBodyPreview"))
+    XCTAssertFalse(source.contains("Org2Display.cleanBlock(item.body)"))
+  }
+
+  func testReviewSelectionMountsOnlyTheSelectedApprovalDetail() {
+    let ids = (0..<10_000).map { "approval-\($0)" }
+
+    XCTAssertEqual(
+      RunCenterDetailCollectionPresentation.visiblePendingApprovalIDs(
+        ids,
+        selectedID: "approval-9000",
+        requestedLimit: nil
+      ),
+      ["approval-9000"]
+    )
+    XCTAssertEqual(
+      RunCenterDetailCollectionPresentation.visiblePendingApprovalIDs(
+        ids,
+        selectedID: nil,
+        requestedLimit: nil
+      ),
+      Array(ids.prefix(RunCenterDetailCollectionPresentation.initialItemLimit))
+    )
+  }
+
+  func testApprovalRowPreviewDoesNotNormalizeTheWholeBody() {
+    let visiblePrefix = "Review this exact message."
+    let oversizedTail = String(repeating: "\n[[https://example.com][evidence]]", count: 100_000)
+    let item = ApprovalItem(
+      title: "Large approval",
+      status: "pending",
+      todo: nil,
+      level: nil,
+      file: "/tmp/large-run.org2",
+      line: 1,
+      idValue: nil,
+      properties: [:],
+      body: visiblePrefix + oversizedTail,
+      tags: []
+    )
+
+    XCTAssertTrue(item.displayBodyPreview.hasPrefix(visiblePrefix))
+    XCTAssertLessThanOrEqual(item.displayBodyPreview.count, 223)
   }
 
   func testLiveChatAppendsLargeCodexTokenBurstWithoutCumulativeReplacement() {
