@@ -109,6 +109,24 @@ final class AIProviderChatClientTests: XCTestCase {
     XCTAssertEqual(reply, "First\nSecond")
   }
 
+  func testAnthropicListsProviderModelCatalog() async throws {
+    AIProviderTestURLProtocol.setHandler { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertEqual(request.url?.absoluteString, "https://api.example.test/v1/models")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "anthropic-secret")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+      return (200, ["data": [
+        ["id": "claude-opus-test", "display_name": "Claude Opus"],
+        ["id": "claude-haiku-test", "display_name": "Claude Haiku"],
+      ]])
+    }
+
+    let models = try await client(.anthropic, apiKey: "anthropic-secret").listModels()
+
+    XCTAssertEqual(models.map(\.id), ["claude-haiku-test", "claude-opus-test"])
+    XCTAssertEqual(models.map(\.label), ["Claude Haiku", "Claude Opus"])
+  }
+
   func testOpenRouterUsesCompatibleEndpointAndAttributionHeaders() async throws {
     AIProviderTestURLProtocol.setHandler { request in
       XCTAssertEqual(request.url?.absoluteString, "https://api.example.test/v1/chat/completions")

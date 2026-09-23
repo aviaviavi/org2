@@ -2359,6 +2359,28 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(restored.selectedAIChatReasoningEffort)
   }
 
+  func testDirectProviderModelOptionsUseDiscoveredCatalogWithoutSavedDefault() {
+    let discovered = [
+      AIChatModelOption(id: "claude-opus-test", label: "Claude Opus"),
+      AIChatModelOption(id: "claude-sonnet-test", label: "Claude Sonnet"),
+    ]
+
+    let withoutDefault = WorkspaceStore.directProviderModelOptions(
+      discovered,
+      configuredModel: nil
+    )
+    XCTAssertEqual(withoutDefault.map(\.id), discovered.map(\.id))
+    XCTAssertFalse(withoutDefault.contains(where: \.isDefault))
+
+    let withMissingDefault = WorkspaceStore.directProviderModelOptions(
+      discovered,
+      configuredModel: "claude-haiku-test"
+    )
+    XCTAssertEqual(withMissingDefault.first?.id, "claude-haiku-test")
+    XCTAssertTrue(withMissingDefault.first?.isDefault == true)
+    XCTAssertEqual(withMissingDefault.dropFirst().map(\.id), discovered.map(\.id))
+  }
+
   @MainActor
   func testAIChatConfigurationCatalogSurvivesAProviderOutageAndAppRestart() throws {
     let root = FileManager.default.temporaryDirectory

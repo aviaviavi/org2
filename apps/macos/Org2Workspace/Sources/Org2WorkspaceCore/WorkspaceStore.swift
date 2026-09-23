@@ -21981,7 +21981,9 @@ public final class WorkspaceStore {
         resolvedReasoningConfiguration = configuration != nil
       case .openAI, .anthropic, .openRouter, .ollama:
         models = try await modelsForAIChatDestination(thread.destinationID)
-        effectiveModel = thread.model ?? selectedAIChatDestination.model
+        effectiveModel = thread.model
+          ?? selectedAIChatDestination.model
+          ?? models.first(where: \.isDefault)?.id
         reasoningOptions = []
         defaultReasoningEffort = nil
         resolvedReasoningConfiguration = true
@@ -26115,9 +26117,50 @@ public final class WorkspaceStore {
         settings: openClawSettings(forDestinationID: destinationID, allowKeychainRead: true)
       ).listModels()
     case .openAI, .anthropic, .openRouter, .ollama:
-      guard let model = destination.model else { return [] }
-      return [AIChatModelOption(id: model, label: model, isDefault: true)]
+      let token = AIChatDestinationCredentials.readToken(
+        destinationID: destination.id,
+        allowUserInteraction: true
+      )
+      let settings = try AIProviderChatSettings(
+        adapter: destination.adapter,
+        endpoint: destination.endpoint,
+        apiKey: token
+      )
+      let discoveredModels = try await AIProviderChatClient(settings: settings).listModels()
+      return Self.directProviderModelOptions(
+        discoveredModels,
+        configuredModel: destination.model
+      )
     }
+  }
+
+  nonisolated static func directProviderModelOptions(
+    _ discoveredModels: [AIChatModelOption],
+    configuredModel: String?
+  ) -> [AIChatModelOption] {
+    var models = discoveredModels.map { option in
+      AIChatModelOption(
+        id: option.id,
+        label: option.label,
+        detail: option.detail,
+        supportsReasoning: option.supportsReasoning,
+        reasoningOptions: option.reasoningOptions,
+        defaultReasoningEffort: option.defaultReasoningEffort,
+        isDefault: option.id == configuredModel
+      )
+    }
+    if let configuredModel,
+       !models.contains(where: { $0.id == configuredModel }) {
+      models.insert(
+        AIChatModelOption(
+          id: configuredModel,
+          label: configuredModel,
+          isDefault: true
+        ),
+        at: 0
+      )
+    }
+    return models
   }
 
   private func externalCodexClient() -> CodexAppServerClient {
