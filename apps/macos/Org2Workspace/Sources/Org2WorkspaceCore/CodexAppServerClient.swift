@@ -1050,7 +1050,16 @@ while True:
       guard let self else {
         throw CodexAppServerError.disconnected("client was released")
       }
-      try await self.performConnect()
+      do {
+        try await self.performConnect()
+      } catch {
+        // The app-server can accept initialize after our request has timed
+        // out. Reusing that transport would send initialize a second time and
+        // poison every Codex thread with "Already initialized". Reset inside
+        // the shared startup task so concurrent waiters rotate it only once.
+        await self.shutdown()
+        throw error
+      }
     }
     startupTask = task
     do {

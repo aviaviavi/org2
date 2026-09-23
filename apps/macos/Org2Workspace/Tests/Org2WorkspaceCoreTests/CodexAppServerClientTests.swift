@@ -896,6 +896,76 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testInitializationTimeoutResetsTransportForRetry() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-initialize-reset-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let launchCount = temporaryDirectory.appendingPathComponent("launch-count")
+    let executable = temporaryDirectory.appendingPathComponent("fake-codex-initialize-reset")
+    let script = #"""
+    #!/bin/sh
+    count_file='\#(launchCount.path)'
+    count=0
+    if [ -f "$count_file" ]; then
+      count=$(sed -n '1p' "$count_file")
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$count_file"
+    initialized=0
+    while IFS= read -r line; do
+      request_id=$(printf '%s\n' "$line" | /usr/bin/sed -E 's/.*"id":([0-9]+).*/\1/')
+      case "$line" in
+        *'"method":"initialize"'*)
+          if [ "$initialized" -eq 1 ]; then
+            printf '{"id":%s,"error":{"code":-32600,"message":"Already initialized"}}\n' "$request_id"
+            continue
+          fi
+          initialized=1
+          if [ "$count" -eq 1 ]; then
+            sleep 2
+          fi
+          printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+          ;;
+        *'"method":"initialized"'*)
+          ;;
+        *'"method":"model/list"'*)
+          printf '{"id":%s,"result":{"data":[{"id":"gpt-recovered","displayName":"Recovered","isDefault":true}],"nextCursor":null}}\n' "$request_id"
+          ;;
+      esac
+    done
+    """#
+    try script.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let client = CodexAppServerClient(
+      executableURL: executable,
+      requestTimeoutNanoseconds: 500_000_000,
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in CodexDynamicToolResult(success: false, text: "unused") }
+    )
+
+    do {
+      _ = try await client.listModels()
+      XCTFail("The first initialization should time out")
+    } catch {
+      XCTAssertEqual(
+        error.localizedDescription,
+        "Codex did not respond to initialize before the request timed out."
+      )
+    }
+
+    let models = try await client.listModels()
+
+    XCTAssertEqual(models.map(\.id), ["gpt-recovered"])
+    XCTAssertEqual(
+      try String(contentsOf: launchCount, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      "2"
+    )
+    await client.shutdown()
+  }
+
   func testSlowThreadResumeUsesDedicatedRecoveryTimeout() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-codex-slow-resume-\(UUID().uuidString)", isDirectory: true)
