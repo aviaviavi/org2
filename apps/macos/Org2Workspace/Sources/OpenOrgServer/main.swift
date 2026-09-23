@@ -129,7 +129,9 @@ struct OpenOrgServer {
                     "schedulerError": store.automationSchedulerErrorText ?? "",
                     "filesystemAccess": store.codexSandboxAccess.rawValue,
                     "threads": store.openClawChatThreads.count,
-                    "runningThreads": store.openClawChatThreads.filter { store.isAIChatThreadRunning($0.id) }.count,
+                    "runningThreads": store.openClawChatThreads.filter {
+                      store.isAIChatThreadRunningOnCurrentHost($0.id)
+                    }.count,
                     "pushConfigured": remote.pushProviderConfigured,
                     "devices": remote.pairedDevices.map { ["id": $0.id.uuidString, "name": $0.name] }]
         case "pair":

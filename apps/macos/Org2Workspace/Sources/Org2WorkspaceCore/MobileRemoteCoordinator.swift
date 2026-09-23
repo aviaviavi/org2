@@ -317,7 +317,9 @@ public final class MobileRemoteCoordinator: ObservableObject {
         hostKind: hostRef == nil ? "desktop" : "server",
         corpusName: store.corpusRoot?.lastPathComponent,
         threadCount: threads.count,
-        runningThreadCount: threads.filter { store.isAIChatThreadRunning($0.id) }.count,
+        runningThreadCount: threads.filter {
+          store.isAIChatThreadRunningOnCurrentHost($0.id)
+        }.count,
         aiChatDestinations: store.enabledAIChatDestinations.map {
           MobileRemoteAIDestination(
             id: $0.id,
@@ -765,7 +767,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
     MobileRemoteThreadProjectionContext(
       destinationNamesByID: store.aiChatDestinationTitlesByID,
       runningThreadIDs: Set(threads.lazy.filter {
-        store.isAIChatThreadRunning($0.id)
+        store.isAIChatThreadRunningOnCurrentHost($0.id)
       }.map(\.id))
     )
   }

@@ -21368,6 +21368,18 @@ public final class WorkspaceStore {
       } == true
   }
 
+  /// Reports only work this process can currently drive or recover. Persisted
+  /// `sending` messages are portable transcript state and may have originated
+  /// on another synced host, so they are not sufficient for a remote-control
+  /// client to offer live status or controls through this host.
+  public func isAIChatThreadRunningOnCurrentHost(_ threadID: UUID) -> Bool {
+    guard isAIChatRuntimeStateVisible(for: threadID) else { return false }
+    return drainingOpenClawThreadIDs.contains(threadID)
+      || openClawSendingThreadIDs.contains(threadID)
+      || aiChatDrainTasksByThreadID[threadID] != nil
+      || openClawRecoveryTasksByThreadID[threadID] != nil
+  }
+
   public func aiChatConnectionState(for threadID: UUID) -> OpenClawGatewayConnectionState {
     guard isAIChatRuntimeStateVisible(for: threadID) else { return .disconnected }
     return openClawGatewayStateByThreadID[threadID] ?? .disconnected

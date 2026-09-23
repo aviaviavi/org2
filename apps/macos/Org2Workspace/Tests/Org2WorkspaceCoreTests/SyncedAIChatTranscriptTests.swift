@@ -73,7 +73,12 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertTrue(refreshed)
 
     XCTAssertTrue(store.isAIChatThreadRunning(active.id))
+    XCTAssertFalse(
+      store.isAIChatThreadRunningOnCurrentHost(active.id),
+      "A synced sending marker is not live work owned by this host"
+    )
     XCTAssertFalse(store.isAIChatThreadRunning(queuedOnly.id))
+    XCTAssertFalse(store.isAIChatThreadRunningOnCurrentHost(queuedOnly.id))
     XCTAssertFalse(store.canChangeChatAgent)
   }
 
@@ -300,6 +305,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     let started = await gate.started
     XCTAssertTrue(started)
     XCTAssertTrue(store.isAIChatThreadRunning(active.id))
+    XCTAssertTrue(store.isAIChatThreadRunningOnCurrentHost(active.id))
     try await store.waitForAIChatTranscriptPersistenceForTesting()
     let working = try XCTUnwrap(store.openClawChatThreads.first { $0.id == active.id })
     let revision = store.aiChatThreadMessageMutationVersionForTesting(active.id)
@@ -335,6 +341,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     await gate.open()
     await send.value
     XCTAssertFalse(store.isAIChatThreadRunning(active.id))
+    XCTAssertFalse(store.isAIChatThreadRunningOnCurrentHost(active.id))
     XCTAssertEqual(store.openClawMessages.last?.content, "Local answer after syncing")
     store.flushDeferredAIChatTranscriptPersistence()
     try await store.waitForAIChatTranscriptPersistenceForTesting()
