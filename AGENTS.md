@@ -37,6 +37,14 @@ memory is the source of truth.
 5. Choose the smallest affected surface and its focused tests before making a
    broad change. Check documentation impact at the same time as code impact.
 
+## Native Org2 tooling
+
+Use Org2's native CLI by default for Org/Org2 operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Org2 workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with `org2 agent capabilities` and `org2 COMMAND --help` before choosing a workaround. Org2 is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.
+
+Do not invoke `emacs`, `emacsclient`, batch Emacs Lisp, or an Emacs Org exporter as an implicit fallback. Do not assume Emacs is installed, probe for it, or install it for ordinary Org2 work. Use Emacs only when the user explicitly requests an Emacs-specific task. This does not prohibit other tools for work outside Org2's scope.
+
+If a native operation appears missing or broken, check the installed version, capabilities, and relevant help first. Distinguish a missing executable, permission restriction, or unavailable tool from a confirmed Org2 capability gap; do not bypass access or review boundaries. State the exact limitation and use a small, supported, reviewable alternative when available. Never silently substitute GNU Org behavior or execute preserved unsupported formulas or source blocks. If this is authorized OpenOrg/Org2 development with repository access, reproduce and fix the shortcoming and add a focused regression test. Otherwise, suggest opening an issue at https://github.com/aviaviavi/org2/issues and prepare a sanitized report with the version, command/tool, minimal input, expected and actual behavior, and workaround. Do not publish an issue or private corpus content without the user's authorization. If shell execution is unavailable, use the exposed tools and explain any remaining limitation rather than inventing command results.
+
 ## Source of truth and safety
 
 - Treat inspectable plain text as canonical. Derived indexes, compiled context,

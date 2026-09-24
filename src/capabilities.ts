@@ -25,6 +25,10 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     sourceOfTruth: "Ordinary .org2 and .org files remain canonical; compiled indexes, views, reports, and app state are derived.",
     discovery: [
       "Run `org2 agent capabilities` for this machine-readable manifest.",
+      "Use the Org2 CLI by default for Org/Org2 operations; prefer exposed Org2 workspace/MCP tools where supported, and honor client-required effective-text reads and reviewed writes.",
+      "Org2 is independent of Emacs. Do not assume Emacs is installed or invoke emacs, emacsclient, batch Emacs Lisp, or Org exporters as an implicit fallback. Use Emacs only for an explicitly requested Emacs-specific task.",
+      "Before declaring a capability gap, check the installed version, capabilities, and command help. Distinguish missing executables, permissions, and unavailable tools from missing features. Use a supported reviewable alternative without bypassing access or review boundaries; never silently execute unsupported formulas or source blocks through GNU Org.",
+      "For a confirmed gap, reproduce and fix it with a regression test when authorized to develop OpenOrg/Org2 in its repository. Otherwise suggest https://github.com/aviaviavi/org2/issues and prepare a sanitized version, command/tool, minimal input, expected/actual behavior, and workaround report. Do not publish issues or private corpus content without user authorization.",
       "Run `org2 --help` for command families and `org2 COMMAND --help` for current flags.",
       "Run `org2 version` or `org2 --version` to inspect the installed package version.",
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",

@@ -241,6 +241,21 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(codex.contains("org2 agent capabilities"))
 
     let claude = context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")
+    // All chat destinations share the native-tool policy, including remote
+    // shell-capable agents and providers with only exposed workspace tools.
+    for prompt in [openClaw, codex, claude,
+      context.codexSystemPrompt(runtimeFilesystemAccess: true),
+      context.systemPrompt(runtime: "bundled"),
+      context.systemPrompt(runtime: "anthropic")] {
+      XCTAssertTrue(prompt.contains("Use Org2's native CLI by default"))
+      XCTAssertTrue(prompt.contains("client-required effective-text reads and reviewed writes take precedence"))
+      XCTAssertTrue(prompt.contains("Do not invoke =emacs=, =emacsclient="))
+      XCTAssertTrue(prompt.contains("Use Emacs only when the user explicitly requests an Emacs-specific task"))
+      XCTAssertTrue(prompt.contains("reproduce and fix the shortcoming"))
+      XCTAssertTrue(prompt.contains("https://github.com/aviaviavi/org2/issues"))
+      XCTAssertTrue(prompt.contains("Do not publish an issue or private corpus content"))
+      XCTAssertTrue(prompt.contains("If shell execution is unavailable, use the exposed tools"))
+    }
     XCTAssertTrue(claude.contains("Execution runtime: claude"))
     XCTAssertTrue(claude.contains("running locally through the installed Claude Code CLI"))
     XCTAssertFalse(claude.contains("Use the client-provided Org2 workspace tools for any other corpus reads or writes."))

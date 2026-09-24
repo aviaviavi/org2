@@ -106,6 +106,17 @@ for (const required of [
 if (!readme.includes("mcp-and-skills.html") || !readme.includes("org2 skill install")) {
   fail("README is missing the MCP and general-skill entry point");
 }
+for (const [label, text] of [
+  ["capability manifest", JSON.stringify(manifest)],
+  ["agent quickstart", fs.readFileSync(path.join(repoRoot, "docs/site/agent-quickstart.org"), "utf8")],
+  ["LLM entry point", fs.readFileSync(path.join(repoRoot, "docs/site/llms.txt"), "utf8")],
+  ["general skill", generalSkill],
+  ["repository agent guide", agents],
+]) {
+  for (const required of ["Emacs", "emacsclient", "https://github.com/aviaviavi/org2/issues", "reviewed writes"]) {
+    if (!text.includes(required)) fail(`${label} is missing native-tool guidance: ${required}`);
+  }
+}
 if (!generalSkill.includes("name: org2") || !generalSkill.includes("org2 agent capabilities")) {
   fail("general Org2 skill is missing required discovery guidance");
 }
