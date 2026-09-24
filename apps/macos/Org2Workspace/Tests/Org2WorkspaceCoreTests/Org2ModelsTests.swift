@@ -309,6 +309,19 @@ private actor OpenClawStoppedRecoveryRecorder {
   }
 }
 
+private actor OpenClawTerminalRecoveryRecorder {
+  private var attempts = 0
+
+  func recover(_: OpenClawPendingTurn) throws -> String {
+    attempts += 1
+    throw OpenClawGatewayError.acceptedRunTerminated("OpenClaw session ended with status failed.")
+  }
+
+  func attemptCount() -> Int {
+    attempts
+  }
+}
+
 private actor OpenClawQueuedSendRecorder {
   private var calls: [[String]] = []
 
@@ -1960,7 +1973,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testOpenClawGatewayReconcilesTruncatedHistoryByRequestStartTime() {
+  func testOpenClawGatewayDoesNotClaimReplyWhenRequestMarkerWasTruncated() {
     let payload: [String: Any] = [
       "messages": [
         [
@@ -1987,7 +2000,7 @@ final class Org2ModelsTests: XCTestCase {
         runID: "missing-from-truncated-history",
         requestStartedAtMilliseconds: 2_000
       ),
-      .completed("Fresh reply")
+      .pending(hasActiveRun: false, activeRunIDs: [])
     )
   }
 
@@ -4022,6 +4035,119 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testTerminalOpenClawRecoveryFailsOnlyAcceptedTurnAndDoesNotRetry() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-terminal-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let failedMessage = OpenClawChatMessage(
+      role: .user,
+      content: "This accepted run failed",
+      deliveryStatus: .sending
+    )
+    let queuedMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Keep this follow-up queued",
+      deliveryStatus: .sending,
+      deliveryKind: .followUp
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: failedMessage.id,
+      runID: "accepted-terminal-run",
+      idempotencyKey: "stable-request-key",
+      agentID: "main",
+      gatewayMessage: "Persisted request"
+    )
+    let thread = OpenClawChatThread(
+      title: "Terminal recovery",
+      sessionKey: "agent:main:org2-workspace:terminal-recovery",
+      messages: [failedMessage, queuedMessage],
+      pendingTurn: pendingTurn
+    )
+    try JSONEncoder().encode(OpenClawTranscriptFixture(
+      version: 6,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )).write(to: transcript, options: .atomic)
+
+    let recorder = OpenClawTerminalRecoveryRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in "Follow-up succeeded" },
+      openClawRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
+    )
+
+    await store.recoverPendingOpenClawTurns()
+    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertEqual(store.openClawMessages[0].deliveryStatus, .failed)
+    XCTAssertEqual(store.openClawMessages[1].deliveryStatus, .sent)
+    XCTAssertEqual(store.openClawMessages[2].content, "Follow-up succeeded")
+    let initialAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(initialAttemptCount, 1)
+
+    await store.recoverPendingOpenClawTurns()
+    let finalAttemptCount = await recorder.attemptCount()
+    XCTAssertEqual(finalAttemptCount, 1)
+  }
+
+  @MainActor
+  func testAcceptedGatewayRunIDIsPersistedSeparatelyFromIdempotencyKey() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-accepted-id-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Persist the accepted ID",
+      deliveryStatus: .sending
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: userMessage.id,
+      runID: "stable-request-key",
+      idempotencyKey: "stable-request-key",
+      agentID: "main",
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      gatewayMessage: "Persisted request"
+    )
+    let thread = OpenClawChatThread(
+      title: "Accepted ID",
+      sessionKey: "agent:main:org2-workspace:accepted-id",
+      messages: [userMessage],
+      pendingTurn: pendingTurn
+    )
+    try JSONEncoder().encode(OpenClawTranscriptFixture(
+      version: 6,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )).write(to: transcript, options: .atomic)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+
+    await store.handleOpenClawGatewayEventDurably(
+      .accepted(runID: "gateway-accepted-id"),
+      threadID: thread.id,
+      destinationID: AIChatDestinationConfiguration.openClawID,
+      expectedUserMessageID: userMessage.id
+    )
+
+    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn?.runID, "gateway-accepted-id")
+    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
+    let reloaded = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(reloaded.selectedOpenClawChatThread?.pendingTurn?.runID, "gateway-accepted-id")
+    XCTAssertEqual(reloaded.selectedOpenClawChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
+  }
+
+  @MainActor
   func testPendingOpenClawTurnCanStopWithoutLiveGatewayConnection() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-stop-offline-recovery-\(UUID().uuidString)", isDirectory: true)
@@ -4099,6 +4225,49 @@ final class Org2ModelsTests: XCTestCase {
     ])
     XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sent)
     XCTAssertNil(store.openClawMessages.first?.sendFailure)
+  }
+
+  @MainActor
+  func testSyncedHostCannotStopAnotherHostsPendingRun() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-remote-owner-stop-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: "Still running elsewhere",
+      deliveryStatus: .sending
+    )
+    let pendingTurn = OpenClawPendingTurn(
+      userMessageID: userMessage.id,
+      runID: "remote-owned-run",
+      idempotencyKey: "remote-owned-key",
+      dispatchOwnerID: "definitely-another-host.invalid",
+      agentID: "main",
+      gatewayMessage: "Persisted request"
+    )
+    let thread = OpenClawChatThread(
+      title: "Remote-owned run",
+      sessionKey: "agent:main:org2-workspace:remote-owned",
+      messages: [userMessage],
+      pendingTurn: pendingTurn
+    )
+    try JSONEncoder().encode(OpenClawTranscriptFixture(
+      version: 6,
+      messages: nil,
+      threads: [thread],
+      selectedThreadID: thread.id
+    )).write(to: transcript, options: .atomic)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+
+    let didStop = await store.stopAIChatRemoteRun(threadID: thread.id)
+    XCTAssertFalse(didStop)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn, pendingTurn)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
   }
 
   @MainActor

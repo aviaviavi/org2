@@ -444,6 +444,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
   case sessionConfigurationRejected(code: String?, message: String)
   case emptyResponse
   case aborted(String?)
+  case acceptedRunTerminated(String)
   case acceptedRunRecovery(String)
 
   public var errorDescription: String? {
@@ -462,6 +463,8 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
       return "OpenClaw finished without a response."
     case .aborted(let message):
       return message?.isEmpty == false ? "OpenClaw run stopped: \(message!)" : "OpenClaw run stopped."
+    case .acceptedRunTerminated(let message):
+      return message
     case .acceptedRunRecovery(let message):
       return "OpenClaw accepted the run but could not reconcile its result: \(message)"
     }
@@ -474,7 +477,7 @@ public enum OpenClawGatewayError: LocalizedError, Sendable {
     case .gateway(let code, let message):
       return code == "NOT_PAIRED"
         || (code == "INVALID_REQUEST" && message.localizedCaseInsensitiveContains("missing scope"))
-    case .sessionConfigurationRejected, .emptyResponse, .aborted, .acceptedRunRecovery:
+    case .sessionConfigurationRejected, .emptyResponse, .aborted, .acceptedRunTerminated, .acceptedRunRecovery:
       return false
     }
   }
@@ -637,8 +640,40 @@ private final class OpenClawWebSocketSessionDelegate: NSObject, URLSessionWebSoc
     }
   }
 
-  func closeInfo(for task: URLSessionWebSocketTask) -> CloseInfo? {
-    lock.withLock { closeInfoByTaskID[task.taskIdentifier] }
+  func takeCloseInfo(for task: URLSessionWebSocketTask) -> CloseInfo? {
+    lock.withLock { closeInfoByTaskID.removeValue(forKey: task.taskIdentifier) }
+  }
+
+  func removeCloseInfo(for task: URLSessionWebSocketTask) {
+    _ = lock.withLock { closeInfoByTaskID.removeValue(forKey: task.taskIdentifier) }
+  }
+}
+
+private actor OpenClawRecoveryConnectionLimiter {
+  static let shared = OpenClawRecoveryConnectionLimiter(limit: 3)
+
+  private let limit: Int
+  private var active = 0
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  init(limit: Int) {
+    self.limit = max(1, limit)
+  }
+
+  func acquire() async {
+    guard active >= limit else {
+      active += 1
+      return
+    }
+    await withCheckedContinuation { waiters.append($0) }
+  }
+
+  func release() {
+    guard !waiters.isEmpty else {
+      active = max(0, active - 1)
+      return
+    }
+    waiters.removeFirst().resume()
   }
 }
 
@@ -664,6 +699,7 @@ public actor OpenClawGatewayClient {
   private var pendingSteerAcknowledgements: [String: CheckedContinuation<Void, Error>] = [:]
   private var earlySteerAcknowledgements: [String: [String: Any]] = [:]
   private var commentaryTextByItemID: [String: String] = [:]
+  private var isShutdown = false
 
   public init(settings: OpenClawGatewaySettings) {
     self.settings = settings
@@ -938,6 +974,21 @@ public actor OpenClawGatewayClient {
 
   deinit {
     socket?.cancel(with: .goingAway, reason: nil)
+    session.invalidateAndCancel()
+  }
+
+  /// Releases URLSession-owned WebSocket resources as soon as a one-turn
+  /// client leaves the workspace's active-client table. URLSession otherwise
+  /// retains closed task descriptors until invalidation.
+  public func shutdown() {
+    guard !isShutdown else { return }
+    isShutdown = true
+    if let socket {
+      socket.cancel(with: .goingAway, reason: nil)
+      sessionDelegate.removeCloseInfo(for: socket)
+    }
+    self.socket = nil
+    session.invalidateAndCancel()
   }
 
   public func send(
@@ -953,6 +1004,7 @@ public actor OpenClawGatewayClient {
     onEvent: @escaping EventHandler
   ) async throws -> String {
     let requestStartedAtMilliseconds = (requestStartedAt ?? Date()).timeIntervalSince1970 * 1_000
+    let requestIdempotencyKey = idempotencyKey ?? UUID().uuidString.lowercased()
     stopRequested = false
     runID = nil
     commentaryTextByItemID.removeAll(keepingCapacity: true)
@@ -993,7 +1045,7 @@ public actor OpenClawGatewayClient {
         }
       }
 
-      let proposedRunID = idempotencyKey ?? UUID().uuidString.lowercased()
+      let proposedRunID = requestIdempotencyKey
       let sendID = UUID().uuidString.lowercased()
       var params: [String: Any] = [
         "sessionKey": sessionKey,
@@ -1038,6 +1090,7 @@ public actor OpenClawGatewayClient {
           ) {
             return try await waitAndReconcile(
               runID: acceptedRunID,
+              historyCorrelationID: proposedRunID,
               sessionKey: sessionKey,
               agentID: agentID,
               requestStartedAtMilliseconds: requestStartedAtMilliseconds,
@@ -1123,6 +1176,7 @@ public actor OpenClawGatewayClient {
       if let runID, error.permitsHTTPFallback {
         return try await recoverAcceptedRunWithoutResending(
           runID: runID,
+          historyCorrelationID: requestIdempotencyKey,
           sessionKey: sessionKey,
           agentID: agentID,
           requestStartedAtMilliseconds: requestStartedAtMilliseconds,
@@ -1138,6 +1192,7 @@ public actor OpenClawGatewayClient {
       if let runID {
         return try await recoverAcceptedRunWithoutResending(
           runID: runID,
+          historyCorrelationID: requestIdempotencyKey,
           sessionKey: sessionKey,
           agentID: agentID,
           requestStartedAtMilliseconds: requestStartedAtMilliseconds,
@@ -1153,6 +1208,7 @@ public actor OpenClawGatewayClient {
   /// idempotency key: the Gateway already gave us the durable run identifier.
   public func reconnectAcceptedRun(
     runID: String,
+    idempotencyKey: String? = nil,
     sessionKey: String,
     agentID: String,
     requestStartedAt: Date,
@@ -1164,6 +1220,7 @@ public actor OpenClawGatewayClient {
     self.agentID = agentID
     return try await recoverAcceptedRunWithoutResending(
       runID: runID,
+      historyCorrelationID: idempotencyKey ?? runID,
       sessionKey: sessionKey,
       agentID: agentID,
       requestStartedAtMilliseconds: requestStartedAt.timeIntervalSince1970 * 1_000,
@@ -1186,6 +1243,7 @@ public actor OpenClawGatewayClient {
 
   private func recoverAcceptedRunWithoutResending(
     runID: String,
+    historyCorrelationID: String,
     sessionKey: String,
     agentID: String,
     requestStartedAtMilliseconds: Double,
@@ -1194,6 +1252,7 @@ public actor OpenClawGatewayClient {
     do {
       return try await recoverAcceptedRun(
         runID: runID,
+        historyCorrelationID: historyCorrelationID,
         sessionKey: sessionKey,
         agentID: agentID,
         requestStartedAtMilliseconds: requestStartedAtMilliseconds,
@@ -1202,6 +1261,7 @@ public actor OpenClawGatewayClient {
     } catch let error as OpenClawGatewayError {
       if case .acceptedRunRecovery = error { throw error }
       if case .aborted = error { throw error }
+      if case .acceptedRunTerminated = error { throw error }
       throw OpenClawGatewayError.acceptedRunRecovery(error.localizedDescription)
     } catch {
       throw OpenClawGatewayError.acceptedRunRecovery(error.localizedDescription)
@@ -1647,6 +1707,7 @@ public actor OpenClawGatewayClient {
 
   private func recoverAcceptedRun(
     runID: String,
+    historyCorrelationID: String,
     sessionKey: String,
     agentID: String,
     requestStartedAtMilliseconds: Double,
@@ -1655,10 +1716,12 @@ public actor OpenClawGatewayClient {
     await onEvent(.connection(.reconnecting, "The run was already accepted; reconnecting without resending it."))
     var lastError: Error?
     for attempt in 1...5 {
+      await OpenClawRecoveryConnectionLimiter.shared.acquire()
       do {
-        if attempt > 1 {
-          try await Task.sleep(for: .seconds(min(attempt * 2, 8)))
-        }
+        defer { Task { await OpenClawRecoveryConnectionLimiter.shared.release() } }
+        let backoffMilliseconds = attempt > 1 ? min(attempt * 2_000, 8_000) : 0
+        let jitterMilliseconds = Int.random(in: 50...750)
+        try await Task.sleep(for: .milliseconds(backoffMilliseconds + jitterMilliseconds))
         let nextSocket = try makeSocket()
         socket = nextSocket
         nextSocket.resume()
@@ -1666,16 +1729,23 @@ public actor OpenClawGatewayClient {
         await onEvent(.connection(.connected, "Reconnected to accepted run \(String(runID.prefix(8)))."))
         return try await waitAndReconcile(
           runID: runID,
+          historyCorrelationID: historyCorrelationID,
           sessionKey: sessionKey,
           agentID: agentID,
           requestStartedAtMilliseconds: requestStartedAtMilliseconds,
           onEvent: onEvent,
           on: nextSocket
         )
-      } catch {
+      } catch let error as OpenClawGatewayError {
         if stopRequested { throw OpenClawGatewayError.aborted(nil) }
+        if case .acceptedRunTerminated = error { throw error }
+        if case .aborted = error { throw error }
         lastError = error
-        socket?.cancel(with: .goingAway, reason: nil)
+        if let failedSocket = socket {
+          failedSocket.cancel(with: .goingAway, reason: nil)
+          sessionDelegate.removeCloseInfo(for: failedSocket)
+        }
+        socket = nil
         await onEvent(.connection(.reconnecting, "Reconnect attempt \(attempt) failed."))
       }
     }
@@ -1687,6 +1757,7 @@ public actor OpenClawGatewayClient {
 
   private func waitAndReconcile(
     runID: String,
+    historyCorrelationID: String,
     sessionKey: String,
     agentID: String,
     requestStartedAtMilliseconds: Double,
@@ -1731,7 +1802,7 @@ public actor OpenClawGatewayClient {
         let payload = Self.dictionary(frame["payload"]) ?? [:]
         let status = Self.string(payload["status"]) ?? "timeout"
         let reconciliation = try await loadReconciledSession(
-          runID: runID,
+          historyCorrelationID: historyCorrelationID,
           sessionKey: sessionKey,
           agentID: agentID,
           requestStartedAtMilliseconds: requestStartedAtMilliseconds,
@@ -1742,22 +1813,21 @@ public actor OpenClawGatewayClient {
         case .completed(let reply):
           return reply
         case .failed(let message):
-          throw OpenClawGatewayError.gateway(code: nil, message: message)
+          throw OpenClawGatewayError.acceptedRunTerminated(message)
         case .pending(let hasActiveRun, let activeRunIDs):
           observedRunIDs.formUnion(activeRunIDs)
           if let activeRunID = activeRunIDs.last {
             waitRunID = activeRunID
           }
           if status == "error", !hasActiveRun {
-            throw OpenClawGatewayError.gateway(
-              code: nil,
-              message: Self.string(payload["error"]) ?? "OpenClaw run failed after reconnecting."
+            throw OpenClawGatewayError.acceptedRunTerminated(
+              Self.string(payload["error"]) ?? "OpenClaw run failed after reconnecting."
             )
           }
           if status == "ok", !hasActiveRun {
             terminalPollsWithoutReply += 1
             if terminalPollsWithoutReply >= 3 {
-              throw OpenClawGatewayError.emptyResponse
+              throw OpenClawGatewayError.acceptedRunTerminated("OpenClaw finished without a response.")
             }
           } else {
             terminalPollsWithoutReply = 0
@@ -1771,7 +1841,7 @@ public actor OpenClawGatewayClient {
   }
 
   private func loadReconciledSession(
-    runID: String,
+    historyCorrelationID: String,
     sessionKey: String,
     agentID: String,
     requestStartedAtMilliseconds: Double,
@@ -1791,7 +1861,7 @@ public actor OpenClawGatewayClient {
       let payload = Self.dictionary(frame["payload"]) ?? [:]
       return Self.chatHistoryReconciliation(
         from: payload,
-        runID: runID,
+        runID: historyCorrelationID,
         requestStartedAtMilliseconds: requestStartedAtMilliseconds
       )
     }
@@ -1810,17 +1880,13 @@ public actor OpenClawGatewayClient {
       return string(dictionary(message["__openclaw"])?["idempotencyKey"]) == requestMarker
     }
 
-    let candidateMessages: [Any]
-    if let requestIndex {
-      candidateMessages = Array(messages.suffix(from: messages.index(after: requestIndex)))
-    } else {
-      candidateMessages = messages.filter { value in
-        guard let message = dictionary(value),
-              let timestamp = milliseconds(message["timestamp"])
-        else { return false }
-        return timestamp >= requestStartedAtMilliseconds
-      }
-    }
+    // Timestamps cannot safely identify a turn when the request marker has
+    // fallen outside the bounded history window. Another client may have sent
+    // a later turn on the same session, so remain unreconciled instead of
+    // attaching an arbitrary assistant response.
+    let candidateMessages: [Any] = requestIndex.map {
+      Array(messages.suffix(from: messages.index(after: $0)))
+    } ?? []
 
     for value in candidateMessages.reversed() {
       guard let message = dictionary(value), string(message["role"]) == "assistant" else { continue }
@@ -1836,10 +1902,7 @@ public actor OpenClawGatewayClient {
     let hasActiveRun = bool(sessionInfo["hasActiveRun"]) ?? !activeRunIDs.isEmpty
     let status = string(sessionInfo["status"])?.lowercased() ?? ""
     let terminalStatuses = Set(["done", "completed", "succeeded", "failed", "error", "aborted", "cancelled", "canceled", "timed_out"])
-    let terminalTimestamp = milliseconds(sessionInfo["endedAt"])
-      ?? milliseconds(sessionInfo["updatedAt"])
-      ?? 0
-    let belongsToRequest = requestIndex != nil || terminalTimestamp >= requestStartedAtMilliseconds
+    let belongsToRequest = requestIndex != nil
 
     guard !hasActiveRun, terminalStatuses.contains(status), belongsToRequest else {
       return .pending(hasActiveRun: hasActiveRun, activeRunIDs: activeRunIDs)
@@ -1891,7 +1954,7 @@ public actor OpenClawGatewayClient {
       // response frame, but it preserves the useful reason on the task.
       var delegateCloseInfo: OpenClawWebSocketSessionDelegate.CloseInfo?
       for _ in 0..<5 where delegateCloseInfo == nil {
-        delegateCloseInfo = sessionDelegate.closeInfo(for: socket)
+        delegateCloseInfo = sessionDelegate.takeCloseInfo(for: socket)
         if delegateCloseInfo == nil { try? await Task.sleep(for: .milliseconds(50)) }
       }
       if let reasonData = socket.closeReason ?? delegateCloseInfo?.reason,

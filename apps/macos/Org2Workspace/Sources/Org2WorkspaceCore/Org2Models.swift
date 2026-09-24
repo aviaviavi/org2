@@ -2727,6 +2727,12 @@ public struct OpenClawResourceReference: Hashable, Codable, Sendable {
 public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   public let userMessageID: UUID
   public let runID: String
+  /// Stable client-generated key used to correlate `chat.history` after the
+  /// Gateway assigns a different accepted run identifier.
+  public let idempotencyKey: String?
+  /// Stable machine owner for dispatch/recovery. A synced peer may append a
+  /// follow-up, but must not redispatch or stop this host's active provider run.
+  public let dispatchOwnerID: String?
   public let agentID: String
   public let destinationID: String?
   public let gatewayMessage: String
@@ -2736,6 +2742,8 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   public init(
     userMessageID: UUID,
     runID: String,
+    idempotencyKey: String? = nil,
+    dispatchOwnerID: String? = nil,
     agentID: String,
     destinationID: String? = nil,
     gatewayMessage: String,
@@ -2744,11 +2752,31 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   ) {
     self.userMessageID = userMessageID
     self.runID = runID
+    self.idempotencyKey = idempotencyKey
+    self.dispatchOwnerID = dispatchOwnerID
     self.agentID = agentID
     self.destinationID = destinationID
     self.gatewayMessage = gatewayMessage
     self.contextSectionFingerprints = contextSectionFingerprints
     self.startedAt = startedAt
+  }
+
+  public var historyCorrelationID: String {
+    idempotencyKey ?? runID
+  }
+
+  public func replacingAcceptedRunID(_ acceptedRunID: String) -> OpenClawPendingTurn {
+    OpenClawPendingTurn(
+      userMessageID: userMessageID,
+      runID: acceptedRunID,
+      idempotencyKey: historyCorrelationID,
+      dispatchOwnerID: dispatchOwnerID,
+      agentID: agentID,
+      destinationID: destinationID,
+      gatewayMessage: gatewayMessage,
+      contextSectionFingerprints: contextSectionFingerprints,
+      startedAt: startedAt
+    )
   }
 }
 

@@ -2153,6 +2153,7 @@ public final class SourceEditorInteractionModel: ObservableObject {
 @MainActor
 @Observable
 public final class WorkspaceStore {
+  private static let openClawDispatchOwnerID = ProcessInfo.processInfo.hostName.lowercased()
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
   nonisolated public static let agendaOpenStatusFilter = "__open__"
@@ -22681,6 +22682,13 @@ public final class WorkspaceStore {
         }
         return false
       }
+      if let ownerID = thread.pendingTurn?.dispatchOwnerID,
+         ownerID != Self.openClawDispatchOwnerID {
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "This OpenClaw run is active on another host"
+        }
+        return false
+      }
       markOpenClawRunStopped(in: threadID)
       return true
     }
@@ -24254,7 +24262,7 @@ public final class WorkspaceStore {
       case .protocolFailure(let detail), .gateway(_, let detail):
         message = detail
       case .invalidEndpoint, .connection, .sessionConfigurationRejected,
-           .emptyResponse, .aborted, .acceptedRunRecovery:
+           .emptyResponse, .aborted, .acceptedRunTerminated, .acceptedRunRecovery:
         return false
       }
       return message.localizedCaseInsensitiveContains("active run")
@@ -24580,6 +24588,11 @@ public final class WorkspaceStore {
       enqueueOpenClawUserMessage(userMessage.id, in: threadID)
     }
     if drainingOpenClawThreadIDs.contains(threadID) {
+      openClawStatusText = openClawQueuedStatusText()
+      return .enqueued(threadID: threadID, shouldDrain: false)
+    }
+    if let ownerID = thread.pendingTurn?.dispatchOwnerID,
+       ownerID != Self.openClawDispatchOwnerID {
       openClawStatusText = openClawQueuedStatusText()
       return .enqueued(threadID: threadID, shouldDrain: false)
     }
@@ -25085,6 +25098,19 @@ public final class WorkspaceStore {
             : openClawQueuedStatusText()
           continue
         }
+        if let gatewayError = error as? OpenClawGatewayError,
+           case .acceptedRunTerminated = gatewayError {
+          replaceOpenClawSendFailure(
+            for: userMessageID,
+            in: threadID,
+            transcriptURL: sendOrigin.transcriptURL,
+            with: failureText
+          )
+          removePendingOpenClawUserMessage(userMessageID, in: threadID)
+          await failAgentAutomationThread(threadID: threadID, reason: failureText)
+          if openClawPendingUserMessageIDs(for: threadID).isEmpty { return }
+          continue
+        }
         markPendingOpenClawMessagesFailed(
           failureText,
           in: threadID,
@@ -25098,6 +25124,26 @@ public final class WorkspaceStore {
   }
 
   func recoverPendingOpenClawTurns() async {
+    let unrecoverable = openClawChatThreads.compactMap { thread -> (UUID, OpenClawPendingTurn, String)? in
+      guard let pendingTurn = thread.pendingTurn else { return nil }
+      guard pendingTurn.dispatchOwnerID == nil
+        || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
+      else { return nil }
+      let destinationID = pendingTurn.destinationID ?? thread.destinationID
+      guard aiChatDestination(id: destinationID)?.adapter != .openClaw else { return nil }
+      return (
+        thread.id,
+        pendingTurn,
+        "The saved AI destination is no longer available. Retry this message after choosing a destination."
+      )
+    }
+    for (threadID, pendingTurn, message) in unrecoverable {
+      await failPendingOpenClawTurnDefinitively(
+        pendingTurn,
+        in: threadID,
+        failureText: message
+      )
+    }
     let tasks = pendingOpenClawRecoveryThreadIDs().map { threadID in
       Task { @MainActor [weak self] in
         await self?.recoverPendingOpenClawTurn(in: threadID)
@@ -25111,6 +25157,9 @@ public final class WorkspaceStore {
   private func pendingOpenClawRecoveryThreadIDs() -> [UUID] {
     openClawChatThreads.compactMap { thread -> UUID? in
       guard let pendingTurn = thread.pendingTurn else { return nil }
+      guard pendingTurn.dispatchOwnerID == nil
+        || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
+      else { return nil }
       let destinationID = pendingTurn.destinationID ?? thread.destinationID
       return aiChatDestination(id: destinationID)?.adapter == .openClaw ? thread.id : nil
     }
@@ -25122,6 +25171,9 @@ public final class WorkspaceStore {
     else {
       return false
     }
+    guard pendingTurn.dispatchOwnerID == nil
+      || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
+    else { return false }
     let destinationID = pendingTurn.destinationID ?? thread.destinationID
     return aiChatDestination(id: destinationID)?.adapter == .openClaw
   }
@@ -25202,17 +25254,25 @@ public final class WorkspaceStore {
           )
         )
         openClawGatewayClientsByThreadID[threadID] = gateway
-        reply = try await gateway.reconnectAcceptedRun(
-          runID: pendingTurn.runID,
-          sessionKey: thread.sessionKey,
-          agentID: pendingTurn.agentID,
-          requestStartedAt: pendingTurn.startedAt
-        ) { [weak self] event in
-          await self?.handleOpenClawGatewayEvent(
-            event,
-            threadID: threadID,
-            destinationID: pendingDestinationID
-          )
+        do {
+          reply = try await gateway.reconnectAcceptedRun(
+            runID: pendingTurn.runID,
+            idempotencyKey: pendingTurn.historyCorrelationID,
+            sessionKey: thread.sessionKey,
+            agentID: pendingTurn.agentID,
+            requestStartedAt: pendingTurn.startedAt
+          ) { [weak self] event in
+            await self?.handleOpenClawGatewayEventDurably(
+              event,
+              threadID: threadID,
+              destinationID: pendingDestinationID,
+              expectedUserMessageID: pendingTurn.userMessageID
+            )
+          }
+          await gateway.shutdown()
+        } catch {
+          await gateway.shutdown()
+          throw error
         }
       }
       commitAcceptedOpenClawPersistentContext(
@@ -25223,7 +25283,7 @@ public final class WorkspaceStore {
       let stillPending = openClawChatThread(
         threadID,
         transcriptURL: sendOrigin.transcriptURL
-      )?.pendingTurn?.runID == pendingTurn.runID
+      )?.pendingTurn?.userMessageID == pendingTurn.userMessageID
       if stillPending {
         _ = insertOpenClawReply(
           reply,
@@ -25250,8 +25310,20 @@ public final class WorkspaceStore {
       let pendingTurnStillExists = openClawChatThread(
         threadID,
         transcriptURL: sendOrigin.transcriptURL
-      )?.pendingTurn?.runID == pendingTurn.runID
-      if Self.openClawRunWasStopped(after: error) || !pendingTurnStillExists {
+      )?.pendingTurn?.userMessageID == pendingTurn.userMessageID
+      if let gatewayError = error as? OpenClawGatewayError,
+         case .acceptedRunTerminated = gatewayError,
+         pendingTurnStillExists {
+        await failPendingOpenClawTurnDefinitively(
+          pendingTurn,
+          in: threadID,
+          transcriptURL: sendOrigin.transcriptURL,
+          failureText: error.localizedDescription
+        )
+        // The failed accepted turn is terminal; any explicit follow-up remains
+        // a separate queued request and may continue normally.
+        completed = true
+      } else if Self.openClawRunWasStopped(after: error) || !pendingTurnStillExists {
         markOpenClawRunStopped(
           in: threadID,
           transcriptURL: sendOrigin.transcriptURL
@@ -26931,7 +27003,10 @@ public final class WorkspaceStore {
     let gateway = OpenClawGatewayClient(settings: settings)
     openClawGatewayClientsByThreadID[threadID] = gateway
     prepareOpenClawRunPresentation(for: threadID)
-    defer { openClawGatewayClientsByThreadID.removeValue(forKey: threadID) }
+    defer {
+      openClawGatewayClientsByThreadID.removeValue(forKey: threadID)
+      Task { await gateway.shutdown() }
+    }
 
     let gatewayMessage = Self.openClawGatewayMessage(
       userMessage: latestUserMessage.content,
@@ -26940,7 +27015,9 @@ public final class WorkspaceStore {
     )
     let pendingTurn = OpenClawPendingTurn(
       userMessageID: latestUserMessage.id,
-      runID: UUID().uuidString.lowercased(),
+      runID: latestUserMessage.id.uuidString.lowercased(),
+      idempotencyKey: latestUserMessage.id.uuidString.lowercased(),
+      dispatchOwnerID: Self.openClawDispatchOwnerID,
       agentID: agentID,
       destinationID: destinationID,
       gatewayMessage: gatewayMessage,
@@ -26952,6 +27029,17 @@ public final class WorkspaceStore {
       transcriptURL: sendOrigin.transcriptURL,
       shouldPersist: true
     )
+    guard await persistOpenClawTranscriptDurably(context: sendOrigin.context) else {
+      clearOpenClawPendingTurn(
+        pendingTurn.runID,
+        in: threadID,
+        transcriptURL: sendOrigin.transcriptURL,
+        shouldPersist: false
+      )
+      throw OpenClawGatewayError.protocolFailure(
+        "the pending turn could not be saved before dispatch"
+      )
+    }
     openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
 
     do {
@@ -26965,10 +27053,11 @@ public final class WorkspaceStore {
         idempotencyKey: pendingTurn.runID,
         requestStartedAt: pendingTurn.startedAt
       ) { [weak self] event in
-        await self?.handleOpenClawGatewayEvent(
+        await self?.handleOpenClawGatewayEventDurably(
           event,
           threadID: threadID,
-          destinationID: destinationID
+          destinationID: destinationID,
+          expectedUserMessageID: pendingTurn.userMessageID
         )
       }
       if let contextDelivery {
@@ -27004,10 +27093,11 @@ public final class WorkspaceStore {
           idempotencyKey: pendingTurn.runID,
           requestStartedAt: pendingTurn.startedAt
         ) { [weak self] event in
-          await self?.handleOpenClawGatewayEvent(
+          await self?.handleOpenClawGatewayEventDurably(
             event,
             threadID: threadID,
-            destinationID: destinationID
+            destinationID: destinationID,
+            expectedUserMessageID: pendingTurn.userMessageID
           )
         }
         if let contextDelivery {
@@ -27312,6 +27402,49 @@ public final class WorkspaceStore {
           ?? openClawTranscriptURL
       )
     }
+  }
+
+  func handleOpenClawGatewayEventDurably(
+    _ event: OpenClawGatewayRunEvent,
+    threadID: UUID,
+    destinationID: String,
+    expectedUserMessageID: UUID
+  ) async {
+    guard let currentPendingTurn = openClawChatThread(
+      threadID,
+      transcriptURL: aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+        ?? openClawTranscriptURL
+    )?.pendingTurn,
+          currentPendingTurn.userMessageID == expectedUserMessageID
+    else {
+      // A delayed callback from a stopped or superseded run must never mutate
+      // the next run's context, trace, or streaming presentation.
+      return
+    }
+
+    if case .accepted(let acceptedRunID) = event,
+       currentPendingTurn.runID != acceptedRunID {
+      let transcriptURL = aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+        ?? openClawTranscriptURL
+      replaceOpenClawPendingTurn(
+        currentPendingTurn.replacingAcceptedRunID(acceptedRunID),
+        in: threadID,
+        transcriptURL: transcriptURL,
+        shouldPersist: true
+      )
+      let context = aiChatSendOriginsByThreadID[threadID]?.context
+        ?? captureAIChatCorpusContext()
+      guard await persistOpenClawTranscriptDurably(context: context) else {
+        openClawGatewayDetailByThreadID[threadID] =
+          "The accepted run identifier could not be saved for crash recovery."
+        return
+      }
+    }
+    handleOpenClawGatewayEvent(
+      event,
+      threadID: threadID,
+      destinationID: destinationID
+    )
   }
 
   private func prepareOpenClawRunPresentation(for threadID: UUID) {
@@ -28164,6 +28297,36 @@ public final class WorkspaceStore {
     }
   }
 
+  private func failPendingOpenClawTurnDefinitively(
+    _ pendingTurn: OpenClawPendingTurn,
+    in threadID: UUID,
+    transcriptURL: URL? = nil,
+    failureText: String
+  ) async {
+    let targetTranscriptURL = transcriptURL ?? openClawTranscriptURL
+    cancelOpenClawPendingTurnRecovery(for: threadID)
+    replaceOpenClawSendFailure(
+      for: pendingTurn.userMessageID,
+      in: threadID,
+      transcriptURL: targetTranscriptURL,
+      with: failureText
+    )
+    clearOpenClawPendingTurn(
+      pendingTurn.runID,
+      in: threadID,
+      transcriptURL: targetTranscriptURL,
+      shouldPersist: true
+    )
+    removePendingOpenClawUserMessage(pendingTurn.userMessageID, in: threadID)
+    await failAgentAutomationThread(threadID: threadID, reason: failureText)
+    openClawGatewayStateByThreadID[threadID] = .disconnected
+    openClawGatewayDetailByThreadID[threadID] = failureText
+    if selectedOpenClawChatThreadID == threadID,
+       isActiveAIChatTranscript(targetTranscriptURL) {
+      openClawStatusText = "OpenClaw could not complete this turn"
+    }
+  }
+
   private func markOpenClawRunStopped(
     in threadID: UUID,
     transcriptURL: URL? = nil,
@@ -28351,7 +28514,7 @@ public final class WorkspaceStore {
       threadID,
       transcriptURL: targetTranscriptURL
     )?.pendingTurn,
-          pendingTurn.runID == runID
+          pendingTurn.runID == runID || pendingTurn.historyCorrelationID == runID
     else {
       return
     }
@@ -28403,6 +28566,17 @@ public final class WorkspaceStore {
       return
     }
     pending.removeFirst()
+    if pending.isEmpty {
+      openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+    } else {
+      openClawPendingUserMessageIDsByThreadID[threadID] = pending
+    }
+    syncSelectedOpenClawSendState()
+  }
+
+  private func removePendingOpenClawUserMessage(_ messageID: UUID, in threadID: UUID) {
+    guard var pending = openClawPendingUserMessageIDsByThreadID[threadID] else { return }
+    pending.removeAll { $0 == messageID }
     if pending.isEmpty {
       openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
     } else {
@@ -38910,8 +39084,11 @@ public final class WorkspaceStore {
       currentMetadata[$0] != metadataBeforeRead[$0]
         || openClawThreadMessageRevisions[$0] != revisionsBeforeRead[$0]
     })
+    let importedCandidates = migrateAIChatThreadDestinations(
+      loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) }
+    )
     let imported = aiChatReadState.applying(
-      to: migrateAIChatThreadDestinations(loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) }),
+      to: Self.interruptUnresolvedOpenClawSteers(in: importedCandidates).threads,
       transcriptURL: target
     )
     let preserved = openClawChatThreads.filter { protectedIDs.contains($0.id) }
@@ -38937,7 +39114,9 @@ public final class WorkspaceStore {
         .replacingOpenClawChatMetadata(unreadMessageCount: 0)
       openClawThreadMessageMutationCounter &+= 1
       openClawThreadMessageRevisions[thread.id] = openClawThreadMessageMutationCounter
-      let pending = thread.messages.filter { $0.role == .user && $0.deliveryStatus == .sending }.map(\.id)
+      let pending = thread.messages.filter {
+        $0.role == .user && $0.deliveryStatus == .sending && $0.deliveryKind != .steer
+      }.map(\.id)
       if !pending.isEmpty { openClawPendingUserMessageIDsByThreadID[thread.id] = pending }
     }
     if openClawThreadSettlementSettings == syncedAIChatCleanSettlementSettings,
@@ -39433,12 +39612,14 @@ public final class WorkspaceStore {
     hasAuthoritativeAIChatTranscriptState = true
     openClawThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = migrateAIChatThreadDestinations(transcript.threads)
+    let unresolvedSteerRecovery = Self.interruptUnresolvedOpenClawSteers(in: migratedThreads)
+    let restoredThreads = unresolvedSteerRecovery.threads
     let migratedThreadMetadata = zip(transcript.threads, migratedThreads).contains { pair in
       pair.0.sessionKey != pair.1.sessionKey
         || pair.0.destinationID != pair.1.destinationID
     }
     openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(
-      aiChatReadState.applying(to: migratedThreads, transcriptURL: openClawTranscriptURL)
+      aiChatReadState.applying(to: restoredThreads, transcriptURL: openClawTranscriptURL)
     )
     rememberCleanAIChatTranscriptMetadata()
     resetAIChatMessageRevisions(for: openClawChatThreads)
@@ -39457,7 +39638,9 @@ public final class WorkspaceStore {
     let threads = openClawChatThreads
     for thread in threads {
       let messageIDs = thread.messages.compactMap { message in
-        message.role == .user && message.deliveryStatus == .sending ? message.id : nil
+        message.role == .user
+          && message.deliveryStatus == .sending
+          && message.deliveryKind != .steer ? message.id : nil
       }
       if messageIDs.isEmpty {
         if !drainingOpenClawThreadIDs.contains(thread.id) {
@@ -39482,9 +39665,36 @@ public final class WorkspaceStore {
     } else {
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     }
-    if shouldPersist || (allowsMaintenanceWrites && (migratedThreadMetadata || !autoSettledIDs.isEmpty)) {
+    if shouldPersist || (allowsMaintenanceWrites && (
+      migratedThreadMetadata
+        || unresolvedSteerRecovery.changed
+        || !autoSettledIDs.isEmpty
+    )) {
       persistOpenClawTranscript()
     }
+  }
+
+  nonisolated private static func interruptUnresolvedOpenClawSteers(
+    in threads: [OpenClawChatThread]
+  ) -> (threads: [OpenClawChatThread], changed: Bool) {
+    var changed = false
+    let recovered = threads.map { thread in
+      var threadChanged = false
+      let messages = thread.messages.map { message in
+        guard message.role == .user,
+              message.deliveryStatus == .sending,
+              message.deliveryKind == .steer
+        else { return message }
+        changed = true
+        threadChanged = true
+        return message.replacingDeliveryStatus(
+          .interrupted,
+          sendFailure: "This steer was interrupted before its acknowledgement. Retry it to steer the active run again."
+        )
+      }
+      return threadChanged ? thread.replacingMessages(messages) : thread
+    }
+    return (recovered, changed)
   }
 
   nonisolated static func recoveredNamedCodexDestinationID(
