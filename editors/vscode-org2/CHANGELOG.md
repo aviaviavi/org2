@@ -4,6 +4,29 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.4 - 2026-09-24
+
+# OpenOrg 0.8.4
+
+OpenOrg 0.8.4 makes AI chats started from iPhone full workspace clients of the configured agent machine. Codex can now search authorized Org2 files and prior AI chats, read bounded chat history, edit active-corpus files through reviewed local tools, and—when a remote Codex destination is configured—work directly in that machine's writable corpus checkout with the selected filesystem sandbox.
+
+This release also improves chat reliability and polish: delayed replies remain chronologically visible, stopped turns no longer appear active, remote activity ownership is reported correctly, transport initialization can recover cleanly, the assistant/provider picker works at narrow widths, and direct Anthropic destinations load their model catalogs.
+
+Agenda completions no longer reappear after an older refresh finishes. Large approval collections, including Revenue Scout reviews, now switch and render without mounting every large body at once.
+
+## Highlights
+
+- Full configured machine and Org2 corpus access for iOS-originated Codex chats.
+- Search across authorized corpus files and prior AI-chat history.
+- Direct writable-checkout support for managed remote Codex destinations.
+- Reliable chat recovery, reply ordering, and host-owned activity state.
+- Responsive large approval navigation and durable Agenda completion.
+- Improved compact assistant/model controls and provider model discovery.
+
+## Installation
+
+macOS 14 or later is required. The downloadable Mac applications are Developer ID signed, hardened, notarized by Apple, and distributed as separate Apple Silicon and Intel DMGs.
+
 ## 0.8.3 - 2026-09-21
 
 OpenOrg 0.8.3 focuses on reliable long-running AI work, sturdier workspace refreshes, and several everyday editing fixes.
