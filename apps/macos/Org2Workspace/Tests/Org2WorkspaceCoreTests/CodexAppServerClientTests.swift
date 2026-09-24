@@ -246,6 +246,37 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertFalse(claude.contains("Use the client-provided Org2 workspace tools for any other corpus reads or writes."))
   }
 
+  func testRemoteCodexPromptUsesRuntimeCorpusWithoutClientEditBroker() {
+    let localRoot = "/Users/avi/avi.org2"
+    let context = OpenClawWorkspaceContext(
+      localCorpusRoot: localRoot,
+      remoteCorpusRoot: nil,
+      selectedSurface: "AI Chat",
+      selectedLocation: nil,
+      selectedEntrySource: nil,
+      backlinks: nil,
+      agenda: nil,
+      searchQuery: "",
+      searchResults: [],
+      authorizedCorpora: [
+        AIChatCorpusContext(
+          name: "Avi Press",
+          kind: "personal",
+          localRoot: localRoot,
+          isActive: true
+        )
+      ]
+    ).replacingRuntimeCorpusRoot("~/avi.org2")
+
+    let prompt = context.codexSystemPrompt(runtimeFilesystemAccess: true)
+
+    XCTAssertTrue(prompt.contains("Active runtime corpus root: ~/avi.org2"))
+    XCTAssertTrue(prompt.contains("Runtime root: ~/avi.org2"))
+    XCTAssertTrue(prompt.contains("--dir ~/avi.org2 --json"))
+    XCTAssertTrue(prompt.contains("Use normal filesystem tools there"))
+    XCTAssertFalse(prompt.contains("Use the client-provided Org2 workspace tools"))
+  }
+
   func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
     let context = OpenClawWorkspaceContext(
       localCorpusRoot: "/tmp/personal",
@@ -576,6 +607,7 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(arguments.last?.contains("codex app-server daemon start") == true)
     XCTAssertTrue(arguments.last?.contains("openorg-codex-adapter") == true)
     XCTAssertTrue(arguments.last?.contains("base64.b64decode") == true)
+    XCTAssertTrue(CodexAppServerClient.managedRemoteJSONLAdapter.contains("os.path.expanduser"))
     XCTAssertFalse(arguments.last?.contains("codex app-server --listen stdio://") == true)
     XCTAssertFalse(arguments.last?.contains("codex app-server proxy") == true)
     XCTAssertThrowsError(
@@ -606,6 +638,68 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(
       CodexSandboxAccess.fullAccess.turnSandboxPolicy(cwd: cwd),
       .object(["type": .string("dangerFullAccess")])
+    )
+    XCTAssertEqual(
+      CodexSandboxAccess.workspaceWrite.turnSandboxPolicy(workspacePath: "~/avi.org2"),
+      .object([
+        "type": .string("workspaceWrite"),
+        "writableRoots": .array([.string("~/avi.org2")]),
+        "networkAccess": .bool(false)
+      ])
+    )
+  }
+
+  func testRemoteCodexUsesFilesystemInstructionsAndNoClientTools() {
+    let instructions = CodexAppServerClient.developerInstructions(for: .runtimeFilesystem)
+
+    XCTAssertTrue(instructions.contains("normal filesystem and shell tools"))
+    XCTAssertTrue(instructions.contains("does not need to broker, preview, or apply"))
+    XCTAssertFalse(instructions.contains("org2_workspace_patch_apply"))
+    XCTAssertTrue(CodexAppServerClient.dynamicTools(for: .runtimeFilesystem).isEmpty)
+    XCTAssertFalse(CodexAppServerClient.dynamicTools(for: .clientWorkspaceTools).isEmpty)
+  }
+
+  func testRemoteCodexWorkspacePathsResolveOnTheRuntime() throws {
+    let localRoot = URL(fileURLWithPath: "/Users/avi/avi.org2", isDirectory: true)
+    let managed = AIChatDestinationConfiguration(
+      name: "Codex on Scarf",
+      mention: "codex-scarf",
+      adapter: .codexManagedRemote,
+      endpoint: "scarfdemo@scarfs-macbook-air",
+      workspaceRoot: "~/avi.org2"
+    )
+    XCTAssertEqual(
+      try WorkspaceStore.codexRuntimeWorkspacePath(
+        destination: managed,
+        localCorpusRoot: localRoot
+      ),
+      "~/avi.org2"
+    )
+
+    var missing = managed
+    missing.workspaceRoot = ""
+    XCTAssertThrowsError(
+      try WorkspaceStore.codexRuntimeWorkspacePath(
+        destination: missing,
+        localCorpusRoot: localRoot
+      )
+    )
+
+    var websocket = managed
+    websocket.adapter = .codexRemote
+    XCTAssertThrowsError(
+      try WorkspaceStore.codexRuntimeWorkspacePath(
+        destination: websocket,
+        localCorpusRoot: localRoot
+      )
+    )
+    websocket.workspaceRoot = "/srv/avi.org2"
+    XCTAssertEqual(
+      try WorkspaceStore.codexRuntimeWorkspacePath(
+        destination: websocket,
+        localCorpusRoot: localRoot
+      ),
+      "/srv/avi.org2"
     )
   }
 

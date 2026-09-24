@@ -116,7 +116,7 @@ The *Automations* view turns a prompt, optional agent profile, schedule, and any
 
 AI is optional. OpenOrg does not require an OpenOrg account, and ordinary note, Agenda, search, meeting, and document features work without an AI destination.
 
-In *OpenOrg → Settings… → AI Chat*, you can configure named destinations including local Codex, local Claude Code, remote Codex App Server, OpenClaw, OpenAI-compatible providers, Anthropic, OpenRouter, or Ollama. API keys are stored in macOS Keychain, not in the corpus.
+In *OpenOrg → Settings… → AI Chat*, you can configure named destinations including local Codex, local Claude Code, remote Codex App Server, OpenClaw, OpenAI-compatible providers, Anthropic, OpenRouter, or Ollama. A remote Codex destination names the writable Org2 corpus checkout on that runtime; managed SSH destinations expand =~/= on the remote Mac and let Codex edit that checkout directly without routing corpus writes back through OpenOrg. API keys are stored in macOS Keychain, not in the corpus.
 
 The chat header’s *AI Chat Settings…* button opens this settings pane directly. The composer combines model and reasoning effort in one compact pill. Open it to choose a model, adjust supported effort levels with a stepped slider, or reset effort to its default. The destination remains alongside it; narrow panes collapse its label, and very narrow panes put the controls above the send actions. Shared rooms use a compact *Models* menu for their per-destination choices. To configure the built-in OpenClaw gateway, choose *Edit* beside its destination in Settings, then *Configure Gateway…*; gateway connection and pairing controls appear only in that editor. Brief and inactive-thread preferences live in the shared *Conversations* section.
 

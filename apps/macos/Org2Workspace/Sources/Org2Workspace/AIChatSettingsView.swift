@@ -260,9 +260,9 @@ private struct AIChatDestinationEditor: View {
             prompt: Text("wss://codex-host.example/ws")
           )
           TextField(
-            "Workspace on that machine",
+            "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
-            prompt: Text("~/dev/org2")
+            prompt: Text("/home/user/avi.org2")
           )
         } else if destination.adapter == .codexManagedRemote {
           TextField(
@@ -271,9 +271,9 @@ private struct AIChatDestinationEditor: View {
             prompt: Text("scarfs-macbook-air")
           )
           TextField(
-            "Workspace on that machine",
+            "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
-            prompt: Text("~/dev/org2")
+            prompt: Text("~/avi.org2")
           )
         } else if destination.adapter == .openClaw && !isBuiltInOpenClaw {
           TextField(
@@ -442,6 +442,12 @@ private struct AIChatDestinationEditor: View {
        destination.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
       return true
     }
+    if destination.isEnabled,
+       (destination.adapter == .codexRemote
+        || destination.adapter == .codexManagedRemote),
+       destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return true
+    }
     return destination.isEnabled && missingRequiredCredential
   }
 
@@ -489,9 +495,9 @@ private struct AIChatDestinationEditor: View {
     case .claudeLocal:
       return "Starts the locally installed Claude Code CLI and uses its existing Anthropic sign-in. Conversations resume through Claude Code's local session history."
     case .codexRemote:
-      return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost; the workspace path is resolved on the remote machine."
+      return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost. Enter the absolute path of the writable Org2 corpus checkout on that machine; Codex edits it directly."
     case .codexManagedRemote:
-      return "Attaches through SSH to Codex's managed App Server daemon. Accepted turns survive laptop sleep and reconnect after wake; client-hosted workspace tools wait for the Mac. Use a host already configured in Codex or ~/.ssh/config; no WebSocket, tunnel, or bearer token is required."
+      return "Attaches through SSH to Codex's managed App Server daemon. Enter the writable Org2 corpus checkout on that Mac; ~ is expanded there, and Codex edits the checkout directly without waiting for OpenOrg. Accepted turns survive laptop sleep and reconnect after wake."
     case .openClaw:
       return isBuiltInOpenClaw
         ? "This default destination uses the existing OpenClaw Gateway configuration."

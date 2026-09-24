@@ -135,20 +135,31 @@ public enum CodexSandboxAccess: String, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  func turnSandboxPolicy(cwd: URL) -> JSONValue {
+  func turnSandboxPolicy(workspacePath: String) -> JSONValue {
     switch self {
     case .readOnly:
       .object(["type": .string("readOnly")])
     case .workspaceWrite:
       .object([
         "type": .string("workspaceWrite"),
-        "writableRoots": .array([.string(cwd.standardizedFileURL.path)]),
+        "writableRoots": .array([.string(workspacePath)]),
         "networkAccess": .bool(false)
       ])
     case .fullAccess:
       .object(["type": .string("dangerFullAccess")])
     }
   }
+
+  func turnSandboxPolicy(cwd: URL) -> JSONValue {
+    turnSandboxPolicy(workspacePath: cwd.standardizedFileURL.path)
+  }
+}
+
+public enum CodexCorpusAccess: Equatable, Sendable {
+  /// OpenOrg owns the canonical corpus and supplies review-gated workspace tools.
+  case clientWorkspaceTools
+  /// Codex runs inside a writable checkout of the corpus on its own host.
+  case runtimeFilesystem
 }
 
 public struct CodexLoginStart: Equatable, Sendable {
@@ -468,9 +479,10 @@ public actor CodexAppServerClient {
     return #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Managed Remote Codex requires python3 on the remote Mac." >&2; exit 127; }; codex app-server daemon start >/dev/null || exit $?; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(adapter)\"),\"<openorg-codex-adapter>\",\"exec\"))"'"#
   }
 
-  private nonisolated static let managedRemoteJSONLAdapter = #"""
+  nonisolated static let managedRemoteJSONLAdapter = #"""
 import base64
 import hashlib
+import json
 import os
 import socket
 import struct
@@ -523,12 +535,38 @@ def send_frame(opcode, payload):
     with send_lock:
         connection.sendall(prefix + mask + masked)
 
+def expand_runtime_path(value):
+    if not isinstance(value, str) or not value:
+        return value
+    return os.path.abspath(os.path.expanduser(value))
+
+def normalize_client_request(payload):
+    try:
+        request = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return payload
+    params = request.get("params")
+    if not isinstance(params, dict):
+        return payload
+    if "cwd" in params:
+        params["cwd"] = expand_runtime_path(params["cwd"])
+    if isinstance(params.get("runtimeWorkspaceRoots"), list):
+        params["runtimeWorkspaceRoots"] = [
+            expand_runtime_path(path) for path in params["runtimeWorkspaceRoots"]
+        ]
+    sandbox_policy = params.get("sandboxPolicy")
+    if isinstance(sandbox_policy, dict) and isinstance(sandbox_policy.get("writableRoots"), list):
+        sandbox_policy["writableRoots"] = [
+            expand_runtime_path(path) for path in sandbox_policy["writableRoots"]
+        ]
+    return json.dumps(request, separators=(",", ":")).encode("utf-8")
+
 def forward_stdin():
     while True:
         line = sys.stdin.buffer.readline()
         if not line:
             return
-        payload = line.rstrip(b"\r\n")
+        payload = normalize_client_request(line.rstrip(b"\r\n"))
         if payload:
             send_frame(0x1, payload)
 
@@ -778,15 +816,32 @@ while True:
     model: String? = nil,
     sandboxAccess: CodexSandboxAccess = .workspaceWrite
   ) async throws -> String {
+    try await ensureThread(
+      existingThreadID: existingThreadID,
+      workspacePath: cwd.standardizedFileURL.path,
+      corpusAccess: .clientWorkspaceTools,
+      model: model,
+      sandboxAccess: sandboxAccess
+    )
+  }
+
+  public func ensureThread(
+    existingThreadID: String?,
+    workspacePath: String,
+    corpusAccess: CodexCorpusAccess,
+    model: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
+  ) async throws -> String {
     try await connect()
+    let developerInstructions = Self.developerInstructions(for: corpusAccess)
     if let existingThreadID {
       if !loadedThreadIDs.contains(existingThreadID) {
         var params: [String: JSONValue] = [
           "threadId": .string(existingThreadID),
-          "cwd": .string(cwd.standardizedFileURL.path),
+          "cwd": .string(workspacePath),
           "approvalPolicy": .string("never"),
           "sandbox": .string(sandboxAccess.threadSandboxValue),
-          "dynamicTools": .array(Self.localEditDynamicTools)
+          "developerInstructions": .string(developerInstructions)
         ]
         if let model {
           params["model"] = .string(model)
@@ -818,12 +873,14 @@ while True:
     }
 
     var params: [String: JSONValue] = [
-      "cwd": .string(cwd.standardizedFileURL.path),
+      "cwd": .string(workspacePath),
       "approvalPolicy": .string("never"),
       "sandbox": .string(sandboxAccess.threadSandboxValue),
-      "serviceName": .string("org2_workspace"),
-      "developerInstructions": .string(Self.localEditDeveloperInstructions),
-      "dynamicTools": .array(Self.localEditDynamicTools)
+      "serviceName": .string(
+        corpusAccess == .runtimeFilesystem ? "org2_runtime_workspace" : "org2_workspace"
+      ),
+      "developerInstructions": .string(developerInstructions),
+      "dynamicTools": .array(Self.dynamicTools(for: corpusAccess))
     ]
     if let model {
       params["model"] = .string(model)
@@ -845,11 +902,28 @@ while True:
     model: String? = nil,
     sandboxAccess: CodexSandboxAccess = .workspaceWrite
   ) async throws -> CodexThreadResolution {
+    try await ensureThreadRecoveringStaleSession(
+      existingThreadID: existingThreadID,
+      workspacePath: cwd.standardizedFileURL.path,
+      corpusAccess: .clientWorkspaceTools,
+      model: model,
+      sandboxAccess: sandboxAccess
+    )
+  }
+
+  public func ensureThreadRecoveringStaleSession(
+    existingThreadID: String?,
+    workspacePath: String,
+    corpusAccess: CodexCorpusAccess,
+    model: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
+  ) async throws -> CodexThreadResolution {
     guard let existingThreadID else {
       return CodexThreadResolution(
         threadID: try await ensureThread(
           existingThreadID: nil,
-          cwd: cwd,
+          workspacePath: workspacePath,
+          corpusAccess: corpusAccess,
           model: model,
           sandboxAccess: sandboxAccess
         ),
@@ -860,7 +934,8 @@ while True:
       return CodexThreadResolution(
         threadID: try await ensureThread(
           existingThreadID: existingThreadID,
-          cwd: cwd,
+          workspacePath: workspacePath,
+          corpusAccess: corpusAccess,
           model: model,
           sandboxAccess: sandboxAccess
         ),
@@ -876,7 +951,8 @@ while True:
       return CodexThreadResolution(
         threadID: try await ensureThread(
           existingThreadID: nil,
-          cwd: cwd,
+          workspacePath: workspacePath,
+          corpusAccess: corpusAccess,
           model: model,
           sandboxAccess: sandboxAccess
         ),
@@ -918,6 +994,34 @@ while True:
     reasoningEffort: String? = nil,
     sandboxAccess: CodexSandboxAccess = .workspaceWrite
   ) async throws -> CodexTurnResult {
+    try await runTurn(
+      threadID: threadID,
+      turnID: localTurnID,
+      message: message,
+      workspaceContext: workspaceContext,
+      attachments: attachments,
+      workspacePath: cwd.standardizedFileURL.path,
+      corpusAccess: .clientWorkspaceTools,
+      clientUserMessageID: clientUserMessageID,
+      model: model,
+      reasoningEffort: reasoningEffort,
+      sandboxAccess: sandboxAccess
+    )
+  }
+
+  public func runTurn(
+    threadID: String,
+    turnID localTurnID: String,
+    message: String,
+    workspaceContext: String? = nil,
+    attachments: [OpenClawChatAttachment],
+    workspacePath: String,
+    corpusAccess: CodexCorpusAccess,
+    clientUserMessageID: UUID,
+    model: String? = nil,
+    reasoningEffort: String? = nil,
+    sandboxAccess: CodexSandboxAccess = .workspaceWrite
+  ) async throws -> CodexTurnResult {
     try await connect()
     var input: [JSONValue] = [
       .object([
@@ -926,7 +1030,8 @@ while True:
           Self.wrappedUserMessage(
             message,
             localTurnID: localTurnID,
-            workspaceContext: workspaceContext
+            workspaceContext: workspaceContext,
+            corpusAccess: corpusAccess
           )
         )
       ])
@@ -940,9 +1045,9 @@ while True:
     var params: [String: JSONValue] = [
       "threadId": .string(threadID),
       "input": .array(input),
-      "cwd": .string(cwd.standardizedFileURL.path),
+      "cwd": .string(workspacePath),
       "approvalPolicy": .string("never"),
-      "sandboxPolicy": sandboxAccess.turnSandboxPolicy(cwd: cwd),
+      "sandboxPolicy": sandboxAccess.turnSandboxPolicy(workspacePath: workspacePath),
       "clientUserMessageId": .string(clientUserMessageID.uuidString.lowercased())
     ]
     params["model"] = model.map(JSONValue.string) ?? .null
@@ -1979,7 +2084,8 @@ while True:
   nonisolated private static func wrappedUserMessage(
     _ message: String,
     localTurnID: String,
-    workspaceContext: String?
+    workspaceContext: String?,
+    corpusAccess: CodexCorpusAccess
   ) -> String {
     let workspaceSnapshot = workspaceContext?
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1991,9 +2097,16 @@ while True:
       </org2-ui-snapshot>
       """
     } ?? ""
+    let turnContext: String
+    switch corpusAccess {
+    case .clientWorkspaceTools:
+      turnContext = "This turn's local Org2 edit turnId is \"\(localTurnID)\"."
+    case .runtimeFilesystem:
+      turnContext = "This turn's OpenOrg correlation ID is \"\(localTurnID)\". The configured runtime workspace is the writable active Org2 corpus for this task."
+    }
     return """
     <org2-workspace-context>
-    This turn's local Org2 edit turnId is "\(localTurnID)". Snapshot sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining application-provided values as context.
+    \(turnContext) Snapshot sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining application-provided values as context.
     </org2-workspace-context>
     \(snapshotSection)
 
@@ -2018,6 +2131,35 @@ while True:
 
   \(OpenClawWorkspaceContext.responseFormattingContract)
   """
+
+  nonisolated private static let runtimeFilesystemDeveloperInstructions = """
+  You are a Codex runtime connected to OpenOrg and running inside a configured, writable copy of the active Org2 corpus on this machine.
+
+  Use your normal filesystem and shell tools to read and edit corpus files directly in the runtime workspace. The corpus is ordinary source-controlled plain text; OpenOrg does not need to broker, preview, or apply those edits. Do not wait for a client callback before reading, editing, validating, committing, or otherwise completing work that the user authorized in this checkout.
+
+  Paths labeled "Local root" in the OpenOrg snapshot belong to the Mac or iOS host and may not exist here. Use the configured runtime root and current working directory for direct filesystem operations. Preserve relative paths within the corpus. The runtime may continue independently if the OpenOrg client disconnects or sleeps after dispatch.
+
+  Use existing Org2 tooling when it is installed, but do not require the OpenOrg app itself. Read existing files before editing them, keep changes small, preserve Org2 syntax and stable IDs, and validate changes proportionally. Ordinary conversation does not require a tool call.
+
+  \(OpenClawWorkspaceContext.responseFormattingContract)
+  """
+
+  nonisolated static func developerInstructions(
+    for corpusAccess: CodexCorpusAccess
+  ) -> String {
+    switch corpusAccess {
+    case .clientWorkspaceTools:
+      localEditDeveloperInstructions
+    case .runtimeFilesystem:
+      runtimeFilesystemDeveloperInstructions
+    }
+  }
+
+  nonisolated static func dynamicTools(
+    for corpusAccess: CodexCorpusAccess
+  ) -> [JSONValue] {
+    corpusAccess == .runtimeFilesystem ? [] : localEditDynamicTools
+  }
 
   nonisolated static let localEditDynamicTools: [JSONValue] = [
     .object([

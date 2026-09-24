@@ -25786,18 +25786,19 @@ public final class WorkspaceStore {
     let existingRuntimeThreadID = thread.runtimeThreadID(forDestinationID: destinationID)
     let selectedModel = thread.model(forDestinationID: destinationID)
     let selectedReasoningEffort = thread.isSharedRoom ? nil : thread.reasoningEffort
-    let destinationRoot: URL
-    if (destination.adapter == .codexRemote
-        || destination.adapter == .codexManagedRemote),
-       !destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      destinationRoot = URL(fileURLWithPath: NSString(string: destination.workspaceRoot)
-        .expandingTildeInPath)
-    } else {
-      destinationRoot = corpusRoot
-    }
+    let usesRuntimeFilesystem = destination.adapter == .codexRemote
+      || destination.adapter == .codexManagedRemote
+    let workspacePath = try Self.codexRuntimeWorkspacePath(
+      destination: destination,
+      localCorpusRoot: corpusRoot
+    )
+    let corpusAccess: CodexCorpusAccess = usesRuntimeFilesystem
+      ? .runtimeFilesystem
+      : .clientWorkspaceTools
     let threadResolution = try await client.ensureThreadRecoveringStaleSession(
       existingThreadID: existingRuntimeThreadID,
-      cwd: destinationRoot,
+      workspacePath: workspacePath,
+      corpusAccess: corpusAccess,
       model: selectedModel,
       sandboxAccess: codexSandboxAccess
     )
@@ -25828,12 +25829,17 @@ public final class WorkspaceStore {
       runtimeSessionID: runtimeThreadID,
       transcriptURL: sendOrigin.transcriptURL,
       fullPrompt: { [self] requiresRecovery in
-        let promptContext = requiresRecovery && !thread.isSharedRoom
+        var promptContext = requiresRecovery && !thread.isSharedRoom
           ? baseWorkspaceContext.replacingThreadContinuation(
               aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
             )
           : baseWorkspaceContext
-        var prompt = promptContext.codexSystemPrompt()
+        if usesRuntimeFilesystem {
+          promptContext = promptContext.replacingRuntimeCorpusRoot(workspacePath)
+        }
+        var prompt = promptContext.codexSystemPrompt(
+          runtimeFilesystemAccess: usesRuntimeFilesystem
+        )
         if threadResolution.replacedStaleThread {
           prompt += """
 
@@ -25842,13 +25848,12 @@ public final class WorkspaceStore {
           OpenOrg could not safely reopen the previous Codex task, so it created a replacement task for this same chat. Continue from the bounded thread continuation above. Do not repeat already completed work unless the latest user message asks you to.
           """
         }
-        if destination.adapter == .codexRemote
-            || destination.adapter == .codexManagedRemote {
+        if usesRuntimeFilesystem {
           prompt += """
 
           ---
 
-          Remote execution note: this Codex destination runs with `\(destinationRoot.path)` as its filesystem working directory. Paths in the Org2 context may describe the Mac hosting Org2; use the remote working directory for direct filesystem operations. The `org2_workspace_*` tools still operate on the active corpus through Org2 on that Mac.
+          Remote execution note: this Codex destination runs with `\(workspacePath)` as its filesystem working directory and active Org2 corpus. Paths labeled as local roots describe the Mac hosting OpenOrg and may not exist here. Use the runtime root and normal filesystem tools for corpus work; no callback to OpenOrg is required.
           """
         }
         return prompt
@@ -25867,7 +25872,8 @@ public final class WorkspaceStore {
       ).content,
       workspaceContext: contextDelivery.envelope.prompt,
       attachments: requestUserMessage.attachments,
-      cwd: destinationRoot,
+      workspacePath: workspacePath,
+      corpusAccess: corpusAccess,
       clientUserMessageID: requestUserMessage.id,
       model: selectedModel,
       reasoningEffort: selectedReasoningEffort,
@@ -25887,6 +25893,38 @@ public final class WorkspaceStore {
     return reply.isEmpty
       ? "Codex completed the turn without a text response."
       : reply
+  }
+
+  nonisolated static func codexRuntimeWorkspacePath(
+    destination: AIChatDestinationConfiguration,
+    localCorpusRoot: URL
+  ) throws -> String {
+    guard destination.adapter == .codexRemote
+      || destination.adapter == .codexManagedRemote
+    else {
+      return localCorpusRoot.standardizedFileURL.path
+    }
+
+    let path = destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty else {
+      throw CodexAppServerError.invalidResponse(
+        "configure the writable corpus workspace path on the remote Codex machine"
+      )
+    }
+    if destination.adapter == .codexManagedRemote {
+      guard path == "~" || path.hasPrefix("~/") || NSString(string: path).isAbsolutePath else {
+        throw CodexAppServerError.invalidResponse(
+          "the managed remote Codex corpus workspace must be an absolute path or start with ~/"
+        )
+      }
+      return path
+    }
+    guard path.hasPrefix("/") else {
+      throw CodexAppServerError.invalidResponse(
+        "the remote Codex corpus workspace must be an absolute path on that machine"
+      )
+    }
+    return path
   }
 
   private func localCodexClient() -> CodexAppServerClient {

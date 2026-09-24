@@ -393,6 +393,42 @@ public struct OpenClawWorkspaceContext: Sendable {
     )
   }
 
+  public func replacingRuntimeCorpusRoot(
+    _ runtimeRoot: String?
+  ) -> OpenClawWorkspaceContext {
+    let normalizedRuntimeRoot = Self.cleanRoot(runtimeRoot)
+    let remappedCorpora = authorizedCorpora.map { corpus in
+      AIChatCorpusContext(
+        name: corpus.name,
+        kind: corpus.kind,
+        localRoot: corpus.localRoot,
+        remoteRoot: corpus.isActive ? normalizedRuntimeRoot : corpus.remoteRoot,
+        isActive: corpus.isActive
+      )
+    }
+    return OpenClawWorkspaceContext(
+      localCorpusRoot: localCorpusRoot,
+      remoteCorpusRoot: normalizedRuntimeRoot,
+      selectedSurface: selectedSurface,
+      selectedLocation: selectedLocation,
+      selectedEntrySource: selectedEntrySource,
+      backlinks: backlinks,
+      agenda: agenda,
+      searchQuery: searchQuery,
+      searchResults: searchResults,
+      agentThreadDirectories: agentThreadDirectories,
+      sourceProfiles: sourceProfiles,
+      sourceRuntimeStatuses: sourceRuntimeStatuses,
+      localEdit: localEdit,
+      authorizedCorpora: remappedCorpora,
+      customInstructions: customInstructions,
+      projectContext: projectContext,
+      chatAgentRef: chatAgentRef,
+      chatAgentProfile: chatAgentProfile,
+      threadContinuation: threadContinuation
+    )
+  }
+
   private var chatAgentContext: String? {
     guard let chatAgentRef else { return nil }
     guard let profile = chatAgentProfile, profile.id == chatAgentRef else {
@@ -450,10 +486,14 @@ public struct OpenClawWorkspaceContext: Sendable {
   Keep changes small and reviewable. Preview supported mutations before applying them, preserve IDs, citations, agent and goal references, respect approval boundaries, and keep credentials outside the corpus. Use durable Org2 runs for delegated work that must be resumable or auditable. Validate changes proportionally with a focused lint, graph audit, or command-specific check.
   """
 
-  private func coordinationPrompt(runtime: String?, runtimeAgentID: String?) -> String {
+  private func coordinationPrompt(
+    runtime: String?,
+    runtimeAgentID: String?,
+    runtimeCorpusRoot: String? = nil
+  ) -> String {
     let runtime = runtime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let runtimeAgentID = runtimeAgentID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    let root = runtime == "openclaw" ? remoteCorpusRoot : localCorpusRoot
+    let root = runtimeCorpusRoot ?? (runtime == "openclaw" ? remoteCorpusRoot : localCorpusRoot)
     let resolution: String
     if !runtime.isEmpty, !runtimeAgentID.isEmpty, let root {
       resolution = "org2 agent-profile resolve --runtime \(runtime) --runtime-agent-id \(runtimeAgentID) --dir \(root) --json"
@@ -591,14 +631,24 @@ public struct OpenClawWorkspaceContext: Sendable {
     return sections.joined(separator: "\n\n---\n\n")
   }
 
-  public func codexSystemPrompt() -> String {
-    localAgentSystemPrompt(runtime: "codex", runtimeTitle: "Codex")
+  public func codexSystemPrompt(runtimeFilesystemAccess: Bool = false) -> String {
+    localAgentSystemPrompt(
+      runtime: "codex",
+      runtimeTitle: "Codex",
+      runtimeFilesystemAccess: runtimeFilesystemAccess
+    )
   }
 
-  public func localAgentSystemPrompt(runtime: String, runtimeTitle: String) -> String {
+  public func localAgentSystemPrompt(
+    runtime: String,
+    runtimeTitle: String,
+    runtimeFilesystemAccess: Bool = false
+  ) -> String {
     let fileAccessInstruction: String
-    if runtime == "codex" {
+    if runtime == "codex" && !runtimeFilesystemAccess {
       fileAccessInstruction = "Use the client-provided Org2 workspace tools for any other corpus reads or writes."
+    } else if runtimeFilesystemAccess {
+      fileAccessInstruction = "The configured runtime root is a writable local checkout on this machine. Use normal filesystem tools there; OpenOrg does not need to broker or apply corpus edits."
     } else {
       fileAccessInstruction = "You are running locally through the installed \(runtimeTitle) CLI. Use its filesystem tools for authorized local roots. Write only inside the active corpus, and obey the permission mode selected in OpenOrg."
     }
@@ -607,6 +657,7 @@ public struct OpenClawWorkspaceContext: Sendable {
       Org2 workspace UI snapshot
 
       Active local corpus root: \(localCorpusRoot ?? "not selected")
+      Active runtime corpus root: \(runtimeFilesystemAccess ? (remoteCorpusRoot ?? "not configured") : "same as local root")
       Current surface: \(selectedSurface)
 
       This snapshot was supplied by OpenOrg. The selected source text may include unsaved editor changes and is authoritative for that visible draft. \(fileAccessInstruction)
@@ -624,7 +675,11 @@ public struct OpenClawWorkspaceContext: Sendable {
     sections.append(Self.agentOperatingGuidance)
 
     sections.append(formatAuthorizedCorpora())
-    sections.append(coordinationPrompt(runtime: runtime, runtimeAgentID: "default"))
+    sections.append(coordinationPrompt(
+      runtime: runtime,
+      runtimeAgentID: "default",
+      runtimeCorpusRoot: runtimeFilesystemAccess ? remoteCorpusRoot : nil
+    ))
 
     if !customInstructions.isEmpty {
       sections.append("""
@@ -696,7 +751,7 @@ public struct OpenClawWorkspaceContext: Sendable {
         lines.append("  Runtime root: not configured")
       }
     }
-    lines.append("Use the listed runtime root when working through a remote OpenClaw Gateway, and the local root when working through local Codex or Claude Code. Never infer access to an unlisted corpus.")
+    lines.append("Use the listed runtime root when working through a remote runtime such as OpenClaw or a remote Codex destination. Use the local root only when the runtime executes on the Mac hosting OpenOrg. Never infer access to an unlisted corpus.")
     return lines.joined(separator: "\n")
   }
 
