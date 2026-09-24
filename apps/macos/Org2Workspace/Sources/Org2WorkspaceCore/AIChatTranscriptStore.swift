@@ -700,7 +700,11 @@ final class AIChatTranscriptStore: @unchecked Sendable {
           let previous = marker.previousManifest.flatMap {
             loadManifest(named: $0, expectedDigest: marker.previousDigest, storeURL: storeURL)
           }
-          return StoreState(current: current, previous: previous, recoveryStatus: .healthy)
+          return reconciledSyncedStoreState(
+            primary: current,
+            previous: previous,
+            storeURL: storeURL
+          )
         }
       }
       if let previousName = marker.previousManifest,
@@ -855,7 +859,47 @@ final class AIChatTranscriptStore: @unchecked Sendable {
         storeURL: storeURL
       )
     }
-    return StoreState(current: current, previous: previous, recoveryStatus: .healthy)
+    return reconciledSyncedStoreState(
+      primary: current,
+      previous: previous,
+      storeURL: storeURL
+    )
+  }
+
+  /// Syncthing can preserve both immutable manifest branches while choosing
+  /// only one writer's mutable marker as the canonical filename. Treat every
+  /// complete immutable tip as committed so a valid-but-stale marker cannot
+  /// hide chats created or updated on another host.
+  private static func reconciledSyncedStoreState(
+    primary: Manifest,
+    previous: Manifest?,
+    storeURL: URL
+  ) -> StoreState {
+    let candidatesByID = Dictionary(
+      ([primary] + [previous].compactMap { $0 } + recoveryManifestCandidates(storeURL: storeURL))
+        .map { ($0.commitID, $0) },
+      uniquingKeysWith: { first, second in
+        second.generation > first.generation ? second : first
+      }
+    )
+    var primaryLineage = Set<String>()
+    var cursor: Manifest? = primary
+    while let manifest = cursor, primaryLineage.insert(manifest.commitID).inserted {
+      cursor = manifest.parentCommitID.flatMap { candidatesByID[$0] }
+    }
+    guard candidatesByID.keys.contains(where: { !primaryLineage.contains($0) }) else {
+      return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
+    }
+    guard let resolved = reconciledRecoveryManifest(
+      from: Array(candidatesByID.values),
+      storeURL: storeURL
+    ) else {
+      return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
+    }
+    if resolved.commitID == primary.commitID {
+      return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
+    }
+    return StoreState(current: resolved, previous: primary, recoveryStatus: .healthy)
   }
 
   private static func loadManifest(
@@ -969,6 +1013,18 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     } ?? completeBase.selectedThreadID.flatMap { id in
       selectedEntries[id] == nil ? nil : id
     } ?? entries.first?.metadata.id
+    let matchesCompleteBase = entries.count == completeBase.threads.count
+      && zip(entries, completeBase.threads).allSatisfy { recovered, base in
+        recovered.metadata == base.metadata
+          && recovered.shard == base.shard
+          && recovered.shardDigest == base.shardDigest
+          && recovered.blobs == base.blobs
+      }
+      && selectedThreadID == completeBase.selectedThreadID
+      && context.settlementSettings == completeBase.settlementSettings
+    if matchesCompleteBase {
+      return completeBase
+    }
     return Manifest(
       schema: Manifest.schemaValue,
       version: 2,

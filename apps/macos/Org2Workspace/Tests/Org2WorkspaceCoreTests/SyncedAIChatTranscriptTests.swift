@@ -21,6 +21,54 @@ private actor SyncedChatSendGate {
 }
 
 final class SyncedAIChatTranscriptTests: XCTestCase {
+  func testValidMarkerReconcilesDivergentImmutableSyncthingBranches() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let laptopURL = root.appendingPathComponent("laptop.json")
+    let serverURL = root.appendingPathComponent("server.json")
+    let shared = OpenClawChatThread(title: "Shared", sessionKey: "shared")
+    let laptop = OpenClawChatThread(
+      title: "Laptop chat",
+      sessionKey: "laptop",
+      messages: [OpenClawChatMessage(role: .assistant, content: "From the laptop")]
+    )
+    let server = OpenClawChatThread(
+      title: "Server chat",
+      sessionKey: "server",
+      messages: [OpenClawChatMessage(role: .assistant, content: "From the server")]
+    )
+    let settings = OpenClawThreadSettlementSettings()
+
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [shared, laptop], selectedThreadID: laptop.id, settlementSettings: settings
+    ), legacyURL: laptopURL)
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [shared, server], selectedThreadID: server.id, settlementSettings: settings
+    ), legacyURL: serverURL)
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+
+    let laptopStore = AIChatTranscriptStore.storeDirectory(for: laptopURL)
+    let serverStore = AIChatTranscriptStore.storeDirectory(for: serverURL)
+    try copyImmutableDirectory(
+      from: serverStore.appendingPathComponent("threads", isDirectory: true),
+      to: laptopStore.appendingPathComponent("threads", isDirectory: true)
+    )
+    try copyImmutableDirectory(
+      from: serverStore.appendingPathComponent("manifests", isDirectory: true),
+      to: laptopStore.appendingPathComponent("manifests", isDirectory: true)
+    )
+
+    let loaded = try XCTUnwrap(
+      AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL)
+    )
+    XCTAssertEqual(Set(loaded.snapshot.threads.map(\.id)), [shared.id, laptop.id, server.id])
+    XCTAssertEqual(
+      loaded.snapshot.threads.first(where: { $0.id == server.id })?.messages.first?.content,
+      "From the server"
+    )
+  }
+
   @MainActor
   func testPersistedSendingTurnShowsRunningOnAnotherHostButFollowUpStaysQueued() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -208,6 +256,20 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     let targetStore = AIChatTranscriptStore.storeDirectory(for: target)
     if fm.fileExists(atPath: targetStore.path) { try fm.removeItem(at: targetStore) }
     try fm.copyItem(at: sourceStore, to: targetStore)
+  }
+
+  private func copyImmutableDirectory(from source: URL, to destination: URL) throws {
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+    for sourceFile in try fileManager.contentsOfDirectory(
+      at: source,
+      includingPropertiesForKeys: nil
+    ) {
+      let destinationFile = destination.appendingPathComponent(sourceFile.lastPathComponent)
+      if !fileManager.fileExists(atPath: destinationFile.path) {
+        try fileManager.copyItem(at: sourceFile, to: destinationFile)
+      }
+    }
   }
 
   @MainActor

@@ -518,13 +518,15 @@ final class MobileRemoteStore: ObservableObject {
         await self?.refreshThreadConfiguration(pollingThreadID)
       }
     }
-    guard isActive, isPaired, threadNotificationsEnabled else { return }
+    guard isActive, isPaired else { return }
     foregroundReplyPollingTask = Task { [weak self] in
       guard let self else { return }
-      await self.prepareThreadNotifications()
+      if self.threadNotificationsEnabled {
+        await self.prepareThreadNotifications()
+      }
       while !Task.isCancelled {
         await self.refresh(reportsErrors: false)
-        try? await Task.sleep(for: .seconds(15))
+        try? await Task.sleep(for: .seconds(4))
       }
     }
   }
@@ -546,9 +548,12 @@ final class MobileRemoteStore: ObservableObject {
       pushNotificationStatusText = "Connecting real-time notifications"
       setAppActive(true)
     } else {
-      foregroundReplyPollingTask?.cancel()
-      foregroundReplyPollingTask = nil
       threadNotificationsUnavailable = false
+      if appIsActive {
+        // Thread-list freshness is independent of whether the user wants
+        // notification banners.
+        setAppActive(true)
+      }
     }
   }
 

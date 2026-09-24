@@ -375,6 +375,10 @@ public final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "GET", path == "/v1/threads" {
+      // A headless host may receive newer immutable chat commits from another
+      // Mac between filesystem callbacks. Reconcile at the request boundary so
+      // iOS never receives an avoidably stale thread list.
+      _ = await store.refreshSyncedAIChatTranscript()
       let threads = store.openClawChatThreads
       return await backgroundWork.threadListResponse(
         threads: threads,
@@ -532,6 +536,11 @@ public final class MobileRemoteCoordinator: ObservableObject {
     }
 
     let components = path.split(separator: "/").map(String.init)
+    if components.count >= 3,
+       components[0] == "v1",
+       components[1] == "threads" {
+      _ = await store.refreshSyncedAIChatTranscript()
+    }
     guard components.count >= 3,
           components[0] == "v1",
           components[1] == "threads",
