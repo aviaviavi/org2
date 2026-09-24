@@ -2008,6 +2008,8 @@ while True:
 
   For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, org2_workspace_patch_apply, and org2_thread_post tools supplied by the client. These tools read effective local text, preserve reviewed writes, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch and thread-post tools always target only the active corpus.
 
+  Use org2_workspace_search to discover relevant ordinary files or prior AI chats instead of guessing paths. Use org2_workspace_chat_read with a returned thread ID when more of a matching conversation is needed. For files outside the authorized Org2 corpora, use the normal runtime filesystem tools when the configured sandbox permits it; an iOS-originated turn has the same machine access policy as a Mac-originated turn.
+
   Existing files must be read first. Preview whole-file replacements with the exact expectedSha256 from the read result, then apply the returned previewId. For new files, set createsFile to true and omit expectedSha256. If a stale-document error occurs, read again and rebuild the replacement. Use the turnId provided in the application context on every tool call.
 
   Ordinary conversation does not require a tool call. Ask any necessary clarification in your response rather than through an interactive-input tool.
@@ -2018,6 +2020,42 @@ while True:
   """
 
   nonisolated static let localEditDynamicTools: [JSONValue] = [
+    .object([
+      "type": .string("function"),
+      "name": .string("org2_workspace_search"),
+      "description": .string("Search authorized Org2 corpus files and active-corpus AI chat history. Returns cited file results and chat message matches; use org2_workspace_chat_read to expand a matching thread."),
+      "inputSchema": .object([
+        "type": .string("object"),
+        "properties": .object([
+          "turnId": .object(["type": .string("string")]),
+          "query": .object(["type": .string("string")]),
+          "scope": .object([
+            "type": .string("string"),
+            "enum": .array([.string("all"), .string("files"), .string("chats")])
+          ]),
+          "corpusRoot": .object(["type": .string("string")]),
+          "limit": .object(["type": .string("integer"), "minimum": .number(1), "maximum": .number(20)])
+        ]),
+        "required": .array([.string("turnId"), .string("query")]),
+        "additionalProperties": .bool(false)
+      ])
+    ]),
+    .object([
+      "type": .string("function"),
+      "name": .string("org2_workspace_chat_read"),
+      "description": .string("Read a bounded window from one active-corpus AI chat by stable thread ID, including message IDs, roles, timestamps, and text."),
+      "inputSchema": .object([
+        "type": .string("object"),
+        "properties": .object([
+          "turnId": .object(["type": .string("string")]),
+          "threadId": .object(["type": .string("string")]),
+          "aroundMessageId": .object(["type": .string("string")]),
+          "maxMessages": .object(["type": .string("integer"), "minimum": .number(1), "maximum": .number(100)])
+        ]),
+        "required": .array([.string("turnId"), .string("threadId")]),
+        "additionalProperties": .bool(false)
+      ])
+    ]),
     .object([
       "type": .string("function"),
       "name": .string("org2_thread_post"),

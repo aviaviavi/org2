@@ -26203,6 +26203,12 @@ public final class WorkspaceStore {
     if call.tool == "org2_thread_post" {
       return await handleCodexThreadPostTool(call.arguments)
     }
+    if call.tool == "org2_workspace_search" {
+      return await handleCodexWorkspaceSearchTool(call.arguments)
+    }
+    if call.tool == "org2_workspace_chat_read" {
+      return await handleCodexWorkspaceChatReadTool(call.arguments)
+    }
     let command: String
     switch call.tool {
     case "org2_workspace_read":
@@ -26241,6 +26247,266 @@ public final class WorkspaceStore {
       .flatMap { String(data: $0, encoding: .utf8) }
       ?? #"{"error":{"code":"LOCAL_EDIT_FAILED","message":"Local Org2 edit failed."}}"#
     return CodexDynamicToolResult(success: false, text: errorText)
+  }
+
+  private func handleCodexWorkspaceSearchTool(
+    _ arguments: JSONValue
+  ) async -> CodexDynamicToolResult {
+    let values = arguments.objectValue ?? [:]
+    let turnID = values["turnId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let query = values["query"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let scope = values["scope"]?.stringValue ?? "all"
+    let limit = min(20, max(1, Self.codexWorkspaceInteger(values["limit"]) ?? 10))
+    guard !turnID.isEmpty, !query.isEmpty, query.utf8.count <= 2_000,
+          ["all", "files", "chats"].contains(scope)
+    else {
+      return codexWorkspaceToolFailure(
+        code: "INVALID_REQUEST",
+        message: "Provide an active turnId, a query of 1–2000 bytes, and scope all, files, or chats."
+      )
+    }
+
+    do {
+      let requestedRoot = values["corpusRoot"]?.stringValue
+      let searchRoot = try authorizedAIChatCorpusRoot(
+        turnID: turnID,
+        requestedRoot: requestedRoot
+      )
+      let activeRoot = try openClawLocalEditCorpus(for: turnID)
+      var payload: [String: JSONValue] = [
+        "$schema": .string("org2:workspace-search:v1"),
+        "query": .string(query),
+        "scope": .string(scope),
+        "corpusRoot": .string(searchRoot.path),
+      ]
+      var errors: [JSONValue] = []
+
+      if scope != "chats" {
+        do {
+          let data = try await cli.run([
+            "agent", "search", "--query", query, "--dir", searchRoot.path,
+            "--recursive", "--limit", String(limit), "--max-chars", "24000", "--format", "json"
+          ])
+          payload["files"] = try JSONDecoder().decode(JSONValue.self, from: data)
+        } catch {
+          payload["files"] = .object(["results": .array([])])
+          errors.append(.string("File search failed: \(error.localizedDescription)"))
+        }
+      }
+
+      if scope != "files" {
+        if searchRoot.path == activeRoot.path {
+          let metadata = openClawChatThreads
+          let unloadedIDs = unloadedOpenClawChatThreadIDs
+          let transcriptURL = openClawTranscriptURL.standardizedFileURL
+          let threads = await Task.detached(priority: .utility) {
+            let loaded = AIChatTranscriptStore.shared.loadAllThreads(
+              replacingMetadata: metadata,
+              legacyURL: transcriptURL
+            )
+            let loadedByID = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
+            return metadata.map { thread in
+              unloadedIDs.contains(thread.id) ? (loadedByID[thread.id] ?? thread) : thread
+            }
+          }.value
+          payload["chats"] = Self.aiChatHistorySearchPayload(
+            query: query,
+            threads: threads,
+            limit: limit
+          )
+        } else {
+          payload["chats"] = .array([])
+          errors.append(.string("AI chat history is available only for the active corpus."))
+        }
+      }
+      payload["errors"] = .array(errors)
+      return codexWorkspaceToolSuccess(.object(payload))
+    } catch {
+      return codexWorkspaceToolFailure(
+        code: "WORKSPACE_SEARCH_FAILED",
+        message: error.localizedDescription
+      )
+    }
+  }
+
+  private func handleCodexWorkspaceChatReadTool(
+    _ arguments: JSONValue
+  ) async -> CodexDynamicToolResult {
+    let values = arguments.objectValue ?? [:]
+    let turnID = values["turnId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let threadIDText = values["threadId"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let maxMessages = min(100, max(1, Self.codexWorkspaceInteger(values["maxMessages"]) ?? 40))
+    guard !turnID.isEmpty, let threadID = UUID(uuidString: threadIDText) else {
+      return codexWorkspaceToolFailure(
+        code: "INVALID_REQUEST",
+        message: "Provide an active turnId and a valid threadId."
+      )
+    }
+
+    do {
+      _ = try openClawLocalEditCorpus(for: turnID)
+      guard let metadata = openClawChatThreads.first(where: { $0.id == threadID }) else {
+        return codexWorkspaceToolFailure(code: "THREAD_NOT_FOUND", message: "AI chat thread not found.")
+      }
+      let thread: OpenClawChatThread
+      if unloadedOpenClawChatThreadIDs.contains(threadID) {
+        let transcriptURL = openClawTranscriptURL.standardizedFileURL
+        guard let loaded = await Task.detached(priority: .utility, operation: {
+          AIChatTranscriptStore.shared.loadThread(
+            id: threadID,
+            metadata: metadata,
+            legacyURL: transcriptURL
+          )
+        }).value else {
+          return codexWorkspaceToolFailure(
+            code: "THREAD_UNAVAILABLE",
+            message: "AI chat thread could not be loaded."
+          )
+        }
+        thread = loaded
+      } else {
+        thread = metadata
+      }
+      let aroundMessageID = values["aroundMessageId"]?.stringValue.flatMap(UUID.init(uuidString:))
+      return codexWorkspaceToolSuccess(Self.aiChatHistoryReadPayload(
+        thread: thread,
+        aroundMessageID: aroundMessageID,
+        maxMessages: maxMessages
+      ))
+    } catch {
+      return codexWorkspaceToolFailure(
+        code: "CHAT_READ_FAILED",
+        message: error.localizedDescription
+      )
+    }
+  }
+
+  private func authorizedAIChatCorpusRoot(
+    turnID: String,
+    requestedRoot: String?
+  ) throws -> URL {
+    let activeRoot = try openClawLocalEditCorpus(for: turnID)
+    guard let requestedRoot = requestedRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !requestedRoot.isEmpty
+    else { return activeRoot }
+    let requestedURL = URL(fileURLWithPath: requestedRoot).standardizedFileURL
+    guard aiChatReadCorpusRootsByTurnID[turnID]?.contains(requestedURL.path) == true else {
+      throw OpenClawLocalEditError.invalidRequest(
+        "corpusRoot is not authorized for this chat turn"
+      )
+    }
+    return requestedURL
+  }
+
+  nonisolated static func aiChatHistorySearchPayload(
+    query: String,
+    threads: [OpenClawChatThread],
+    limit: Int
+  ) -> JSONValue {
+    let terms = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+      .map(String.init)
+      .filter { !$0.isEmpty }
+    guard !terms.isEmpty else { return .array([]) }
+    var matches: [(score: Int, updatedAt: Date, value: JSONValue)] = []
+    for thread in threads {
+      let title = thread.title.lowercased()
+      for message in thread.messages where !message.isRoomDispatchCopy {
+        let searchable = "\(thread.title)\n\(message.content)".lowercased()
+        guard terms.allSatisfy(searchable.contains) else { continue }
+        let titleHits = terms.filter(title.contains).count
+        let score = titleHits * 10 + terms.filter(message.content.lowercased().contains).count
+        matches.append((score, thread.updatedAt, .object([
+          "threadId": .string(thread.id.uuidString.lowercased()),
+          "threadTitle": .string(thread.title),
+          "messageId": .string(message.id.uuidString.lowercased()),
+          "role": .string(message.role.rawValue),
+          "createdAt": .string(message.createdAt.ISO8601Format()),
+          "snippet": .string(boundedAIChatSearchSnippet(message.content, terms: terms)),
+          "citation": .string("org2-chat:\(thread.id.uuidString.lowercased())#\(message.id.uuidString.lowercased())"),
+        ])))
+      }
+    }
+    return .array(matches.sorted {
+      $0.score != $1.score ? $0.score > $1.score : $0.updatedAt > $1.updatedAt
+    }.prefix(max(1, min(20, limit))).map(\.value))
+  }
+
+  nonisolated static func aiChatHistoryReadPayload(
+    thread: OpenClawChatThread,
+    aroundMessageID: UUID?,
+    maxMessages: Int
+  ) -> JSONValue {
+    let visible = thread.messages.filter { !$0.isRoomDispatchCopy }
+    let count = max(1, min(100, maxMessages))
+    let start: Int
+    if let aroundMessageID,
+       let index = visible.firstIndex(where: { $0.id == aroundMessageID }) {
+      start = max(0, min(index - count / 2, visible.count - count))
+    } else {
+      start = max(0, visible.count - count)
+    }
+    let window = visible.dropFirst(start).prefix(count)
+    return .object([
+      "$schema": .string("org2:ai-chat-context:v1"),
+      "threadId": .string(thread.id.uuidString.lowercased()),
+      "title": .string(thread.title),
+      "runtime": .string(thread.runtime.rawValue),
+      "messageCount": .number(Double(visible.count)),
+      "windowStart": .number(Double(start)),
+      "messages": .array(window.map { message in
+        .object([
+          "id": .string(message.id.uuidString.lowercased()),
+          "role": .string(message.role.rawValue),
+          "createdAt": .string(message.createdAt.ISO8601Format()),
+          "content": .string(String(message.content.prefix(20_000))),
+        ])
+      }),
+    ])
+  }
+
+  nonisolated private static func boundedAIChatSearchSnippet(
+    _ content: String,
+    terms: [String]
+  ) -> String {
+    let limit = 700
+    guard content.count > limit else { return content }
+    let lowercased = content.lowercased()
+    let firstRange = terms.compactMap { lowercased.range(of: $0) }.min {
+      lowercased.distance(from: lowercased.startIndex, to: $0.lowerBound)
+        < lowercased.distance(from: lowercased.startIndex, to: $1.lowerBound)
+    }
+    guard let firstRange else { return String(content.prefix(limit)) + "…" }
+    let offset = lowercased.distance(from: lowercased.startIndex, to: firstRange.lowerBound)
+    let startOffset = max(0, offset - limit / 3)
+    let start = content.index(content.startIndex, offsetBy: startOffset)
+    let end = content.index(start, offsetBy: min(limit, content.distance(from: start, to: content.endIndex)))
+    return (startOffset > 0 ? "…" : "") + content[start..<end] + (end < content.endIndex ? "…" : "")
+  }
+
+  private func codexWorkspaceToolSuccess(_ value: JSONValue) -> CodexDynamicToolResult {
+    let text = (try? JSONEncoder().encode(value)).map { String(decoding: $0, as: UTF8.self) }
+      ?? #"{"ok":true}"#
+    return CodexDynamicToolResult(success: true, text: text)
+  }
+
+  nonisolated private static func codexWorkspaceInteger(_ value: JSONValue?) -> Int? {
+    switch value {
+    case .integer(let number): Int(exactly: number)
+    case .number(let number): Int(exactly: number)
+    default: nil
+    }
+  }
+
+  private func codexWorkspaceToolFailure(
+    code: String,
+    message: String
+  ) -> CodexDynamicToolResult {
+    let value: JSONValue = .object([
+      "error": .object(["code": .string(code), "message": .string(message)])
+    ])
+    let text = (try? JSONEncoder().encode(value)).map { String(decoding: $0, as: UTF8.self) }
+      ?? message
+    return CodexDynamicToolResult(success: false, text: text)
   }
 
   func handleCodexThreadPostTool(_ arguments: JSONValue) async -> CodexDynamicToolResult {
@@ -31104,23 +31370,10 @@ public final class WorkspaceStore {
     let broker = OpenClawLocalEditBroker(
       documentReader: { [weak self] turnID, path, requestedRoot in
         guard let self else { throw OpenClawLocalEditError.inactiveTurn }
-        let activeCorpusRoot = try self.openClawLocalEditCorpus(for: turnID)
-        let corpusRoot: URL
-        if let requestedRoot = requestedRoot?
-          .trimmingCharacters(in: .whitespacesAndNewlines),
-           !requestedRoot.isEmpty {
-          let requestedURL = URL(fileURLWithPath: requestedRoot).standardizedFileURL
-          guard self.aiChatReadCorpusRootsByTurnID[turnID]?
-            .contains(requestedURL.path) == true
-          else {
-            throw OpenClawLocalEditError.invalidRequest(
-              "corpusRoot is not authorized for this chat turn"
-            )
-          }
-          corpusRoot = requestedURL
-        } else {
-          corpusRoot = activeCorpusRoot
-        }
+        let corpusRoot = try self.authorizedAIChatCorpusRoot(
+          turnID: turnID,
+          requestedRoot: requestedRoot
+        )
         return try self.openClawLocalEditDocument(at: path, corpusRoot: corpusRoot)
       },
       replacementApplier: { [weak self] turnID, replacements in

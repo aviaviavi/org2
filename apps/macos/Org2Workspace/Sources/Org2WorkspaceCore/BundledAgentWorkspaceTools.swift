@@ -27,7 +27,11 @@ final class BundledAgentWorkspaceTools {
 
   static var definitions: [JSONValue] {
     CodexAppServerClient.localEditDynamicTools.filter {
-      $0["name"]?.stringValue != "org2_thread_post"
+      [
+        "org2_workspace_read",
+        "org2_workspace_patch_preview",
+        "org2_workspace_patch_apply",
+      ].contains($0["name"]?.stringValue ?? "")
     } + [.object([
       "name": .string("org2_workspace_search"),
       "description": .string("Search the active corpus on disk for up to ten cited results. Read a result with org2_workspace_read before editing; search may not include unsaved drafts."),
