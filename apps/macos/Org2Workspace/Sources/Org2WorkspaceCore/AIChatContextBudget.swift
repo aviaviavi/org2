@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct AIChatTokenUsage: Hashable, Codable, Sendable {
@@ -107,8 +108,15 @@ struct AIChatPersistentContextState: Sendable {
     _ envelope: AIChatPersistentContextEnvelope,
     for key: AIChatPersistentContextKey
   ) {
+    commit(envelope.sectionSnapshot, for: key)
+  }
+
+  mutating func commit(
+    _ sectionSnapshot: [String: String],
+    for key: AIChatPersistentContextKey
+  ) {
     guard !recoveryRequired.contains(key) else { return }
-    sections[key] = envelope.sectionSnapshot
+    sections[key] = sectionSnapshot
   }
 
   mutating func requireRecovery(for keys: Set<AIChatPersistentContextKey>) {
@@ -204,7 +212,7 @@ enum AIChatContextBudget {
   ) -> AIChatPersistentContextEnvelope {
     let sections = promptSections(fullPrompt)
     let snapshot = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
-      isTranscriptSection(section.key) ? nil : (section.key, section.text)
+      isTranscriptSection(section.key) ? nil : (section.key, sectionFingerprint(section.text))
     })
     let isRecovery = forceRecovery || previousSections == nil
     let included: [(key: String, text: String)]
@@ -221,7 +229,8 @@ enum AIChatContextBudget {
       }
     } else {
       let changed = sections.filter { section in
-        !isTranscriptSection(section.key) && previousSections?[section.key] != section.text
+        !isTranscriptSection(section.key)
+          && previousSections?[section.key] != snapshot[section.key]
       }
       let removed = previousSections?.keys
         .filter { snapshot[$0] == nil && !isTranscriptSection($0) }
@@ -305,6 +314,12 @@ enum AIChatContextBudget {
       occurrences[title] = occurrence + 1
       return ("\(title)#\(occurrence)", text)
     }
+  }
+
+  private static func sectionFingerprint(_ text: String) -> String {
+    SHA256.hash(data: Data(text.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
   }
 
   private static func isTranscriptSection(_ key: String) -> Bool {

@@ -24,6 +24,8 @@ final class AIChatContextBudgetTests: XCTestCase {
     XCTAssertFalse(recovery.sectionSnapshot.keys.contains {
       $0.hasPrefix("Selected AI chat thread continuation#")
     })
+    XCTAssertTrue(recovery.sectionSnapshot.values.allSatisfy { $0.count == 64 })
+    XCTAssertFalse(recovery.sectionSnapshot.values.contains("Keep citations stable."))
 
     let unchanged = AIChatContextBudget.persistentEnvelope(
       fullPrompt: initialPrompt,
@@ -202,6 +204,31 @@ final class AIChatContextBudgetTests: XCTestCase {
     )
     XCTAssertEqual(second.telemetry.mode, .delta)
     XCTAssertNil(second.prompt)
+  }
+
+  func testPersistentContextStateRestoresAcceptedSnapshotAfterProcessRelaunch() {
+    let key = persistentKey(destinationID: "openclaw:main")
+    var originalState = AIChatPersistentContextState()
+    let accepted = originalState.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+
+    var restoredState = AIChatPersistentContextState()
+    restoredState.commit(accepted.sectionSnapshot, for: key)
+    let continuation = restoredState.envelope(
+      for: key,
+      fullPrompt: { _ in self.persistentPrompt },
+      includesTranscript: true,
+      roomPrompt: "",
+      attachments: []
+    )
+
+    XCTAssertEqual(continuation.telemetry.mode, .delta)
+    XCTAssertNil(continuation.prompt)
   }
 
   func testPersistentContextStateForcesExactlyOneRecoveryAfterCompaction() {

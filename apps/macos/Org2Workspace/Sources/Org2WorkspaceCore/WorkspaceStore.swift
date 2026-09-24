@@ -25215,6 +25215,11 @@ public final class WorkspaceStore {
           )
         }
       }
+      commitAcceptedOpenClawPersistentContext(
+        threadID: threadID,
+        destinationID: pendingDestinationID,
+        transcriptURL: sendOrigin.transcriptURL
+      )
       let stillPending = openClawChatThread(
         threadID,
         transcriptURL: sendOrigin.transcriptURL
@@ -25431,6 +25436,35 @@ public final class WorkspaceStore {
       )
     )
     aiChatPersistentContextState.commit(envelope, for: key)
+  }
+
+  private func commitAcceptedOpenClawPersistentContext(
+    threadID: UUID,
+    destinationID: String,
+    transcriptURL: URL
+  ) {
+    guard let thread = openClawChatThread(threadID, transcriptURL: transcriptURL),
+          let pendingTurn = thread.pendingTurn,
+          (pendingTurn.destinationID ?? thread.destinationID) == destinationID,
+          let sectionFingerprints = pendingTurn.contextSectionFingerprints
+    else { return }
+    let key = AIChatPersistentContextKey(
+      transcriptPath: transcriptURL.standardizedFileURL.path,
+      threadID: threadID,
+      destinationID: destinationID,
+      runtimeSessionID: Self.agentScopedOpenClawSessionKey(
+        thread.sessionKey,
+        agentID: pendingTurn.agentID
+      )
+    )
+    aiChatPersistentContextState.commit(sectionFingerprints, for: key)
+    aiChatActivePersistentContextKeyByDestinationTurn.removeValue(
+      forKey: aiChatDestinationTurnKey(
+        threadID: threadID,
+        destinationID: destinationID,
+        transcriptURL: transcriptURL
+      )
+    )
   }
 
   private func requirePersistentContextRecovery(
@@ -26909,7 +26943,8 @@ public final class WorkspaceStore {
       runID: UUID().uuidString.lowercased(),
       agentID: agentID,
       destinationID: destinationID,
-      gatewayMessage: gatewayMessage
+      gatewayMessage: gatewayMessage,
+      contextSectionFingerprints: contextDelivery?.envelope.sectionSnapshot
     )
     replaceOpenClawPendingTurn(
       pendingTurn,
@@ -27216,6 +27251,12 @@ public final class WorkspaceStore {
       }
     case .accepted(let runID):
       openClawActiveRunIDByThreadID[threadID] = runID
+      commitAcceptedOpenClawPersistentContext(
+        threadID: threadID,
+        destinationID: resolvedDestinationID,
+        transcriptURL: aiChatSendOriginsByThreadID[threadID]?.transcriptURL
+          ?? openClawTranscriptURL
+      )
       if selectedOpenClawChatThreadID == threadID,
          canPublishAIChatRuntimeState(for: threadID) {
         openClawStatusText = "\(destinationName) is working"

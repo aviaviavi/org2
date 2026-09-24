@@ -3789,13 +3789,15 @@ final class Org2ModelsTests: XCTestCase {
     let queuedMessage = OpenClawChatMessage(
       role: .user,
       content: "Then handle this queued follow-up",
-      deliveryStatus: .sending
+      deliveryStatus: .sending,
+      deliveryKind: .followUp
     )
     let pendingTurn = OpenClawPendingTurn(
       userMessageID: userMessage.id,
       runID: "durable-run-id",
       agentID: "main",
       gatewayMessage: "Exact persisted Gateway request",
+      contextSectionFingerprints: ["Org2 working rules#0": String(repeating: "a", count: 64)],
       startedAt: Date(timeIntervalSince1970: 1_700_000_000)
     )
     let thread = OpenClawChatThread(
@@ -3844,6 +3846,10 @@ final class Org2ModelsTests: XCTestCase {
     let recoveredTurns = await recorder.recordedTurns()
     XCTAssertEqual(recoveredTurns.map(\.runID), ["durable-run-id"])
     XCTAssertEqual(recoveredTurns.first?.gatewayMessage, "Exact persisted Gateway request")
+    XCTAssertEqual(
+      recoveredTurns.first?.contextSectionFingerprints,
+      ["Org2 working rules#0": String(repeating: "a", count: 64)]
+    )
 
     let relaunchedAgain = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),

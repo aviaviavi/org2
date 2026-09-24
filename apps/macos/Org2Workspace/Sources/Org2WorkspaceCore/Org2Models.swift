@@ -2730,6 +2730,7 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   public let agentID: String
   public let destinationID: String?
   public let gatewayMessage: String
+  public let contextSectionFingerprints: [String: String]?
   public let startedAt: Date
 
   public init(
@@ -2738,6 +2739,7 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
     agentID: String,
     destinationID: String? = nil,
     gatewayMessage: String,
+    contextSectionFingerprints: [String: String]? = nil,
     startedAt: Date = Date()
   ) {
     self.userMessageID = userMessageID
@@ -2745,6 +2747,7 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
     self.agentID = agentID
     self.destinationID = destinationID
     self.gatewayMessage = gatewayMessage
+    self.contextSectionFingerprints = contextSectionFingerprints
     self.startedAt = startedAt
   }
 }
