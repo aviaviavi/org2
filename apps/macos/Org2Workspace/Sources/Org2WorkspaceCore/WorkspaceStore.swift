@@ -10947,16 +10947,16 @@ public final class WorkspaceStore {
     return injectedOpenClawContext(pointer) + draft
   }
 
-  public func askOpenClawAboutCurrentSelection(threadMode: OpenClawThreadMode = .newThread) {
+  public func askOpenClawAboutCurrentSelection(threadMode: OpenClawThreadMode? = nil) {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"
       return
     }
 
-    addOpenClawContext(pointer, threadMode: threadMode)
+    addOpenClawContext(pointer, threadMode: threadMode ?? defaultAskAIThreadMode)
   }
 
-  public func askOpenClawAboutBlock(_ block: OrgEditableBlock, threadMode: OpenClawThreadMode = .newThread) {
+  public func askOpenClawAboutBlock(_ block: OrgEditableBlock, threadMode: OpenClawThreadMode? = nil) {
     if selectedRenderedBlockIndexes[block.id] != nil {
       selectedBlockID = block.id
     }
@@ -10966,7 +10966,13 @@ public final class WorkspaceStore {
       return
     }
 
-    addOpenClawContext(pointer, threadMode: threadMode)
+    addOpenClawContext(pointer, threadMode: threadMode ?? defaultAskAIThreadMode)
+  }
+
+  private var defaultAskAIThreadMode: OpenClawThreadMode {
+    selectedSurface == .openClaw && selectedOpenClawChatThreadID != nil
+      ? .currentThread
+      : .newThread
   }
 
   public func askOpenClawAboutSourceHeading(at line: Int) {
@@ -36046,6 +36052,18 @@ public final class WorkspaceStore {
     statusText = "\(surface.title) is primary"
   }
 
+  public func openReviewQueue() {
+    runsAndReviewPage = .review
+    makeSurfacePrimary(.approvals)
+    statusText = "Review Queue is primary"
+  }
+
+  public func openAutomations() {
+    runsAndReviewPage = .workflows
+    makeSurfacePrimary(.approvals)
+    statusText = "Automations is primary"
+  }
+
   public func makeSelectedSurfacePrimary() {
     makeSurfacePrimary(selectedSurface)
   }
@@ -36268,6 +36286,10 @@ public final class WorkspaceStore {
     }
 
     if modifiers == [.command, .option] {
+      if key == "a" {
+        openAutomations()
+        return true
+      }
       return false
     }
 
@@ -36299,6 +36321,9 @@ public final class WorkspaceStore {
         return true
       case "o":
         chooseCorpus()
+        return true
+      case "r":
+        openReviewQueue()
         return true
       case "z":
         guard scope == .all else { return false }

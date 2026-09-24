@@ -2396,6 +2396,12 @@ private struct SidebarView: View {
 
   private var chatThreads: [OpenClawSidebarThreadSummary] { store.sidebarOpenClawChatThreadSummaries }
   private var settledThreads: [OpenClawSidebarThreadSummary] { store.sidebarSettledOpenClawChatThreadSummaries }
+  private var runningChatThreads: [OpenClawSidebarThreadSummary] {
+    chatThreads.filter { store.isAIChatThreadRunning($0.id) }
+  }
+  private var recentChatThreads: [OpenClawSidebarThreadSummary] {
+    chatThreads.filter { !store.isAIChatThreadRunning($0.id) }
+  }
 
   var body: some View {
     let pinnedCorpusFiles = store.pinnedCorpusFiles
@@ -2406,17 +2412,16 @@ private struct SidebarView: View {
         Section {
           ForEach(WorkspaceSurface.sidebarCases) { surface in
             Button {
-              guard surface != store.selectedSurface else { return }
-              store.makeSurfacePrimary(surface)
+              activateSidebarSurface(surface)
             } label: {
               SidebarSurfaceRow(
                 surface: surface,
                 showsCommandShortcut: showsCommandShortcuts,
-                notificationCount: surface == .approvals ? store.approvalItems.count : 0
+                notificationCount: 0
               )
               .modifier(
                 ReadableListSelectionModifier(
-                  isSelected: store.selectedSurface == surface,
+                  isSelected: isSidebarSurfaceSelected(surface),
                   verticalPadding: 4
                 )
               )
@@ -2424,10 +2429,9 @@ private struct SidebarView: View {
               .background {
                 WorkspaceSurfaceNavigationAccessibilityTarget(
                   surface: surface,
-                  isSelected: store.selectedSurface == surface,
+                  isSelected: isSidebarSurfaceSelected(surface),
                   activate: {
-                    guard surface != store.selectedSurface else { return }
-                    store.makeSurfacePrimary(surface)
+                    activateSidebarSurface(surface)
                   }
                 )
               }
@@ -2440,6 +2444,42 @@ private struct SidebarView: View {
             .listRowBackground(Color.clear)
             .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
+
+          Button {
+            store.openReviewQueue()
+          } label: {
+            SidebarAgentWorkPageRow(
+              title: "Review Queue",
+              systemImage: "checkmark.seal",
+              shortcut: "⌘⇧R",
+              showsCommandShortcut: showsCommandShortcuts,
+              notificationCount: store.approvalItems.count
+            )
+            .modifier(ReadableListSelectionModifier(
+              isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .review,
+              verticalPadding: 4
+            ))
+          }
+          .buttonStyle(.plain)
+          .help("Review Queue (⌘⇧R)")
+
+          Button {
+            store.openAutomations()
+          } label: {
+            SidebarAgentWorkPageRow(
+              title: "Automations",
+              systemImage: "clock.arrow.circlepath",
+              shortcut: "⌥⌘A",
+              showsCommandShortcut: showsCommandShortcuts,
+              notificationCount: 0
+            )
+            .modifier(ReadableListSelectionModifier(
+              isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .workflows,
+              verticalPadding: 4
+            ))
+          }
+          .buttonStyle(.plain)
+          .help("Automations (⌥⌘A)")
         } header: {
           SidebarSectionLabel("Workspace")
         }
@@ -2564,7 +2604,21 @@ private struct SidebarView: View {
                 .padding(.vertical, 3)
                 .listRowBackground(Color.clear)
             } else {
-              ForEach(chatThreads) { summary in
+              if !runningChatThreads.isEmpty {
+                SidebarChatThreadGroupLabel(title: "Running", count: runningChatThreads.count)
+              }
+
+              ForEach(runningChatThreads) { summary in
+                chatThreadRow(summary)
+                  .id(OpenClawSidebarThreadRowIdentity(summary: summary))
+                  .listRowBackground(Color.clear)
+              }
+
+              if !runningChatThreads.isEmpty, !recentChatThreads.isEmpty {
+                SidebarChatThreadGroupLabel(title: "Recent", count: recentChatThreads.count)
+              }
+
+              ForEach(recentChatThreads) { summary in
                 chatThreadRow(summary)
                   .id(OpenClawSidebarThreadRowIdentity(summary: summary))
                   .listRowBackground(Color.clear)
@@ -2720,7 +2774,7 @@ private struct SidebarView: View {
   private func chatThreadRow(_ summary: OpenClawSidebarThreadSummary) -> some View {
     OpenClawSidebarThreadRow(
       summary: summary,
-      isSending: store.openClawSendingThreadIDs.contains(summary.id),
+      isSending: store.isAIChatThreadRunning(summary.id),
       select: {
         store.makeSurfacePrimary(.openClaw)
         store.selectOpenClawChatThread(summary.id)
@@ -2874,6 +2928,66 @@ private struct SidebarView: View {
     } else {
       expandedSidebarFileDirectoryIDs.insert(id)
     }
+  }
+
+  private func isSidebarSurfaceSelected(_ surface: WorkspaceSurface) -> Bool {
+    guard store.selectedSurface == surface else { return false }
+    guard surface == .approvals else { return true }
+    return store.runsAndReviewPage != .review && store.runsAndReviewPage != .workflows
+  }
+
+  private func activateSidebarSurface(_ surface: WorkspaceSurface) {
+    if surface == .approvals {
+      store.runsAndReviewPage = .runs
+      store.makeSurfacePrimary(.approvals)
+      return
+    }
+    guard surface != store.selectedSurface else { return }
+    store.makeSurfacePrimary(surface)
+  }
+}
+
+private struct SidebarAgentWorkPageRow: View {
+  let title: String
+  let systemImage: String
+  let shortcut: String
+  let showsCommandShortcut: Bool
+  let notificationCount: Int
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Label(title, systemImage: systemImage)
+        .font(.callout.weight(.medium))
+      Spacer(minLength: 0)
+      if notificationCount > 0 {
+        Text("\(notificationCount)")
+          .font(.caption2.monospacedDigit().weight(.semibold))
+          .foregroundStyle(.secondary)
+      }
+      if showsCommandShortcut {
+        KeyboardShortcutBadge(text: shortcut)
+      }
+    }
+    .contentShape(Rectangle())
+  }
+}
+
+private struct SidebarChatThreadGroupLabel: View {
+  let title: String
+  let count: Int
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Text(title.uppercased())
+      Text("\(count)")
+        .foregroundStyle(.tertiary)
+      Spacer(minLength: 0)
+    }
+    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+    .tracking(0.6)
+    .foregroundStyle(WorkspaceDesign.tertiaryText)
+    .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+    .padding(.top, 4)
   }
 }
 

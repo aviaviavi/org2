@@ -349,6 +349,47 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(appSource.contains(#".keyboardShortcut("/", modifiers: [.command])"#))
     XCTAssertTrue(contentSource.contains("Label(\"Keyboard Shortcuts\", systemImage: \"questionmark.circle\")"))
     XCTAssertTrue(contentSource.contains("store.presentKeyboardShortcuts()"))
+    XCTAssertTrue(contentSource.contains("title: \"Review Queue\""))
+    XCTAssertTrue(contentSource.contains("title: \"Automations\""))
+    XCTAssertTrue(contentSource.contains("SidebarChatThreadGroupLabel(title: \"Running\""))
+    XCTAssertTrue(appSource.contains("Button(\"Review Queue\")"))
+    XCTAssertTrue(appSource.contains("Button(\"Automations\")"))
+    XCTAssertTrue(appSource.contains(#".keyboardShortcut("r", modifiers: [.command, .shift])"#))
+    XCTAssertTrue(appSource.contains(#".keyboardShortcut("a", modifiers: [.command, .option])"#))
+  }
+
+  func testIOSForegroundThreadRefreshDoesNotDependOnNotifications() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let repositoryRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: repositoryRoot
+        .appendingPathComponent("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteStore.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(source.contains("guard isActive, isPaired else { return }"))
+    XCTAssertTrue(source.contains("if self.threadNotificationsEnabled"))
+    XCTAssertTrue(source.contains("Task.sleep(for: .seconds(4))"))
+
+    let coordinatorSource = try String(
+      contentsOf: repositoryRoot.appendingPathComponent(
+        "apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/MobileRemoteCoordinator.swift"
+      ),
+      encoding: .utf8
+    )
+    XCTAssertGreaterThanOrEqual(
+      coordinatorSource.components(
+        separatedBy: "_ = await store.refreshSyncedAIChatTranscript()"
+      ).count - 1,
+      2,
+      "Thread lists and individual thread requests must reconcile synced disk state before responding"
+    )
   }
 
   func testGlobalSearchFocusWaitsForTheCachedSurfaceToAttach() throws {
@@ -461,7 +502,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     let source = try String(contentsOf: contentView, encoding: .utf8)
 
     XCTAssertNotNil(source.range(
-      of: #"ReadableListSelectionModifier\(\s*isSelected:\s*store\.selectedSurface == surface,\s*verticalPadding:\s*4\s*\)"#,
+      of: #"ReadableListSelectionModifier\(\s*isSelected:\s*isSidebarSurfaceSelected\(surface\),\s*verticalPadding:\s*4\s*\)"#,
       options: .regularExpression
     ))
     XCTAssertTrue(source.contains("var verticalPadding: CGFloat = 0"))

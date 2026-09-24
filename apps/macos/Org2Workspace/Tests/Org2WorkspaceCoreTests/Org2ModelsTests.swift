@@ -7681,6 +7681,46 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAskAIFromDetailContinuesChatAlreadyOpenInOtherPane() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-ai-existing-pane-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "org2-ai-existing-pane-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    let threadID = store.createOpenClawChatThread(runtime: .codex)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Keep this conversation")
+    ]
+    store.selectedEntrySource = EntrySource(
+      file: root.appendingPathComponent("notes/plan.org").path,
+      startLine: 4,
+      endLineExclusive: 7,
+      text: "* Plan\nDetails",
+      isSubtree: true
+    )
+    store.makeSurfacePrimary(.openClaw)
+
+    store.askOpenClawAboutCurrentSelection()
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawChatThreads.first?.messages.count, 1)
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use selected entry “Plan” at /remote/org2/notes/plan.org:4 as context.\n\n"
+    )
+  }
+
+  @MainActor
   func testAskOpenClawAboutRenderedHTMLHeadingUsesExactSourceBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-html-heading-ai-\(UUID().uuidString)", isDirectory: true)
@@ -11989,6 +12029,14 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "K", keyCode: 40, modifiers: [.command, .shift])))
     XCTAssertEqual(store.selectedSurface, .skills)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "R", keyCode: 15, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.runsAndReviewPage, .review)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "a", keyCode: 0, modifiers: [.command, .option])))
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.runsAndReviewPage, .workflows)
 
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))

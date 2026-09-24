@@ -214,6 +214,18 @@ struct Org2WorkspaceApp: App {
       }
 
       CommandMenu("Pane") {
+        Button("Review Queue") {
+          store.openReviewQueue()
+        }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+
+        Button("Automations") {
+          store.openAutomations()
+        }
+        .keyboardShortcut("a", modifiers: [.command, .option])
+
+        Divider()
+
         Button("Make Current Pane Primary") {
           store.makeSelectedSurfacePrimary()
         }
