@@ -186,6 +186,33 @@ private actor DataNotebookInspectionGate {
   }
 }
 
+private actor AgendaRefreshPublicationGate {
+  private var started = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    started = true
+    startWaiters.forEach { $0.resume() }
+    startWaiters = []
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
 private final class FluidVoiceTestURLProtocol: URLProtocol, @unchecked Sendable {
   private static let lock = NSLock()
   nonisolated(unsafe) private static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
@@ -12371,6 +12398,119 @@ final class Org2ModelsTests: XCTestCase {
     try await waitForCondition(timeout: 10) {
       ((try? String(contentsOf: note, encoding: .utf8)) ?? "").contains("* DONE First task")
         && store.visibleAgendaItems.map(\.headline) == ["Second task", "Third task"]
+    }
+  }
+
+  @MainActor
+  func testAgendaRefreshStartedBeforeDoneCannotRestoreCompletedRow() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-preexisting-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("agenda-preexisting-refresh.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let gate = AgendaRefreshPublicationGate()
+    let blocksFirstRefresh = ThreadSafeTestFlag()
+    let stalePayload = try JSONDecoder().decode(AgendaPayload.self, from: Data("""
+    {
+      "$schema": "org2:agenda:v1",
+      "range": { "start": "\(today.prefix(10))", "end": "\(today.prefix(10))", "days": 1 },
+      "overdue": [],
+      "days": [{
+        "date": "\(today.prefix(10))",
+        "weekday": "Today",
+        "items": [
+          { "todo": "TODO", "headline": "First task", "kind": "SCHEDULED", "file": "\(note.path)", "line": 1, "tags": [], "properties": {} },
+          { "todo": "TODO", "headline": "Second task", "kind": "SCHEDULED", "file": "\(note.path)", "line": 4, "tags": [], "properties": {} }
+        ]
+      }],
+      "skippedFiles": 0
+    }
+    """.utf8))
+    let freshPayload = try JSONDecoder().decode(AgendaPayload.self, from: Data("""
+    {
+      "$schema": "org2:agenda:v1",
+      "range": { "start": "\(today.prefix(10))", "end": "\(today.prefix(10))", "days": 1 },
+      "overdue": [],
+      "days": [{
+        "date": "\(today.prefix(10))",
+        "weekday": "Today",
+        "items": [
+          { "todo": "TODO", "headline": "Second task", "kind": "SCHEDULED", "file": "\(note.path)", "line": 5, "tags": [], "properties": {} }
+        ]
+      }],
+      "skippedFiles": 0
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.agendaRefreshLoaderForTesting = { _ in
+      if blocksFirstRefresh.setIfUnset() {
+        await gate.wait()
+        return stalePayload
+      }
+      return freshPayload
+    }
+    store.todoStatusMutationForTesting = { status, file, line in
+      let fileURL = URL(fileURLWithPath: file)
+      var lines = try String(contentsOf: fileURL, encoding: .utf8)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+      lines[line - 1] = lines[line - 1].replacingOccurrences(
+        of: " TODO ",
+        with: " \(status.label) "
+      )
+      try lines.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+      return status.label
+    }
+    store.setCorpusRoot(root)
+    let staleRefresh = Task {
+      await store.refreshAgenda(preserveSelection: true, updatesStatus: false)
+    }
+    await gate.waitUntilStarted()
+    store.agenda = stalePayload
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(first)
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Second task"])
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+
+    try await waitForCondition(timeout: 10) {
+      ((try? String(contentsOf: note, encoding: .utf8)) ?? "").contains("* DONE First task")
+    }
+    XCTAssertTrue(
+      ((try? String(contentsOf: note, encoding: .utf8)) ?? "").contains("* DONE First task"),
+      "TODO mutation did not finish: \(store.statusText) / \(store.errorText ?? "no error")"
+    )
+    try await Task.sleep(nanoseconds: 250_000_000)
+    await gate.release()
+    try await waitForCondition(timeout: 10) {
+      !store.isRefreshingAgendaForTesting
+    }
+    XCTAssertFalse(store.isRefreshingAgendaForTesting, "Stale agenda refresh did not finish")
+    await staleRefresh.value
+
+    XCTAssertEqual(store.visibleAgendaItems.map(\.headline), ["Second task"])
+    XCTAssertEqual(
+      store.visibleAgendaItems.first { $0.id == store.selectedAgendaItemID }?.headline,
+      "Second task"
+    )
+    try await waitForCondition(timeout: 10) {
+      store.visibleAgendaItems.map(\.headline) == ["Second task"]
     }
   }
 

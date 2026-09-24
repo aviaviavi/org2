@@ -3394,6 +3394,7 @@ public final class WorkspaceStore {
     _ file: String,
     _ line: Int
   ) async throws -> String)?
+  var agendaRefreshLoaderForTesting: (@MainActor ([String]) async throws -> AgendaPayload)?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var liveFileEditorDraftGeneration: UInt64 = 0
@@ -3477,6 +3478,7 @@ public final class WorkspaceStore {
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var nextSelectedRenderedBlocksMetadata: RenderedBlocksMetadata?
   private var isRefreshingAgenda = false
+  var isRefreshingAgendaForTesting: Bool { isRefreshingAgenda }
   private var isRefreshingApprovals = false
   private var approvalRefreshRequestedAfterCurrent = false
   private var isRefreshingAgentRuns = false
@@ -3504,6 +3506,7 @@ public final class WorkspaceStore {
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var agendaRefreshDeferredForTodoShortcutBurst = false
+  private var agendaTodoShortcutMutationGeneration: UInt64 = 0
   private var pendingAgendaRefreshAfterBlockEditing = false
   private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
   private var agentRunFilterTextByID: [AgentRunItem.ID: String] = [:]
@@ -4665,6 +4668,7 @@ public final class WorkspaceStore {
     agendaTodoShortcutMutationTask = nil
     pendingAgendaTodoShortcutMutations = []
     agendaRefreshDeferredForTodoShortcutBurst = false
+    agendaTodoShortcutMutationGeneration &+= 1
     searchIndexTask?.cancel()
     searchIndexTask = nil
     searchIndexGeneration += 1
@@ -6228,6 +6232,7 @@ public final class WorkspaceStore {
     }
 
     let sessionGeneration = corpusSessionGeneration
+    let todoMutationGeneration = agendaTodoShortcutMutationGeneration
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.agenda, default: 0]
     isRefreshingAgenda = true
     let showsLoading = updatesStatus || agenda == nil
@@ -6259,8 +6264,18 @@ public final class WorkspaceStore {
         "--format", "json",
         "--workload"
       ]
-      let payload: AgendaPayload = try await cli.runJSON(arguments)
+      let payload: AgendaPayload
+      if let agendaRefreshLoaderForTesting {
+        payload = try await agendaRefreshLoaderForTesting(arguments)
+      } else {
+        payload = try await cli.runJSON(arguments)
+      }
       guard !Task.isCancelled, isCurrentCorpusSession(root: corpusRoot, generation: sessionGeneration) else { return }
+      guard todoMutationGeneration == agendaTodoShortcutMutationGeneration else {
+        agendaRefreshDeferredForTodoShortcutBurst = true
+        scheduleAgendaRefresh(preserveSelection: true, updatesStatus: false)
+        return
+      }
       guard agendaTodoShortcutMutationTask == nil,
             pendingAgendaTodoShortcutMutations.isEmpty
       else {
@@ -33823,6 +33838,7 @@ public final class WorkspaceStore {
       target: target,
       context: context
     ))
+    agendaTodoShortcutMutationGeneration &+= 1
     guard agendaTodoShortcutMutationTask == nil else { return }
 
     agendaTodoShortcutMutationTask = Task { @MainActor [weak self] in
