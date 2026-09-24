@@ -28081,10 +28081,18 @@ public final class WorkspaceStore {
       return true
     }
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }),
-          thread.pendingTurn?.userMessageID == messageID else { return false }
-    return thread.messages.contains {
-      $0.id == messageID && $0.role == .user && $0.deliveryStatus == .sending
+          let message = thread.messages.first(where: { $0.id == messageID }),
+          message.role == .user,
+          message.deliveryStatus == .sending
+    else { return false }
+    if thread.pendingTurn?.userMessageID == messageID {
+      return true
     }
+    // A synced host does not own the provider task and can observe the
+    // transcript before (or without) its portable pending-turn metadata. The
+    // delivery kind still distinguishes that active turn or steer from an
+    // explicit follow-up waiting behind it.
+    return message.deliveryKind != .followUp
   }
 
   private func clearOpenClawSendFailure(

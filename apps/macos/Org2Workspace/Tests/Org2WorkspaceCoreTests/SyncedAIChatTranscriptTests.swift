@@ -79,6 +79,14 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     )
     XCTAssertFalse(store.isAIChatThreadRunning(queuedOnly.id))
     XCTAssertFalse(store.isAIChatThreadRunningOnCurrentHost(queuedOnly.id))
+    XCTAssertFalse(
+      store.isAIChatMessageQueued(activeMessage.id),
+      "The active turn imported from another host must not be labeled as queued"
+    )
+    XCTAssertTrue(
+      store.isAIChatMessageQueued(queuedMessage.id),
+      "An explicit follow-up must remain queued behind the active remote turn"
+    )
     XCTAssertFalse(store.canChangeChatAgent)
   }
 

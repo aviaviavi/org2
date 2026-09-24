@@ -65,6 +65,25 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     try await Task.sleep(for: .milliseconds(80))
   }
 
+  func testSelectableTranscriptDoesNotSuppressLiveActivityInSharedRooms() throws {
+    let sourceURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("Sources/Org2WorkspaceCore/AIChatTranscriptDocument.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let start = try XCTUnwrap(source.range(of: "private var liveInput: LiveInput?"))
+    let end = try XCTUnwrap(source.range(
+      of: "var body: some View",
+      range: start.upperBound..<source.endIndex
+    ))
+    let liveInputSource = source[start.lowerBound..<end.lowerBound]
+
+    XCTAssertTrue(liveInputSource.contains("store.isSendingOpenClawMessage"))
+    XCTAssertTrue(liveInputSource.contains("store.selectedAIChatActiveDestinationID"))
+    XCTAssertFalse(liveInputSource.contains("!store.selectedAIChatIsSharedRoom"))
+  }
+
   func testNativeSelectionCrossesMessagesAndSurvivesIncomingUpdates() async throws {
     let view = try await document()
     let first = entry("first", "<main><p>Start in the first message.</p></main>", role: "user")

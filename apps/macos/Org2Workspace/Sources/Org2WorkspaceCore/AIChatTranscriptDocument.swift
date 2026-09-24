@@ -204,7 +204,6 @@ struct AIChatTranscriptDocument: View {
 
   private var liveInput: LiveInput? {
     guard store.isSendingOpenClawMessage,
-          !store.selectedAIChatIsSharedRoom,
           let threadID = store.selectedOpenClawChatThreadID
     else { return nil }
     let snapshot = liveState.presentationSnapshot(for: threadID)
