@@ -1061,6 +1061,12 @@ public actor OpenClawGatewayClient {
             if replace { assembledText = delta } else { assembledText += delta }
             if !delta.isEmpty { await onEvent(.text(delta, replace: replace)) }
           } else if state == "final" {
+            if Self.isSteerAcknowledgement(payload["message"]) {
+              // OpenClaw records a synthetic assistant message when /steer is
+              // accepted. It belongs to the steer command, not to the active
+              // turn whose run ID remains on the session.
+              continue
+            }
             let final = Self.messageText(payload["message"], includeThinking: false)
             if !final.isEmpty {
               assembledText = final
@@ -1818,6 +1824,7 @@ public actor OpenClawGatewayClient {
 
     for value in candidateMessages.reversed() {
       guard let message = dictionary(value), string(message["role"]) == "assistant" else { continue }
+      if isSteerAcknowledgement(message) { continue }
       let text = messageText(message, includeThinking: false)
         .trimmingCharacters(in: .whitespacesAndNewlines)
       if !text.isEmpty { return .completed(text) }
@@ -1841,6 +1848,19 @@ public actor OpenClawGatewayClient {
       return .failed("OpenClaw finished without a response.")
     }
     return .failed("OpenClaw session ended with status \(status).")
+  }
+
+  static func isSteerAcknowledgement(_ value: Any?) -> Bool {
+    guard let message = dictionary(value),
+          string(message["role"]) == "assistant",
+          string(message["provider"]) == "openclaw",
+          string(message["model"]) == "gateway-injected"
+    else {
+      return false
+    }
+    return messageText(message, includeThinking: false)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased() == "steered current session."
   }
 
   private func sendRequest(

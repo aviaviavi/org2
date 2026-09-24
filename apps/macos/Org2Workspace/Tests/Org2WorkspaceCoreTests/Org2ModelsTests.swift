@@ -2013,6 +2013,81 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawGatewayClient.acceptedRunRecoveryPollTimeoutMilliseconds, 5_000)
   }
 
+  func testOpenClawGatewayIgnoresSteerAcknowledgementWhileOriginalRunContinues() {
+    let acknowledgement: [String: Any] = [
+      "role": "assistant",
+      "provider": "openclaw",
+      "model": "gateway-injected",
+      "content": [["type": "text", "text": "steered current session."]],
+    ]
+    let payload: [String: Any] = [
+      "messages": [
+        [
+          "role": "user",
+          "timestamp": 2_000,
+          "idempotencyKey": "original-run:user",
+          "content": "Current request",
+        ],
+        acknowledgement,
+      ],
+      "sessionInfo": [
+        "status": "running",
+        "hasActiveRun": true,
+        "activeRunIds": ["original-run"],
+        "updatedAt": 3_000,
+      ],
+    ]
+
+    XCTAssertTrue(OpenClawGatewayClient.isSteerAcknowledgement(acknowledgement))
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatHistoryReconciliation(
+        from: payload,
+        runID: "original-run",
+        requestStartedAtMilliseconds: 1_900
+      ),
+      .pending(hasActiveRun: true, activeRunIDs: ["original-run"])
+    )
+  }
+
+  func testOpenClawGatewayReturnsRealReplyAfterSteerAcknowledgement() {
+    let payload: [String: Any] = [
+      "messages": [
+        [
+          "role": "user",
+          "timestamp": 2_000,
+          "idempotencyKey": "original-run:user",
+          "content": "Current request",
+        ],
+        [
+          "role": "assistant",
+          "provider": "openclaw",
+          "model": "gateway-injected",
+          "content": [["type": "text", "text": "steered current session."]],
+        ],
+        [
+          "role": "assistant",
+          "provider": "openai",
+          "model": "gpt-test",
+          "content": [["type": "text", "text": "Finished after steering"]],
+        ],
+      ],
+      "sessionInfo": [
+        "status": "done",
+        "hasActiveRun": false,
+        "endedAt": 4_100,
+      ],
+    ]
+
+    XCTAssertEqual(
+      OpenClawGatewayClient.chatHistoryReconciliation(
+        from: payload,
+        runID: "original-run",
+        requestStartedAtMilliseconds: 1_900
+      ),
+      .completed("Finished after steering")
+    )
+  }
+
   func testOpenClawGatewayReconcilesDuplicateSendAcknowledgements() {
     XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "in_flight"]))
     XCTAssertTrue(OpenClawGatewayClient.shouldReconcileAfterSendAcknowledgement(["status": "ok"]))
