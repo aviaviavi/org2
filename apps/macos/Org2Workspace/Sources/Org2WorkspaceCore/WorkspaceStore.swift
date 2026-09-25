@@ -3076,6 +3076,8 @@ public final class WorkspaceStore {
   private var codexAppServerClientsByDestinationID: [String: CodexAppServerClient] = [:]
   private static let codexModelCatalogMaximumAge: TimeInterval = 15 * 60
   private var claudeCodeClient: ClaudeCodeClient?
+  private var piAgentClientsByDestinationID: [String: PiAgentClient] = [:]
+  private var openCodeClientsByDestinationID: [String: OpenCodeClient] = [:]
   private var externalCodexAppServerClient: CodexAppServerClient?
   private var externalThreadRefreshRequestID: UUID?
   private var externalThreadLoadRequestID: UUID?
@@ -7629,7 +7631,8 @@ public final class WorkspaceStore {
     _ adapter: AIChatDestinationAdapter
   ) -> Bool {
     switch adapter {
-    case .codexLocal, .codexRemote, .codexManagedRemote, .openClaw:
+    case .codexLocal, .codexRemote, .codexManagedRemote, .piLocal, .piRemote,
+         .openCodeLocal, .openCodeRemote, .openClaw:
       true
     case .claudeLocal, .openAI, .anthropic, .openRouter, .ollama:
       false
@@ -21453,6 +21456,8 @@ public final class WorkspaceStore {
         switch destinationID {
         case AIChatDestinationConfiguration.localCodexID: .codex
         case AIChatDestinationConfiguration.localClaudeID: .claude
+        case AIChatDestinationConfiguration.localPiID: .pi
+        case AIChatDestinationConfiguration.localOpenCodeID: .openCode
         default: .openClaw
         }
       }()
@@ -21508,6 +21513,7 @@ public final class WorkspaceStore {
     aiChatDestinations[index] = normalized
     aiChatDestinationSettingsError = nil
     invalidateCodexClient(forDestinationID: normalized.id)
+    invalidateCLIChatClient(forDestinationID: normalized.id)
     removeCachedAIChatConfiguration(destinationID: normalized.id)
     persistAIChatDestinations()
   }
@@ -21515,6 +21521,8 @@ public final class WorkspaceStore {
   public func removeAIChatDestination(_ destinationID: String) {
     guard destinationID != AIChatDestinationConfiguration.localCodexID,
           destinationID != AIChatDestinationConfiguration.localClaudeID,
+          destinationID != AIChatDestinationConfiguration.localPiID,
+          destinationID != AIChatDestinationConfiguration.localOpenCodeID,
           destinationID != AIChatDestinationConfiguration.openClawID
     else {
       aiChatDestinationSettingsError = "Built-in local and OpenClaw destinations can be disabled, but not deleted."
@@ -21528,6 +21536,7 @@ public final class WorkspaceStore {
     }
     aiChatDestinations.removeAll(where: { $0.id == destinationID })
     invalidateCodexClient(forDestinationID: destinationID)
+    invalidateCLIChatClient(forDestinationID: destinationID)
     removeCachedAIChatConfiguration(destinationID: destinationID)
     try? AIChatDestinationCredentials.deleteToken(destinationID: destinationID)
     persistAIChatDestinations()
@@ -21976,6 +21985,12 @@ public final class WorkspaceStore {
         models = try await modelsForAIChatDestination(thread.destinationID)
         effectiveModel = thread.model
         reasoningOptions = []
+        defaultReasoningEffort = nil
+        resolvedReasoningConfiguration = true
+      case .piLocal, .piRemote, .openCodeLocal, .openCodeRemote:
+        models = try await modelsForAIChatDestination(thread.destinationID)
+        effectiveModel = thread.model ?? selectedAIChatDestination.model
+        reasoningOptions = Self.cliHarnessReasoningOptions
         defaultReasoningEffort = nil
         resolvedReasoningConfiguration = true
       case .openClaw:
@@ -22674,6 +22689,40 @@ public final class WorkspaceStore {
         statusText: thread.isSharedRoom ? "Shared room stopped" : "Claude Code stopped"
       )
       await claudeCodeClient?.interrupt(openOrgThreadID: threadID)
+      aiChatDrainTasksByThreadID[threadID]?.task.cancel()
+      return true
+    }
+    if activeRuntime == .pi {
+      guard isAIChatThreadRunning(threadID) else {
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "No active Pi request to stop"
+        }
+        return false
+      }
+      markOpenClawRunStopped(
+        in: threadID,
+        statusText: thread.isSharedRoom ? "Shared room stopped" : "Pi stopped"
+      )
+      await piAgentClientsByDestinationID[activeDestinationID]?.interrupt(
+        openOrgThreadID: threadID
+      )
+      aiChatDrainTasksByThreadID[threadID]?.task.cancel()
+      return true
+    }
+    if activeRuntime == .openCode {
+      guard isAIChatThreadRunning(threadID) else {
+        if selectedOpenClawChatThreadID == threadID {
+          openClawStatusText = "No active OpenCode request to stop"
+        }
+        return false
+      }
+      markOpenClawRunStopped(
+        in: threadID,
+        statusText: thread.isSharedRoom ? "Shared room stopped" : "OpenCode stopped"
+      )
+      await openCodeClientsByDestinationID[activeDestinationID]?.interrupt(
+        openOrgThreadID: threadID
+      )
       aiChatDrainTasksByThreadID[threadID]?.task.cancel()
       return true
     }
@@ -23522,6 +23571,8 @@ public final class WorkspaceStore {
         switch thread.runtime {
         case .codex: .codexLocal
         case .claude: .claudeLocal
+        case .pi: .piLocal
+        case .openCode: .openCodeLocal
         case .openClaw: .openClaw
         }
       }()
@@ -23545,6 +23596,15 @@ public final class WorkspaceStore {
         effectiveModel: thread.model,
         reasoningEffort: nil,
         reasoningOptions: [],
+        defaultReasoningEffort: nil
+      )
+    case .piLocal, .piRemote, .openCodeLocal, .openCodeRemote:
+      let models = try await modelsForAIChatDestination(thread.destinationID)
+      return AIChatRemoteConfiguration(
+        models: models,
+        effectiveModel: thread.model ?? aiChatDestination(id: thread.destinationID)?.model,
+        reasoningEffort: thread.reasoningEffort,
+        reasoningOptions: Self.cliHarnessReasoningOptions,
         defaultReasoningEffort: nil
       )
     case .openClaw:
@@ -24137,6 +24197,8 @@ public final class WorkspaceStore {
         && openClawActiveRunIDByThreadID[threadID] != nil
     case .claude:
       return false
+    case .pi, .openCode:
+      return false
     }
   }
 
@@ -24190,6 +24252,14 @@ public final class WorkspaceStore {
         case .claude:
           throw ClaudeCodeError.invalidResponse(
             "steering is not available for Claude Code; queue a follow-up instead"
+          )
+        case .pi:
+          throw PiAgentError.invalidResponse(
+            "steering is not available for Pi; queue a follow-up instead"
+          )
+        case .openCode:
+          throw OpenCodeError.invalidResponse(
+            "steering is not available for OpenCode; queue a follow-up instead"
           )
         }
       }
@@ -24275,6 +24345,8 @@ public final class WorkspaceStore {
         || message.localizedCaseInsensitiveContains("live run")
         || message.localizedCaseInsensitiveContains("in progress")
     case .claude:
+      return false
+    case .pi, .openCode:
       return false
     }
   }
@@ -24942,6 +25014,20 @@ public final class WorkspaceStore {
           )
         case .claudeLocal:
           reply = try await sendClaudeCodeRequest(
+            messages: requestMessages,
+            threadID: threadID,
+            destinationID: dispatchDestinationID,
+            sendOrigin: sendOrigin
+          )
+        case .piLocal, .piRemote:
+          reply = try await sendPiAgentRequest(
+            messages: requestMessages,
+            threadID: threadID,
+            destinationID: dispatchDestinationID,
+            sendOrigin: sendOrigin
+          )
+        case .openCodeLocal, .openCodeRemote:
+          reply = try await sendOpenCodeRequest(
             messages: requestMessages,
             threadID: threadID,
             destinationID: dispatchDestinationID,
@@ -25823,6 +25909,176 @@ public final class WorkspaceStore {
       : reply
   }
 
+  private func sendPiAgentRequest(
+    messages: [OpenClawChatMessage],
+    threadID: UUID,
+    destinationID: String,
+    sendOrigin: AIChatSendOrigin
+  ) async throws -> String {
+    guard let corpusRoot = sendOrigin.corpusRoot else {
+      throw PiAgentError.invalidResponse("choose an Org2 corpus before using Pi")
+    }
+    guard let destination = aiChatDestination(id: destinationID),
+          destination.adapter == .piLocal || destination.adapter == .piRemote,
+          let thread = openClawChatThread(threadID, transcriptURL: sendOrigin.transcriptURL),
+          let userMessage = messages.last(where: { $0.role == .user }),
+          thread.runtime == .pi
+            || (thread.isSharedRoom && userMessage.targetDestinationID == destinationID)
+    else {
+      throw PiAgentError.invalidResponse("the selected thread is not routed to Pi")
+    }
+    let requestMessages = thread.isSharedRoom
+      ? Self.sharedRoomRequestMessages(
+          messages,
+          targetDestinationName: destination.name,
+          targetDestinationID: destinationID,
+          destinationNamesByID: Dictionary(
+            uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
+          ),
+          through: userMessage.id
+        )
+      : messages
+    let requestUserMessage = requestMessages.last(where: { $0.id == userMessage.id }) ?? userMessage
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: sendOrigin.transcriptURL
+    )
+
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    var workspaceContext = sendOrigin.workspaceContext.threadContinuation == nil
+      ? sendOrigin.workspaceContext.replacingThreadContinuation(
+          aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
+        )
+      : sendOrigin.workspaceContext
+    if destination.adapter == .piRemote {
+      workspaceContext = workspaceContext.replacingRuntimeCorpusRoot(destination.workspaceRoot)
+    }
+    let result = try await piAgentClient(forDestinationID: destinationID).runTurn(
+      openOrgThreadID: threadID,
+      existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
+      message: Self.expandingOpenClawAgentCommand(
+        requestUserMessage,
+        corpusSkills: corpusAgentSkillCommands
+      ).content,
+      systemPrompt: workspaceContext.localAgentSystemPrompt(
+        runtime: "pi",
+        runtimeTitle: "Pi",
+        runtimeFilesystemAccess: destination.adapter == .piRemote
+      ),
+      attachments: requestUserMessage.attachments,
+      cwd: corpusRoot,
+      model: thread.model(forDestinationID: destinationID) ?? destination.model,
+      reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
+      sandboxAccess: codexSandboxAccess
+    )
+    persistRuntimeSessionID(
+      result.sessionID,
+      destinationID: destinationID,
+      thread: thread,
+      transcriptURL: sendOrigin.transcriptURL
+    )
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    return reply.isEmpty ? "Pi completed the turn without a text response." : reply
+  }
+
+  private func sendOpenCodeRequest(
+    messages: [OpenClawChatMessage],
+    threadID: UUID,
+    destinationID: String,
+    sendOrigin: AIChatSendOrigin
+  ) async throws -> String {
+    guard let corpusRoot = sendOrigin.corpusRoot else {
+      throw OpenCodeError.invalidResponse("choose an Org2 corpus before using OpenCode")
+    }
+    guard let destination = aiChatDestination(id: destinationID),
+          destination.adapter == .openCodeLocal || destination.adapter == .openCodeRemote,
+          let thread = openClawChatThread(threadID, transcriptURL: sendOrigin.transcriptURL),
+          let userMessage = messages.last(where: { $0.role == .user }),
+          thread.runtime == .openCode
+            || (thread.isSharedRoom && userMessage.targetDestinationID == destinationID)
+    else {
+      throw OpenCodeError.invalidResponse("the selected thread is not routed to OpenCode")
+    }
+    let requestMessages = thread.isSharedRoom
+      ? Self.sharedRoomRequestMessages(
+          messages,
+          targetDestinationName: destination.name,
+          targetDestinationID: destinationID,
+          destinationNamesByID: Dictionary(
+            uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
+          ),
+          through: userMessage.id
+        )
+      : messages
+    let requestUserMessage = requestMessages.last(where: { $0.id == userMessage.id }) ?? userMessage
+    resetAIChatTurnTelemetry(
+      threadID: threadID,
+      destinationID: destinationID,
+      transcriptURL: sendOrigin.transcriptURL
+    )
+
+    openClawGatewayStateByThreadID[threadID] = .connecting
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    var workspaceContext = sendOrigin.workspaceContext.threadContinuation == nil
+      ? sendOrigin.workspaceContext.replacingThreadContinuation(
+          aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
+        )
+      : sendOrigin.workspaceContext
+    if destination.adapter == .openCodeRemote {
+      workspaceContext = workspaceContext.replacingRuntimeCorpusRoot(destination.workspaceRoot)
+    }
+    let result = try await openCodeClient(forDestinationID: destinationID).runTurn(
+      openOrgThreadID: threadID,
+      existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
+      message: Self.expandingOpenClawAgentCommand(
+        requestUserMessage,
+        corpusSkills: corpusAgentSkillCommands
+      ).content,
+      systemPrompt: workspaceContext.localAgentSystemPrompt(
+        runtime: "opencode",
+        runtimeTitle: "OpenCode",
+        runtimeFilesystemAccess: destination.adapter == .openCodeRemote
+      ),
+      attachments: requestUserMessage.attachments,
+      cwd: corpusRoot,
+      model: thread.model(forDestinationID: destinationID) ?? destination.model,
+      reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
+      sandboxAccess: codexSandboxAccess
+    )
+    persistRuntimeSessionID(
+      result.sessionID,
+      destinationID: destinationID,
+      thread: thread,
+      transcriptURL: sendOrigin.transcriptURL
+    )
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawGatewayDetailByThreadID[threadID] = destination.name
+    let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    return reply.isEmpty ? "OpenCode completed the turn without a text response." : reply
+  }
+
+  private func persistRuntimeSessionID(
+    _ sessionID: String,
+    destinationID: String,
+    thread: OpenClawChatThread,
+    transcriptURL: URL
+  ) {
+    guard sessionID != thread.runtimeThreadID(forDestinationID: destinationID) else { return }
+    var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
+    runtimeThreadIDs[destinationID] = sessionID
+    replaceOpenClawChatThread(
+      thread.replacingOpenClawChatMetadata(
+        runtimeThreadID: destinationID == thread.destinationID ? .some(sessionID) : nil,
+        runtimeThreadIDsByDestination: runtimeThreadIDs
+      ),
+      transcriptURL: transcriptURL
+    )
+  }
+
   private func sendCodexRequest(
     messages: [OpenClawChatMessage],
     threadID: UUID,
@@ -26067,11 +26323,70 @@ public final class WorkspaceStore {
     return client
   }
 
+  private func piAgentClient(forDestinationID destinationID: String) throws -> PiAgentClient {
+    if let client = piAgentClientsByDestinationID[destinationID] { return client }
+    guard let destination = aiChatDestination(id: destinationID) else {
+      throw PiAgentError.invalidResponse("the configured Pi destination no longer exists")
+    }
+    let transport: PiAgentTransport
+    switch destination.adapter {
+    case .piLocal:
+      transport = .local
+    case .piRemote:
+      transport = .managedRemote(
+        sshHost: destination.endpoint,
+        workspacePath: destination.workspaceRoot
+      )
+    default:
+      throw PiAgentError.invalidResponse("the configured AI destination is not a Pi target")
+    }
+    let client = PiAgentClient(transport: transport) { [weak self] threadID, event in
+      await self?.handlePiAgentEvent(event, threadID: threadID)
+    }
+    piAgentClientsByDestinationID[destinationID] = client
+    return client
+  }
+
+  private func openCodeClient(forDestinationID destinationID: String) throws -> OpenCodeClient {
+    if let client = openCodeClientsByDestinationID[destinationID] { return client }
+    guard let destination = aiChatDestination(id: destinationID) else {
+      throw OpenCodeError.invalidResponse("the configured OpenCode destination no longer exists")
+    }
+    let transport: OpenCodeTransport
+    switch destination.adapter {
+    case .openCodeLocal:
+      transport = .local
+    case .openCodeRemote:
+      transport = .managedRemote(
+        sshHost: destination.endpoint,
+        workspacePath: destination.workspaceRoot
+      )
+    default:
+      throw OpenCodeError.invalidResponse(
+        "the configured AI destination is not an OpenCode target"
+      )
+    }
+    let client = OpenCodeClient(transport: transport) { [weak self] threadID, event in
+      await self?.handleOpenCodeEvent(event, threadID: threadID)
+    }
+    openCodeClientsByDestinationID[destinationID] = client
+    return client
+  }
+
   private func invalidateCodexClient(forDestinationID destinationID: String) {
     guard let client = codexAppServerClientsByDestinationID.removeValue(
       forKey: destinationID
     ) else { return }
     Task { await client.shutdown() }
+  }
+
+  private func invalidateCLIChatClient(forDestinationID destinationID: String) {
+    let pi = piAgentClientsByDestinationID.removeValue(forKey: destinationID)
+    let openCode = openCodeClientsByDestinationID.removeValue(forKey: destinationID)
+    Task {
+      await pi?.shutdown()
+      await openCode?.shutdown()
+    }
   }
 
   public var hasWorkInProgressForTermination: Bool {
@@ -26189,11 +26504,17 @@ public final class WorkspaceStore {
     codexActiveTurnsByThreadID.removeAll()
     let claudeClient = claudeCodeClient
     claudeCodeClient = nil
+    let piClients = Array(piAgentClientsByDestinationID.values)
+    let openCodeClients = Array(openCodeClientsByDestinationID.values)
+    piAgentClientsByDestinationID.removeAll()
+    openCodeClientsByDestinationID.removeAll()
     var stoppedClients = Set<ObjectIdentifier>()
     for client in clients where stoppedClients.insert(ObjectIdentifier(client)).inserted {
       await client.shutdown()
     }
     await claudeClient?.shutdown()
+    for client in piClients { await client.shutdown() }
+    for client in openCodeClients { await client.shutdown() }
     await withTaskGroup(of: Void.self) { group in
       for gateway in gatewayClients {
         group.addTask {
@@ -26241,7 +26562,8 @@ public final class WorkspaceStore {
         )
       }
       transport = .managedRemote(sshHost: destination.endpoint)
-    case .claudeLocal, .openClaw, .openAI, .anthropic, .openRouter, .ollama:
+    case .claudeLocal, .piLocal, .piRemote, .openCodeLocal, .openCodeRemote,
+         .openClaw, .openAI, .anthropic, .openRouter, .ollama:
       throw CodexAppServerError.invalidResponse("the configured AI destination is not a Codex target")
     }
     let client = CodexAppServerClient(
@@ -26277,6 +26599,15 @@ public final class WorkspaceStore {
         AIChatModelOption(id: "opus", label: "Opus"),
         AIChatModelOption(id: "haiku", label: "Haiku")
       ]
+    case .piLocal, .piRemote, .openCodeLocal, .openCodeRemote:
+      guard let model = destination.model else { return [] }
+      return [AIChatModelOption(
+        id: model,
+        label: model,
+        supportsReasoning: true,
+        reasoningOptions: Self.cliHarnessReasoningOptions,
+        isDefault: true
+      )]
     case .openClaw:
       return try await OpenClawGatewayClient(
         settings: openClawSettings(forDestinationID: destinationID, allowKeychainRead: true)
@@ -26298,6 +26629,15 @@ public final class WorkspaceStore {
       )
     }
   }
+
+  private nonisolated static let cliHarnessReasoningOptions = [
+    AIChatReasoningOption(id: "off", label: "Off"),
+    AIChatReasoningOption(id: "minimal", label: "Minimal"),
+    AIChatReasoningOption(id: "low", label: "Low"),
+    AIChatReasoningOption(id: "medium", label: "Medium"),
+    AIChatReasoningOption(id: "high", label: "High"),
+    AIChatReasoningOption(id: "xhigh", label: "Extra High")
+  ]
 
   nonisolated static func directProviderModelOptions(
     _ discoveredModels: [AIChatModelOption],
@@ -26743,6 +27083,97 @@ public final class WorkspaceStore {
          canPublishAIChatRuntimeState(for: threadID) {
         openClawStatusText = message
       }
+    }
+  }
+
+  private func handlePiAgentEvent(_ event: PiAgentEvent, threadID: UUID) async {
+    switch event {
+    case .sessionStarted(let sessionID):
+      handleCLIChatSessionStarted(sessionID, threadID: threadID, title: "Pi")
+    case .textDelta(let delta):
+      handleCLIChatTextDelta(delta, threadID: threadID, title: "Pi")
+    case .activity(let id, let title, let status):
+      handleCLIChatActivity(id: id, title: title, status: status, threadID: threadID, runID: "pi")
+    case .warning(let message):
+      handleCLIChatWarning(message, threadID: threadID)
+    }
+  }
+
+  private func handleOpenCodeEvent(_ event: OpenCodeEvent, threadID: UUID) async {
+    switch event {
+    case .sessionStarted(let sessionID):
+      handleCLIChatSessionStarted(sessionID, threadID: threadID, title: "OpenCode")
+    case .textDelta(let delta):
+      handleCLIChatTextDelta(delta, threadID: threadID, title: "OpenCode")
+    case .activity(let id, let title, let status):
+      handleCLIChatActivity(
+        id: id,
+        title: title,
+        status: status,
+        threadID: threadID,
+        runID: "opencode"
+      )
+    case .warning(let message):
+      handleCLIChatWarning(message, threadID: threadID)
+    }
+  }
+
+  private func handleCLIChatSessionStarted(
+    _ sessionID: String,
+    threadID: UUID,
+    title: String
+  ) {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+    openClawLastEventAtByThreadID[threadID] = Date()
+    openClawGatewayStateByThreadID[threadID] = .connected
+    openClawActiveRunIDByThreadID[threadID] = sessionID
+    if selectedOpenClawChatThreadID == threadID, canPublishAIChatRuntimeState(for: threadID) {
+      openClawStatusText = "\(title) is working"
+    }
+  }
+
+  private func handleCLIChatTextDelta(_ delta: String, threadID: UUID, title: String) {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+    openClawLastEventAtByThreadID[threadID] = Date()
+    openClawLiveState.noteEvent(for: threadID, coalesced: true)
+    openClawLiveState.appendStreamingDelta(delta, for: threadID)
+    if selectedOpenClawChatThreadID == threadID, canPublishAIChatRuntimeState(for: threadID) {
+      openClawStatusText = "\(title) is replying"
+    }
+  }
+
+  private func handleCLIChatActivity(
+    id: String,
+    title: String,
+    status: OpenClawRunActivity.Status,
+    threadID: UUID,
+    runID: String
+  ) {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+    openClawLastEventAtByThreadID[threadID] = Date()
+    let activity = OpenClawRunActivity(
+      id: id,
+      runID: openClawActiveRunIDByThreadID[threadID] ?? runID,
+      kind: .tool,
+      title: title,
+      detail: nil,
+      status: status
+    )
+    var activities = openClawRunActivitiesByThreadID[threadID] ?? []
+    if let index = activities.firstIndex(where: { $0.id == id }) {
+      activities[index] = activity
+    } else {
+      activities.append(activity)
+    }
+    openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
+  }
+
+  private func handleCLIChatWarning(_ message: String, threadID: UUID) {
+    guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+    openClawLastEventAtByThreadID[threadID] = Date()
+    openClawGatewayDetailByThreadID[threadID] = message
+    if selectedOpenClawChatThreadID == threadID, canPublishAIChatRuntimeState(for: threadID) {
+      openClawStatusText = message
     }
   }
 
@@ -29450,6 +29881,8 @@ public final class WorkspaceStore {
       if let index = openClawChatThreads.firstIndex(where: { $0.id == threadID }),
          openClawChatThreads[index].runtime == .codex
            || openClawChatThreads[index].runtime == .claude
+           || openClawChatThreads[index].runtime == .pi
+           || openClawChatThreads[index].runtime == .openCode
            || openClawChatThreads[index].isSharedRoom {
         openClawChatThreads[index] = openClawChatThreads[index]
           .replacingOpenClawChatMetadata(
@@ -29481,6 +29914,10 @@ public final class WorkspaceStore {
       openClawStatusText = "Ready for a Codex message"
     case .claude:
       openClawStatusText = "Ready for a Claude Code message"
+    case .pi:
+      openClawStatusText = "Ready for a Pi message"
+    case .openCode:
+      openClawStatusText = "Ready for an OpenCode message"
     case .openClaw:
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     }

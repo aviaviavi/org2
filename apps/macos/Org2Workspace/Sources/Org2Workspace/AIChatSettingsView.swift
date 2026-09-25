@@ -139,7 +139,7 @@ struct AIChatSettingsView: View {
               .stroke(.separator, lineWidth: 1)
           }
 
-        Text("These instructions are included with every new AI chat turn for OpenClaw, Codex, and Claude Code.")
+        Text("These instructions are included with every new AI chat turn for OpenClaw, Codex, Claude Code, Pi, and OpenCode.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -183,17 +183,19 @@ struct AIChatSettingsView: View {
   }
 
   private var addableDestinationAdapters: [AIChatDestinationAdapter] {
-    AIChatDestinationAdapter.allCases.filter { $0 != .codexLocal && $0 != .claudeLocal }
+    AIChatDestinationAdapter.allCases.filter {
+      $0 != .codexLocal && $0 != .claudeLocal && $0 != .piLocal && $0 != .openCodeLocal
+    }
   }
 
   private var localAgentAccessHelp: String {
     switch store.codexSandboxAccess {
     case .readOnly:
-      return "Codex and Claude Code can inspect local files. Claude Code runs in Plan mode; Codex must use OpenOrg's reviewed edit tools for corpus changes."
+      return "Local coding harnesses can inspect files. Claude Code runs in Plan mode, Pi and OpenCode receive read-only tools, and Codex uses OpenOrg's reviewed edit tools for corpus changes."
     case .workspaceWrite:
-      return "Codex and Claude Code can edit inside the active corpus. Their protected settings and repository metadata remain guarded by each runtime."
+      return "Local and SSH coding harnesses can edit through their native tools in the configured corpus workspace."
     case .fullAccess:
-      return "Codex and Claude Code can write anywhere your Mac account can. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
+      return "Coding harnesses receive full tool access. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
   }
 
@@ -274,6 +276,34 @@ private struct AIChatDestinationEditor: View {
             "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
             prompt: Text("~/avi.org2")
+          )
+        } else if destination.adapter == .piRemote || destination.adapter == .openCodeRemote {
+          TextField(
+            "SSH host",
+            text: $destination.endpoint,
+            prompt: Text("press.local")
+          )
+          TextField(
+            "Corpus workspace on that machine",
+            text: $destination.workspaceRoot,
+            prompt: Text("~/avi.org2")
+          )
+          TextField(
+            "Model (optional)",
+            text: Binding(
+              get: { destination.model ?? "" },
+              set: { destination.model = $0 }
+            ),
+            prompt: Text("provider/model")
+          )
+        } else if destination.adapter == .piLocal || destination.adapter == .openCodeLocal {
+          TextField(
+            "Model (optional)",
+            text: Binding(
+              get: { destination.model ?? "" },
+              set: { destination.model = $0 }
+            ),
+            prompt: Text("provider/model")
           )
         } else if destination.adapter == .openClaw && !isBuiltInOpenClaw {
           TextField(
@@ -416,6 +446,8 @@ private struct AIChatDestinationEditor: View {
   private var isBuiltIn: Bool {
     destination.id == AIChatDestinationConfiguration.localCodexID
       || destination.id == AIChatDestinationConfiguration.localClaudeID
+      || destination.id == AIChatDestinationConfiguration.localPiID
+      || destination.id == AIChatDestinationConfiguration.localOpenCodeID
       || destination.id == AIChatDestinationConfiguration.openClawID
   }
 
@@ -444,7 +476,9 @@ private struct AIChatDestinationEditor: View {
     }
     if destination.isEnabled,
        (destination.adapter == .codexRemote
-        || destination.adapter == .codexManagedRemote),
+        || destination.adapter == .codexManagedRemote
+        || destination.adapter == .piRemote
+        || destination.adapter == .openCodeRemote),
        destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return true
     }
@@ -494,6 +528,14 @@ private struct AIChatDestinationEditor: View {
       return "Starts a local Codex App Server process on this Mac."
     case .claudeLocal:
       return "Starts the locally installed Claude Code CLI and uses its existing Anthropic sign-in. Conversations resume through Claude Code's local session history."
+    case .piLocal:
+      return "Starts the locally installed Pi coding-agent CLI. Conversations resume through Pi's native session history."
+    case .piRemote:
+      return "Runs Pi over SSH in the configured corpus workspace. Pi must already be installed and connected to a model provider on that host."
+    case .openCodeLocal:
+      return "Starts the locally installed OpenCode CLI with an OpenOrg-specific agent configuration."
+    case .openCodeRemote:
+      return "Runs OpenCode over SSH in the configured corpus workspace. OpenCode must already be installed and connected to a model provider on that host."
     case .codexRemote:
       return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost. Enter the absolute path of the writable Org2 corpus checkout on that machine; Codex edits it directly."
     case .codexManagedRemote:

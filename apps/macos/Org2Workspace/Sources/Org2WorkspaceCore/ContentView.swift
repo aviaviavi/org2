@@ -5499,7 +5499,7 @@ private struct AgentsView: View {
       } else if store.agentProfiles.isEmpty {
         EmptyStateView(
           title: "No Agents",
-          detail: "Named agent profiles created in this corpus appear here automatically. OpenClaw, Codex, and Claude Code remain runtimes, not agent identities."
+          detail: "Named agent profiles created in this corpus appear here automatically. OpenClaw, Codex, Claude Code, Pi, and OpenCode remain runtimes, not agent identities."
         )
       } else {
         WorkspaceLazyCollection {

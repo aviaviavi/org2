@@ -1,0 +1,83 @@
+import XCTest
+@testable import Org2WorkspaceCore
+
+final class OpenCodeClientTests: XCTestCase {
+  func testArgumentsResumeSessionAndApplyModelVariant() {
+    let arguments = OpenCodeClient.arguments(
+      sessionID: "ses_123",
+      model: "openai/gpt-5",
+      reasoningEffort: "high",
+      attachmentPaths: ["/tmp/file.txt"],
+      message: "Review this"
+    )
+
+    XCTAssertEqual(arguments.prefix(7), [
+      "run", "--standalone", "--format", "json", "--agent", "openorg", "--auto"
+    ])
+    XCTAssertTrue(arguments.containsAdjacent(["--session", "ses_123"]))
+    XCTAssertTrue(arguments.containsAdjacent(["--model", "openai/gpt-5#high"]))
+    XCTAssertEqual(arguments.suffix(3), ["--file", "/tmp/file.txt", "Review this"])
+  }
+
+  func testJSONStreamDecodesSessionTextAndTools() async {
+    var decoder = OpenCodeStreamDecoder()
+    let events = EventLog()
+    await decoder.consume(#"{"type":"step_start","sessionID":"ses_123","part":{}}"#) { event in
+      if case .sessionStarted(let id) = event { await events.append("session:\(id)") }
+    }
+    await decoder.consume(#"{"type":"tool_use","sessionID":"ses_123","part":{"id":"tool-1","tool":"glob","state":{"status":"completed"}}}"#) { event in
+      if case .activity(let id, let title, let status) = event {
+        await events.append("tool:\(id):\(title):\(status.rawValue)")
+      }
+    }
+    await decoder.consume(#"{"type":"text","sessionID":"ses_123","part":{"text":"Yes."}}"#) { event in
+      if case .textDelta(let text) = event { await events.append("text:\(text)") }
+    }
+
+    XCTAssertEqual(decoder.result.sessionID, "ses_123")
+    XCTAssertEqual(decoder.result.reply, "Yes.")
+    XCTAssertTrue(decoder.result.succeeded)
+    let loggedEvents = await events.values
+    XCTAssertEqual(loggedEvents, ["session:ses_123", "tool:tool-1:Searching:succeeded", "text:Yes."])
+  }
+
+  func testInlineConfigurationMapsReadOnlyPermissions() throws {
+    let configuration = try OpenCodeClient.inlineConfiguration(
+      systemPrompt: "Use the Org2 rules.",
+      sandboxAccess: .readOnly
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(configuration.utf8)) as? [String: Any])
+    let agents = try XCTUnwrap(object["agent"] as? [String: Any])
+    let agent = try XCTUnwrap(agents["openorg"] as? [String: Any])
+    let permissions = try XCTUnwrap(agent["permission"] as? [String: String])
+    XCTAssertEqual(agent["prompt"] as? String, "Use the Org2 rules.")
+    XCTAssertEqual(permissions["edit"], "deny")
+    XCTAssertEqual(permissions["bash"], "deny")
+    XCTAssertEqual(permissions["external_directory"], "deny")
+  }
+
+  func testManagedRemoteRejectsCommandInjectionHost() {
+    XCTAssertThrowsError(try OpenCodeClient.managedRemoteSSHArguments(
+      sshHost: "press.local; touch /tmp/nope"
+    ))
+    XCTAssertNoThrow(try OpenCodeClient.managedRemoteSSHArguments(sshHost: "press.local"))
+  }
+}
+
+private actor EventLog {
+  private(set) var values: [String] = []
+
+  func append(_ value: String) {
+    values.append(value)
+  }
+}
+
+private extension Array where Element == String {
+  func containsAdjacent(_ adjacent: [String]) -> Bool {
+    guard !adjacent.isEmpty, adjacent.count <= count else { return false }
+    for start in 0...(count - adjacent.count) {
+      if Array(self[start..<(start + adjacent.count)]) == adjacent { return true }
+    }
+    return false
+  }
+}

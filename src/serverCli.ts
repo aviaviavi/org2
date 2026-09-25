@@ -69,7 +69,7 @@ function localAgentFilesystemAccess(value: unknown): ServerConfiguration["localA
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const help = `OpenOrg headless server (macOS 14 or later)
 
-  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--mcp-port PORT] [--apply]
+  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|pi|opencode|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--mcp-port PORT] [--apply]
   org2 server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
   org2 server token create --name NAME [--config FILE] [--apply]
   org2 server token list [--config FILE]
@@ -204,7 +204,7 @@ export function validateServerConfiguration(value: unknown, configFile: string):
   for (const destination of config.destinations) {
     if (!destination.id || ids.has(destination.id)) throw new Error("AI destination IDs must be unique");
     ids.add(destination.id);
-    if (!["codexLocal", "claudeLocal", "openClaw", "codexRemote", "codexManagedRemote", "openAI", "anthropic", "openRouter", "ollama"].includes(destination.adapter)) {
+    if (!["codexLocal", "claudeLocal", "piLocal", "piRemote", "openCodeLocal", "openCodeRemote", "openClaw", "codexRemote", "codexManagedRemote", "openAI", "anthropic", "openRouter", "ollama"].includes(destination.adapter)) {
       throw new Error(`Unsupported AI destination adapter: ${destination.adapter}`);
     }
     for (const key of ["name", "mention", "endpoint", "agentID", "workspaceRoot"] as const) {
@@ -380,7 +380,15 @@ export async function runServerCommand(args: string[]): Promise<void> {
   if (command === "init") {
     if (!values.dir || !values["host-ref"] || !values.bind) throw new Error("init requires --dir, --host-ref, and --bind");
     const destination = values.destination || "codex";
-    if (!["codex", "claude", "openclaw"].includes(destination)) throw new Error("Choose codex, claude, or openclaw");
+    const builtInDestinations: Record<string, { name: string; adapter: string }> = {
+      codex: { name: "Codex", adapter: "codexLocal" },
+      claude: { name: "Claude Code", adapter: "claudeLocal" },
+      pi: { name: "Pi", adapter: "piLocal" },
+      opencode: { name: "OpenCode", adapter: "openCodeLocal" },
+      openclaw: { name: "OpenClaw", adapter: "openClaw" },
+    };
+    const builtInDestination = builtInDestinations[destination];
+    if (!builtInDestination) throw new Error("Choose codex, claude, pi, opencode, or openclaw");
     const relayPort = Number(values.port || 48922);
     const config = validateServerConfiguration({
       schema: "org2:server-config:v1", hostRef: values["host-ref"], name: values.name || `OpenOrg on ${values["host-ref"]}`,
@@ -395,8 +403,8 @@ export async function runServerCommand(args: string[]): Promise<void> {
         allowedOrigins: values["allow-origin"] || [],
         accessTokens: [],
       },
-      destinations: [{ id: `builtin.${destination}`, name: destination === "codex" ? "Codex" : destination === "claude" ? "Claude Code" : "OpenClaw",
-        mention: destination, adapter: destination === "codex" ? "codexLocal" : destination === "claude" ? "claudeLocal" : "openClaw",
+      destinations: [{ id: `builtin.${destination}`, name: builtInDestination.name,
+        mention: destination, adapter: builtInDestination.adapter,
         endpoint: "", agentID: "", workspaceRoot: "", isEnabled: true }],
     }, configFile);
     if (values.apply) {

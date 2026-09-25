@@ -68,6 +68,18 @@ try {
   const fullAccessInit = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2",
     "--filesystem-access", "full-access", "--config", configFile);
   assert.equal(fullAccessInit.config.localAgentFilesystemAccess, "fullAccess");
+  const piInit = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2",
+    "--destination", "pi", "--config", configFile);
+  assert.deepEqual(piInit.config.destinations[0], {
+    id: "builtin.pi", name: "Pi", mention: "pi", adapter: "piLocal", endpoint: "", agentID: "", workspaceRoot: "", isEnabled: true,
+  });
+  const openCodeInit = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2",
+    "--destination", "opencode", "--config", configFile);
+  assert.deepEqual(openCodeInit.config.destinations[0], {
+    id: "builtin.opencode", name: "OpenCode", mention: "opencode", adapter: "openCodeLocal", endpoint: "", agentID: "", workspaceRoot: "", isEnabled: true,
+  });
+  assert.equal(validateServerConfiguration({ ...config, destinations: [{ ...config.destinations[0], adapter: "piRemote" }] }, configFile).destinations[0].adapter, "piRemote");
+  assert.equal(validateServerConfiguration({ ...config, destinations: [{ ...config.destinations[0], adapter: "openCodeRemote" }] }, configFile).destinations[0].adapter, "openCodeRemote");
   assert.equal(validateServerConfiguration(config, configFile).hostRef, "press");
   const legacyConfig = { ...config };
   delete legacyConfig.localAgentFilesystemAccess;
