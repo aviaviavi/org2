@@ -3398,6 +3398,30 @@ public enum AIChatMessageDeliveryPreference: String, Codable, Sendable {
   case followUp
 }
 
+/// User-chosen harness, model, and reasoning effort for node briefs.
+public struct NodeBriefAIConfiguration: Hashable, Codable, Sendable {
+  public var destinationID: String?
+  public var model: String?
+  public var reasoningEffort: String?
+
+  public init(destinationID: String? = nil, model: String? = nil, reasoningEffort: String? = nil) {
+    self.destinationID = Self.normalized(destinationID)
+    self.model = Self.normalized(model)
+    self.reasoningEffort = Self.normalized(reasoningEffort)
+  }
+
+  public var isDefault: Bool {
+    destinationID == nil && model == nil && reasoningEffort == nil
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty
+    else { return nil }
+    return trimmed
+  }
+}
+
 public struct AIChatReasoningOption: Identifiable, Hashable, Codable, Sendable {
   public let id: String
   public let label: String

@@ -29,6 +29,9 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   public let aiChatDestinations: [MobileRemoteAIDestination]?
   public let pushNotificationsSupported: Bool?
   public let pushNotificationsConfigured: Bool?
+  /// The host accepts a client-chosen `threadID` when creating a chat, so the
+  /// phone can open the new thread before the round trip completes.
+  public let supportsClientThreadIDs: Bool?
 
   public init(
     protocolVersion: Int = MobileRemoteProtocol.version,
@@ -40,8 +43,10 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
     runningThreadCount: Int,
     aiChatDestinations: [MobileRemoteAIDestination]? = nil,
     pushNotificationsSupported: Bool? = nil,
-    pushNotificationsConfigured: Bool? = nil
+    pushNotificationsConfigured: Bool? = nil,
+    supportsClientThreadIDs: Bool? = true
   ) {
+    self.supportsClientThreadIDs = supportsClientThreadIDs
     self.protocolVersion = protocolVersion
     self.serverName = serverName
     self.hostRef = hostRef
@@ -124,11 +129,18 @@ public struct MobileRemoteCreateThreadRequest: Codable, Hashable, Sendable {
   public let runtime: String
   public let destinationID: String?
   public let projectID: String?
+  public let threadID: UUID?
 
-  public init(runtime: String, destinationID: String? = nil, projectID: String? = nil) {
+  public init(
+    runtime: String,
+    destinationID: String? = nil,
+    projectID: String? = nil,
+    threadID: UUID? = nil
+  ) {
     self.runtime = runtime
     self.destinationID = destinationID
     self.projectID = projectID
+    self.threadID = threadID
   }
 }
 

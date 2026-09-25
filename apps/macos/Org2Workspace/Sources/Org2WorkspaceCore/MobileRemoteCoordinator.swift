@@ -404,11 +404,18 @@ public final class MobileRemoteCoordinator: ObservableObject {
         resolvedDestinationID = store.enabledAIChatDestinations.first(where: { $0.runtime == runtime })?.id
           ?? AIChatDestinationConfiguration.defaultID(for: runtime)
       }
+      // Client-chosen IDs make creation idempotent: a retried request for a
+      // thread that already exists returns it instead of creating another.
+      if let requestedID = payload.threadID,
+         store.openClawChatThreads.contains(where: { $0.id == requestedID }) {
+        return .json(MobileRemoteMutationResponse(accepted: true, threadID: requestedID), statusCode: 201)
+      }
       let id: UUID
       if let projectID = payload.projectID {
         guard let projectThreadID = await store.createAIChatRemoteThread(
           destinationID: resolvedDestinationID,
-          projectID: projectID
+          projectID: projectID,
+          id: payload.threadID ?? UUID()
         ) else {
           return .error(
             store.projectStatus.isEmpty
@@ -419,7 +426,10 @@ public final class MobileRemoteCoordinator: ObservableObject {
         }
         id = projectThreadID
       } else {
-        id = store.createAIChatRemoteThread(destinationID: resolvedDestinationID)
+        id = store.createAIChatRemoteThread(
+          destinationID: resolvedDestinationID,
+          id: payload.threadID ?? UUID()
+        )
       }
       return .json(MobileRemoteMutationResponse(accepted: true, threadID: id), statusCode: 201)
     }

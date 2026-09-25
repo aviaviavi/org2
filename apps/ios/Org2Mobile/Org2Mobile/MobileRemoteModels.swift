@@ -42,6 +42,7 @@ struct MobileRemoteServerStatus: Codable, Hashable {
   let aiChatDestinations: [MobileRemoteAIDestination]?
   let pushNotificationsSupported: Bool?
   let pushNotificationsConfigured: Bool?
+  let supportsClientThreadIDs: Bool?
 }
 
 struct MobileRemotePushRegistrationRequest: Codable {
@@ -78,6 +79,7 @@ struct MobileRemoteCreateThreadRequest: Codable {
   let runtime: String
   let destinationID: String?
   let projectID: String?
+  var threadID: UUID? = nil
 }
 
 struct MobileRemoteUpdateThreadProjectRequest: Codable {

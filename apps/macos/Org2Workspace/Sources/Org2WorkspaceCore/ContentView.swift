@@ -127,6 +127,10 @@ public struct ContentView: View {
         QuickOpenView()
           .environment(store)
       }
+      .sheet(isPresented: $store.isNodeBriefOptionsPresented) {
+        NodeBriefOptionsView()
+          .environment(store)
+      }
       .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
         KeyboardShortcutsView()
           .environment(store)
@@ -12319,6 +12323,12 @@ private struct DetailHeader: View {
       }
       .disabled(!store.canBriefCurrentNode)
 
+      Button {
+        store.isNodeBriefOptionsPresented = true
+      } label: {
+        Label("Brief Options…", systemImage: "slider.horizontal.3")
+      }
+
       if case .meeting = location {
         Button {
           store.askOpenClawAboutSelectedMeeting()
@@ -13927,9 +13937,11 @@ private struct NodeContextOverview: View {
       }
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(!store.canBriefCurrentNode)
-      .help(store.openClawBriefsStartNewThread
-        ? "Generate the brief in a new AI chat thread."
+      .help(store.nodeBriefStartsNewThread
+        ? "Generate the brief in a new \(store.nodeBriefDestination.title) chat thread."
         : "Generate the brief in the current AI chat thread.")
+
+      NodeBriefOptionsButton()
 
       if store.backlinkFileGroups.isEmpty {
         NodeContextEmptyText()
@@ -14086,9 +14098,11 @@ private struct NodeContextBrief: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!store.canBriefCurrentNode)
-        .help(store.openClawBriefsStartNewThread
-          ? "Generate the brief in a new AI chat thread."
+        .help(store.nodeBriefStartsNewThread
+          ? "Generate the brief in a new \(store.nodeBriefDestination.title) chat thread."
           : "Generate the brief in the current AI chat thread.")
+
+        NodeBriefOptionsButton()
 
         Text("Generated briefs live in views/node-briefs and work with any AI runtime.")
           .font(.caption)

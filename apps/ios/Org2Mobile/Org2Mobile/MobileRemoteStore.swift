@@ -71,6 +71,9 @@ final class MobileRemoteStore: ObservableObject {
   private var pollingLeaseID: UUID?
   private var configurationRequestID: UUID?
   private var threadDetailCache: [UUID: MobileRemoteThreadDetail] = [:]
+  /// Chats opened optimistically while the host is still creating them.
+  /// Thread requests for these IDs wait for creation before hitting the host.
+  private var pendingThreadCreations: [UUID: Task<Bool, Never>] = [:]
   private var threadDetailCacheOrder: [UUID] = []
   private static let threadDetailCacheLimit = 6
   private var externalThreadLoadRequestID: UUID?
@@ -352,9 +355,15 @@ final class MobileRemoteStore: ObservableObject {
       await syncPushRegistrationIfNeeded(force: false, connectionGeneration: generation)
       await reconcileReplyNotifications(with: nextThreads.threads, connectionGeneration: generation)
       guard isCurrentConnection(generation) else { return }
-      threads = nextThreads.threads
+      let hostThreadIDs = Set(nextThreads.threads.map(\.id))
+      let pendingThreads = threads.filter {
+        pendingThreadCreations[$0.id] != nil && !hostThreadIDs.contains($0.id)
+      }
+      threads = pendingThreads + nextThreads.threads
       projects = nextThreads.projects ?? []
-      pruneThreadDetailCache(keeping: Set(nextThreads.threads.map(\.id)))
+      pruneThreadDetailCache(
+        keeping: Set(nextThreads.threads.map(\.id)).union(pendingThreadCreations.keys)
+      )
       defaults.set(serverName, forKey: Self.serverNameKey)
     } catch {
       guard isCurrentConnection(generation) else { return }
@@ -774,14 +783,107 @@ final class MobileRemoteStore: ObservableObject {
     destination: MobileRemoteAIDestination,
     project: MobileRemoteProjectSummary? = nil
   ) async -> UUID? {
-    activeRequestCount += 1
-    defer { activeRequestCount -= 1 }
     guard isConnected else {
       errorMessage = connectionError.map {
         "Reconnect to the Mac before creating a chat. \($0)"
       } ?? "Reconnect to the Mac before creating a chat."
       return nil
     }
+    guard status?.supportsClientThreadIDs == true else {
+      return await createThreadAwaitingHost(destination: destination, project: project)
+    }
+    // Open the new chat immediately. The host accepts this client-chosen ID,
+    // so navigation never waits on a Tailscale round trip; thread requests
+    // for the ID wait on the pending creation instead.
+    let threadID = UUID()
+    let summary = MobileRemoteThreadSummary(
+      id: threadID,
+      title: "New Chat",
+      runtime: destination.runtime,
+      destinationID: destination.id,
+      destinationName: destination.name,
+      isSharedRoom: false,
+      model: nil,
+      updatedAt: Date(),
+      isSettled: false,
+      isPinned: false,
+      isRunning: false,
+      unreadMessageCount: 0,
+      preview: nil,
+      latestAssistantMessageID: nil,
+      latestAssistantPreview: nil
+    )
+    cacheThreadDetail(MobileRemoteThreadDetail(
+      thread: summary,
+      messages: [],
+      activeDestinationName: destination.name,
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      connectionState: "connected",
+      connectionDetail: nil
+    ))
+    apply(summary)
+    let request = MobileRemoteCreateThreadRequest(
+      runtime: destination.runtime,
+      destinationID: destination.id,
+      projectID: project?.id,
+      threadID: threadID
+    )
+    pendingThreadCreations[threadID] = Task { [weak self] in
+      guard let self else { return false }
+      return await self.finishOptimisticThreadCreation(threadID, request: request)
+    }
+    return threadID
+  }
+
+  private func finishOptimisticThreadCreation(
+    _ threadID: UUID,
+    request: MobileRemoteCreateThreadRequest
+  ) async -> Bool {
+    activeRequestCount += 1
+    defer {
+      activeRequestCount -= 1
+      pendingThreadCreations[threadID] = nil
+    }
+    do {
+      let response: MobileRemoteMutationResponse = try await pairedClient().post(
+        "/v1/threads",
+        payload: request,
+        as: MobileRemoteMutationResponse.self
+      )
+      guard response.threadID == threadID else {
+        throw MobileRemoteClientError.malformedResponse
+      }
+      Task { [weak self] in
+        await self?.refresh(reportsErrors: false)
+      }
+      return true
+    } catch {
+      errorMessage = "The chat could not be created: \(error.localizedDescription)"
+      threads.removeAll { $0.id == threadID }
+      threadDetailCache.removeValue(forKey: threadID)
+      threadDetailCacheOrder.removeAll { $0 == threadID }
+      if pollingThreadID == threadID {
+        threadConnectionError = error.localizedDescription
+      }
+      return false
+    }
+  }
+
+  /// Returns false when the thread was optimistically opened but the host
+  /// rejected its creation, so callers skip requests that would 404.
+  private func awaitPendingCreation(of threadID: UUID) async -> Bool {
+    guard let pending = pendingThreadCreations[threadID] else { return true }
+    return await pending.value
+  }
+
+  private func createThreadAwaitingHost(
+    destination: MobileRemoteAIDestination,
+    project: MobileRemoteProjectSummary?
+  ) async -> UUID? {
+    activeRequestCount += 1
+    defer { activeRequestCount -= 1 }
     do {
       let response: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads",
@@ -795,10 +897,6 @@ final class MobileRemoteStore: ObservableObject {
       guard let threadID = response.threadID else {
         throw MobileRemoteClientError.malformedResponse
       }
-      // The thread detail endpoint can serve this new in-memory thread
-      // immediately. Do not hold navigation behind a complete status and
-      // thread-list refresh, which can be noticeably slower on a large chat
-      // history or a weak Tailscale connection.
       Task { [weak self] in
         await self?.refresh(reportsErrors: false)
       }
@@ -1014,6 +1112,7 @@ final class MobileRemoteStore: ObservableObject {
     defer { activeRequestCount -= 1 }
     let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty || !attachments.isEmpty else { return nil }
+    guard await awaitPendingCreation(of: threadID) else { return nil }
     do {
       let response: MobileRemoteMutationResponse = try await pairedClient().post(
         "/v1/threads/\(threadID.uuidString)/messages",
@@ -1076,6 +1175,7 @@ final class MobileRemoteStore: ObservableObject {
     _ request: MobileRemoteUpdateThreadConfigurationRequest,
     threadID: UUID
   ) async {
+    guard await awaitPendingCreation(of: threadID) else { return }
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     guard !isUpdatingConfiguration else { return }
@@ -1127,6 +1227,7 @@ final class MobileRemoteStore: ObservableObject {
   }
 
   private func refreshThread(_ threadID: UUID, pollingLeaseID expectedLeaseID: UUID? = nil) async {
+    guard await awaitPendingCreation(of: threadID) else { return }
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     do {
@@ -1163,6 +1264,7 @@ final class MobileRemoteStore: ObservableObject {
     _ threadID: UUID,
     pollingLeaseID expectedLeaseID: UUID? = nil
   ) async {
+    guard await awaitPendingCreation(of: threadID) else { return }
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     let requestID = UUID()

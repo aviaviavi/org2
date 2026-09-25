@@ -2649,6 +2649,17 @@ public final class WorkspaceStore {
       defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
     }
   }
+  /// Harness/model/reasoning used to generate node briefs. Nil fields fall
+  /// back to the current chat's destination and that destination's defaults.
+  public var nodeBriefConfiguration = NodeBriefAIConfiguration() {
+    didSet {
+      guard nodeBriefConfiguration != oldValue else { return }
+      if let data = try? JSONEncoder().encode(nodeBriefConfiguration) {
+        defaults.set(data, forKey: nodeBriefConfigurationKey)
+      }
+    }
+  }
+  public var isNodeBriefOptionsPresented = false
   public private(set) var openClawLocalEditsEnabled = false
   public private(set) var openClawLocalEditNodeState: OpenClawLocalEditNodeState = .disabled
   public private(set) var openClawLocalEditNodeDetail = ""
@@ -2988,6 +2999,7 @@ public final class WorkspaceStore {
     "Org2Workspace.dailyNotes.automaticCreationDisabledByCorpus.v1"
   private let launchGuideCompletedKey = "Org2Workspace.openOrgLaunchGuideCompleted.v1"
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
+  private let nodeBriefConfigurationKey = "Org2Workspace.nodeBriefConfiguration"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
   private let meetingReadyAutomationDeliveriesByCorpusKey = "Org2Workspace.meetingReadyAutomation.deliveriesByCorpus.v1"
@@ -3647,6 +3659,10 @@ public final class WorkspaceStore {
       .flatMap(WorkspaceAppearanceMode.init(rawValue:)) ?? .system
     experimentalFeaturesEnabled = defaults.bool(forKey: experimentalFeaturesEnabledKey)
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
+    if let data = defaults.data(forKey: nodeBriefConfigurationKey),
+       let configuration = try? JSONDecoder().decode(NodeBriefAIConfiguration.self, from: data) {
+      nodeBriefConfiguration = configuration
+    }
     openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
       .flatMap(RenderedDocumentWidth.init(rawValue:)) ?? .comfortable
@@ -10891,7 +10907,7 @@ public final class WorkspaceStore {
     selectedLocation != nil
       && corpusRoot != nil
       && !isBuildingNodeBrief
-      && (openClawBriefsStartNewThread || !isSendingOpenClawMessage)
+      && (nodeBriefStartsNewThread || !isSendingOpenClawMessage)
   }
 
   public var canLinkifyCurrentFile: Bool {
@@ -30164,6 +30180,65 @@ public final class WorkspaceStore {
     )
   }
 
+  /// Inserts a freshly created thread into the sorted sidebar projections and
+  /// quick-open index without re-sorting or re-summarizing every existing
+  /// thread. Creating a chat must stay instant on long chat histories.
+  private func insertNewAIChatThreadIncrementally(_ thread: OpenClawChatThread) {
+    guard !openClawChatThreads.contains(where: { $0.id == thread.id }) else {
+      openClawChatThreads.removeAll { $0.id == thread.id }
+      openClawChatThreads.insert(thread, at: 0)
+      return
+    }
+    isApplyingIncrementalAIChatThreadMutation = true
+    openClawChatThreads.insert(thread, at: 0)
+    isApplyingIncrementalAIChatThreadMutation = false
+
+    func precedes(_ lhs: OpenClawChatThread, _ rhs: OpenClawChatThread) -> Bool {
+      if lhs.isSettled != rhs.isSettled { return !lhs.isSettled }
+      if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+      return lhs.updatedAt > rhs.updatedAt
+    }
+    let summary = openClawSidebarThreadSummary(for: thread)
+    if thread.isSettled {
+      let index = archivedOpenClawChatThreads.firstIndex(where: { !precedes($0, thread) })
+        ?? archivedOpenClawChatThreads.count
+      archivedOpenClawChatThreads.insert(thread, at: index)
+      archivedOpenClawChatThreadSummaries.insert(
+        summary,
+        at: min(index, archivedOpenClawChatThreadSummaries.count)
+      )
+    } else {
+      let index = visibleOpenClawChatThreads.firstIndex(where: { !precedes($0, thread) })
+        ?? visibleOpenClawChatThreads.count
+      visibleOpenClawChatThreads.insert(thread, at: index)
+      visibleOpenClawChatThreadSummaries.insert(
+        summary,
+        at: min(index, visibleOpenClawChatThreadSummaries.count)
+      )
+    }
+    openClawUnreadMessageCount += thread.unreadMessageCount
+
+    quickOpenChatIndexSignature.insert(
+      OpenClawQuickOpenChatIndexSignature(id: thread.id, title: thread.title),
+      at: 0
+    )
+    quickOpenIndexedChatThreads.insert(
+      QuickOpenIndexedChatThread(
+        id: thread.id,
+        title: thread.title,
+        normalizedTitle: Self.normalizedQuickOpenCandidate(thread.title)
+      ),
+      at: 0
+    )
+    var shiftedIndexes = quickOpenChatThreadIndexesByID.mapValues { $0 + 1 }
+    shiftedIndexes[thread.id] = 0
+    quickOpenChatThreadIndexesByID = shiftedIndexes
+    if isQuickOpenPresented,
+       !quickOpenQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      scheduleQuickOpenSearch(debounce: false)
+    }
+  }
+
   private func openClawSidebarThreadSummary(
     for thread: OpenClawChatThread
   ) -> OpenClawSidebarThreadSummary {
@@ -30280,7 +30355,9 @@ public final class WorkspaceStore {
     createAIChatRemoteThread(destinationID: destinationID, id: UUID())
   }
 
-  private func createAIChatRemoteThread(destinationID: String, id: UUID) -> UUID {
+  @discardableResult
+  public func createAIChatRemoteThread(destinationID: String, id: UUID) -> UUID {
+    if openClawChatThreads.contains(where: { $0.id == id }) { return id }
     let destination = aiChatDestination(id: destinationID)
       ?? AIChatDestinationConfiguration.defaults[0]
     return createOpenClawChatThread(
@@ -30296,13 +30373,13 @@ public final class WorkspaceStore {
 
   func createAIChatRemoteThread(
     destinationID: String,
-    projectID: String
+    projectID: String,
+    id: UUID = UUID()
   ) async -> UUID? {
     guard let project = projectNotes.first(where: { $0.id == projectID }) else {
       projectStatus = "That project is no longer available."
       return nil
     }
-    let id = UUID()
     guard await updateProject(project, threadID: id) else { return nil }
     return createAIChatRemoteThread(destinationID: destinationID, id: id)
   }
@@ -30521,7 +30598,7 @@ public final class WorkspaceStore {
       roomAudience: roomAudience,
       roomDestinationIDs: initialRoomDestinationIDs
     )
-    openClawChatThreads.insert(thread, at: 0)
+    insertNewAIChatThreadIncrementally(thread)
     advanceAIChatMessageRevision(
       for: thread.id,
       tracksPersistence: true,
@@ -30555,8 +30632,51 @@ public final class WorkspaceStore {
     )
   }
 
+  /// A chosen brief harness, model, or reasoning level cannot retarget an
+  /// existing conversation, so it always gets its own brief thread.
+  public var nodeBriefStartsNewThread: Bool {
+    openClawBriefsStartNewThread || !nodeBriefConfiguration.isDefault
+  }
+
+  /// Destination the next brief will run on, after validating the saved one.
+  public var nodeBriefDestination: AIChatDestinationConfiguration {
+    if let id = nodeBriefConfiguration.destinationID,
+       let destination = enabledAIChatDestinations.first(where: { $0.id == id }) {
+      return destination
+    }
+    return selectedAIChatDestination
+  }
+
+  /// Models for the brief options picker: cached catalog first, then a live
+  /// lookup against the destination. Failures return an empty list so the
+  /// user can still type a model ID.
+  public func nodeBriefModelOptions(forDestinationID destinationID: String) async -> [AIChatModelOption] {
+    if let cached = aiChatConfigurationCatalogCache[destinationID]?.models, !cached.isEmpty {
+      return cached
+    }
+    guard let models = try? await modelsForAIChatDestination(destinationID), !models.isEmpty else {
+      return []
+    }
+    cacheAIChatModelCatalog(destinationID: destinationID, models: models)
+    return models
+  }
+
   private func prepareOpenClawThreadForNodeBrief(title: String) {
-    guard openClawBriefsStartNewThread else { return }
+    guard nodeBriefStartsNewThread else { return }
+    let configuration = nodeBriefConfiguration
+    if !configuration.isDefault {
+      let destination = nodeBriefDestination
+      createOpenClawChatThread(
+        title: Self.normalizedOpenClawThreadTitle("Brief: \(title)"),
+        statusText: "New \(destination.title) brief chat",
+        runtime: destination.runtime,
+        destinationID: destination.id,
+        inheritsChatConfiguration: configuration.model == nil && configuration.reasoningEffort == nil,
+        modelOverride: configuration.model,
+        reasoningEffortOverride: configuration.reasoningEffort
+      )
+      return
+    }
     prepareOpenClawThread(
       mode: .newThread,
       title: "Brief: \(title)",
