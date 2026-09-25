@@ -289,6 +289,10 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(prompt.contains("Runtime root: ~/avi.org2"))
     XCTAssertTrue(prompt.contains("--dir ~/avi.org2 --json"))
     XCTAssertTrue(prompt.contains("Use normal filesystem tools there"))
+    XCTAssertTrue(prompt.contains("User's OpenOrg machine: "))
+    XCTAssertTrue(prompt.contains("only the synced corpus is shared"))
+    XCTAssertTrue(prompt.contains("link it with a corpus-relative path"))
+    XCTAssertFalse(prompt.contains("accessible to the Mac"))
     XCTAssertFalse(prompt.contains("Use the client-provided Org2 workspace tools"))
   }
 
@@ -331,10 +335,10 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("User-configured AI chat instructions"))
       XCTAssertTrue(prompt.contains("Prefer concise answers and surface open TODOs."))
       XCTAssertTrue(prompt.contains("Org2 response formatting contract"))
-      XCTAssertTrue(prompt.contains("[[file:/absolute/path/qr.png][QR code]]"))
+      XCTAssertTrue(prompt.contains("[[file:images/qr.png][QR code]]"))
       XCTAssertTrue(prompt.contains("OpenOrg renders image links inline"))
       XCTAssertTrue(prompt.contains("opening Preview does not embed it"))
-      XCTAssertTrue(prompt.contains("A path on an SSH host is not a Mac-local path"))
+      XCTAssertTrue(prompt.contains("never link an absolute path outside the corpus"))
       XCTAssertTrue(prompt.contains("Inline emphasis does not nest in Org2 v0."))
       XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org2="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
