@@ -493,6 +493,36 @@ final class CSVDocumentTests: XCTestCase {
   }
 
   @MainActor
+  func testBackgroundPDFRefreshOfPartialFileKeepsPreviewAndDoesNotRaiseGlobalError() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-pdf-partial-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pdf = root.appendingPathComponent("brief.pdf")
+    let goodData = Data("%PDF-1.4\n% good\n".utf8)
+    try goodData.write(to: pdf)
+
+    let store = try makeStore()
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.entrySourceLoaderForTesting = { _, _, _ in throw CocoaError(.fileReadUnsupportedScheme) }
+    store.linkedPDFDataLoaderForTesting = { url in try Data(contentsOf: url) }
+    store.openChatFileReference(OpenClawFileReference(path: "brief.pdf", line: nil))
+    try await waitForCondition {
+      store.linkedPDFPreviewData == goodData && !store.isLoadingLinkedPDFPreview
+    }
+
+    // A sync client truncates the file mid-transfer while the user is in chat.
+    try Data().write(to: pdf)
+    store.handleCorpusFileEvents([pdf.path], corpusRoot: root, requiresFullScan: false)
+    try await Task.sleep(nanoseconds: 600_000_000)
+    try await waitForCondition { !store.isLoadingLinkedPDFPreview }
+
+    XCTAssertEqual(store.linkedPDFPreviewData, goodData)
+    XCTAssertNil(store.linkedPDFPreviewError)
+    XCTAssertNil(store.errorText)
+  }
+
+  @MainActor
   private func waitForCondition(
     timeout: TimeInterval = 5,
     _ condition: @escaping @MainActor () -> Bool

@@ -12637,13 +12637,15 @@ public final class WorkspaceStore {
     else { return }
     scheduleLinkedPDFPreviewLoad(
       for: selectedLocation,
-      delayNanoseconds: 150_000_000
+      delayNanoseconds: 150_000_000,
+      isBackgroundRefresh: true
     )
   }
 
   private func scheduleLinkedPDFPreviewLoad(
     for location: WorkspaceLocation,
-    delayNanoseconds: UInt64 = 0
+    delayNanoseconds: UInt64 = 0,
+    isBackgroundRefresh: Bool = false
   ) {
     linkedPDFLoadTask?.cancel()
     linkedPDFLoadGeneration += 1
@@ -12656,13 +12658,18 @@ public final class WorkspaceStore {
           return
         }
       }
-      await self?.loadLinkedPDFPreview(for: location, generation: generation)
+      await self?.loadLinkedPDFPreview(
+        for: location,
+        generation: generation,
+        isBackgroundRefresh: isBackgroundRefresh
+      )
     }
   }
 
   private func loadLinkedPDFPreview(
     for location: WorkspaceLocation,
-    generation: Int
+    generation: Int,
+    isBackgroundRefresh: Bool = false
   ) async {
     guard generation == linkedPDFLoadGeneration,
           selectedLocationMatches(location),
@@ -12688,21 +12695,37 @@ public final class WorkspaceStore {
         return try Data(contentsOf: url, options: .mappedIfSafe)
       }.value
       guard data.starts(with: Data("%PDF".utf8)) else {
-        throw CocoaError(.fileReadCorruptFile)
+        throw CocoaError(.fileReadCorruptFile, userInfo: [
+          NSLocalizedDescriptionKey: "\(relativePath(location.file)) is not a complete PDF file (it may still be syncing)."
+        ])
       }
       guard generation == linkedPDFLoadGeneration,
             selectedLocationMatches(location)
       else { return }
+      let clearsSharedError = !isBackgroundRefresh
+        || errorText?.hasPrefix("The linked PDF could not be loaded") == true
       linkedPDFPreviewData = data
       linkedPDFPreviewError = nil
-      errorText = nil
-      statusText = "Opened \(relativePath(location.file))"
+      if clearsSharedError {
+        errorText = nil
+        statusText = "Opened \(relativePath(location.file))"
+      }
     } catch is CancellationError {
       return
     } catch {
       guard generation == linkedPDFLoadGeneration,
             selectedLocationMatches(location)
       else { return }
+      if isBackgroundRefresh {
+        // File-watcher refreshes fire while the user is elsewhere (for example
+        // in a chat) and often observe a partially synced or rewritten file.
+        // Keep the last good preview and never raise the global error banner;
+        // the next file event or an explicit open retries the load.
+        if linkedPDFPreviewData == nil {
+          linkedPDFPreviewError = "The linked PDF could not be loaded: \(error.localizedDescription)"
+        }
+        return
+      }
       linkedPDFPreviewData = nil
       linkedPDFPreviewError = "The linked PDF could not be loaded: \(error.localizedDescription)"
       errorText = linkedPDFPreviewError
