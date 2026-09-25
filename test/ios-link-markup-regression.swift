@@ -30,6 +30,12 @@
     precondition(table.rows == [["Name", "State"], ["iOS", "Done"]], "Org table cells changed during parsing")
     let literalBlocks = MobileRemoteMessageMarkup.renderedBlocks(for: "#+begin_src text\n| literal | source |\n#+end_src")
     precondition(literalBlocks.count == 1, "Source block table text must remain literal")
+    let imageBlocks = MobileRemoteMessageMarkup.renderedBlocks(for: "Before\n[[file:images/chart.png][Chart]]\nAfter")
+    precondition(imageBlocks.count == 3, "Standalone image links must become native render blocks")
+    guard case .image(let image) = imageBlocks[1] else {
+      preconditionFailure("Standalone image link was left as plain text")
+    }
+    precondition(image.path == "images/chart.png" && image.remoteURL == nil && image.label == "Chart", "Image link metadata changed during parsing")
     print("Native chat markup renders links and Org tables while keeping source examples literal")
   }
 }
