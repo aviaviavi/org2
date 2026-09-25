@@ -37,6 +37,42 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   static let shared = AIChatTranscriptStore()
   static let eagerWorkingSetLimit = 16
   private static let garbageCollectionGraceInterval: TimeInterval = 30 * 24 * 60 * 60
+  private static let manifestAncestryLimit = 32
+
+#if DEBUG
+  private final class RecoveryCandidateDecodeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func reset() {
+      lock.lock()
+      value = 0
+      lock.unlock()
+    }
+
+    func increment() {
+      lock.lock()
+      value += 1
+      lock.unlock()
+    }
+
+    func read() -> Int {
+      lock.lock()
+      defer { lock.unlock() }
+      return value
+    }
+  }
+
+  private static let recoveryCandidateDecodeCounter = RecoveryCandidateDecodeCounter()
+
+  static func resetRecoveryCandidateDecodeCountForTesting() {
+    recoveryCandidateDecodeCounter.reset()
+  }
+
+  static func recoveryCandidateDecodeCountForTesting() -> Int {
+    recoveryCandidateDecodeCounter.read()
+  }
+#endif
 
   private struct PendingWrite {
     let generation: UInt64
@@ -608,6 +644,10 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       generation: (priorManifest?.generation ?? 0) &+ 1,
       commitID: commitID,
       parentCommitID: priorManifest?.commitID,
+      ancestorCommitIDs: boundedCommitIDs(
+        [priorManifest?.commitID].compactMap { $0 } + (priorManifest?.ancestorCommitIDs ?? [])
+      ),
+      mergedCommitIDs: priorManifest?.mergedCommitIDs,
       threads: entries,
       selectedThreadID: snapshot.selectedThreadID,
       settlementSettings: snapshot.settlementSettings
@@ -810,6 +850,8 @@ final class AIChatTranscriptStore: @unchecked Sendable {
           generation: 0,
           commitID: "legacy-sharded-v1",
           parentCommitID: nil,
+          ancestorCommitIDs: nil,
+          mergedCommitIDs: nil,
           threads: entries,
           selectedThreadID: legacy.selectedThreadID,
           settlementSettings: legacy.settlementSettings
@@ -875,21 +917,24 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     previous: Manifest?,
     storeURL: URL
   ) -> StoreState {
+    var mergedCommitIDs = Set(primary.mergedCommitIDs ?? [])
+    mergedCommitIDs.formUnion(primary.ancestorCommitIDs ?? [])
+    mergedCommitIDs.insert(primary.commitID)
+    if let previous { mergedCommitIDs.insert(previous.commitID) }
+    let unseenCandidates = recoveryManifestCandidates(
+      storeURL: storeURL,
+      excludingCommitIDs: mergedCommitIDs
+    )
+    guard !unseenCandidates.isEmpty else {
+      return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
+    }
     let candidatesByID = Dictionary(
-      ([primary] + [previous].compactMap { $0 } + recoveryManifestCandidates(storeURL: storeURL))
+      ([primary] + [previous].compactMap { $0 } + unseenCandidates)
         .map { ($0.commitID, $0) },
       uniquingKeysWith: { first, second in
         second.generation > first.generation ? second : first
       }
     )
-    var primaryLineage = Set<String>()
-    var cursor: Manifest? = primary
-    while let manifest = cursor, primaryLineage.insert(manifest.commitID).inserted {
-      cursor = manifest.parentCommitID.flatMap { candidatesByID[$0] }
-    }
-    guard candidatesByID.keys.contains(where: { !primaryLineage.contains($0) }) else {
-      return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
-    }
     guard let resolved = reconciledRecoveryManifest(
       from: Array(candidatesByID.values),
       storeURL: storeURL
@@ -949,7 +994,10 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     return manifest
   }
 
-  private static func recoveryManifestCandidates(storeURL: URL) -> [Manifest] {
+  private static func recoveryManifestCandidates(
+    storeURL: URL,
+    excludingCommitIDs: Set<String> = []
+  ) -> [Manifest] {
     let fileManager = FileManager.default
     let manifestDirectory = manifestsDirectory(storeURL: storeURL)
     var urls = (try? fileManager.contentsOfDirectory(
@@ -966,11 +1014,22 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
     urls += rootViews
     return urls.compactMap { url in
+      if url.deletingLastPathComponent().standardizedFileURL == manifestDirectory.standardizedFileURL,
+         url.pathExtension == "json",
+         excludingCommitIDs.contains(url.deletingPathExtension().lastPathComponent) {
+        return nil
+      }
       guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
             values.isRegularFile == true,
             values.isSymbolicLink != true
       else { return nil }
-      return loadManifestCandidate(at: url)
+      #if DEBUG
+      recoveryCandidateDecodeCounter.increment()
+      #endif
+      guard let candidate = loadManifestCandidate(at: url),
+            !excludingCommitIDs.contains(candidate.commitID)
+      else { return nil }
+      return candidate
     }
   }
 
@@ -1008,6 +1067,12 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
     let entries = (baseIDs + additionalIDs).compactMap { selectedEntries[$0]?.entry }
     let context = sorted.first ?? completeBase
+    let ancestorCommitIDs = boundedCommitIDs(
+      [completeBase.commitID] + (completeBase.ancestorCommitIDs ?? [])
+    )
+    let mergedCommitIDs = Array(Set(candidates.flatMap { candidate in
+      [candidate.commitID] + (candidate.mergedCommitIDs ?? [])
+    }).subtracting(ancestorCommitIDs).subtracting([completeBase.commitID])).sorted()
     let selectedThreadID = context.selectedThreadID.flatMap { id in
       selectedEntries[id] == nil ? nil : id
     } ?? completeBase.selectedThreadID.flatMap { id in
@@ -1022,7 +1087,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       }
       && selectedThreadID == completeBase.selectedThreadID
       && context.settlementSettings == completeBase.settlementSettings
-    if matchesCompleteBase {
+    let recordedMergedCommitIDs = Set(completeBase.mergedCommitIDs ?? [])
+    let commitsNeedingRecord = Set(mergedCommitIDs).subtracting([completeBase.commitID])
+    if matchesCompleteBase && recordedMergedCommitIDs.isSuperset(of: commitsNeedingRecord) {
       return completeBase
     }
     return Manifest(
@@ -1031,6 +1098,8 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       generation: (sorted.map(\.generation).max() ?? completeBase.generation) &+ 1,
       commitID: "recovered-\(UUID().uuidString.lowercased())",
       parentCommitID: completeBase.commitID,
+      ancestorCommitIDs: ancestorCommitIDs,
+      mergedCommitIDs: mergedCommitIDs,
       threads: entries,
       selectedThreadID: selectedThreadID,
       settlementSettings: context.settlementSettings
@@ -1054,10 +1123,21 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   }
 
   private static func isStructurallyValid(_ manifest: Manifest) -> Bool {
+    let ancestorCommitIDs = manifest.ancestorCommitIDs ?? []
+    let mergedCommitIDs = manifest.mergedCommitIDs ?? []
     guard manifest.schema == Manifest.schemaValue,
           manifest.version == 2,
           !manifest.commitID.isEmpty,
           manifest.commitID == URL(fileURLWithPath: manifest.commitID).lastPathComponent,
+          ancestorCommitIDs.count <= manifestAncestryLimit,
+          Set(ancestorCommitIDs).count == ancestorCommitIDs.count,
+          ancestorCommitIDs.allSatisfy({
+            !$0.isEmpty && $0 == URL(fileURLWithPath: $0).lastPathComponent
+          }),
+          Set(mergedCommitIDs).count == mergedCommitIDs.count,
+          mergedCommitIDs.allSatisfy({
+            !$0.isEmpty && $0 == URL(fileURLWithPath: $0).lastPathComponent
+          }),
           manifest.selectedThreadID == nil
             || manifest.threads.contains(where: { $0.metadata.id == manifest.selectedThreadID })
     else { return false }
@@ -1280,6 +1360,16 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
+  private static func boundedCommitIDs(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    var result: [String] = []
+    for value in values where seen.insert(value).inserted {
+      result.append(value)
+      if result.count == manifestAncestryLimit { break }
+    }
+    return result
+  }
+
   private static func writeIfChanged(_ data: Data, to url: URL) throws {
     if let existing = try? Data(contentsOf: url, options: .mappedIfSafe), existing == data { return }
     try data.write(to: url, options: [.atomic])
@@ -1332,6 +1422,8 @@ private struct Manifest: Codable {
   let generation: UInt64
   let commitID: String
   let parentCommitID: String?
+  let ancestorCommitIDs: [String]?
+  let mergedCommitIDs: [String]?
   let threads: [ManifestThread]
   let selectedThreadID: UUID?
   let settlementSettings: OpenClawThreadSettlementSettings

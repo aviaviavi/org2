@@ -67,6 +67,19 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       loaded.snapshot.threads.first(where: { $0.id == server.id })?.messages.first?.content,
       "From the server"
     )
+
+    // Persisting the reconciled snapshot records every immutable branch that
+    // it subsumes. Routine follow-up loads must not reopen all of those large
+    // versioned manifests (and then decode every shard) forever.
+    try AIChatTranscriptStore.shared.flush(loaded.snapshot, legacyURL: laptopURL)
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    AIChatTranscriptStore.resetRecoveryCandidateDecodeCountForTesting()
+    XCTAssertNotNil(AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL))
+    XCTAssertLessThanOrEqual(
+      AIChatTranscriptStore.recoveryCandidateDecodeCountForTesting(),
+      2,
+      "A converged store should inspect only its two mutable manifest views"
+    )
   }
 
   @MainActor
