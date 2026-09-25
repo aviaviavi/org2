@@ -444,6 +444,134 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testOnlyConfiguredAIDestinationsAreRestored() throws {
+    let suiteName = "AIChatConfiguredDestinations.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-configured-destinations-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+
+    let initial = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    XCTAssertEqual(
+      Set(initial.aiChatDestinations.map(\.id)),
+      Set([
+        AIChatDestinationConfiguration.localCodexID,
+        AIChatDestinationConfiguration.openClawID,
+      ])
+    )
+
+    var disabledClaude = try XCTUnwrap(
+      AIChatDestinationConfiguration.defaults.first(where: {
+        $0.id == AIChatDestinationConfiguration.localClaudeID
+      })
+    )
+    disabledClaude.isEnabled = false
+    let configuredAnthropic = AIChatDestinationConfiguration(
+      name: "Anthropic",
+      mention: "anthropic",
+      adapter: .anthropic,
+      model: "claude-test"
+    )
+    defaults.set(
+      try JSONEncoder().encode([disabledClaude, configuredAnthropic]),
+      forKey: "Org2Workspace.aiChat.destinations.v1"
+    )
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    XCTAssertNil(restored.aiChatDestination(id: disabledClaude.id))
+    XCTAssertEqual(restored.aiChatDestinations.map(\.id), [configuredAnthropic.id])
+    XCTAssertTrue(restored.aiChatDestinations.allSatisfy(\.isEnabled))
+  }
+
+  @MainActor
+  func testDestinationDraftPersistsOnlyAfterSave() throws {
+    let suiteName = "AIChatDestinationDraft.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-destination-draft-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+
+    let originalCount = store.aiChatDestinations.count
+    var draft = store.makeAIChatDestinationDraft(adapter: .openRouter)
+    XCTAssertEqual(store.aiChatDestinations.count, originalCount)
+    XCTAssertTrue(draft.isEnabled)
+    draft.model = "anthropic/claude-test"
+    store.updateAIChatDestination(draft)
+
+    XCTAssertEqual(store.aiChatDestinations.count, originalCount + 1)
+    XCTAssertEqual(store.aiChatDestination(id: draft.id)?.model, "anthropic/claude-test")
+  }
+
+  @MainActor
+  func testBuiltInDestinationCanBeDeletedAndAddedBack() throws {
+    let suiteName = "AIChatDeleteBuiltInDestination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-delete-built-in-destination-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+
+    XCTAssertTrue(store.removeAIChatDestination(AIChatDestinationConfiguration.openClawID))
+    XCTAssertNil(store.aiChatDestination(id: AIChatDestinationConfiguration.openClawID))
+
+    let draft = store.makeAIChatDestinationDraft(adapter: .openClaw)
+    XCTAssertEqual(draft.id, AIChatDestinationConfiguration.openClawID)
+    store.updateAIChatDestination(draft)
+    XCTAssertNotNil(store.aiChatDestination(id: AIChatDestinationConfiguration.openClawID))
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    XCTAssertNotNil(restored.aiChatDestination(id: AIChatDestinationConfiguration.openClawID))
+  }
+
+  @MainActor
+  func testDestinationUsedByExistingChatCannotBeDeleted() throws {
+    let suiteName = "AIChatDeleteUsedDestination.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-delete-used-destination-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    let destinationID = store.addAIChatDestination(adapter: .codexManagedRemote)
+    store.createAIChatThread(destinationID: destinationID)
+
+    XCTAssertFalse(store.removeAIChatDestination(destinationID))
+    XCTAssertNotNil(store.aiChatDestination(id: destinationID))
+    XCTAssertEqual(
+      store.aiChatDestinationSettingsError,
+      "This destination is used by an existing chat. Delete that chat before deleting its destination."
+    )
+  }
+
+  @MainActor
   func testManagedRemoteCodexDestinationPersistsSSHHostAndWorkspace() throws {
     let suiteName = "AIChatManagedRemoteDestination.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -520,10 +648,9 @@ final class CodexAppServerClientTests: XCTestCase {
     )
     let id = store.addAIChatDestination(adapter: .openRouter)
     var destination = try XCTUnwrap(store.aiChatDestination(id: id))
-    XCTAssertFalse(destination.isEnabled)
+    XCTAssertTrue(destination.isEnabled)
     XCTAssertEqual(destination.endpoint, "https://openrouter.ai/api/v1")
     destination.model = "anthropic/claude-test"
-    destination.isEnabled = true
     store.updateAIChatDestination(destination)
 
     let restored = WorkspaceStore(

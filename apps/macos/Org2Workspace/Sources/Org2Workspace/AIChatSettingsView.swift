@@ -3,7 +3,8 @@ import SwiftUI
 
 struct AIChatSettingsView: View {
   @Environment(WorkspaceStore.self) private var store
-  @State private var editedDestination: AIChatDestinationConfiguration?
+  @State private var destinationEditor: AIChatDestinationEditorPresentation?
+  @State private var destinationPendingDeletion: AIChatDestinationConfiguration?
 
   var body: some View {
     @Bindable var store = store
@@ -27,7 +28,7 @@ struct AIChatSettingsView: View {
           HStack(spacing: 10) {
             Image(systemName: destination.systemImage)
               .frame(width: 22)
-              .foregroundStyle(destination.isEnabled ? Color.accentColor : Color.secondary)
+              .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
               Text(destination.title)
                 .font(.body.weight(.medium))
@@ -36,10 +37,14 @@ struct AIChatSettingsView: View {
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle("Enabled", isOn: destinationEnabledBinding(destination))
-              .labelsHidden()
             Button("Edit") {
-              editedDestination = destination
+              destinationEditor = AIChatDestinationEditorPresentation(
+                destination: destination,
+                isNew: false
+              )
+            }
+            Button("Delete", role: .destructive) {
+              destinationPendingDeletion = destination
             }
           }
         }
@@ -48,8 +53,10 @@ struct AIChatSettingsView: View {
           Menu {
             ForEach(addableDestinationAdapters) { adapter in
               Button {
-                let id = store.addAIChatDestination(adapter: adapter)
-                editedDestination = store.aiChatDestination(id: id)
+                destinationEditor = AIChatDestinationEditorPresentation(
+                  destination: store.makeAIChatDestinationDraft(adapter: adapter),
+                  isNew: true
+                )
               } label: {
                 Label(adapter.title, systemImage: adapter.systemImage)
               }
@@ -58,7 +65,7 @@ struct AIChatSettingsView: View {
             Label("Add Destination", systemImage: "plus")
           }
           Spacer()
-          Text("Use names such as @claude, @codex-remote, or @research-agent.")
+          Text("Configured destinations are available in new chats.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -151,25 +158,31 @@ struct AIChatSettingsView: View {
     .frame(width: 620)
     .frame(minHeight: 560)
     .task { await store.refreshCodexAccount() }
-    .sheet(item: $editedDestination) { destination in
-      AIChatDestinationEditor(destination: destination)
+    .sheet(item: $destinationEditor) { presentation in
+      AIChatDestinationEditor(
+        destination: presentation.destination,
+        isNew: presentation.isNew
+      )
         .environment(store)
     }
-  }
-
-  private func destinationEnabledBinding(
-    _ destination: AIChatDestinationConfiguration
-  ) -> Binding<Bool> {
-    Binding(
-      get: {
-        store.aiChatDestination(id: destination.id)?.isEnabled ?? destination.isEnabled
-      },
-      set: { enabled in
-        var updated = store.aiChatDestination(id: destination.id) ?? destination
-        updated.isEnabled = enabled
-        store.updateAIChatDestination(updated)
+    .confirmationDialog(
+      "Delete \(destinationPendingDeletion?.title ?? "Destination")?",
+      isPresented: Binding(
+        get: { destinationPendingDeletion != nil },
+        set: { if !$0 { destinationPendingDeletion = nil } }
+      ),
+      presenting: destinationPendingDeletion
+    ) { destination in
+      Button("Delete Destination", role: .destructive) {
+        _ = store.removeAIChatDestination(destination.id)
+        destinationPendingDeletion = nil
       }
-    )
+      Button("Cancel", role: .cancel) {
+        destinationPendingDeletion = nil
+      }
+    } message: { destination in
+      Text("@\(destination.mention) will no longer be available for new chats. A destination used by an existing chat cannot be deleted.")
+    }
   }
 
   private var corpusAccessHelp: String {
@@ -183,8 +196,14 @@ struct AIChatSettingsView: View {
   }
 
   private var addableDestinationAdapters: [AIChatDestinationAdapter] {
-    AIChatDestinationAdapter.allCases.filter {
-      $0 != .codexLocal && $0 != .claudeLocal && $0 != .piLocal && $0 != .openCodeLocal
+    AIChatDestinationAdapter.allCases.filter { adapter in
+      switch adapter {
+      case .codexLocal, .claudeLocal, .piLocal, .openCodeLocal:
+        return !store.aiChatDestinations.contains(where: { $0.adapter == adapter })
+      case .piRemote, .openCodeRemote, .codexRemote, .codexManagedRemote,
+           .openClaw, .openAI, .anthropic, .openRouter, .ollama:
+        return true
+      }
     }
   }
 
@@ -201,6 +220,15 @@ struct AIChatSettingsView: View {
 
 }
 
+private struct AIChatDestinationEditorPresentation: Identifiable {
+  let destination: AIChatDestinationConfiguration
+  let isNew: Bool
+
+  var id: String {
+    "\(isNew ? "new" : "existing")-\(destination.id)"
+  }
+}
+
 private struct AIChatDestinationEditor: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(WorkspaceStore.self) private var store
@@ -210,9 +238,12 @@ private struct AIChatDestinationEditor: View {
   @State private var isTestingConnection = false
   @State private var connectionStatus: String?
   @State private var isShowingOpenClawGateway = false
+  @State private var isConfirmingDeletion = false
+  private let isNew: Bool
 
-  init(destination: AIChatDestinationConfiguration) {
+  init(destination: AIChatDestinationConfiguration, isNew: Bool) {
     _destination = State(initialValue: destination)
+    self.isNew = isNew
   }
 
   var body: some View {
@@ -221,7 +252,6 @@ private struct AIChatDestinationEditor: View {
         Label("AI Destination", systemImage: destination.systemImage)
           .font(.title3.weight(.semibold))
         Spacer()
-        Toggle("Enabled", isOn: $destination.isEnabled)
       }
 
       if destination.adapter == .codexLocal {
@@ -372,16 +402,22 @@ private struct AIChatDestinationEditor: View {
         .font(.callout)
         .foregroundStyle(.secondary)
 
+      if let error = store.aiChatDestinationSettingsError {
+        Label(error, systemImage: "exclamationmark.triangle.fill")
+          .font(.callout)
+          .foregroundStyle(.red)
+      }
+
       HStack {
-        if !isBuiltIn {
-          Button("Delete", role: .destructive) {
-            store.removeAIChatDestination(destination.id)
-            dismiss()
+        if !isNew {
+          Button("Delete Destination…", role: .destructive) {
+            isConfirmingDeletion = true
           }
         }
         Spacer()
         Button("Cancel") { dismiss() }
         Button("Save") {
+          destination.isEnabled = true
           store.updateAIChatDestination(destination)
           if clearsSavedToken {
             store.saveAIChatDestinationToken("", destinationID: destination.id)
@@ -401,6 +437,19 @@ private struct AIChatDestinationEditor: View {
     .sheet(isPresented: $isShowingOpenClawGateway) {
       OpenClawGatewayConfigurationSheet()
         .environment(store)
+    }
+    .confirmationDialog(
+      "Delete \(destination.title)?",
+      isPresented: $isConfirmingDeletion
+    ) {
+      Button("Delete Destination", role: .destructive) {
+        if store.removeAIChatDestination(destination.id) {
+          dismiss()
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("@\(destination.mention) will no longer be available for new chats. A destination used by an existing chat cannot be deleted.")
     }
   }
 
@@ -469,20 +518,18 @@ private struct AIChatDestinationEditor: View {
     if destination.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return true
     }
-    if destination.isEnabled,
-       destination.adapter.isDirectProvider,
+    if destination.adapter.isDirectProvider,
        destination.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
       return true
     }
-    if destination.isEnabled,
-       (destination.adapter == .codexRemote
+    if (destination.adapter == .codexRemote
         || destination.adapter == .codexManagedRemote
         || destination.adapter == .piRemote
         || destination.adapter == .openCodeRemote),
        destination.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return true
     }
-    return destination.isEnabled && missingRequiredCredential
+    return missingRequiredCredential
   }
 
   private var credentialLabel: String {

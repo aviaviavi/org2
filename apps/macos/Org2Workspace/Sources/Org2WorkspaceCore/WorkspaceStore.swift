@@ -3987,14 +3987,20 @@ public final class WorkspaceStore {
   }
 
   public func completeLaunchGuide(destinationID: String?) {
-    if let destinationID,
-       var destination = aiChatDestination(id: destinationID) {
-      if !destination.isEnabled {
-        destination.isEnabled = true
-        updateAIChatDestination(destination)
+    if let destinationID {
+      let configuredDestinationID: String?
+      if aiChatDestination(id: destinationID) != nil {
+        configuredDestinationID = destinationID
+      } else if let fallback = AIChatDestinationConfiguration.defaults.first(where: {
+        $0.id == destinationID
+      }) {
+        configuredDestinationID = addAIChatDestination(adapter: fallback.adapter)
+      } else {
+        configuredDestinationID = nil
       }
-      if selectedOpenClawChatThread?.destinationID != destinationID {
-        createAIChatThread(destinationID: destinationID)
+      if let configuredDestinationID,
+         selectedOpenClawChatThread?.destinationID != configuredDestinationID {
+        createAIChatThread(destinationID: configuredDestinationID)
       }
     }
     defaults.set(true, forKey: launchGuideCompletedKey)
@@ -21466,24 +21472,33 @@ public final class WorkspaceStore {
   public func addAIChatDestination(
     adapter: AIChatDestinationAdapter = .codexRemote
   ) -> String {
+    let destination = makeAIChatDestinationDraft(adapter: adapter)
+    updateAIChatDestination(destination)
+    return destination.id
+  }
+
+  public func makeAIChatDestinationDraft(
+    adapter: AIChatDestinationAdapter = .codexRemote
+  ) -> AIChatDestinationConfiguration {
     let existingMentions = Set(aiChatDestinations.map { $0.mention.lowercased() })
+    var destination = AIChatDestinationConfiguration.defaults.first(where: {
+      $0.adapter == adapter && aiChatDestination(id: $0.id) == nil
+    }) ?? AIChatDestinationConfiguration(
+      name: adapter.defaultName,
+      mention: adapter.defaultMention,
+      adapter: adapter,
+      endpoint: adapter.defaultEndpoint
+    )
+    destination.isEnabled = true
     var suffix = 1
-    let baseMention = adapter.defaultMention
+    let baseMention = destination.mention
     var mention = baseMention
     while existingMentions.contains(mention) {
       suffix += 1
       mention = "\(baseMention)-\(suffix)"
     }
-    let destination = AIChatDestinationConfiguration(
-      name: adapter.defaultName,
-      mention: mention,
-      adapter: adapter,
-      endpoint: adapter.defaultEndpoint,
-      isEnabled: !adapter.isDirectProvider
-    )
-    aiChatDestinations.append(destination)
-    persistAIChatDestinations()
-    return destination.id
+    destination.mention = mention
+    return destination
   }
 
   public func updateAIChatDestination(_ destination: AIChatDestinationConfiguration) {
@@ -21507,10 +21522,12 @@ public final class WorkspaceStore {
       aiChatDestinationSettingsError = "Every AI destination needs a unique @mention."
       return
     }
-    guard let index = aiChatDestinations.firstIndex(where: { $0.id == normalized.id }) else {
-      return
+    normalized.isEnabled = true
+    if let index = aiChatDestinations.firstIndex(where: { $0.id == normalized.id }) {
+      aiChatDestinations[index] = normalized
+    } else {
+      aiChatDestinations.append(normalized)
     }
-    aiChatDestinations[index] = normalized
     aiChatDestinationSettingsError = nil
     invalidateCodexClient(forDestinationID: normalized.id)
     invalidateCLIChatClient(forDestinationID: normalized.id)
@@ -21518,28 +21535,22 @@ public final class WorkspaceStore {
     persistAIChatDestinations()
   }
 
-  public func removeAIChatDestination(_ destinationID: String) {
-    guard destinationID != AIChatDestinationConfiguration.localCodexID,
-          destinationID != AIChatDestinationConfiguration.localClaudeID,
-          destinationID != AIChatDestinationConfiguration.localPiID,
-          destinationID != AIChatDestinationConfiguration.localOpenCodeID,
-          destinationID != AIChatDestinationConfiguration.openClawID
-    else {
-      aiChatDestinationSettingsError = "Built-in local and OpenClaw destinations can be disabled, but not deleted."
-      return
-    }
+  @discardableResult
+  public func removeAIChatDestination(_ destinationID: String) -> Bool {
     guard !openClawChatThreads.contains(where: {
       $0.destinationID == destinationID || $0.roomDestinationIDs.contains(destinationID)
     }) else {
-      aiChatDestinationSettingsError = "This destination is used by an existing thread. Disable it instead."
-      return
+      aiChatDestinationSettingsError = "This destination is used by an existing chat. Delete that chat before deleting its destination."
+      return false
     }
     aiChatDestinations.removeAll(where: { $0.id == destinationID })
     invalidateCodexClient(forDestinationID: destinationID)
     invalidateCLIChatClient(forDestinationID: destinationID)
     removeCachedAIChatConfiguration(destinationID: destinationID)
     try? AIChatDestinationCredentials.deleteToken(destinationID: destinationID)
+    aiChatDestinationSettingsError = nil
     persistAIChatDestinations()
+    return true
   }
 
   public func aiChatDestinationHasToken(_ destinationID: String) -> Bool {
@@ -21575,15 +21586,13 @@ public final class WorkspaceStore {
   ) -> [AIChatDestinationConfiguration] {
     let stored = defaults.data(forKey: key).flatMap {
       try? JSONDecoder().decode([AIChatDestinationConfiguration].self, from: $0)
-    } ?? []
-    var destinations = stored
-    for fallback in AIChatDestinationConfiguration.defaults where
-      !destinations.contains(where: { $0.id == fallback.id }) {
-      destinations.append(fallback)
     }
+    let destinations = (stored ?? AIChatDestinationConfiguration.defaults)
+      .filter(\.isEnabled)
     var seen = Set<String>()
     return destinations.map { destination in
       var normalized = destination
+      normalized.isEnabled = true
       normalized.mention = AIChatDestinationConfiguration.normalizedMention(destination.mention)
       // Early destination builds persisted `main` here, which silently
       // overrode the user's configured OpenClaw Chat Agent. Treat the built-in
