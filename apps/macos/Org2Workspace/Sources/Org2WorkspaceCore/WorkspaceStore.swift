@@ -23410,6 +23410,30 @@ public final class WorkspaceStore {
     return preview
   }
 
+  nonisolated public static let mobileRemoteImageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
+  nonisolated public static let mobileRemoteImageMaxBytes = 12 * 1024 * 1024
+
+  /// Returns the bytes of an image inside the active or mounted corpora so the
+  /// iOS chat can render inline image links that are not yet synced locally.
+  public func mobileRemoteImage(path rawPath: String) async throws -> MobileRemoteImage {
+    let active = corpusRoot?.standardizedFileURL.path
+    let mounted = workspaceMountPaths().sorted()
+    let roots = (active.map { [$0] } ?? []) + mounted.filter { $0 != active }
+    return try await Task.detached(priority: .userInitiated) {
+      let target = try Self.mobileRemotePreviewTarget(for: rawPath, mountedRootPaths: roots)
+      let ext = target.url.pathExtension.lowercased()
+      guard Self.mobileRemoteImageExtensions.contains(ext) else {
+        throw MobileRemoteFilePreviewError.unsupportedFile
+      }
+      let size = (try? target.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+      guard size <= Self.mobileRemoteImageMaxBytes,
+            let data = try? Data(contentsOf: target.url)
+      else { throw MobileRemoteFilePreviewError.unavailable }
+      let mimeType = ext == "jpg" ? "image/jpeg" : "image/\(ext)"
+      return MobileRemoteImage(relativePath: target.relativePath, mimeType: mimeType, data: data)
+    }.value
+  }
+
   private func mobileRemoteFilePreviewOverlay() -> MobileRemoteFilePreviewOverlay? {
     guard let selectedFile = selectedEntrySource?.file ?? selectedLocation?.file else {
       return nil

@@ -115,6 +115,16 @@ struct MobileRemoteFilePreviewRequest: Codable, Hashable {
   let line: Int?
 }
 
+struct MobileRemoteImageRequest: Codable, Hashable {
+  let path: String
+}
+
+struct MobileRemoteImage: Codable, Hashable {
+  let relativePath: String
+  let mimeType: String
+  let data: Data
+}
+
 struct MobileRemoteFilePreview: Codable, Hashable {
   let title: String
   let relativePath: String

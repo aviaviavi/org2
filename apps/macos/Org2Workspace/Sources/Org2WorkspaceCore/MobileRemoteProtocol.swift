@@ -180,6 +180,27 @@ public struct MobileRemoteFilePreviewRequest: Codable, Hashable, Sendable {
   }
 }
 
+public struct MobileRemoteImageRequest: Codable, Hashable, Sendable {
+  public let path: String
+
+  public init(path: String) {
+    self.path = path
+  }
+}
+
+/// Image bytes travel base64-encoded through JSON's default `Data` strategy.
+public struct MobileRemoteImage: Codable, Hashable, Sendable {
+  public let relativePath: String
+  public let mimeType: String
+  public let data: Data
+
+  public init(relativePath: String, mimeType: String, data: Data) {
+    self.relativePath = relativePath
+    self.mimeType = mimeType
+    self.data = data
+  }
+}
+
 public struct MobileRemoteFilePreview: Codable, Hashable, Sendable {
   public let title: String
   public let relativePath: String

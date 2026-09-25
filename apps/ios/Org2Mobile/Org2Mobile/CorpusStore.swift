@@ -287,6 +287,24 @@ final class CorpusStore: ObservableObject {
     }.value
   }
 
+  /// Reads an image from the synced corpus for inline chat rendering.
+  func imageData(path rawPath: String) async throws -> Data {
+    guard let rootURL else { throw CorpusFileError.noCorpus }
+    return try await Task.detached(priority: .userInitiated) {
+      let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+      defer {
+        if hasSecurityAccess {
+          rootURL.stopAccessingSecurityScopedResource()
+        }
+      }
+      let baseURL = try Self.corpusBaseURL(for: rootURL)
+      let relativePath = try Self.canonicalCorpusRelativePath(rawPath, baseURL: baseURL)
+      let url = baseURL.appendingPathComponent(relativePath).standardizedFileURL
+      guard try Self.isRegularFile(url) else { throw CorpusFileError.unavailable }
+      return try Data(contentsOf: url)
+    }.value
+  }
+
   func pathForDocumentLink(_ link: MobileDocumentLink) async throws -> String {
     guard let nodeID = link.nodeID else { return link.path }
     if !searchIndex.entries.contains(where: { $0.nodeID == nodeID }) { await refresh() }

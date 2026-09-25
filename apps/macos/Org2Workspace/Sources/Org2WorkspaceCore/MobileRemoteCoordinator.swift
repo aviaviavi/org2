@@ -494,6 +494,18 @@ public final class MobileRemoteCoordinator: ObservableObject {
       }
     }
 
+    if request.method == "POST", path == "/v1/files/image" {
+      guard let payload = try? request.decode(MobileRemoteImageRequest.self) else {
+        return .error("The image reference could not be read.", statusCode: 400)
+      }
+      do {
+        let image = try await store.mobileRemoteImage(path: payload.path)
+        return await backgroundWork.jsonResponse(image)
+      } catch {
+        return .error(error.localizedDescription, statusCode: 404)
+      }
+    }
+
     if request.method == "GET", path == "/v1/external-threads" {
       do {
         let threads = try await store.externalThreadSummaries()

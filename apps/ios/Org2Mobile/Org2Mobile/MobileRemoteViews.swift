@@ -2245,8 +2245,10 @@ private struct MobileRemoteFullMessageTextView: View {
 
   private var containsTable: Bool {
     MobileRemoteMessageMarkup.renderedBlocks(for: content).contains {
-      if case .table = $0 { return true }
-      return false
+      switch $0 {
+      case .table, .image: return true
+      case .text: return false
+      }
     }
   }
 }
@@ -2736,6 +2738,48 @@ private enum MobileRemoteMessageMarkup {
   enum RenderedBlock: Equatable {
     case text(String)
     case table(Table)
+    case image(ImageReference)
+  }
+
+  struct ImageReference: Equatable {
+    /// Corpus-relative or absolute path for =file:= images, or nil for web images.
+    let path: String?
+    let remoteURL: URL?
+    let label: String
+  }
+
+  private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic"]
+
+  /// Recognizes a line that consists only of an Org image link, which Org2
+  /// renders inline rather than as a textual link.
+  static func imageReference(in line: String) -> ImageReference? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let range = NSRange(location: 0, length: (trimmed as NSString).length)
+    guard let match = orgLinkPattern.firstMatch(in: trimmed, range: range),
+          match.range == range,
+          let targetRange = Range(match.range(at: 1), in: trimmed)
+    else { return nil }
+    let target = String(trimmed[targetRange]).trimmingCharacters(in: .whitespaces)
+    let label = Range(match.range(at: 2), in: trimmed).map { String(trimmed[$0]) } ?? ""
+    return imageReference(target: target, label: label)
+  }
+
+  static func imageReference(target: String, label: String) -> ImageReference? {
+    let lowered = target.lowercased()
+    if lowered.hasPrefix("http://") || lowered.hasPrefix("https://") {
+      guard let url = URL(string: target),
+            imageExtensions.contains(url.pathExtension.lowercased())
+      else { return nil }
+      return ImageReference(path: nil, remoteURL: url, label: label)
+    }
+    var path = target
+    if lowered.hasPrefix("file:") { path = String(path.dropFirst(5)) }
+    else if lowered.contains(":") { return nil }
+    path = path.components(separatedBy: "::").first ?? path
+    guard !path.isEmpty,
+          imageExtensions.contains((path as NSString).pathExtension.lowercased())
+    else { return nil }
+    return ImageReference(path: path, remoteURL: nil, label: label)
   }
 
   private static let markdownLinkPattern = try! NSRegularExpression(
@@ -2773,7 +2817,7 @@ private enum MobileRemoteMessageMarkup {
   private struct RenderedLink {
     let range: NSRange
     let label: String
-    let url: URL
+    let url: URL?
   }
 
   private final class CachedMarkup {
@@ -2814,7 +2858,10 @@ private enum MobileRemoteMessageMarkup {
 
     func flushText() {
       guard !textLines.isEmpty else { return }
-      blocks.append(.text(textLines.joined(separator: "\n")))
+      let text = textLines.joined(separator: "\n").trimmingCharacters(in: .newlines)
+      textLines.removeAll(keepingCapacity: true)
+      guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+      blocks.append(.text(text))
       textLines.removeAll(keepingCapacity: true)
     }
 
@@ -2824,6 +2871,13 @@ private enum MobileRemoteMessageMarkup {
       let directive = line.trimmingCharacters(in: .whitespaces).lowercased()
       if directive.hasPrefix("#+begin_src") || directive.hasPrefix("#+begin_example") {
         isInsideLiteralBlock = true
+      }
+
+      if !isInsideLiteralBlock, let image = imageReference(in: line) {
+        flushText()
+        blocks.append(.image(image))
+        index += 1
+        continue
       }
 
       if !isInsideLiteralBlock, isTableLine(line) {
@@ -2936,10 +2990,6 @@ private enum MobileRemoteMessageMarkup {
         quote.foregroundColor = .secondary
         output.append(quote)
       } else if let heading = heading(in: line) {
-        var marker = AttributedString("* ")
-        marker.font = headingFont(level: heading.level)
-        marker.foregroundColor = .accentColor
-        output.append(marker)
         var title = inlineAttributedString(for: heading.title)
         title.font = headingFont(level: heading.level)
         output.append(title)
@@ -2978,8 +3028,10 @@ private enum MobileRemoteMessageMarkup {
       let prefixRange = NSRange(location: cursor, length: link.range.location - cursor)
       output.append(styledInlineAttributedString(for: source.substring(with: prefixRange)))
       var chunk = styledInlineAttributedString(for: link.label)
-      chunk.foregroundColor = .accentColor
-      chunk.link = link.url
+      if let url = link.url {
+        chunk.foregroundColor = .accentColor
+        chunk.link = url
+      }
       output.append(chunk)
       cursor = link.range.location + link.range.length
     }
@@ -3145,10 +3197,13 @@ private enum MobileRemoteMessageMarkup {
     if target.hasPrefix("<"), target.hasSuffix(">") {
       target = String(target.dropFirst().dropLast())
     }
-    guard let url = URL(string: target),
-          ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-    else { return nil }
-    return RenderedLink(range: range, label: label, url: url)
+    if let url = URL(string: target),
+       ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+      return RenderedLink(range: range, label: label, url: url)
+    }
+    // Other file links (images mid-sentence, PDFs) still read as their label.
+    guard target.lowercased().hasPrefix("file:") else { return nil }
+    return RenderedLink(range: range, label: label, url: nil)
   }
 
   private static func citation(target rawTarget: String, label: String) -> MobileRemoteFileCitation? {
@@ -3188,6 +3243,8 @@ private struct MobileRemoteRenderedMessageText: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case .table(let table):
           MobileRemoteOrgTable(table: table)
+        case .image(let image):
+          MobileRemoteInlineImage(reference: image)
         }
       }
     }
@@ -3196,6 +3253,16 @@ private struct MobileRemoteRenderedMessageText: View {
 
 private struct MobileRemoteOrgTable: View {
   let table: MobileRemoteMessageMarkup.Table
+
+  // A horizontal ScrollView proposes unlimited width, so a flexible frame
+  // never makes text wrap to its height. Give each column a definite width
+  // estimated from its longest cell instead.
+  private var columnWidths: [CGFloat] {
+    (0..<table.columnCount).map { column in
+      let longest = table.rows.map { column < $0.count ? $0[column].count : 0 }.max() ?? 0
+      return min(220, max(56, CGFloat(longest) * 9.5))
+    }
+  }
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: true) {
@@ -3208,10 +3275,11 @@ private struct MobileRemoteOrgTable: View {
               ))
               .font(rowIndex < table.headerRowCount ? .body.weight(.semibold) : .body)
               .textSelection(.enabled)
+              .frame(width: columnWidths[columnIndex], alignment: .leading)
               .fixedSize(horizontal: false, vertical: true)
-              .frame(minWidth: 72, maxWidth: 220, alignment: .leading)
               .padding(.horizontal, 9)
               .padding(.vertical, 7)
+              .frame(maxHeight: .infinity, alignment: .topLeading)
               .background(
                 rowIndex < table.headerRowCount
                   ? Color.secondary.opacity(0.14)
@@ -3233,6 +3301,102 @@ private struct MobileRemoteOrgTable: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Table")
+  }
+}
+
+@MainActor
+private enum MobileRemoteInlineImageCache {
+  static let images: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.totalCostLimit = 64 * 1024 * 1024
+    return cache
+  }()
+}
+
+/// Renders an Org image link inline. Corpus images load from the synced
+/// corpus first and fall back to the paired Mac, since freshly generated
+/// images often reach the Mac before they sync to the phone.
+private struct MobileRemoteInlineImage: View {
+  @EnvironmentObject private var store: CorpusStore
+  @EnvironmentObject private var remote: MobileRemoteStore
+  let reference: MobileRemoteMessageMarkup.ImageReference
+  @State private var image: UIImage?
+  @State private var failed = false
+  @State private var isFullScreen = false
+
+  private var cacheKey: String { reference.path ?? reference.remoteURL?.absoluteString ?? "" }
+  private var caption: String {
+    if !reference.label.isEmpty { return reference.label }
+    return ((reference.path ?? reference.remoteURL?.lastPathComponent ?? "") as NSString).lastPathComponent
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      if let image {
+        Button { isFullScreen = true } label: {
+          Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity, maxHeight: 420, alignment: .leading)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(caption.isEmpty ? "Image" : caption)
+        if !reference.label.isEmpty {
+          Text(reference.label).font(.caption).foregroundStyle(.secondary)
+        }
+      } else if failed {
+        Label(caption.isEmpty ? "Image unavailable" : "\(caption) (unavailable)", systemImage: "photo")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } else {
+        RoundedRectangle(cornerRadius: 8)
+          .fill(Color.secondary.opacity(0.10))
+          .frame(height: 160)
+          .overlay { ProgressView() }
+      }
+    }
+    .task(id: cacheKey) { await load() }
+    .fullScreenCover(isPresented: $isFullScreen) {
+      NavigationStack {
+        ScrollView([.horizontal, .vertical]) {
+          if let image {
+            Image(uiImage: image).resizable().scaledToFit()
+              .frame(maxWidth: .infinity)
+          }
+        }
+        .navigationTitle(caption)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .confirmationAction) {
+            Button("Done") { isFullScreen = false }
+          }
+        }
+      }
+    }
+  }
+
+  private func load() async {
+    if let cached = MobileRemoteInlineImageCache.images.object(forKey: cacheKey as NSString) {
+      image = cached
+      return
+    }
+    var data: Data?
+    if let url = reference.remoteURL {
+      data = try? await URLSession.shared.data(from: url).0
+    } else if let path = reference.path {
+      data = try? await store.imageData(path: path)
+      if data == nil, remote.isPaired {
+        data = try? await remote.imageData(path: path)
+      }
+    }
+    guard !Task.isCancelled else { return }
+    guard let data, let loaded = UIImage(data: data) else {
+      failed = true
+      return
+    }
+    MobileRemoteInlineImageCache.images.setObject(loaded, forKey: cacheKey as NSString, cost: data.count)
+    image = loaded
   }
 }
 

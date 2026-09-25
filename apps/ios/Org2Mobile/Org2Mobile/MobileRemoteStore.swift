@@ -1049,6 +1049,15 @@ final class MobileRemoteStore: ObservableObject {
     )
   }
 
+  func imageData(path: String) async throws -> Data {
+    try await pairedClient().post(
+      "/v1/files/image",
+      payload: MobileRemoteImageRequest(path: path),
+      timeout: 60,
+      as: MobileRemoteImage.self
+    ).data
+  }
+
   func setModel(_ model: String?, threadID: UUID) async {
     await updateThreadConfiguration(
       MobileRemoteUpdateThreadConfigurationRequest(model: model),

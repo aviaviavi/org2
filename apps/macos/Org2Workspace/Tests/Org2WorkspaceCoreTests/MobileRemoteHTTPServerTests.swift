@@ -272,6 +272,39 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertEqual(markdown.content, "# Read me\nAll text is visible.")
   }
 
+  @MainActor
+  func testMobileRemoteImageServesCorpusImagesOnly() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-mobile-image-\(UUID().uuidString)", isDirectory: true)
+    let images = root.appendingPathComponent("images", isDirectory: true)
+    try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    try bytes.write(to: images.appendingPathComponent("chart.png"))
+    try "secret".write(to: root.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-mobile-image-defaults-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    let image = try await store.mobileRemoteImage(path: "images/chart.png")
+    XCTAssertEqual(image.data, bytes)
+    XCTAssertEqual(image.mimeType, "image/png")
+    let decoded = try JSONDecoder().decode(MobileRemoteImage.self, from: JSONEncoder().encode(image))
+    XCTAssertEqual(decoded.data, bytes)
+
+    do {
+      _ = try await store.mobileRemoteImage(path: "notes.txt")
+      XCTFail("Non-image files must not be served")
+    } catch {}
+    do {
+      _ = try await store.mobileRemoteImage(path: "../etc/hosts.png")
+      XCTFail("Paths outside the corpus must be rejected")
+    } catch {}
+  }
+
   func testCanonicalWorkspaceSnapshotAndMutationsRoundTrip() throws {
     let snapshot = MobileRemoteWorkspaceSnapshot(
       updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
