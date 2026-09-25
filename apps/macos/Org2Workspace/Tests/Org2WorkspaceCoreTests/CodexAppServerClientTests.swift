@@ -605,6 +605,35 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   @MainActor
+  func testManagedRemoteCodexDefaultNameMigratesToRemoteCodex() throws {
+    let suiteName = "AIChatManagedRemoteNameMigration.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let transcript = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-managed-remote-name-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: transcript) }
+    let destination = AIChatDestinationConfiguration(
+      name: "Managed Remote Codex",
+      mention: "codex-scarf",
+      adapter: .codexManagedRemote,
+      endpoint: "scarfs-macbook-air",
+      workspaceRoot: "~/avi.org2"
+    )
+    defaults.set(
+      try JSONEncoder().encode([destination]),
+      forKey: "Org2Workspace.aiChat.destinations.v1"
+    )
+
+    let restored = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+
+    XCTAssertEqual(restored.aiChatDestination(id: destination.id)?.name, "Remote Codex")
+  }
+
+  @MainActor
   func testNewAIChatThreadPreservesSelectedManagedRemoteDestination() throws {
     let suiteName = "AIChatManagedRemoteNewThread.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -732,7 +761,7 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertEqual(
       CodexAppServerTransport.managedRemote(sshHost: "scarfs-macbook-air")
         .connectionDescription,
-      "Managed remote Codex via scarfs-macbook-air"
+      "Remote Codex over SSH via scarfs-macbook-air"
     )
   }
 

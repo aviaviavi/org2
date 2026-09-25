@@ -200,9 +200,11 @@ struct AIChatSettingsView: View {
       switch adapter {
       case .codexLocal, .claudeLocal, .piLocal, .openCodeLocal:
         return !store.aiChatDestinations.contains(where: { $0.adapter == adapter })
-      case .piRemote, .openCodeRemote, .codexRemote, .codexManagedRemote,
+      case .piRemote, .openCodeRemote, .codexManagedRemote,
            .openClaw, .openAI, .anthropic, .openRouter, .ollama:
         return true
+      case .codexRemote:
+        return false
       }
     }
   }
@@ -264,7 +266,7 @@ private struct AIChatDestinationEditor: View {
           .textContentType(.username)
 
         Picker("Adapter", selection: $destination.adapter) {
-          ForEach(AIChatDestinationAdapter.allCases) { adapter in
+          ForEach(visibleAdapters) { adapter in
             Text(adapter.title).tag(adapter)
           }
         }
@@ -506,6 +508,12 @@ private struct AIChatDestinationEditor: View {
 
   private var hasSavedToken: Bool {
     store.aiChatDestinationHasToken(destination.id)
+  }
+
+  private var visibleAdapters: [AIChatDestinationAdapter] {
+    AIChatDestinationAdapter.allCases.filter {
+      $0 != .codexRemote || destination.adapter == .codexRemote
+    }
   }
 
   private var missingRequiredCredential: Bool {

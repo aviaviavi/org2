@@ -1180,7 +1180,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
           startedAt: Date().addingTimeInterval(-75),
           lastEventAt: Date(),
           runtime: .codex,
-          destinationTitle: "Managed Remote Codex",
+          destinationTitle: "Remote Codex",
           connectionState: .connected,
           connectionDetail: nil,
           runID: "layout-test",
@@ -1214,7 +1214,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
           guard case .view(let view) = node else { return nil }
           return view as? AppKitPeriodicTextField
         }
-        let title = try XCTUnwrap(labels.first { $0.stringValue == "Managed Remote Codex is working" })
+        let title = try XCTUnwrap(labels.first { $0.stringValue == "Remote Codex is working" })
         let elapsed = try XCTUnwrap(labels.first { $0 !== title })
         let titleFrame = title.convert(title.bounds, to: host)
         let elapsedFrame = elapsed.convert(elapsed.bounds, to: host)

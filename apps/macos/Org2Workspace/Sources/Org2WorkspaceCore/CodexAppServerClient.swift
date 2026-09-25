@@ -301,7 +301,7 @@ public enum CodexAppServerTransport: Sendable, Equatable {
     switch self {
     case .local: "Local Codex App Server"
     case .remote(let endpoint, _): endpoint.absoluteString
-    case .managedRemote(let sshHost): "Managed remote Codex via \(sshHost)"
+    case .managedRemote(let sshHost): "Remote Codex over SSH via \(sshHost)"
     }
   }
 }
@@ -476,7 +476,7 @@ public actor CodexAppServerClient {
   // this SSH process therefore no longer terminates work on the remote Mac.
   private nonisolated static func managedRemoteCommand() -> String {
     let adapter = Data(managedRemoteJSONLAdapter.utf8).base64EncodedString()
-    return #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Managed Remote Codex requires python3 on the remote Mac." >&2; exit 127; }; codex app-server daemon start >/dev/null || exit $?; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(adapter)\"),\"<openorg-codex-adapter>\",\"exec\"))"'"#
+    return #"exec /bin/sh -lc 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote Codex over SSH requires python3 on the remote Mac." >&2; exit 127; }; codex app-server daemon start >/dev/null || exit $?; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(adapter)\"),\"<openorg-codex-adapter>\",\"exec\"))"'"#
   }
 
   nonisolated static let managedRemoteJSONLAdapter = #"""

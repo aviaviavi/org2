@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -61,6 +62,63 @@ final class OpenCodeClientTests: XCTestCase {
       sshHost: "press.local; touch /tmp/nope"
     ))
     XCTAssertNoThrow(try OpenCodeClient.managedRemoteSSHArguments(sshHost: "press.local"))
+    XCTAssertThrowsError(try OpenCodeClient.managedRemoteModelSSHArguments(
+      sshHost: "press.local; touch /tmp/nope"
+    ))
+    XCTAssertNoThrow(try OpenCodeClient.managedRemoteModelSSHArguments(sshHost: "press.local"))
+  }
+
+  func testModelCatalogParsingKeepsOnlyProviderModelIDs() {
+    XCTAssertEqual(OpenCodeClient.modelIDs(from: """
+    anthropic/claude-sonnet-4-6
+    log line without an id
+    opencode/space-bunny-free
+    anthropic/claude-sonnet-4-6
+    /missing-provider
+    missing-model/
+    """), [
+      "anthropic/claude-sonnet-4-6",
+      "opencode/space-bunny-free"
+    ])
+  }
+
+  func testLocalModelCatalogReloadsAnEmptyOpenCodeService() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("OpenCodeClientTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let executable = root.appendingPathComponent("opencode")
+    try """
+    #!/bin/sh
+    if [ "$1" = "reload" ]; then
+      /usr/bin/touch .reloaded
+      exit 0
+    fi
+    if [ "$1" = "models" ] && [ -f .reloaded ]; then
+      printf '%s\\n' 'anthropic/claude-sonnet-4-6' 'opencode/space-bunny-free'
+    fi
+    """.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: executable.path
+    )
+
+    let client = OpenCodeClient(
+      executableURL: executable,
+      environment: ["PATH": root.path]
+    ) { _, _ in }
+    let models = try await client.listModels(
+      cwd: root,
+      configuredModel: "anthropic/claude-opus-4-6"
+    )
+
+    XCTAssertEqual(models.map(\.id), [
+      "anthropic/claude-opus-4-6",
+      "anthropic/claude-sonnet-4-6",
+      "opencode/space-bunny-free"
+    ])
+    XCTAssertEqual(models.first(where: \.isDefault)?.id, "anthropic/claude-opus-4-6")
   }
 }
 

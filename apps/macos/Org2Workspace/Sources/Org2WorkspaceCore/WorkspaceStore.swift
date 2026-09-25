@@ -21594,6 +21594,10 @@ public final class WorkspaceStore {
       var normalized = destination
       normalized.isEnabled = true
       normalized.mention = AIChatDestinationConfiguration.normalizedMention(destination.mention)
+      if normalized.adapter == .codexManagedRemote,
+         normalized.name == "Managed Remote Codex" {
+        normalized.name = "Remote Codex"
+      }
       // Early destination builds persisted `main` here, which silently
       // overrode the user's configured OpenClaw Chat Agent. Treat the built-in
       // destination as inherited and migrate that value away on restore.
@@ -26608,7 +26612,7 @@ public final class WorkspaceStore {
         AIChatModelOption(id: "opus", label: "Opus"),
         AIChatModelOption(id: "haiku", label: "Haiku")
       ]
-    case .piLocal, .piRemote, .openCodeLocal, .openCodeRemote:
+    case .piLocal, .piRemote:
       guard let model = destination.model else { return [] }
       return [AIChatModelOption(
         id: model,
@@ -26617,6 +26621,14 @@ public final class WorkspaceStore {
         reasoningOptions: Self.cliHarnessReasoningOptions,
         isDefault: true
       )]
+    case .openCodeLocal, .openCodeRemote:
+      guard let corpusRoot else {
+        throw OpenCodeError.invalidResponse("OpenCode needs an active corpus workspace")
+      }
+      return try await openCodeClient(forDestinationID: destinationID).listModels(
+        cwd: corpusRoot,
+        configuredModel: destination.model
+      )
     case .openClaw:
       return try await OpenClawGatewayClient(
         settings: openClawSettings(forDestinationID: destinationID, allowKeychainRead: true)

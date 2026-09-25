@@ -269,10 +269,56 @@ public actor OpenCodeClient {
     ]
   }
 
+  nonisolated static func managedRemoteModelSSHArguments(sshHost: String) throws -> [String] {
+    [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      try validatedSSHHost(sshHost),
+      managedRemoteModelCommand()
+    ]
+  }
+
   private nonisolated static func managedRemoteCommand() -> String {
     let script = Data(managedRemotePythonBootstrap.utf8).base64EncodedString()
     return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-adapter>\",\"exec\"))"'"#
   }
+
+  private nonisolated static func managedRemoteModelCommand() -> String {
+    let script = Data(managedRemoteModelPythonBootstrap.utf8).base64EncodedString()
+    return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-models>\",\"exec\"))"'"#
+  }
+
+  nonisolated static let managedRemoteModelPythonBootstrap = #"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+payload = json.load(sys.stdin)
+workspace = os.path.expanduser(payload["workspacePath"])
+if not os.path.isabs(workspace) or not os.path.isdir(workspace):
+    sys.stderr.write("Remote OpenCode workspace does not exist: %s\n" % workspace)
+    sys.exit(66)
+
+opencode = shutil.which("opencode")
+if not opencode:
+    sys.stderr.write("OpenCode was not found on the remote PATH.\n")
+    sys.exit(127)
+
+def models():
+    return subprocess.run([opencode, "models"], cwd=workspace, capture_output=True, text=True)
+
+result = models()
+if result.returncode == 0 and not result.stdout.strip():
+    subprocess.run([opencode, "reload"], cwd=workspace, capture_output=True, text=True)
+    result = models()
+
+sys.stdout.write(result.stdout)
+sys.stderr.write(result.stderr)
+sys.exit(result.returncode)
+"""#
 
   nonisolated static let managedRemotePythonBootstrap = #"""
 import base64
@@ -326,6 +372,64 @@ try:
 finally:
     shutil.rmtree(temporary_root, ignore_errors=True)
 """#
+
+  public func listModels(
+    cwd: URL,
+    configuredModel: String? = nil
+  ) async throws -> [AIChatModelOption] {
+    let output: String
+    switch transport {
+    case .local:
+      guard let executableURL else { throw OpenCodeError.executableNotFound }
+      var result = try await Self.runCommand(
+        executableURL: executableURL,
+        arguments: ["models"],
+        cwd: cwd.standardizedFileURL,
+        environment: environment
+      )
+      if Self.modelIDs(from: result.output).isEmpty {
+        _ = try? await Self.runCommand(
+          executableURL: executableURL,
+          arguments: ["reload"],
+          cwd: cwd.standardizedFileURL,
+          environment: environment
+        )
+        result = try await Self.runCommand(
+          executableURL: executableURL,
+          arguments: ["models"],
+          cwd: cwd.standardizedFileURL,
+          environment: environment
+        )
+      }
+      output = result.output
+    case .managedRemote(let sshHost, let workspacePath):
+      let workspacePath = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !workspacePath.isEmpty else { throw OpenCodeError.missingRemoteWorkspace }
+      let input = try JSONEncoder().encode(OpenCodeRemoteModelPayload(workspacePath: workspacePath))
+      let result = try await Self.runCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/ssh"),
+        arguments: try Self.managedRemoteModelSSHArguments(sshHost: sshHost),
+        cwd: nil,
+        environment: environment,
+        input: input
+      )
+      output = result.output
+    }
+
+    var ids = Self.modelIDs(from: output)
+    if let configuredModel = Self.normalized(configuredModel), !ids.contains(configuredModel) {
+      ids.append(configuredModel)
+      ids.sort()
+    }
+    return ids.map { id in
+      AIChatModelOption(
+        id: id,
+        label: id,
+        supportsReasoning: true,
+        isDefault: id == Self.normalized(configuredModel)
+      )
+    }
+  }
 
   public func runTurn(
     openOrgThreadID: UUID,
@@ -505,6 +609,64 @@ finally:
     return decoder.result
   }
 
+  nonisolated static func modelIDs(from output: String) -> [String] {
+    Array(Set(output.split(whereSeparator: \.isNewline).compactMap { rawLine in
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty,
+            !line.contains(where: \.isWhitespace),
+            let slash = line.firstIndex(of: "/"),
+            slash != line.startIndex,
+            line.index(after: slash) != line.endIndex
+      else { return nil }
+      return line
+    })).sorted()
+  }
+
+  private nonisolated static func runCommand(
+    executableURL: URL,
+    arguments: [String],
+    cwd: URL?,
+    environment: [String: String],
+    input: Data? = nil
+  ) async throws -> (output: String, error: String) {
+    try await Task.detached(priority: .utility) {
+      let process = Process()
+      let standardInput = Pipe()
+      let standardOutput = Pipe()
+      let standardError = Pipe()
+      process.executableURL = executableURL
+      process.arguments = arguments
+      process.currentDirectoryURL = cwd
+      process.environment = environment
+      process.standardInput = standardInput
+      process.standardOutput = standardOutput
+      process.standardError = standardError
+      do {
+        try process.run()
+        if let input { try standardInput.fileHandleForWriting.write(contentsOf: input) }
+        try standardInput.fileHandleForWriting.close()
+      } catch {
+        if process.isRunning { process.terminate() }
+        throw OpenCodeError.launchFailed(error.localizedDescription)
+      }
+      let output = String(
+        decoding: try standardOutput.fileHandleForReading.readToEnd() ?? Data(),
+        as: UTF8.self
+      )
+      let error = String(
+        decoding: try standardError.fileHandleForReading.readToEnd() ?? Data(),
+        as: UTF8.self
+      ).trimmingCharacters(in: .whitespacesAndNewlines)
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else {
+        throw OpenCodeError.launchFailed(
+          error.isEmpty ? "OpenCode exited with status \(process.terminationStatus)." : error
+        )
+      }
+      return (output, error)
+    }.value
+  }
+
   private nonisolated static func materializeAttachments(
     _ attachments: [OpenClawChatAttachment],
     under temporaryRoot: URL
@@ -544,6 +706,10 @@ private struct OpenCodeRemotePayload: Encodable {
   let message: String
   let configuration: String
   let attachments: [OpenCodeRemoteAttachment]
+}
+
+private struct OpenCodeRemoteModelPayload: Encodable {
+  let workspacePath: String
 }
 
 private struct OpenCodeRemoteAttachment: Encodable {
