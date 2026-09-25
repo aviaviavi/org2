@@ -235,6 +235,17 @@ export function clarificationContinuationPrompt(run, response) {
   ].join("\n");
 }
 
+export function shouldEnsureCronRun(event, triggered = Boolean(event.job?.trigger)) {
+  // OpenClaw intentionally omits `finished` when a trigger returns fire:false,
+  // so defer triggered jobs until a real execution reaches `finished`.
+  // The public plugin job shape currently strips `trigger`; heartbeat names
+  // remain a fail-safe if the full scheduler inventory also omits it.
+  const deferred = triggered || /^Agent heartbeat:/i.test(String(event.job?.name || "").trim());
+  if (event.action === "started") return !deferred;
+  if (event.action === "finished") return deferred;
+  return false;
+}
+
 export class Org2Lifecycle {
   constructor(options = {}) {
     this.corpusDir = options.corpusDir;
@@ -257,6 +268,19 @@ export class Org2Lifecycle {
   }
 
   setCron(cron) { this.cron = cron; }
+
+  async cronHasTrigger(jobId, fallback = false) {
+    if (!this.cron?.list) return fallback;
+    try {
+      const listed = await this.cron.list({ includeDisabled: true });
+      const jobs = Array.isArray(listed) ? listed : listed?.jobs || [];
+      const job = jobs.find((candidate) => candidate?.id === jobId);
+      return job ? Boolean(job.trigger) : fallback;
+    } catch (error) {
+      this.log.warn?.(`[org2-lifecycle] could not inspect cron ${jobId}: ${error.message}`);
+      return fallback;
+    }
+  }
 
   serialize(fn) {
     const next = this.queue.then(fn, fn);

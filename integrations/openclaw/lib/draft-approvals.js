@@ -135,6 +135,13 @@ function draftIdFromResult(result) {
   return "";
 }
 
+function verifiedSafeWrapperResult(result) {
+  return resultObjects(result).some((candidate) => candidate?.verified === true
+    && candidate?.hasPlainTextFallback === true
+    && candidate?.hasHtmlBody === true
+    && candidate?.hardWrapCheck === "passed");
+}
+
 function draftIdFromParams(params, mode) {
   return deepValue(params, new Set(["draftId", "draft_id"]))
     || commandDraftId(command(params), mode);
@@ -172,7 +179,7 @@ function fingerprint(params) {
 }
 
 function provider(toolName, op) {
-  if (/gog\s+gmail/i.test(op)) return "gmail:gog";
+  if (/gog\s+gmail/i.test(op) || /gmail-draft-safe\.mjs\s+(?:create|update)\b/i.test(op)) return "gmail:gog";
   return toolName;
 }
 
@@ -187,10 +194,16 @@ function effectKey(providerName, accountName, draftId) {
 export function draftCreatedEffect(toolName, params = {}, result, error) {
   const op = operation(toolName, params);
   if (error || !isDraftCreate(op)) return null;
+  const safeWrapper = /gmail-draft-safe\.mjs\s+(?:create|update)\b/i.test(op);
   // Shell results commonly contain unrelated generic `id` fields. Only the
-  // explicitly supported gog Gmail command is safe to classify as a draft;
+  // explicitly supported gog Gmail forms are safe to classify as drafts;
   // connector tools remain discoverable from their draft-specific names.
-  if (isShellTool(toolName) && !/\bgog\s+gmail\s+drafts?\s+(?:create|save|update|upsert)\b/i.test(op)) return null;
+  if (isShellTool(toolName)
+    && !/\bgog\s+gmail\s+drafts?\s+(?:create|save|update|upsert)\b/i.test(op)
+    && !safeWrapper) return null;
+  // The wrapper only becomes approval-eligible after exact provider readback
+  // confirms fluid multipart MIME, both body variants, and no hard wrapping.
+  if (safeWrapper && !verifiedSafeWrapperResult(result)) return null;
   const draftId = draftIdFromResult(result) || draftIdFromParams(params, "create");
   if (!draftId) return null;
   const providerName = provider(toolName, op);
@@ -244,7 +257,7 @@ export function approvalAction(effect) {
     `Subject: ${effect.subject}`,
     "",
     "Body:",
-    effect.body || "(Body unavailable; open the provider draft before approving.)",
+    string(effect.body) || "(Body unavailable; open the provider draft before approving.)",
     "",
     `Provider draft: ${effect.provider}:${effect.draftId}`,
     `Content fingerprint: ${effect.fingerprint}`,

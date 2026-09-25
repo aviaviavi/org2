@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { approvedRunContinuationPrompt, clarificationContinuationPrompt, conciseGoal, cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
+import { approvedRunContinuationPrompt, clarificationContinuationPrompt, conciseGoal, cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, outcomeCommand, shouldEnsureCronRun, shouldTrackMainTurn, workflowContinuationPrompt, workflowExecutionPrompt, workflowMarker, workflowRevisionPrompt } from "../lib/lifecycle.js";
 import { Org2Lifecycle } from "../lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect } from "../lib/draft-approvals.js";
 
@@ -64,6 +64,31 @@ test("reads current and legacy OpenClaw cron prompt payloads", () => {
   assert.equal(cronPayloadText({ kind: "agentTurn", message: "current" }), "current");
   assert.equal(cronPayloadText({ kind: "agentTurn", text: "legacy" }), "legacy");
   assert.equal(cronPayloadText(undefined), "");
+});
+
+test("defers triggered cron lifecycle creation until a real execution finishes", () => {
+  assert.equal(shouldEnsureCronRun({ action: "started", job: {} }), true);
+  assert.equal(shouldEnsureCronRun({ action: "finished", job: {} }), false);
+  assert.equal(shouldEnsureCronRun({ action: "started", job: { trigger: { script: "json({ fire: false })" } } }), false);
+  assert.equal(shouldEnsureCronRun({ action: "finished", job: { trigger: { script: "json({ fire: true })" } } }), true);
+  assert.equal(shouldEnsureCronRun({ action: "started", job: {} }, true), false);
+  assert.equal(shouldEnsureCronRun({ action: "finished", job: {} }, true), true);
+});
+
+test("detects triggered cron jobs from the full scheduler inventory", async () => {
+  const lifecycle = new Org2Lifecycle({
+    cron: {
+      list: async () => ({
+        jobs: [
+          { id: "ordinary", name: "Ordinary job" },
+          { id: "gated", name: "Gated job", trigger: { script: "json({ fire: false })" } },
+        ],
+      }),
+    },
+  });
+  assert.equal(await lifecycle.cronHasTrigger("ordinary"), false);
+  assert.equal(await lifecycle.cronHasTrigger("gated"), true);
+  assert.equal(await lifecycle.cronHasTrigger("missing", true), true);
 });
 
 test("recognizes prepared Org2 workflow runs", () => {
@@ -661,9 +686,39 @@ test("recognizes gog Gmail draft commands", () => {
   assert.equal(wrapped.subject, "Readable update");
   assert.equal(wrapped.body, "Hello there");
   assert.match(approvalAction(wrapped), /To: person@example\.com\nCc: \(none\)\nBcc: \(none\)\nSubject: Readable update[\s\S]*Hello there/);
+  assert.equal(
+    approvalAction({ ...wrapped, body: "Hello there\r\n" }),
+    approvalAction({ ...wrapped, body: "Hello there" }),
+  );
   assert.equal(draftSendEffect("exec", {
     source: `await tools.exec_command({cmd: "gog gmail drafts send gog-wrapped-1"});`,
   }).draftId, "gog-wrapped-1");
+});
+
+test("recognizes verified safe-wrapper drafts for the normal Gmail approval path", () => {
+  const effect = draftCreatedEffect("exec", {
+    command: "node /Users/avi/dev/org2/integrations/openclaw/bin/gmail-draft-safe.mjs create --account avi@scarf.sh --to pat@example.com --subject 'Fluid follow-up' --body-file /tmp/body.txt",
+  }, JSON.stringify({
+    draftId: "safe-draft-1",
+    verified: true,
+    hasPlainTextFallback: true,
+    hasHtmlBody: true,
+    hardWrapCheck: "passed",
+  }));
+  assert.equal(effect.provider, "gmail:gog");
+  assert.equal(effect.account, "avi@scarf.sh");
+  assert.equal(effect.draftId, "safe-draft-1");
+  assert.equal(effect.destination, "pat@example.com");
+  assert.equal(effect.subject, "Fluid follow-up");
+  assert.equal(draftCreatedEffect("exec", {
+    command: "node /Users/avi/dev/org2/integrations/openclaw/bin/gmail-draft-safe.mjs create --account avi@scarf.sh --to pat@example.com --subject 'Fluid follow-up' --body-file /tmp/body.txt",
+  }, JSON.stringify({
+    draftId: "unsafe-draft-1",
+    verified: false,
+    hasPlainTextFallback: true,
+    hasHtmlBody: true,
+    hardWrapCheck: "passed",
+  })), null);
 });
 
 test("does not turn unrelated shell output into draft approvals", () => {

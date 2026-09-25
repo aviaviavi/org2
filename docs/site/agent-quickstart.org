@@ -118,6 +118,8 @@ Install the checked-out integration with =openclaw plugins install --link ./inte
 
 The same plugin registers the Mac app's optional local-edit node policy. When *Read and apply Org2 edits on this Mac* is enabled, approve the app's separate node-role pairing and enable the =nodes= tool for the selected agent. Corpus mutations must then use =org2.workspace.read=, =org2.workspace.patch.preview=, and =org2.workspace.patch.apply=. Read returns the effective local document, including an unsaved selected-editor draft; preview binds a whole-file replacement to SHA-256 inputs; apply rechecks that preview, remains inside the active corpus, and returns the exact per-turn change set. The Mac node does not expose a generic shell.
 
+The OpenClaw integration also fails closed on direct =gog gmail drafts create|update= calls. Use =integrations/openclaw/bin/gmail-draft-safe.mjs= for automated Gmail drafts: it creates fluid =multipart/alternative= MIME with a plain-text fallback, rejects hard-wrapped prose, anchors replies to a surviving non-draft message, and verifies provider readback before the draft reaches its Org2 approval boundary.
+
 * Durable delegation example
 
 #+begin_src sh

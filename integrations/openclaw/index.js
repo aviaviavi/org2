@@ -1,5 +1,5 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
+import { cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldEnsureCronRun, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
 import { registerOrg2WorkspaceNodePolicy } from "./lib/local-edit-node.js";
 
@@ -17,6 +17,7 @@ function selectedCoordination(prompt) {
     selectedGoalRef: text.match(/^ORG2_SELECTED_GOAL_REF:[ \t]*(\S+)[ \t]*$/mi)?.[1],
   };
 }
+import { unsafeGmailDraftMutation } from "./lib/gmail-draft-safety.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
@@ -29,6 +30,9 @@ export default definePluginEntry({
     const trackCron = config.trackCron !== false;
     const trackSubagents = config.trackSubagents !== false;
     const trackDraftApprovals = config.trackDraftApprovals !== false;
+    const enforceSafeGmailDrafts = config.enforceSafeGmailDrafts !== false;
+    const safeGmailDraftCommand = config.safeGmailDraftCommand
+      || `node ${new URL("./bin/gmail-draft-safe.mjs", import.meta.url).pathname}`;
 
     registerOrg2WorkspaceNodePolicy(api);
 
@@ -168,6 +172,12 @@ export default definePluginEntry({
     });
 
     api.on("before_tool_call", async (event, ctx) => {
+      if (enforceSafeGmailDrafts && unsafeGmailDraftMutation(event.toolName, event.params)) {
+        return {
+          block: true,
+          blockReason: `Direct gog Gmail draft creation/update is disabled because it can create hard-wrapped or mis-threaded messages. Use ${safeGmailDraftCommand} create|update with --account, --to, --subject, and --body-file; the wrapper creates multipart/alternative MIME, anchors replies to a surviving message, and verifies provider readback before approval.`,
+        };
+      }
       if (!trackDraftApprovals) return;
       const effect = draftSendEffect(event.toolName, event.params);
       if (!effect) return;
@@ -240,12 +250,14 @@ export default definePluginEntry({
       }));
     });
 
-    api.on("cron_changed", async (event) => {
+    api.on("cron_changed", async (event, ctx) => {
       if (!trackCron) return;
+      lifecycle.setCron(ctx.getCron?.() || lifecycle.cron);
       const key = cronKey(event);
       const agentId = runtimeAgentId(event);
       const sessionKey = cronSessionKey(event, agentId);
-      if (event.action === "started") {
+      const triggered = await lifecycle.cronHasTrigger(event.jobId, Boolean(event.job?.trigger));
+      if (shouldEnsureCronRun(event, triggered)) {
         const marker = workflowMarker(cronPayloadText(event.job?.payload));
         if (marker) {
           await lifecycle.serialize(() => lifecycle.ensureWorkflow(key, marker.workflowId, marker.inputs, {
@@ -259,17 +271,17 @@ export default definePluginEntry({
             model: event.model,
             runtimeAgentId: agentId,
           }));
-          return;
+        } else {
+          await lifecycle.serialize(() => lifecycle.ensure(key, {
+            kind: "cron",
+            goal: event.job?.name || `Cron ${event.jobId}`,
+            sessionKey,
+            openclawRunId: event.runId,
+            provider: event.provider,
+            model: event.model,
+            runtimeAgentId: agentId,
+          }));
         }
-        await lifecycle.serialize(() => lifecycle.ensure(key, {
-          kind: "cron",
-          goal: event.job?.name || `Cron ${event.jobId}`,
-          sessionKey,
-          openclawRunId: event.runId,
-          provider: event.provider,
-          model: event.model,
-          runtimeAgentId: agentId,
-        }));
       }
       if (event.action === "finished") {
         await lifecycle.serialize(() => lifecycle.finish(key, event.status === "ok" || event.status === "skipped" ? "ok" : "error", {

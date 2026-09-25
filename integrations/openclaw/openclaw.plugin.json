@@ -13,7 +13,9 @@
       "trackMainTurns": { "type": "boolean" },
       "trackCron": { "type": "boolean" },
       "trackSubagents": { "type": "boolean" },
-      "trackDraftApprovals": { "type": "boolean" }
+      "trackDraftApprovals": { "type": "boolean" },
+      "enforceSafeGmailDrafts": { "type": "boolean" },
+      "safeGmailDraftCommand": { "type": "string" }
     }
   }
 }

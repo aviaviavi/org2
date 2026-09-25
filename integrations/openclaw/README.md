@@ -95,6 +95,16 @@ named `requestedFrom` assignee: the macOS client records decisions as the
 determine that the item is actionable; readable prose in the approval action is
 necessary for review but is not sufficient by itself.
 
+For =gog= Gmail automation, draft safety is enforced before the approval
+boundary. Direct =gog gmail drafts create= and =update= tool calls are blocked
+by default. Agents must use =bin/gmail-draft-safe.mjs=, which creates a
+=multipart/alternative= message with fluid HTML and a plain-text fallback,
+rejects hard-wrapped prose, anchors replies to a surviving non-draft message,
+and reads the provider draft back before returning success. This keeps a draft
+that looked normal in Gmail's narrow composer from becoming a fixed-width
+plain-text message after send. Set =enforceSafeGmailDrafts: false= only for an
+integration that supplies an equivalent provider-side invariant.
+
 The built-in effect recognizers cover direct tools whose operation names
 contain =draft= plus =create/save/update/upsert= or =send/deliver=, and the
 configured Google Workspace CLI form (=gog gmail drafts create/send=).
