@@ -59,6 +59,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       to: laptopStore.appendingPathComponent("manifests", isDirectory: true)
     )
 
+    AIChatTranscriptStore.resetThreadShardDecodeCountForTesting()
     let loaded = try XCTUnwrap(
       AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL)
     )
@@ -66,6 +67,11 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertEqual(
       loaded.snapshot.threads.first(where: { $0.id == server.id })?.messages.first?.content,
       "From the server"
+    )
+    XCTAssertLessThanOrEqual(
+      AIChatTranscriptStore.threadShardDecodeCountForTesting(),
+      6,
+      "Divergent manifests should validate each thread revision at most once"
     )
 
     // Persisting the reconciled snapshot records every immutable branch that

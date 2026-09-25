@@ -64,6 +64,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   }
 
   private static let recoveryCandidateDecodeCounter = RecoveryCandidateDecodeCounter()
+  private static let threadShardDecodeCounter = RecoveryCandidateDecodeCounter()
 
   static func resetRecoveryCandidateDecodeCountForTesting() {
     recoveryCandidateDecodeCounter.reset()
@@ -71,6 +72,14 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
   static func recoveryCandidateDecodeCountForTesting() -> Int {
     recoveryCandidateDecodeCounter.read()
+  }
+
+  static func resetThreadShardDecodeCountForTesting() {
+    threadShardDecodeCounter.reset()
+  }
+
+  static func threadShardDecodeCountForTesting() -> Int {
+    threadShardDecodeCounter.read()
   }
 #endif
 
@@ -1041,20 +1050,32 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       if $0.generation != $1.generation { return $0.generation > $1.generation }
       return $0.commitID > $1.commitID
     }
-    guard let completeBase = sorted.first(where: { isComplete($0, storeURL: storeURL) }) else {
+    var validatedEntries: [ManifestThread: Bool] = [:]
+    func isValid(_ entry: ManifestThread) -> Bool {
+      if let cached = validatedEntries[entry] { return cached }
+      let valid = loadThreadShard(entry, storeURL: storeURL) != nil
+      validatedEntries[entry] = valid
+      return valid
+    }
+    func isCompleteCandidate(_ manifest: Manifest) -> Bool {
+      isStructurallyValid(manifest) && manifest.threads.allSatisfy(isValid)
+    }
+    guard let completeBase = sorted.first(where: isCompleteCandidate) else {
       return nil
     }
 
-    var selectedEntries: [UUID: RecoverySelectedEntry] = [:]
+    var candidateEntries: [UUID: [RecoverySelectedEntry]] = [:]
     for candidate in sorted {
-      for entry in candidate.threads where loadThreadShard(entry, storeURL: storeURL) != nil {
-        let selected = RecoverySelectedEntry(entry: entry, generation: candidate.generation)
-        if let existing = selectedEntries[entry.metadata.id],
-           !prefersRecoveryEntry(selected, over: existing) {
-          continue
-        }
-        selectedEntries[entry.metadata.id] = selected
+      for entry in candidate.threads {
+        candidateEntries[entry.metadata.id, default: []].append(
+          RecoverySelectedEntry(entry: entry, generation: candidate.generation)
+        )
       }
+    }
+    let selectedEntries = candidateEntries.compactMapValues { revisions in
+      revisions.sorted { prefersRecoveryEntry($0, over: $1) }.first(where: {
+        isValid($0.entry)
+      })
     }
     guard !selectedEntries.isEmpty else { return nil }
 
@@ -1161,6 +1182,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     _ entry: ManifestThread,
     storeURL: URL
   ) -> ThreadShard? {
+    #if DEBUG
+    threadShardDecodeCounter.increment()
+    #endif
     let threadDirectory = threadsDirectory(storeURL: storeURL)
     let shardName = URL(fileURLWithPath: entry.shard).lastPathComponent
     guard entry.shard == "threads/\(shardName)",
@@ -1429,7 +1453,7 @@ private struct Manifest: Codable {
   let settlementSettings: OpenClawThreadSettlementSettings
 }
 
-private struct ManifestThread: Codable {
+private struct ManifestThread: Codable, Hashable {
   let metadata: OpenClawChatThread
   let shard: String
   let shardDigest: String
