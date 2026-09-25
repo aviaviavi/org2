@@ -554,17 +554,29 @@ function extractCandidates(records: AgentIngestRecord[]): { summaries: string[];
 }
 
 export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: { title?: string; generatedAt?: string; generator?: string; quoteRecordText?: boolean } = {}): string {
-  const provenance = records.map((record) => `${record.source.kind}:${record.id}`);
+  const sourceUrls = records.map((record) => record.source.url || `${record.source.kind}://${encodeURIComponent(record.id)}`);
+  const provenance = sourceUrls.map((url) => `url:${url}`);
+  const generatedAtInput = opts.generatedAt || new Date().toISOString();
+  const generatedAtTimestamp = Date.parse(generatedAtInput);
+  const generatedAt = Number.isFinite(generatedAtTimestamp) ? new Date(generatedAtTimestamp).toISOString() : generatedAtInput;
+  const observedAtTimestamps = records
+    .map((record) => record.source.timestamp)
+    .map((timestamp) => Date.parse(timestamp))
+    .filter(Number.isFinite);
+  const observedAt = observedAtTimestamps.length > 0 ? new Date(Math.max(...observedAtTimestamps)).toISOString() : generatedAt;
+  const artifactId = `ingest-review-${sha256Hex([...new Set(provenance)].sort().join("\n")).slice(0, 32)}`;
   const metadata = buildGeneratedArtifactMetadata({
-    role: "report",
+    role: "view",
     generator: opts.generator || "org2-agent-ingest-fixture",
-    generatedAt: opts.generatedAt,
+    generatedAt,
     provenance,
-    sourceHashes: records.map((record) => ({ kind: "artifact", value: `${record.source.kind}:${record.id}`, sha256: sha256Hex(record.text) })),
+    sourceHashes: records.map((record, index) => ({ kind: "url", value: sourceUrls[index]!, sha256: sha256Hex(record.text) })),
     reviewStatus: "review-required",
+    claimState: "source-backed",
+    observedAt,
     aiTask: "ingest-review-packet",
   });
-  const lines = [`#+TITLE: ${opts.title || "Scoped ingestion review packet"}`, formatOrg2ArtifactPropertyDrawer(metadata), "* Review checklist", "- [ ] Confirm this scoped import is allowed and bounded.", "- [ ] Redact private/sensitive details before promotion.", "- [ ] Promote only verified decisions, people, projects, follow-ups, and claims."];
+  const lines = [`#+TITLE: ${opts.title || "Scoped ingestion review packet"}`, formatOrg2ArtifactPropertyDrawer(metadata, artifactId), "* Review checklist", "- [ ] Confirm this scoped import is allowed and bounded.", "- [ ] Redact private/sensitive details before promotion.", "- [ ] Promote only verified decisions, people, projects, follow-ups, and claims."];
   const candidates = extractCandidates(records);
   if (candidates.summaries.length || candidates.todos.length) {
     lines.push("", "* Generated candidates (review required)", ...candidates.summaries.map((summary) => `- Summary candidate: ${summary}`), ...candidates.todos.map((todo) => `- TODO candidate: ${todo}`));

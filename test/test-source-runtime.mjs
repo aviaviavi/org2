@@ -156,9 +156,20 @@ if (args.includes("messages")) {
   assert.equal(fs.existsSync(appliedImport.files[0].rawPath), true);
   assert.equal(fs.existsSync(appliedImport.files[0].reviewPath), true);
   const reviewPacket = fs.readFileSync(appliedImport.files[0].reviewPath, "utf8");
+  assert.match(reviewPacket, /:ID: ingest-review-[a-f0-9]{32}/);
+  assert.match(reviewPacket, /:ORG2_ARTIFACT_ROLE: view/);
+  assert.match(reviewPacket, /:ORG2_PROVENANCE: url:slack:\/\/T1%3AC1%3A1784505600\.000001/);
+  assert.match(reviewPacket, /:ORG2_CLAIM_STATE: source-backed/);
+  assert.match(reviewPacket, /:ORG2_OBSERVED_AT: 2026-07-20T00:00:00\.000Z/);
   assert.match(reviewPacket, /: Decision: import this Slack message/);
   assert.match(reviewPacket, /: \* TODO untrusted external heading/);
   assert.doesNotMatch(reviewPacket, /\n\* TODO untrusted external heading/);
+  const reviewLint = spawnSync(process.execPath, ["dist/cli.js", "lint", "--file", appliedImport.files[0].reviewPath, "--format", "json"], {
+    cwd: process.cwd(), encoding: "utf8", env: { ...process.env, HOME: tmp, ORG2_INDEX_HOME: indexHome },
+  });
+  assert.equal(reviewLint.status, 0, reviewLint.stderr);
+  const reviewLintIssues = JSON.parse(reviewLint.stdout).issues;
+  assert.deepEqual(reviewLintIssues.map((issue) => issue.rule), ["artifact-generated-unreviewed"]);
 
   const staleRaw = path.join(corpus, "raw", "connectors", "slack-test", "stale.json");
   const staleReview = path.join(corpus, "views", "connectors", "slack-test", "stale.org2");
@@ -183,6 +194,13 @@ if (args.includes("messages")) {
   assert.match(notionRaw, /api-page/);
   assert.match(notionRaw, /desktop-scarf/);
   assert.doesNotMatch(notionRaw, /desktop-other/);
+  const notionReview = fs.readFileSync(notionApplied.files[0].reviewPath, "utf8");
+  assert.match(notionReview, /:ORG2_PROVENANCE: url:https:\/\/www\.notion\.so\/apipage/);
+  const notionReviewLint = spawnSync(process.execPath, ["dist/cli.js", "lint", "--file", notionApplied.files[0].reviewPath, "--format", "json"], {
+    cwd: process.cwd(), encoding: "utf8", env: { ...process.env, HOME: tmp, ORG2_INDEX_HOME: indexHome },
+  });
+  assert.equal(notionReviewLint.status, 0, notionReviewLint.stderr);
+  assert.deepEqual(JSON.parse(notionReviewLint.stdout).issues.map((issue) => issue.rule), ["artifact-generated-unreviewed"]);
 
   const synced = run("sync", "slack");
   assert.equal(synced.status, 0, synced.stderr);

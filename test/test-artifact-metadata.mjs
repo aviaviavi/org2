@@ -91,4 +91,31 @@ const missingIssues = lintArtifactMetadataInText(missingFreshness, 'views/missin
 assert.ok(missingIssues.some((issue) => issue.rule === 'artifact-claim-state-missing'));
 assert.ok(missingIssues.some((issue) => issue.rule === 'artifact-freshness-missing'));
 
+const splitFileMetadata = `:PROPERTIES:
+:ID: split-view
+:END:
+
+#+TITLE: Split view metadata
+
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: url:slack://message-1
+:ORG2_GENERATOR: org2-source-import
+:ORG2_GENERATED_AT: 2026-05-19T23:04:00Z
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CLAIM_STATE: source-backed
+:ORG2_OBSERVED_AT: 2026-05-19T23:04:00Z
+:END:
+
+* Source record
+:PROPERTIES:
+:ORG2_SOURCE_KIND: slack
+:ORG2_SOURCE_ID: message-1
+:END:
+`;
+const splitFileIssues = lintArtifactMetadataInText(splitFileMetadata, 'views/split.org2');
+assert.equal(splitFileIssues.some((issue) => issue.rule === 'artifact-id-missing'), false);
+assert.equal(splitFileIssues.some((issue) => issue.rule === 'artifact-role-path-missing'), false);
+assert.equal(splitFileIssues.some((issue) => issue.rule === 'artifact-role-path-mismatch'), false);
+
 console.log('✓ artifact-metadata');

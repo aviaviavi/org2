@@ -249,6 +249,7 @@ function evaluateArtifactProperties(
   filePath: string,
   line: number,
   issues: ArtifactLintIssue[],
+  enforcePathRole = true,
 ): void {
   const roleRaw = normalizePropertyValue(props.get("ORG2_ARTIFACT_ROLE") || "");
   const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
@@ -274,7 +275,7 @@ function evaluateArtifactProperties(
     });
   }
 
-  const expectedRoleFromPath = inferExpectedArtifactRoleFromPath(filePath);
+  const expectedRoleFromPath = enforcePathRole ? inferExpectedArtifactRoleFromPath(filePath) : null;
   if (expectedRoleFromPath && !role) {
     issues.push({
       severity: "warning",
@@ -574,13 +575,18 @@ export function lintArtifactMetadataInText(content: string, filePath: string): A
       message: `File has ${fileIdDrawers.length} file-level property drawers with ID values before the first headline; keep exactly one canonical file ID.`,
     });
   }
-  for (const fileDrawer of fileDrawers) {
-    evaluateArtifactProperties(fileDrawer.properties, filePath, fileDrawer.startLine, issues);
+  if (fileDrawers.length > 0) {
+    const fileProperties = new Map<string, string>();
+    for (const drawer of fileDrawers) {
+      for (const [key, value] of drawer.properties) fileProperties.set(key, value);
+    }
+    const metadataDrawer = fileDrawers.find((drawer) => drawer.properties.has("ORG2_ARTIFACT_ROLE")) || fileDrawers[0]!;
+    evaluateArtifactProperties(fileProperties, filePath, metadataDrawer.startLine, issues);
   }
 
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
   for (const drawer of headlineDrawers) {
-    evaluateArtifactProperties(drawer.properties, filePath, drawer.startLine, issues);
+    evaluateArtifactProperties(drawer.properties, filePath, drawer.startLine, issues, false);
   }
 
   return issues;
