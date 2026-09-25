@@ -194,6 +194,44 @@ test('headline tags support shared colons and trailing whitespace without consum
   }
 });
 
+test('bracket links, headline links, and bare URLs receive bounded link scopes', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+
+  for (const line of ['[[id:target]]', '[[id:target][Description]]']) {
+    const result = grammar.tokenizeLine(line, null);
+    const targetToken = result.tokens.find((token) => line.slice(token.startIndex, token.endIndex) === 'id:target');
+    assert(targetToken?.scopes.includes('meta.link.org2'), `expected link scope for ${line}`);
+    assert(targetToken?.scopes.includes('markup.underline.link.org2'), `expected target scope for ${line}`);
+
+    if (line.includes('Description')) {
+      const descriptionToken = result.tokens.find(
+        (token) => line.slice(token.startIndex, token.endIndex) === 'Description'
+      );
+      assert(descriptionToken?.scopes.includes('string.other.link.description.org2'));
+    }
+  }
+
+  for (const stars of ['*', '**', '***', '****', '*****', '******', '*******']) {
+    const line = `${stars} Heading [[id:target][Description]]`;
+    const result = grammar.tokenizeLine(line, null);
+    const targetToken = result.tokens.find((token) => line.slice(token.startIndex, token.endIndex) === 'id:target');
+    assert(targetToken?.scopes.includes('entity.name.section.org2'), `expected headline scope for ${line}`);
+    assert(targetToken?.scopes.includes('markup.underline.link.org2'), `expected nested link scope for ${line}`);
+  }
+
+  const bareUrlLine = '[https://example.com/path]';
+  const bareUrlResult = grammar.tokenizeLine(bareUrlLine, null);
+  const urlToken = bareUrlResult.tokens.find(
+    (token) => bareUrlLine.slice(token.startIndex, token.endIndex) === 'https://example.com/path'
+  );
+  const closingBracketToken = bareUrlResult.tokens.find(
+    (token) => token.startIndex <= bareUrlLine.length - 1 && token.endIndex > bareUrlLine.length - 1
+  );
+  assert(urlToken?.scopes.includes('markup.underline.link.org2'));
+  assert(!closingBracketToken?.scopes.includes('markup.underline.link.org2'));
+});
+
 test('table formula lines receive a dedicated expression scope', async () => {
   const registry = await createRegistry();
   const grammar = await registry.loadGrammar('source.org2');

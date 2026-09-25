@@ -1597,7 +1597,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1615,7 +1620,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1633,7 +1643,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1651,7 +1666,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1669,7 +1689,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1687,7 +1712,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1705,7 +1735,12 @@
               "name": "keyword.other.todo.org2"
             },
             "3": {
-              "name": "entity.name.section.org2"
+              "name": "entity.name.section.org2",
+              "patterns": [
+                {
+                  "include": "#links"
+                }
+              ]
             },
             "4": {
               "name": "entity.other.attribute-name.tag.org2"
@@ -1846,12 +1881,35 @@
     "links": {
       "patterns": [
         {
-          "name": "markup.underline.link.org2",
-          "match": "\\[\\[[^\\]\\n]+?\\](?:\\[[^\\]\\n]*\\])?\\]\\]"
+          "name": "meta.link.org2",
+          "match": "(\\[\\[)([^\\]\\n]+)(\\])(?:(\\[)([^\\]\\n]+)(\\]))?(\\])",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.link.begin.org2"
+            },
+            "2": {
+              "name": "markup.underline.link.org2"
+            },
+            "3": {
+              "name": "punctuation.definition.link.org2"
+            },
+            "4": {
+              "name": "punctuation.definition.link.org2"
+            },
+            "5": {
+              "name": "string.other.link.description.org2"
+            },
+            "6": {
+              "name": "punctuation.definition.link.org2"
+            },
+            "7": {
+              "name": "punctuation.definition.link.end.org2"
+            }
+          }
         },
         {
           "name": "markup.underline.link.org2",
-          "match": "https?:\\/\\/\\S+"
+          "match": "https?:\\/\\/[^\\s\\[\\]<>]+"
         }
       ]
     }
