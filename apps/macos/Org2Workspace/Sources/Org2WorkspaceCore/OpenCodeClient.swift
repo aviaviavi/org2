@@ -35,7 +35,11 @@ public enum OpenCodeTransport: Equatable, Sendable {
 }
 
 public enum OpenCodeEvent: Sendable {
+  /// The OpenCode process launched; the first JSON event can take a few
+  /// seconds while its private server loads config, providers, and MCP servers.
+  case processStarted
   case sessionStarted(sessionID: String)
+  case reasoning(id: String, text: String)
   case textDelta(String)
   case activity(id: String, title: String, status: OpenClawRunActivity.Status)
   case warning(String)
@@ -86,6 +90,14 @@ struct OpenCodeStreamDecoder: Sendable {
       result.reply += text
       result.succeeded = true
       await eventHandler(.textDelta(text))
+    case "reasoning":
+      guard let part = object["part"] as? [String: Any],
+            let text = (part["text"] as? String)?
+              .trimmingCharacters(in: .whitespacesAndNewlines),
+            !text.isEmpty
+      else { return }
+      let id = (part["id"] as? String) ?? UUID().uuidString.lowercased()
+      await eventHandler(.reasoning(id: id, text: text))
     case "tool_use":
       guard let part = object["part"] as? [String: Any] else { return }
       let id = (part["id"] as? String)
@@ -190,7 +202,7 @@ public actor OpenCodeClient {
     message: String
   ) -> [String] {
     var arguments = [
-      "run", "--standalone", "--format", "json", "--agent", "openorg", "--auto"
+      "run", "--standalone", "--format", "json", "--thinking", "--agent", "openorg", "--auto"
     ]
     if let sessionID = normalized(sessionID) {
       arguments.append(contentsOf: ["--session", sessionID])
@@ -521,6 +533,7 @@ finally:
     do {
       try process.run()
       activeProcesses[openOrgThreadID] = process
+      await eventHandler(openOrgThreadID, .processStarted)
       if let inputData { try standardInput.fileHandleForWriting.write(contentsOf: inputData) }
       try standardInput.fileHandleForWriting.close()
     } catch {

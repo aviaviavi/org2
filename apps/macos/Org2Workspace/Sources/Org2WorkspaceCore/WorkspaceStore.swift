@@ -27122,6 +27122,31 @@ public final class WorkspaceStore {
 
   private func handleOpenCodeEvent(_ event: OpenCodeEvent, threadID: UUID) async {
     switch event {
+    case .processStarted:
+      guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
+      openClawGatewayStateByThreadID[threadID] = .connected
+      if selectedOpenClawChatThreadID == threadID, canPublishAIChatRuntimeState(for: threadID) {
+        openClawStatusText = "OpenCode is starting"
+      }
+    case .reasoning(let id, let text):
+      guard openClawChatThreads.contains(where: { $0.id == threadID }) else { return }
+      openClawLastEventAtByThreadID[threadID] = Date()
+      let activity = OpenClawRunActivity(
+        id: id,
+        runID: openClawActiveRunIDByThreadID[threadID] ?? "opencode",
+        kind: .reasoning,
+        title: "Thinking",
+        detail: text,
+        status: .succeeded
+      )
+      var activities = openClawRunActivitiesByThreadID[threadID] ?? []
+      if let index = activities.firstIndex(where: { $0.id == id }) {
+        activities[index] = activity
+      } else {
+        activities.append(activity)
+      }
+      openClawRunActivitiesByThreadID[threadID] = Array(activities.suffix(80))
     case .sessionStarted(let sessionID):
       handleCLIChatSessionStarted(sessionID, threadID: threadID, title: "OpenCode")
     case .textDelta(let delta):

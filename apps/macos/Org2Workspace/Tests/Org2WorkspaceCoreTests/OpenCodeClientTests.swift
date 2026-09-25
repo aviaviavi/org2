@@ -12,12 +12,28 @@ final class OpenCodeClientTests: XCTestCase {
       message: "Review this"
     )
 
-    XCTAssertEqual(arguments.prefix(7), [
-      "run", "--standalone", "--format", "json", "--agent", "openorg", "--auto"
+    XCTAssertEqual(arguments.prefix(8), [
+      "run", "--standalone", "--format", "json", "--thinking", "--agent", "openorg", "--auto"
     ])
     XCTAssertTrue(arguments.containsAdjacent(["--session", "ses_123"]))
     XCTAssertTrue(arguments.containsAdjacent(["--model", "openai/gpt-5#high"]))
     XCTAssertEqual(arguments.suffix(3), ["--file", "/tmp/file.txt", "Review this"])
+  }
+
+  func testJSONStreamDecodesReasoningParts() async {
+    var decoder = OpenCodeStreamDecoder()
+    let events = EventLog()
+    await decoder.consume(#"{"type":"reasoning","sessionID":"ses_1","part":{"id":"r-1","type":"reasoning","text":"  Weighing options.\n\n"}}"#) { event in
+      if case .reasoning(let id, let text) = event { await events.append("reasoning:\(id):\(text)") }
+    }
+    await decoder.consume(#"{"type":"reasoning","sessionID":"ses_1","part":{"id":"r-2","text":"   "}}"#) { event in
+      if case .reasoning = event { await events.append("blank") }
+    }
+    let recorded = await events.values
+    XCTAssertTrue(recorded.contains("reasoning:r-1:Weighing options."))
+    XCTAssertFalse(recorded.contains("blank"))
+    XCTAssertEqual(decoder.result.reply, "")
+    XCTAssertFalse(decoder.result.succeeded)
   }
 
   func testJSONStreamDecodesSessionTextAndTools() async {
