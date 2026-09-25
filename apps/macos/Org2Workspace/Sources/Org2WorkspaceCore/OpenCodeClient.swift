@@ -151,7 +151,14 @@ public actor OpenCodeClient {
   private let executableURL: URL?
   private let environment: [String: String]
   private let eventHandler: EventHandler
-  private var activeProcesses: [UUID: Process] = [:]
+  private struct ActiveRun {
+    let process: Process
+    let serverProcess: Process?
+    let serverURL: String
+    let serverPassword: String
+  }
+
+  private var activeRuns: [UUID: ActiveRun] = [:]
 
   public init(
     transport: OpenCodeTransport = .local,
@@ -201,9 +208,7 @@ public actor OpenCodeClient {
     attachmentPaths: [String],
     message: String
   ) -> [String] {
-    var arguments = [
-      "run", "--standalone", "--format", "json", "--thinking", "--agent", "openorg", "--auto"
-    ]
+    var arguments = ["run", "--format", "json", "--thinking", "--agent", "openorg", "--auto"]
     if let sessionID = normalized(sessionID) {
       arguments.append(contentsOf: ["--session", sessionID])
     }
@@ -291,6 +296,16 @@ public actor OpenCodeClient {
     ]
   }
 
+  nonisolated static func managedRemoteSteerSSHArguments(sshHost: String) throws -> [String] {
+    [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      try validatedSSHHost(sshHost),
+      managedRemoteSteerCommand()
+    ]
+  }
+
   private nonisolated static func managedRemoteCommand() -> String {
     let script = Data(managedRemotePythonBootstrap.utf8).base64EncodedString()
     return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-adapter>\",\"exec\"))"'"#
@@ -299,6 +314,11 @@ public actor OpenCodeClient {
   private nonisolated static func managedRemoteModelCommand() -> String {
     let script = Data(managedRemoteModelPythonBootstrap.utf8).base64EncodedString()
     return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-models>\",\"exec\"))"'"#
+  }
+
+  private nonisolated static func managedRemoteSteerCommand() -> String {
+    let script = Data(managedRemoteSteerPythonBootstrap.utf8).base64EncodedString()
+    return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-steer>\",\"exec\"))"'"#
   }
 
   nonisolated static let managedRemoteModelPythonBootstrap = #"""
@@ -341,6 +361,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 
 payload = json.load(sys.stdin)
 workspace = os.path.expanduser(payload["workspacePath"])
@@ -373,7 +394,27 @@ try:
     arguments.append(payload["message"])
     environment = os.environ.copy()
     environment["OPENCODE_CONFIG_CONTENT"] = payload["configuration"]
+    environment["OPENCODE_SERVER_PASSWORD"] = payload["serverPassword"]
 
+    server = subprocess.Popen(
+        [opencode, "serve", "--hostname", "127.0.0.1", "--port", "0"],
+        cwd=workspace,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    server_line = server.stdout.readline().strip()
+    server_prefix = "server listening on "
+    if not server_line.startswith(server_prefix):
+        detail = server.stderr.readline().strip()
+        raise RuntimeError(detail or server_line or "OpenCode private server did not start")
+    server_url = server_line[len(server_prefix):]
+    threading.Thread(target=server.stderr.read, daemon=True).start()
+    sys.stdout.write(json.dumps({"type": "openorg_server", "url": server_url}) + "\n")
+    sys.stdout.flush()
+
+    arguments[1:1] = ["--server", server_url]
     process = subprocess.Popen([opencode] + arguments, cwd=workspace, env=environment)
     def forward(signum, _frame):
         if process.poll() is None:
@@ -382,7 +423,49 @@ try:
     signal.signal(signal.SIGTERM, forward)
     sys.exit(process.wait())
 finally:
+    if "server" in locals() and server.poll() is None:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
     shutil.rmtree(temporary_root, ignore_errors=True)
+"""#
+
+  nonisolated static let managedRemoteSteerPythonBootstrap = #"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+payload = json.load(sys.stdin)
+opencode = shutil.which("opencode")
+if not opencode:
+    sys.stderr.write("OpenCode was not found on the remote PATH.\n")
+    sys.exit(127)
+
+environment = os.environ.copy()
+environment["OPENCODE_SERVER_PASSWORD"] = payload["serverPassword"]
+result = subprocess.run(
+    [
+        opencode,
+        "api",
+        "--server",
+        payload["serverURL"],
+        "session.prompt",
+        "--param",
+        "sessionID=" + payload["sessionID"],
+        "--data",
+        payload["requestData"],
+    ],
+    capture_output=True,
+    env=environment,
+    text=True,
+)
+sys.stdout.write(result.stdout)
+sys.stderr.write(result.stderr)
+sys.exit(result.returncode)
 """#
 
   public func listModels(
@@ -454,7 +537,7 @@ finally:
     reasoningEffort: String?,
     sandboxAccess: CodexSandboxAccess
   ) async throws -> OpenCodeTurnResult {
-    if let existing = activeProcesses[openOrgThreadID], existing.isRunning {
+    if let existing = activeRuns[openOrgThreadID]?.process, existing.isRunning {
       throw OpenCodeError.launchFailed("another turn is already running in this chat")
     }
 
@@ -464,6 +547,10 @@ finally:
     let standardError = Pipe()
     let temporaryRoot: URL?
     var inputData: Data?
+    var serverProcess: Process?
+    var serverOutputDrain: Task<Void, Never>?
+    var serverURL: String?
+    let serverPassword = UUID().uuidString.lowercased()
     let configuration = try Self.inlineConfiguration(
       systemPrompt: systemPrompt,
       sandboxAccess: sandboxAccess
@@ -481,17 +568,30 @@ finally:
       )
       temporaryRoot = root
       let attachmentURLs = try Self.materializeAttachments(attachments, under: root)
+      let processEnvironment = Self.privateServerEnvironment(
+        environment,
+        serverPassword: serverPassword,
+        configuration: configuration
+      )
+      let server = try await Self.startServer(
+        executableURL: executableURL,
+        cwd: cwd.standardizedFileURL,
+        environment: processEnvironment
+      )
+      serverProcess = server.process
+      serverOutputDrain = server.outputDrain
+      serverURL = server.url
       process.executableURL = executableURL
-      process.arguments = Self.arguments(
+      var arguments = Self.arguments(
         sessionID: existingSessionID,
         model: model,
         reasoningEffort: reasoningEffort,
         attachmentPaths: attachmentURLs.map(\.path),
         message: message
       )
+      arguments.insert(contentsOf: ["--server", server.url], at: 1)
+      process.arguments = arguments
       process.currentDirectoryURL = cwd.standardizedFileURL
-      var processEnvironment = environment
-      processEnvironment["OPENCODE_CONFIG_CONTENT"] = configuration
       process.environment = processEnvironment
       inputData = nil
     case .managedRemote(let sshHost, let workspacePath):
@@ -512,6 +612,7 @@ finally:
         arguments: Array(remoteArguments.dropLast()),
         message: message,
         configuration: configuration,
+        serverPassword: serverPassword,
         attachments: try attachments.map {
           OpenCodeRemoteAttachment(
             fileName: $0.fileName,
@@ -524,6 +625,8 @@ finally:
     }
 
     defer {
+      serverOutputDrain?.cancel()
+      if let serverProcess, serverProcess.isRunning { serverProcess.terminate() }
       if let temporaryRoot { try? FileManager.default.removeItem(at: temporaryRoot) }
     }
     process.standardInput = standardInput
@@ -532,13 +635,24 @@ finally:
 
     do {
       try process.run()
-      activeProcesses[openOrgThreadID] = process
       await eventHandler(openOrgThreadID, .processStarted)
       if let inputData { try standardInput.fileHandleForWriting.write(contentsOf: inputData) }
       try standardInput.fileHandleForWriting.close()
+      if serverURL == nil {
+        serverURL = try await Self.readRemoteServerURL(from: standardOutput.fileHandleForReading)
+      }
+      guard let serverURL else {
+        throw OpenCodeError.invalidResponse("the private server did not report its endpoint")
+      }
+      activeRuns[openOrgThreadID] = ActiveRun(
+        process: process,
+        serverProcess: serverProcess,
+        serverURL: serverURL,
+        serverPassword: serverPassword
+      )
     } catch {
       if process.isRunning { process.terminate() }
-      activeProcesses.removeValue(forKey: openOrgThreadID)
+      activeRuns.removeValue(forKey: openOrgThreadID)
       throw OpenCodeError.launchFailed(error.localizedDescription)
     }
 
@@ -565,12 +679,12 @@ finally:
     do {
       decoded = try await outputTask.value
     } catch {
-      activeProcesses.removeValue(forKey: openOrgThreadID)
+      activeRuns.removeValue(forKey: openOrgThreadID)
       throw OpenCodeError.invalidResponse(error.localizedDescription)
     }
     let stderr = (try? await errorTask.value)?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    activeProcesses.removeValue(forKey: openOrgThreadID)
+    activeRuns.removeValue(forKey: openOrgThreadID)
 
     if Task.isCancelled || process.terminationReason == .uncaughtSignal {
       throw OpenCodeError.interrupted
@@ -588,13 +702,183 @@ finally:
   }
 
   public func interrupt(openOrgThreadID: UUID) {
-    guard let process = activeProcesses[openOrgThreadID], process.isRunning else { return }
+    guard let process = activeRuns[openOrgThreadID]?.process, process.isRunning else { return }
     process.interrupt()
   }
 
+  public func steer(
+    openOrgThreadID: UUID,
+    sessionID: String,
+    message: String,
+    attachments: [OpenClawChatAttachment]
+  ) async throws {
+    guard let active = activeRuns[openOrgThreadID], active.process.isRunning else {
+      throw OpenCodeError.invalidResponse("there is no active OpenCode turn to steer")
+    }
+    let data = try Self.steerRequestData(
+      message: message,
+      attachments: attachments
+    )
+    switch transport {
+    case .local:
+      guard let executableURL else { throw OpenCodeError.executableNotFound }
+      _ = try await Self.runCommand(
+        executableURL: executableURL,
+        arguments: Self.steerArguments(
+          serverURL: active.serverURL,
+          sessionID: sessionID,
+          data: data
+        ),
+        cwd: nil,
+        environment: Self.privateServerEnvironment(
+          environment,
+          serverPassword: active.serverPassword
+        )
+      )
+    case .managedRemote(let sshHost, _):
+      let input = try JSONEncoder().encode(OpenCodeRemoteSteerPayload(
+        serverURL: active.serverURL,
+        sessionID: sessionID,
+        requestData: data,
+        serverPassword: active.serverPassword
+      ))
+      _ = try await Self.runCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/ssh"),
+        arguments: try Self.managedRemoteSteerSSHArguments(sshHost: sshHost),
+        cwd: nil,
+        environment: environment,
+        input: input
+      )
+    }
+  }
+
   public func shutdown() {
-    for process in activeProcesses.values where process.isRunning { process.terminate() }
-    activeProcesses.removeAll()
+    for run in activeRuns.values {
+      if run.process.isRunning { run.process.terminate() }
+      if let serverProcess = run.serverProcess, serverProcess.isRunning {
+        serverProcess.terminate()
+      }
+    }
+    activeRuns.removeAll()
+  }
+
+  nonisolated static func steerArguments(
+    serverURL: String,
+    sessionID: String,
+    data: String
+  ) -> [String] {
+    [
+      "api", "--server", serverURL,
+      "session.prompt",
+      "--param", "sessionID=\(sessionID)",
+      "--data", data
+    ]
+  }
+
+  nonisolated static func steerRequestData(
+    message: String,
+    attachments: [OpenClawChatAttachment]
+  ) throws -> String {
+    var request: [String: Any] = [
+      "text": message,
+      "delivery": "steer"
+    ]
+    if !attachments.isEmpty {
+      request["files"] = try attachments.map { attachment in
+        [
+          "uri": "data:\(attachment.mimeType);base64,\(try attachment.loadData().base64EncodedString())",
+          "name": attachment.fileName
+        ]
+      }
+    }
+    let data = try JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  nonisolated static func privateServerEnvironment(
+    _ environment: [String: String],
+    serverPassword: String,
+    configuration: String? = nil
+  ) -> [String: String] {
+    var result = environment
+    result["OPENCODE_SERVER_PASSWORD"] = serverPassword
+    if let configuration { result["OPENCODE_CONFIG_CONTENT"] = configuration }
+    return result
+  }
+
+  private nonisolated static func startServer(
+    executableURL: URL,
+    cwd: URL,
+    environment: [String: String]
+  ) async throws -> (process: Process, url: String, outputDrain: Task<Void, Never>) {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = executableURL
+    process.arguments = ["serve", "--hostname", "127.0.0.1", "--port", "0"]
+    process.currentDirectoryURL = cwd
+    process.environment = environment
+    process.standardOutput = output
+    process.standardError = output
+    do {
+      try process.run()
+      let line = try await readLine(from: output.fileHandleForReading)
+      let prefix = "server listening on "
+      guard line.hasPrefix(prefix) else {
+        if process.isRunning { process.terminate() }
+        throw OpenCodeError.launchFailed(
+          line.isEmpty ? "the private server did not report its endpoint" : line
+        )
+      }
+      let url = String(line.dropFirst(prefix.count))
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard isLoopbackServerURL(url) else {
+        if process.isRunning { process.terminate() }
+        throw OpenCodeError.invalidResponse("the private server reported an invalid endpoint")
+      }
+      let outputDrain = Task.detached(priority: .utility) {
+        _ = try? output.fileHandleForReading.readToEnd()
+      }
+      return (process, url, outputDrain)
+    } catch {
+      if process.isRunning { process.terminate() }
+      throw error
+    }
+  }
+
+  private nonisolated static func readRemoteServerURL(from handle: FileHandle) async throws -> String {
+    let line = try await readLine(from: handle)
+    guard let data = line.data(using: .utf8),
+          let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          object["type"] as? String == "openorg_server",
+          let url = object["url"] as? String,
+          isLoopbackServerURL(url)
+    else {
+      throw OpenCodeError.invalidResponse("the remote private server did not report its endpoint")
+    }
+    return url
+  }
+
+  private nonisolated static func readLine(from handle: FileHandle) async throws -> String {
+    try await Task.detached(priority: .userInitiated) {
+      var data = Data()
+      while let byte = try handle.read(upToCount: 1), !byte.isEmpty {
+        if byte[byte.startIndex] == 0x0A { break }
+        data.append(byte)
+        if data.count > 16_384 {
+          throw OpenCodeError.invalidResponse("the private server response was too large")
+        }
+      }
+      return String(decoding: data, as: UTF8.self)
+    }.value
+  }
+
+  private nonisolated static func isLoopbackServerURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value),
+          components.scheme == "http",
+          components.host == "127.0.0.1",
+          components.port != nil
+    else { return false }
+    return true
   }
 
   private nonisolated static func consumeOutput(
@@ -718,11 +1002,19 @@ private struct OpenCodeRemotePayload: Encodable {
   let arguments: [String]
   let message: String
   let configuration: String
+  let serverPassword: String
   let attachments: [OpenCodeRemoteAttachment]
 }
 
 private struct OpenCodeRemoteModelPayload: Encodable {
   let workspacePath: String
+}
+
+private struct OpenCodeRemoteSteerPayload: Encodable {
+  let serverURL: String
+  let sessionID: String
+  let requestData: String
+  let serverPassword: String
 }
 
 private struct OpenCodeRemoteAttachment: Encodable {

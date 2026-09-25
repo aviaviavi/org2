@@ -2104,6 +2104,30 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
+  func testOpenCodeStatusCardDoesNotCallALiveQuietProcessStalled() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let view = OpenClawTypingIndicatorView(
+      startedAt: now.addingTimeInterval(-30 * 60),
+      lastEventAt: now.addingTimeInterval(-12 * 60),
+      runtime: .openCode,
+      destinationTitle: "OpenCode on press.local",
+      connectionState: .connected,
+      connectionDetail: nil,
+      runID: "ses_123",
+      streamingReply: "",
+      reasoning: "",
+      activities: [],
+      compact: false,
+      onStop: {}
+    )
+
+    XCTAssertEqual(view.statusTitle(now: now), "Waiting for OpenCode on press.local")
+    XCTAssertEqual(
+      view.statusDetail(now: now),
+      "No new output for 12m. OpenCode is still running; long tool calls can be quiet."
+    )
+  }
+
   func testOpenClawStatusCardExplainsSavedRunWhileReconnecting() {
     let now = Date(timeIntervalSince1970: 1_000_000)
     let reconnecting = OpenClawTypingIndicatorView(

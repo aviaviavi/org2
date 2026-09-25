@@ -12,9 +12,10 @@ final class OpenCodeClientTests: XCTestCase {
       message: "Review this"
     )
 
-    XCTAssertEqual(arguments.prefix(8), [
-      "run", "--standalone", "--format", "json", "--thinking", "--agent", "openorg", "--auto"
+    XCTAssertEqual(arguments.prefix(7), [
+      "run", "--format", "json", "--thinking", "--agent", "openorg", "--auto"
     ])
+    XCTAssertFalse(arguments.contains("--standalone"))
     XCTAssertTrue(arguments.containsAdjacent(["--session", "ses_123"]))
     XCTAssertTrue(arguments.containsAdjacent(["--model", "openai/gpt-5#high"]))
     XCTAssertEqual(arguments.suffix(3), ["--file", "/tmp/file.txt", "Review this"])
@@ -82,6 +83,58 @@ final class OpenCodeClientTests: XCTestCase {
       sshHost: "press.local; touch /tmp/nope"
     ))
     XCTAssertNoThrow(try OpenCodeClient.managedRemoteModelSSHArguments(sshHost: "press.local"))
+    XCTAssertThrowsError(try OpenCodeClient.managedRemoteSteerSSHArguments(
+      sshHost: "press.local; touch /tmp/nope"
+    ))
+    XCTAssertNoThrow(try OpenCodeClient.managedRemoteSteerSSHArguments(sshHost: "press.local"))
+  }
+
+  func testSteerUsesExplicitDeliveryAndPreservesAttachments() throws {
+    let attachment = OpenClawChatAttachment(
+      fileName: "note.txt",
+      mimeType: "text/plain",
+      data: Data("context".utf8)
+    )
+    let data = try OpenCodeClient.steerRequestData(
+      message: "Use the new constraint",
+      attachments: [attachment]
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(data.utf8)) as? [String: Any]
+    )
+    XCTAssertEqual(object["text"] as? String, "Use the new constraint")
+    XCTAssertEqual(object["delivery"] as? String, "steer")
+    let files = try XCTUnwrap(object["files"] as? [[String: String]])
+    XCTAssertEqual(files.first?["name"], "note.txt")
+    XCTAssertEqual(files.first?["uri"], "data:text/plain;base64,Y29udGV4dA==")
+    XCTAssertEqual(
+      OpenCodeClient.steerArguments(
+        serverURL: "http://127.0.0.1:54321",
+        sessionID: "ses_123",
+        data: data
+      ),
+      [
+        "api", "--server", "http://127.0.0.1:54321",
+        "session.prompt", "--param", "sessionID=ses_123", "--data", data
+      ]
+    )
+  }
+
+  func testPrivateServerCredentialsReachLocalAndRemoteCommands() {
+    let environment = OpenCodeClient.privateServerEnvironment(
+      ["KEEP": "yes", "OPENCODE_SERVER_PASSWORD": "stale"],
+      serverPassword: "per-run-secret",
+      configuration: "{\"agent\":{}}"
+    )
+    XCTAssertEqual(environment["KEEP"], "yes")
+    XCTAssertEqual(environment["OPENCODE_SERVER_PASSWORD"], "per-run-secret")
+    XCTAssertEqual(environment["OPENCODE_CONFIG_CONTENT"], "{\"agent\":{}}")
+    XCTAssertTrue(OpenCodeClient.managedRemotePythonBootstrap.contains(
+      #"environment["OPENCODE_SERVER_PASSWORD"] = payload["serverPassword"]"#
+    ))
+    XCTAssertTrue(OpenCodeClient.managedRemoteSteerPythonBootstrap.contains(
+      #"environment["OPENCODE_SERVER_PASSWORD"] = payload["serverPassword"]"#
+    ))
   }
 
   func testModelCatalogParsingKeepsOnlyProviderModelIDs() {

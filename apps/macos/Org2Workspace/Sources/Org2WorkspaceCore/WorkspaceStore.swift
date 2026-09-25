@@ -24210,8 +24210,11 @@ public final class WorkspaceStore {
         && openClawActiveRunIDByThreadID[threadID] != nil
     case .claude:
       return false
-    case .pi, .openCode:
+    case .pi:
       return false
+    case .openCode:
+      return openCodeClientsByDestinationID[thread.destinationID] != nil
+        && openClawActiveRunIDByThreadID[threadID] != nil
     }
   }
 
@@ -24271,8 +24274,14 @@ public final class WorkspaceStore {
             "steering is not available for Pi; queue a follow-up instead"
           )
         case .openCode:
-          throw OpenCodeError.invalidResponse(
-            "steering is not available for OpenCode; queue a follow-up instead"
+          guard let sessionID = openClawActiveRunIDByThreadID[threadID] else {
+            throw OpenCodeError.invalidResponse("there is no active OpenCode turn to steer")
+          }
+          try await openCodeClient(forDestinationID: thread.destinationID).steer(
+            openOrgThreadID: threadID,
+            sessionID: sessionID,
+            message: message.content,
+            attachments: message.attachments
           )
         }
       }
@@ -24359,8 +24368,18 @@ public final class WorkspaceStore {
         || message.localizedCaseInsensitiveContains("in progress")
     case .claude:
       return false
-    case .pi, .openCode:
+    case .pi:
       return false
+    case .openCode:
+      guard let error = error as? OpenCodeError else { return false }
+      switch error {
+      case .invalidResponse(let message), .launchFailed(let message):
+        return message.localizedCaseInsensitiveContains("active OpenCode turn")
+          || message.localizedCaseInsensitiveContains("session not found")
+      case .executableNotFound, .invalidSSHHost, .missingRemoteWorkspace,
+           .turnFailed, .interrupted:
+        return false
+      }
     }
   }
 

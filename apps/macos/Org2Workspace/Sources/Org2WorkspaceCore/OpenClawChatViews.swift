@@ -5234,7 +5234,8 @@ struct OpenClawTypingIndicatorView: View {
     hasReasoning: Bool
   ) -> String {
     if connectionState == .connected, runID != nil {
-      if runLivenessAge(now: now) >= Self.stalledRunInterval {
+      if runtime != .openCode,
+         runLivenessAge(now: now) >= Self.stalledRunInterval {
         return "\(displayTitle) may be stalled"
       }
       if runLivenessAge(now: now) >= Self.quietRunInterval {
@@ -5341,6 +5342,9 @@ struct OpenClawTypingIndicatorView: View {
     case .connected where runID != nil:
       let age = runLivenessAge(now: now)
       if age >= Self.stalledRunInterval {
+        if runtime == .openCode {
+          return "No new output for \(durationText(age)). OpenCode is still running; long tool calls can be quiet."
+        }
         return "No new activity for \(durationText(age)). The run is saved; the connection or agent may be stalled."
       }
       if age >= Self.quietRunInterval {
@@ -5356,6 +5360,7 @@ struct OpenClawTypingIndicatorView: View {
     guard connectionState != .disconnected else { return false }
     return connectionState != .connected
       || runID == nil
+      || runtime == .openCode
       || runLivenessAge(now: now) < Self.stalledRunInterval
   }
 
