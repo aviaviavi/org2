@@ -4,39 +4,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.4</title>
-            <pubDate>Thu, 24 Sep 2026 11:39:20 -0700</pubDate>
+            <title>0.8.5</title>
+            <pubDate>Sat, 26 Sep 2026 16:44:01 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.4</sparkle:version>
-            <sparkle:shortVersionString>0.8.4</sparkle:shortVersionString>
+            <sparkle:version>0.8.5</sparkle:version>
+            <sparkle:shortVersionString>0.8.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# OpenOrg 0.8.4
+            <description sparkle:format="markdown"><![CDATA[## Highlights
 
-OpenOrg 0.8.4 makes AI chats started from iPhone full workspace clients of the configured agent machine. Codex can now search authorized Org2 files and prior AI chats, read bounded chat history, edit active-corpus files through reviewed local tools, and—when a remote Codex destination is configured—work directly in that machine's writable corpus checkout with the selected filesystem sandbox.
+- Keep AI chat history and active status consistent across the Mac app, headless server, and iPhone, including recovery after interruptions and cross-host sync.
+- Add Pi and OpenCode as agent destinations, with model discovery, startup progress, and clearer steering.
+- Improve iPhone chat rendering for inline images and formatted replies, and make new threads start faster.
+- Fix stale notifications, background PDF refresh errors, source-import validation, and link highlighting.
 
-This release also improves chat reliability and polish: delayed replies remain chronologically visible, stopped turns no longer appear active, remote activity ownership is reported correctly, transport initialization can recover cleanly, the assistant/provider picker works at narrow widths, and direct Anthropic destinations load their model catalogs.
-
-Agenda completions no longer reappear after an older refresh finishes. Large approval collections, including Revenue Scout reviews, now switch and render without mounting every large body at once.
-
-## Highlights
-
-- Full configured machine and Org2 corpus access for iOS-originated Codex chats.
-- Search across authorized corpus files and prior AI-chat history.
-- Direct writable-checkout support for managed remote Codex destinations.
-- Reliable chat recovery, reply ordering, and host-owned activity state.
-- Responsive large approval navigation and durable Agenda completion.
-- Improved compact assistant/model controls and provider model discovery.
-
-## Installation
-
-macOS 14 or later is required. The downloadable Mac applications are Developer ID signed, hardened, notarized by Apple, and distributed as separate Apple Silicon and Intel DMGs.
-
+This release includes the changes since 0.8.4. The macOS downloads are signed and notarized for Apple Silicon and Intel; the iPhone build is distributed separately through TestFlight.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.4/OpenOrg.dmg" length="231392824" type="application/octet-stream" sparkle:edSignature="AZA4BAsZHoeUdJwtdnym8rd/ZTegfgpG7/ehvA0cqlhKwH3lLJxxeCHDPKtEL4tKM/Yyml6FFvZNIsPO79rIAg=="></enclosure>
+            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.5/OpenOrg.dmg" length="232095070" type="application/octet-stream" sparkle:edSignature="yAEvC7HGool0+9sUzYWU0cqQYUBneBVomshjwsZtPx1zwDJgpZVOZQKAY4EohRZRM6l6BZmMmGjlX4VnmaVwBg=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 4C2FSI6N8IG2y682C13k+RGpwgOZXtpmUAjCzD2y+W0AgzqfphJzR9awIpeyHf7E1eoyLs8O1iWLjxE25tx5BA==
-length: 2871
+edSignature: Zcv3NT33v5i+z8ZqLiA42gVuNBIHyI9IQrRy/OBa/vdovGsQ8ohyZNbmpoSNej7A7agDjNtxYAWjKVvRhsUBBA==
+length: 1934
 -->
