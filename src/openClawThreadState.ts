@@ -12,6 +12,7 @@ import {
 export const OPENCLAW_THREAD_STATE_SCHEMA = "org2:openclaw-thread-state:v1";
 export const OPENCLAW_TRANSCRIPT_VERSION = 6;
 const STORE_MARKER_SCHEMA = "org2:ai-chat-transcript-store-marker:v1";
+const STORE_HEAD_SCHEMA = "org2:ai-chat-transcript-head:v1";
 const MANIFEST_V2_SCHEMA = "org2:ai-chat-transcript-manifest:v2";
 const MANIFEST_V1_SCHEMA = "org2:ai-chat-transcript-manifest:v1";
 const THREAD_SHARD_SCHEMA = "org2:ai-chat-thread:v1";
@@ -133,6 +134,8 @@ interface ParsedManifest {
   settlementSettings: OpenClawThreadSettlementSettings;
   commitID: string | null;
   generation: number | null;
+  /** Commits this manifest already incorporates (ancestors and merged branches). */
+  subsumedCommitIDs?: string[];
 }
 
 export function openClawTranscriptPath(corpusRoot: string): string {
@@ -216,6 +219,49 @@ function parseMarker(file: string): StoreMarker | null {
   }
 }
 
+/**
+ * Per-writer commit points (`heads/<writer>.json`). Each OpenOrg host owns one
+ * head so synchronized replicas never rewrite the same file. Newest first.
+ */
+function parseHeads(storeRoot: string): Array<StoreMarker & { generation: number }> {
+  const headsRoot = path.join(storeRoot, "heads");
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(headsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && !entry.name.startsWith("."))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+  const heads: Array<StoreMarker & { generation: number }> = [];
+  for (const name of names) {
+    try {
+      const value = JSON.parse(fs.readFileSync(path.join(headsRoot, name), "utf8")) as unknown;
+      if (!isRecord(value)
+          || value.schema !== STORE_HEAD_SCHEMA
+          || !safeManifestName(value.currentManifest)
+          || !isDigest(value.currentDigest)
+          || !Number.isSafeInteger(value.currentGeneration)) {
+        continue;
+      }
+      heads.push({
+        currentManifest: value.currentManifest,
+        currentDigest: value.currentDigest,
+        previousManifest: typeof value.previousManifest === "string" && safeManifestName(value.previousManifest)
+          ? value.previousManifest
+          : null,
+        previousDigest: typeof value.previousDigest === "string" && isDigest(value.previousDigest)
+          ? value.previousDigest
+          : null,
+        generation: value.currentGeneration as number,
+      });
+    } catch {
+      // A partially synchronized or corrupt head is ignored; others remain valid.
+    }
+  }
+  return heads.sort((left, right) => right.generation - left.generation);
+}
+
 function parseManifestV2Data(
   data: Buffer,
   file: string,
@@ -260,6 +306,9 @@ function parseManifestV2Data(
       settlementSettings: settlementSettings(payload),
       commitID: payload.commitID,
       generation: payload.generation as number,
+      subsumedCommitIDs: [payload.ancestorCommitIDs, payload.mergedCommitIDs]
+        .flatMap((value) => (Array.isArray(value) ? value : []))
+        .filter((value): value is string => typeof value === "string"),
     };
   } catch {
     return null;
@@ -463,10 +512,34 @@ function resolveShardedManifest(storeRoot: string): {
   const previousMarkerFile = path.join(storeRoot, "migration-marker.previous.json");
   const currentView = path.join(storeRoot, "manifest.json");
   const previousView = path.join(storeRoot, "manifest.previous.json");
-  const markerExists = fs.existsSync(markerFile) || fs.existsSync(previousMarkerFile);
+  const heads = parseHeads(storeRoot);
+  const markerExists = fs.existsSync(markerFile) || fs.existsSync(previousMarkerFile) || heads.length > 0;
   const candidates: ParsedManifest[] = [];
 
-  const marker = parseMarker(markerFile);
+  if (heads.length > 0) {
+    const tips: ParsedManifest[] = [];
+    for (const head of heads) {
+      const current = manifestNamed(storeRoot, head.currentManifest, head.currentDigest);
+      if (current && isCompleteManifest(storeRoot, current)) {
+        tips.push(current);
+        continue;
+      }
+      if (current) candidates.push(current);
+      if (head.previousManifest) {
+        const previous = manifestNamed(storeRoot, head.previousManifest, head.previousDigest);
+        if (previous) candidates.push(previous);
+      }
+    }
+    if (tips.length > 0) {
+      const subsumed = new Set(tips.flatMap((tip) => tip.subsumedCommitIDs ?? []));
+      const live = tips.filter((tip) => !tip.commitID || !subsumed.has(tip.commitID));
+      if (live.length === 1) return { manifest: live[0]!, recoveryStatus: "healthy" };
+      const merged = reconcileRecoveryManifest(storeRoot, live);
+      if (merged) return { manifest: merged, recoveryStatus: "healthy" };
+    }
+  }
+
+  const marker = heads.length > 0 ? null : parseMarker(markerFile);
   if (marker) {
     const current = manifestNamed(storeRoot, marker.currentManifest, marker.currentDigest);
     if (current && isCompleteManifest(storeRoot, current)) {

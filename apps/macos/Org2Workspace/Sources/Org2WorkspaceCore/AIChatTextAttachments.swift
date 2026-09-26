@@ -40,7 +40,8 @@ enum AIChatTextAttachments {
       authorDestinationID: message.authorDestinationID,
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
-      isRoomDispatchCopy: message.isRoomDispatchCopy, roomRoundID: message.roomRoundID
+      isRoomDispatchCopy: message.isRoomDispatchCopy, roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
   }
 }

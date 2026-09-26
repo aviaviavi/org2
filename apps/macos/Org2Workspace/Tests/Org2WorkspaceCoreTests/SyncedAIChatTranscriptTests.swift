@@ -199,8 +199,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     // Defer writes without simulating a corrupt store: a recovery-blocked
     // transcript intentionally reloads instead of taking the normal sync path.
     defer { store.flushDeferredAIChatTranscriptPersistence() }
-    let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
-    let before = try Data(contentsOf: marker)
+    let before = try commitPointFingerprint(localURL)
     for thread in [unread, room] {
       store.selectOpenClawChatThread(thread.id)
       await store.waitForAIChatThreadHydrationForTesting(thread.id)
@@ -213,7 +212,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       XCTAssertEqual(store.openClawUnreadMessageCount, 0, "App activation must not restore dismissed badges")
       XCTAssertTrue(store.sidebarOpenClawChatThreadSummaries.allSatisfy { $0.unreadMessageCount == 0 })
     }
-    XCTAssertEqual(try Data(contentsOf: marker), before, "Local read state must not rewrite synced history")
+    XCTAssertEqual(try commitPointFingerprint(localURL), before, "Local read state must not rewrite synced history")
 
     let reopened = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults,
@@ -264,6 +263,22 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     let visibleRefresh = await store.refreshSyncedAIChatTranscript()
     XCTAssertTrue(visibleRefresh)
     XCTAssertEqual(store.selectedOpenClawChatThread?.unreadMessageCount, 0)
+  }
+
+  /// Every writer's head plus the historical marker. A change means a commit.
+  private func commitPointFingerprint(_ transcriptURL: URL) throws -> Data {
+    let store = AIChatTranscriptStore.storeDirectory(for: transcriptURL)
+    var data = Data()
+    let heads = store.appendingPathComponent("heads", isDirectory: true)
+    let names = ((try? FileManager.default.contentsOfDirectory(atPath: heads.path)) ?? []).sorted()
+    for name in names {
+      data.append(Data(name.utf8))
+      data.append(try Data(contentsOf: heads.appendingPathComponent(name)))
+    }
+    if let marker = try? Data(contentsOf: store.appendingPathComponent("migration-marker.json")) {
+      data.append(marker)
+    }
+    return data
   }
 
   private func replicate(_ source: URL, to target: URL) throws {
@@ -318,8 +333,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       threads: [original, incoming], selectedThreadID: incoming.id, settlementSettings: settings
     ), legacyURL: remoteURL)
     try replicate(remoteURL, to: localURL)
-    let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
-    let before = try Data(contentsOf: marker)
+    let before = try commitPointFingerprint(localURL)
     XCTAssertFalse(store.hasUnpersistedAIChatTranscriptMutationForTesting)
     let refreshed = await store.refreshSyncedAIChatTranscript()
     XCTAssertTrue(refreshed)
@@ -329,7 +343,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     store.selectOpenClawChatThread(incoming.id)
     await store.waitForAIChatThreadHydrationForTesting(incoming.id)
     XCTAssertEqual(store.openClawMessages.map(\.content), ["From my phone", "From the server"])
-    XCTAssertEqual(try Data(contentsOf: marker), before, "Viewing a synced conversation must not create a commit")
+    XCTAssertEqual(try commitPointFingerprint(localURL), before, "Viewing a synced conversation must not create a commit")
 
     let pendingMessage = OpenClawChatMessage(role: .user, content: "Still working", deliveryStatus: .sending)
     let working = OpenClawChatThread(
@@ -405,8 +419,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       ]), renamed, incoming], selectedThreadID: incoming.id, settlementSettings: settings
     ), legacyURL: remoteURL)
     try replicate(remoteURL, to: localURL)
-    let marker = AIChatTranscriptStore.storeDirectory(for: localURL).appendingPathComponent("migration-marker.json")
-    let before = try Data(contentsOf: marker)
+    let before = try commitPointFingerprint(localURL)
     AIChatTranscriptStore.shared.setWritesSuspendedForTesting(true, legacyURL: localURL)
     defer { AIChatTranscriptStore.shared.setWritesSuspendedForTesting(false, legacyURL: localURL) }
     store.renameOpenClawChatThread(renamed.id, title: "My unsaved local title")
@@ -421,7 +434,7 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertEqual(store.openClawChatThreads.first { $0.id == idle.id }?.messages.last?.content, "A remote reply in an existing chat")
     XCTAssertEqual(store.selectedOpenClawChatThreadID, active.id)
     XCTAssertEqual(store.openClawDraft, "Keep this draft while the agent works")
-    XCTAssertEqual(try Data(contentsOf: marker), before)
+    XCTAssertEqual(try commitPointFingerprint(localURL), before)
     // Repeated refreshes must keep the dirty metadata protected as well.
     let refreshedAgain = await store.refreshSyncedAIChatTranscript()
     XCTAssertTrue(refreshedAgain)

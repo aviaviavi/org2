@@ -2238,6 +2238,92 @@ public struct MeetingReadyAutomationSettings: Hashable, Codable, Sendable {
   }
 }
 
+/// Where a chat message came from and which OpenOrg host handled it. Every
+/// field is optional so transcripts written by older builds (and messages
+/// posted by tools) stay valid. Hosts are identified by a stable `ref` and a
+/// human-readable `name`; the corpus is shared, so these are provenance and
+/// routing hints, not access control.
+public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
+  public enum Client: String, Codable, Sendable {
+    case desktop
+    case mobile
+    case automation
+    case inbox
+  }
+
+  /// The surface a person or process used to compose the message.
+  public var originClient: Client?
+  /// A readable device label, such as the paired iPhone's name.
+  public var originDeviceName: String?
+  /// The OpenOrg host that accepted the message from that client.
+  public var receivedByHostRef: String?
+  public var receivedByHostName: String?
+  /// For user messages, the host responsible for dispatching the turn. For
+  /// assistant messages, the host whose runtime produced the reply.
+  public var executionHostRef: String?
+  public var executionHostName: String?
+  /// When the execution host took responsibility for a message another host
+  /// handed to it. Absent while the hand-off is still pending.
+  public var acceptedAt: Date?
+
+  public init(
+    originClient: Client? = nil,
+    originDeviceName: String? = nil,
+    receivedByHostRef: String? = nil,
+    receivedByHostName: String? = nil,
+    executionHostRef: String? = nil,
+    executionHostName: String? = nil,
+    acceptedAt: Date? = nil
+  ) {
+    self.originClient = originClient
+    self.originDeviceName = originDeviceName
+    self.receivedByHostRef = receivedByHostRef
+    self.receivedByHostName = receivedByHostName
+    self.executionHostRef = executionHostRef
+    self.executionHostName = executionHostName
+    self.acceptedAt = acceptedAt
+  }
+
+  public var isEmpty: Bool {
+    originClient == nil && originDeviceName == nil && receivedByHostRef == nil
+      && receivedByHostName == nil && executionHostRef == nil
+      && executionHostName == nil && acceptedAt == nil
+  }
+
+  /// A short caption such as "iPhone via press · ran on press".
+  public func caption(role: OpenClawChatMessage.Role) -> String? {
+    var parts: [String] = []
+    if role == .user {
+      let client: String? = {
+        if let originDeviceName, !originDeviceName.isEmpty { return originDeviceName }
+        switch originClient {
+        case .mobile: return "Phone"
+        case .automation: return "Automation"
+        case .inbox: return "Background agent"
+        case .desktop: return receivedByHostName
+        case nil: return nil
+        }
+      }()
+      if let client {
+        if let receivedByHostName, !receivedByHostName.isEmpty, receivedByHostName != client {
+          parts.append("\(client) via \(receivedByHostName)")
+        } else {
+          parts.append(client)
+        }
+      } else if let receivedByHostName, !receivedByHostName.isEmpty {
+        parts.append("via \(receivedByHostName)")
+      }
+      if let executionHostName, !executionHostName.isEmpty,
+         executionHostName != receivedByHostName {
+        parts.append(acceptedAt == nil ? "handing off to \(executionHostName)" : "runs on \(executionHostName)")
+      }
+    } else if let executionHostName, !executionHostName.isEmpty {
+      parts.append("ran on \(executionHostName)")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+}
+
 public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public enum Role: String, Codable, Sendable {
     case user
@@ -2279,6 +2365,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let targetDestinationID: String?
   public let isRoomDispatchCopy: Bool
   public let roomRoundID: UUID?
+  public let provenance: AIChatMessageProvenance?
 
   public init(
     id: UUID = UUID(),
@@ -2301,7 +2388,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     audienceDestinationIDs: [String] = [],
     targetDestinationID: String? = nil,
     isRoomDispatchCopy: Bool = false,
-    roomRoundID: UUID? = nil
+    roomRoundID: UUID? = nil,
+    provenance: AIChatMessageProvenance? = nil
   ) {
     self.id = id
     self.role = role
@@ -2324,6 +2412,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.targetDestinationID = role == .user ? targetDestinationID : nil
     self.isRoomDispatchCopy = role == .user && isRoomDispatchCopy
     self.roomRoundID = roomRoundID
+    self.provenance = provenance?.isEmpty == true ? nil : provenance
   }
 
   enum CodingKeys: String, CodingKey {
@@ -2348,6 +2437,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case targetDestinationID
     case isRoomDispatchCopy
     case roomRoundID
+    case provenance
   }
 
   public init(from decoder: Decoder) throws {
@@ -2401,6 +2491,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       ? (try container.decodeIfPresent(Bool.self, forKey: .isRoomDispatchCopy) ?? false)
       : false
     roomRoundID = try container.decodeIfPresent(UUID.self, forKey: .roomRoundID)
+    provenance = try? container.decodeIfPresent(AIChatMessageProvenance.self, forKey: .provenance)
   }
 
   public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
@@ -2425,7 +2516,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       audienceDestinationIDs: audienceDestinationIDs,
       targetDestinationID: targetDestinationID,
       isRoomDispatchCopy: isRoomDispatchCopy,
-      roomRoundID: roomRoundID
+      roomRoundID: roomRoundID,
+      provenance: provenance
     )
   }
 
@@ -2454,7 +2546,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       audienceDestinationIDs: audienceDestinationIDs,
       targetDestinationID: targetDestinationID,
       isRoomDispatchCopy: isRoomDispatchCopy,
-      roomRoundID: roomRoundID
+      roomRoundID: roomRoundID,
+      provenance: provenance
     )
   }
 
@@ -2480,7 +2573,35 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       audienceDestinationIDs: audienceDestinationIDs,
       targetDestinationID: targetDestinationID,
       isRoomDispatchCopy: isRoomDispatchCopy,
-      roomRoundID: roomRoundID
+      roomRoundID: roomRoundID,
+      provenance: provenance
+    )
+  }
+
+  public func replacingProvenance(_ nextProvenance: AIChatMessageProvenance?) -> OpenClawChatMessage {
+    OpenClawChatMessage(
+      id: id,
+      role: role,
+      content: content,
+      attachments: attachments,
+      createdAt: createdAt,
+      changeSummary: changeSummary,
+      responseTrace: responseTrace,
+      sendFailure: sendFailure,
+      deliveryStatus: deliveryStatus,
+      deliveryKind: deliveryKind,
+      authorRuntime: authorRuntime,
+      authorLabel: authorLabel,
+      authorAgentRef: authorAgentRef,
+      source: source,
+      audience: audience,
+      targetRuntime: targetRuntime,
+      authorDestinationID: authorDestinationID,
+      audienceDestinationIDs: audienceDestinationIDs,
+      targetDestinationID: targetDestinationID,
+      isRoomDispatchCopy: isRoomDispatchCopy,
+      roomRoundID: roomRoundID,
+      provenance: nextProvenance
     )
   }
 
@@ -2506,7 +2627,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       audienceDestinationIDs: audienceDestinationIDs,
       targetDestinationID: targetDestinationID,
       isRoomDispatchCopy: isRoomDispatchCopy,
-      roomRoundID: roomRoundID
+      roomRoundID: roomRoundID,
+      provenance: provenance
     )
   }
 }
@@ -3951,6 +4073,39 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: nil,
       storedHasUnresolvedLatestDelivery: nil,
       storedLatestDeliveryNeedsAttention: nil,
+      isPinned: isPinned,
+      isArchived: isArchived,
+      settledAt: settledAt,
+      unreadMessageCount: unreadMessageCount,
+      resource: resource,
+      pendingTurn: pendingTurn,
+      isSharedRoom: isSharedRoom,
+      roomAudience: roomAudience,
+      roomModels: roomModels,
+      roomDestinationIDs: roomDestinationIDs,
+      roomModelsByDestination: roomModelsByDestination,
+      agentRef: agentRef
+    )
+  }
+
+  func replacingUpdatedAt(_ nextUpdatedAt: Date) -> OpenClawChatThread {
+    guard nextUpdatedAt != updatedAt else { return self }
+    return OpenClawChatThread(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      updatedAt: nextUpdatedAt,
+      runtime: runtime,
+      destinationID: destinationID,
+      sessionKey: sessionKey,
+      runtimeThreadID: runtimeThreadID,
+      runtimeThreadIDsByDestination: runtimeThreadIDsByDestination,
+      model: model,
+      reasoningEffort: reasoningEffort,
+      messages: messages,
+      storedMessageCount: storedMessageCount,
+      storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
+      storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,

@@ -25,19 +25,66 @@ struct AIChatTranscriptLoadResult: Sendable {
   let recoveryStatus: AIChatTranscriptRecoveryStatus
 }
 
+/// Identifies one process that commits to a (possibly replicated) transcript
+/// store. Each writer owns exactly one head file, so replication tools such as
+/// Syncthing never see two machines modify the same path.
+public struct AIChatTranscriptWriterIdentity: Sendable, Equatable {
+  public let id: String
+  public let label: String
+
+  public init(id rawID: String, label: String) {
+    let sanitized = Self.sanitized(rawID)
+    self.id = sanitized.isEmpty ? UUID().uuidString.lowercased() : sanitized
+    self.label = label
+  }
+
+  static func sanitized(_ raw: String) -> String {
+    let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-")
+    let lowered = raw.lowercased().map { allowed.contains($0) ? $0 : "-" }
+    return String(String(lowered).split(separator: "-", omittingEmptySubsequences: true)
+      .joined(separator: "-").prefix(96))
+  }
+
+  /// A stable per-installation identity. The ID is persisted in the calling
+  /// process's defaults domain, so the desktop app and a headless server on
+  /// the same Mac remain distinct writers.
+  public static func persistent(
+    defaults: UserDefaults = .standard,
+    label: String? = nil
+  ) -> AIChatTranscriptWriterIdentity {
+    let key = "org2.aiChatTranscriptWriterID"
+    let id: String
+    if let existing = defaults.string(forKey: key), !sanitized(existing).isEmpty {
+      id = existing
+    } else {
+      id = UUID().uuidString.lowercased()
+      defaults.set(id, forKey: key)
+    }
+    let resolvedLabel = label
+      ?? Host.current().localizedName
+      ?? ProcessInfo.processInfo.hostName
+    return AIChatTranscriptWriterIdentity(id: id, label: resolvedLabel)
+  }
+}
+
 /// A coalescing, serial persistence service for AI chat state.
 ///
-/// A tiny marker is the commit point. It references immutable, versioned
-/// manifests, each of which references immutable, content-addressed thread
-/// shards and attachment blobs. A crash before the marker update leaves the
-/// previous commit authoritative; a crash afterwards can recover through the
-/// marker's previous-manifest reference. `manifest.json` and
-/// `manifest.previous.json` are inspectable, redundant derived copies.
+/// Every writer owns one head file under `heads/`. A head is that writer's
+/// commit point: it references immutable, versioned manifests, each of which
+/// references immutable, content-addressed thread shards and attachment blobs.
+/// Readers select the newest complete head and reconcile every other head or
+/// unseen immutable manifest, merging divergent revisions of one conversation
+/// by message identity instead of choosing a single winner. No path is ever
+/// rewritten by two machines, so synchronized replicas do not produce
+/// conflict copies. The historical `migration-marker.json` is still read for
+/// compatibility and is created once for older builds, but never rewritten.
 final class AIChatTranscriptStore: @unchecked Sendable {
   static let shared = AIChatTranscriptStore()
   static let eagerWorkingSetLimit = 16
+  static let headsDirectoryName = "heads"
   private static let garbageCollectionGraceInterval: TimeInterval = 30 * 24 * 60 * 60
   private static let manifestAncestryLimit = 32
+  private static let tombstoneLimit = 512
 
 #if DEBUG
   private final class RecoveryCandidateDecodeCounter: @unchecked Sendable {
@@ -110,8 +157,105 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private var suspendedWritePathsForTesting: Set<String> = []
   private var garbageCollectionPaths: Set<String> = []
   private var isDraining = false
+  private var configuredWriterIdentity: AIChatTranscriptWriterIdentity?
+  private var writerIdentityOverridesForTesting: [String: AIChatTranscriptWriterIdentity] = [:]
+  /// The message list each hydrated in-memory conversation was derived from,
+  /// per store. Writes use it as the common ancestor of a three-way merge so
+  /// a replica's concurrent messages are kept and local deletions are honored.
+  private var adoptedBases: [String: [UUID: AdoptedThreadBase]] = [:]
+  private var adoptionSequence: UInt64 = 0
 
   private init() {}
+
+  /// Sets the writer identity for this process. Call once at startup, before
+  /// the first commit. Tests may override per store with
+  /// `setWriterIdentityForTesting`.
+  func configureWriter(_ identity: AIChatTranscriptWriterIdentity) {
+    condition.lock()
+    configuredWriterIdentity = identity
+    condition.unlock()
+  }
+
+  var writerIdentity: AIChatTranscriptWriterIdentity {
+    condition.lock()
+    defer { condition.unlock() }
+    return resolvedWriterIdentityLocked(key: nil)
+  }
+
+  func setWriterIdentityForTesting(_ identity: AIChatTranscriptWriterIdentity?, legacyURL: URL) {
+    let key = legacyURL.standardizedFileURL.path
+    condition.lock()
+    writerIdentityOverridesForTesting[key] = identity
+    condition.unlock()
+  }
+
+  private func resolvedWriterIdentityLocked(key: String?) -> AIChatTranscriptWriterIdentity {
+    if let key, let override = writerIdentityOverridesForTesting[key] { return override }
+    if let configuredWriterIdentity { return configuredWriterIdentity }
+    let identity = AIChatTranscriptWriterIdentity.persistent()
+    configuredWriterIdentity = identity
+    return identity
+  }
+
+  /// Records the persisted revision that an in-memory conversation now
+  /// mirrors. Only call this for threads the caller actually installed; a
+  /// read that is discarded (for example because a local turn protects the
+  /// thread) must not become the merge base.
+  func recordAdoptedThreads(_ threads: [OpenClawChatThread], legacyURL: URL) {
+    guard !threads.isEmpty else { return }
+    let key = legacyURL.standardizedFileURL.path
+    condition.lock()
+    for thread in threads {
+      adoptionSequence &+= 1
+      if thread.storedMessageCount != nil {
+        adoptedBases[key]?.removeValue(forKey: thread.id)
+      } else {
+        adoptedBases[key, default: [:]][thread.id] = AdoptedThreadBase(
+          messages: thread.messages,
+          writtenShardDigest: nil,
+          sequence: adoptionSequence
+        )
+      }
+    }
+    condition.unlock()
+  }
+
+  /// Drop merge bases for threads whose in-memory copy did not come from the
+  /// persisted revision (for example an in-flight copy restored after a corpus
+  /// switch). Their next write keeps every replica message.
+  func forgetAdoptedThreads(_ ids: Set<UUID>, legacyURL: URL) {
+    guard !ids.isEmpty else { return }
+    let key = legacyURL.standardizedFileURL.path
+    condition.lock()
+    for id in ids {
+      adoptionSequence &+= 1
+      adoptedBases[key]?.removeValue(forKey: id)
+    }
+    condition.unlock()
+  }
+
+  func adoptedBaseMessageIDsForTesting(threadID: UUID, legacyURL: URL) -> [UUID]? {
+    let key = legacyURL.standardizedFileURL.path
+    condition.lock()
+    defer { condition.unlock() }
+    return adoptedBases[key]?[threadID]?.messages.map(\.id)
+  }
+
+  /// True when a committed store (current head layout or the historical
+  /// marker/view layout) exists for this transcript.
+  nonisolated static func hasCommittedStore(for legacyURL: URL) -> Bool {
+    let storeURL = storeDirectory(for: legacyURL)
+    let fileManager = FileManager.default
+    for name in [
+      "migration-marker.json", "migration-marker.previous.json", "manifest.json",
+    ] where fileManager.fileExists(atPath: storeURL.appendingPathComponent(name).path) {
+      return true
+    }
+    let heads = (try? fileManager.contentsOfDirectory(
+      atPath: storeURL.appendingPathComponent(headsDirectoryName).path
+    )) ?? []
+    return heads.contains { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+  }
 
   @discardableResult
   func enqueue(_ snapshot: AIChatTranscriptSnapshot, legacyURL: URL) -> UInt64 {
@@ -367,14 +511,32 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       } else if pendingWrites[pending.legacyURL.path]?.generation == pending.generation {
         pendingWrites.removeValue(forKey: pending.legacyURL.path)
       }
+      let writer = resolvedWriterIdentityLocked(key: pending.legacyURL.path)
+      let bases = adoptedBases[pending.legacyURL.path] ?? [:]
       condition.unlock()
 
-      let result = Result { try Self.write(pending.snapshot, legacyURL: pending.legacyURL) }
+      let result = Result {
+        try Self.write(pending.snapshot, legacyURL: pending.legacyURL, writer: writer, bases: bases)
+      }
       var resumptions: [(CheckedContinuation<Void, Error>, Result<Void, Error>)] = []
       condition.lock()
       let key = pending.legacyURL.path
       switch result {
-      case .success:
+      case .success(let writtenBases):
+        // The in-memory copy now mirrors what it just wrote, unless the caller
+        // adopted a newer persisted revision while this commit was running.
+        for (threadID, written) in writtenBases {
+          if let current = adoptedBases[key]?[threadID],
+             current.sequence != (bases[threadID]?.sequence ?? 0) {
+            continue
+          }
+          adoptionSequence &+= 1
+          adoptedBases[key, default: [:]][threadID] = AdoptedThreadBase(
+            messages: written.messages,
+            writtenShardDigest: written.writtenShardDigest,
+            sequence: adoptionSequence
+          )
+        }
         persistedGenerations[key] = max(persistedGenerations[key, default: 0], pending.generation)
         garbageCollectionPaths.insert(key)
         if pendingWrites[key] == nil,
@@ -533,20 +695,24 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
   private static func write(
     _ snapshot: AIChatTranscriptSnapshot,
-    legacyURL: URL
-  ) throws {
+    legacyURL: URL,
+    writer: AIChatTranscriptWriterIdentity? = nil,
+    bases: [UUID: AdoptedThreadBase] = [:]
+  ) throws -> [UUID: AdoptedThreadBase] {
     let fileManager = FileManager.default
     let storeURL = storeDirectory(for: legacyURL)
     let threadDirectory = threadsDirectory(storeURL: storeURL)
     let attachmentDirectory = attachmentsDirectory(storeURL: storeURL)
     let manifestDirectory = manifestsDirectory(storeURL: storeURL)
+    let headDirectory = headsDirectory(storeURL: storeURL)
     try fileManager.createDirectory(at: threadDirectory, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: manifestDirectory, withIntermediateDirectories: true)
-    guard ![storeURL, threadDirectory, attachmentDirectory, manifestDirectory]
+    try fileManager.createDirectory(at: headDirectory, withIntermediateDirectories: true)
+    guard ![storeURL, threadDirectory, attachmentDirectory, manifestDirectory, headDirectory]
       .contains(where: isSymbolicLink)
     else { throw TranscriptStoreError.unsafeStorePath }
-    for directory in [storeURL, threadDirectory, attachmentDirectory, manifestDirectory] {
+    for directory in [storeURL, threadDirectory, attachmentDirectory, manifestDirectory, headDirectory] {
       try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
 
@@ -555,25 +721,34 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       throw TranscriptStoreError.unrecoverableStore(priorState.recoveryStatus.description)
     }
     let priorManifest = priorState?.current
+    let priorEntriesByID = Dictionary(
+      (priorManifest?.threads ?? []).map { ($0.metadata.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     var entries: [ManifestThread] = []
+    var writtenBases: [UUID: AdoptedThreadBase] = [:]
     entries.reserveCapacity(snapshot.threads.count)
 
     for thread in snapshot.threads {
-      if snapshot.knownThreadIDs != nil,
-         let prior = priorManifest?.threads.first(where: { $0.metadata.id == thread.id }),
-         prior.metadata.updatedAt > thread.updatedAt {
-        entries.append(prior)
-        continue
-      }
+      let prior = priorEntriesByID[thread.id]
       if thread.storedMessageCount != nil {
-        if let prior = priorManifest?.threads.first(where: { $0.metadata.id == thread.id }) {
-          guard loadThreadShard(prior, storeURL: storeURL) != nil
+        if let prior {
+          guard isValidShard(prior, storeURL: storeURL)
           else { throw TranscriptStoreError.missingShard(thread.id) }
+          // A metadata-only copy cannot describe messages it never loaded.
+          // Keep a newer replica revision, or one whose message count this
+          // stale copy no longer matches, instead of mislabeling its shard.
+          if (snapshot.knownThreadIDs != nil && prior.metadata.updatedAt > thread.updatedAt)
+              || prior.metadata.storedMessageCount != thread.storedMessageCount {
+            entries.append(prior)
+            continue
+          }
           entries.append(ManifestThread(
             metadata: thread.metadataOnly(),
             shard: prior.shard,
             shardDigest: prior.shardDigest,
-            blobs: prior.blobs
+            blobs: prior.blobs,
+            deletedMessageIDs: prior.deletedMessageIDs
           ))
           continue
         }
@@ -621,6 +796,64 @@ final class AIChatTranscriptStore: @unchecked Sendable {
           attachments: references
         ))
       }
+
+      // Three-way merge against the persisted revision. A replica (another
+      // Mac, the headless server, or `org2 thread post`) may have appended
+      // messages or finished a turn in this conversation since this copy
+      // was loaded. Never overwrite that work with a stale local copy.
+      let base = bases[thread.id]
+      let localIDs = Set(thread.messages.map(\.id))
+      var tombstones = prior?.deletedMessageIDs ?? []
+      if let base {
+        for message in base.messages where !localIDs.contains(message.id) {
+          tombstones.append(message.id)
+        }
+      }
+      // A message this copy introduced (absent from the revision it was
+      // derived from) overrides an older deletion of the same ID. Without a
+      // base, the local copy is authoritative for everything it holds.
+      let baseIDs = Set(base?.messages.map(\.id) ?? [])
+      let reintroduced = base == nil ? localIDs : localIDs.subtracting(baseIDs)
+      tombstones = boundedTombstones(tombstones.filter { !reintroduced.contains($0) })
+      var metadata = thread
+      if let prior, prior.shardDigest != base?.writtenShardDigest,
+         let priorShard = loadThreadShard(prior, storeURL: storeURL) {
+        let merged = threeWayMerge(
+          local: storedMessages,
+          remote: priorShard.messages,
+          base: base?.messages,
+          tombstones: Set(tombstones)
+        )
+        if merged.map(\.message) != storedMessages.map(\.message)
+            || merged.map(\.attachments) != storedMessages.map(\.attachments) {
+          storedMessages = merged
+          threadBlobs = Set(merged.flatMap { $0.attachments.map(\.blob) })
+        }
+        if snapshot.knownThreadIDs != nil, prior.metadata.updatedAt > thread.updatedAt {
+          // Keep the newer replica's thread settings while retaining a local
+          // turn marker that still names an unresolved local message.
+          var newer = prior.metadata
+          if newer.pendingTurn == nil, let pendingTurn = thread.pendingTurn {
+            newer = newer.replacingPendingTurn(pendingTurn)
+          }
+          metadata = newer
+        }
+      } else if !tombstones.isEmpty {
+        let removed = Set(tombstones)
+        storedMessages.removeAll { removed.contains($0.message.id) }
+        threadBlobs = Set(storedMessages.flatMap { $0.attachments.map(\.blob) })
+      }
+      if let pendingTurn = metadata.pendingTurn,
+         !storedMessages.contains(where: {
+           $0.message.id == pendingTurn.userMessageID && $0.message.deliveryStatus == .sending
+         }),
+         thread.pendingTurn == nil {
+        metadata = metadata.replacingPendingTurn(nil)
+      }
+      let mergedMetadata = metadata
+        .hydrating(messages: storedMessages.map(\.message))
+        .replacingUpdatedAt(max(thread.updatedAt, prior?.metadata.updatedAt ?? thread.updatedAt))
+
       let shardData = try encoder.encode(ThreadShard(
         schema: ThreadShard.schemaValue,
         version: 1,
@@ -630,11 +863,17 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       let shardName = "threads/\(thread.id.uuidString.lowercased())-\(shardDigest.prefix(20)).json"
       try writeIfChanged(shardData, to: storeURL.appendingPathComponent(shardName))
       entries.append(ManifestThread(
-        metadata: thread.metadataOnly(),
+        metadata: mergedMetadata.metadataOnly(),
         shard: shardName,
         shardDigest: shardDigest,
-        blobs: threadBlobs.sorted()
+        blobs: threadBlobs.sorted(),
+        deletedMessageIDs: tombstones.isEmpty ? nil : tombstones
       ))
+      writtenBases[thread.id] = AdoptedThreadBase(
+        messages: thread.messages,
+        writtenShardDigest: shardDigest,
+        sequence: 0
+      )
     }
 
     // A snapshot can predate a synced thread. Absence only means deletion if
@@ -666,49 +905,56 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     let versionedManifestURL = manifestDirectory.appendingPathComponent(manifestName)
     try writeIfChanged(manifestData, to: versionedManifestURL)
 
-    // Updating this marker is the only commit point.
     // Recovery can synthesize a reconciled prior manifest from multiple
     // immutable sync branches. Persist that complete prior before referencing
-    // it so the marker never points only at an in-memory recovery result.
-    if let priorManifest {
+    // it so a head never points only at an in-memory recovery result.
+    let previousData = try priorManifest.map { try encoder.encode($0) }
+    if let priorManifest, let previousData {
       try writeIfChanged(
-        try encoder.encode(priorManifest),
+        previousData,
         to: manifestDirectory.appendingPathComponent("\(priorManifest.commitID).json")
       )
     }
-    let hasVersionedPrior = priorManifest != nil
-    let previousData = hasVersionedPrior ? priorManifest.flatMap { try? encoder.encode($0) } : nil
-    let previousName = hasVersionedPrior ? priorManifest.map { "\($0.commitID).json" } : nil
-    let marker = StoreMarker(
-      schema: StoreMarker.schemaValue,
+    let previousName = priorManifest.map { "\($0.commitID).json" }
+
+    // This writer's head is the commit point. No other process writes it.
+    let writer = writer ?? AIChatTranscriptWriterIdentity.persistent()
+    let head = StoreHead(
+      schema: StoreHead.schemaValue,
       version: 1,
+      writerID: writer.id,
+      writerLabel: writer.label,
       currentManifest: manifestName,
       currentDigest: digest(manifestData),
+      currentGeneration: manifest.generation,
       previousManifest: previousName,
-      previousDigest: previousData.map(digest)
+      previousDigest: previousData.map(digest),
+      updatedAt: Date()
     )
+    let headURL = headDirectory.appendingPathComponent("\(writer.id).json")
+    try encoder.encode(head).write(to: headURL, options: [.atomic])
+    try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: headURL.path)
+
+    // Builds that predate per-writer heads read only the historical marker.
+    // Create it once so they can open a new store (they also reconcile every
+    // unseen immutable manifest), but never rewrite it: a shared, mutable
+    // marker was the main source of synchronization conflicts.
     let markerURL = storeURL.appendingPathComponent("migration-marker.json")
     let previousMarkerURL = storeURL.appendingPathComponent("migration-marker.previous.json")
-    let markerData = try encoder.encode(marker)
-    if let existingMarker = try? Data(contentsOf: markerURL, options: .mappedIfSafe) {
-      try existingMarker.write(to: previousMarkerURL, options: [.atomic])
-    } else {
-      // The first commit is redundant too; losing one marker must never make
-      // the stale legacy monolith eligible again.
+    if !fileManager.fileExists(atPath: markerURL.path),
+       !fileManager.fileExists(atPath: previousMarkerURL.path) {
+      let markerData = try encoder.encode(StoreMarker(
+        schema: StoreMarker.schemaValue,
+        version: 1,
+        currentManifest: manifestName,
+        currentDigest: digest(manifestData),
+        previousManifest: previousName,
+        previousDigest: previousData.map(digest)
+      ))
       try markerData.write(to: previousMarkerURL, options: [.atomic])
-    }
-    try markerData.write(
-      to: markerURL,
-      options: [.atomic]
-    )
-    try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerURL.path)
-    try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: previousMarkerURL.path)
-
-    // Human-inspectable redundant views. Recovery does not depend on these
-    // when the marker and its immutable manifests are intact.
-    try writeIfChanged(manifestData, to: storeURL.appendingPathComponent("manifest.json"))
-    if let previousData {
-      try writeIfChanged(previousData, to: storeURL.appendingPathComponent("manifest.previous.json"))
+      try markerData.write(to: markerURL, options: [.atomic])
+      try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerURL.path)
+      try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: previousMarkerURL.path)
     }
 
     // New corpora still get a small compatibility pointer at the historical
@@ -721,6 +967,93 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       try manifestData.write(to: legacyURL, options: [.atomic])
       try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: legacyURL.path)
     }
+    return writtenBases
+  }
+
+  /// Merge a locally written message list with the persisted revision. `base`
+  /// is the list the local copy was derived from; without one, every message
+  /// that only the replica has is treated as a concurrent addition.
+  private static func threeWayMerge(
+    local: [StoredMessage],
+    remote: [StoredMessage],
+    base: [OpenClawChatMessage]?,
+    tombstones: Set<UUID>
+  ) -> [StoredMessage] {
+    var remoteByID: [UUID: StoredMessage] = [:]
+    for message in remote { remoteByID[message.message.id] = message }
+    var baseByID: [UUID: OpenClawChatMessage] = [:]
+    for message in base ?? [] { baseByID[message.id] = message }
+    func matches(_ stored: StoredMessage, _ message: OpenClawChatMessage) -> Bool {
+      stored.message == message.replacingAttachments([])
+        && stored.attachments.map(\.id) == message.attachments.map(\.id)
+    }
+    var result = local.compactMap { local -> StoredMessage? in
+      if tombstones.contains(local.message.id) { return nil }
+      guard let remote = remoteByID[local.message.id], remote != local else { return local }
+      if let base = baseByID[local.message.id] {
+        if matches(local, base) { return remote }
+        if matches(remote, base) { return local }
+      }
+      return deliveryRank(remote.message) > deliveryRank(local.message) ? remote : local
+    }
+    let localIDs = Set(local.map(\.message.id))
+    let additions = remote.filter {
+      !localIDs.contains($0.message.id)
+        && !tombstones.contains($0.message.id)
+        && baseByID[$0.message.id] == nil
+    }
+    insertByCreationTime(additions, into: &result)
+    return result
+  }
+
+  /// Merge two divergent persisted revisions of one conversation. Neither
+  /// side is an ancestor of the other, so the union is kept; a message both
+  /// sides changed keeps its most resolved delivery state.
+  private static func unionMerge(
+    primary: [StoredMessage],
+    other: [StoredMessage],
+    tombstones: Set<UUID>
+  ) -> [StoredMessage] {
+    var otherByID: [UUID: StoredMessage] = [:]
+    for message in other { otherByID[message.message.id] = message }
+    var result = primary.compactMap { message -> StoredMessage? in
+      if tombstones.contains(message.message.id) { return nil }
+      guard let replica = otherByID[message.message.id], replica != message else { return message }
+      return deliveryRank(replica.message) > deliveryRank(message.message) ? replica : message
+    }
+    let primaryIDs = Set(primary.map(\.message.id))
+    insertByCreationTime(
+      other.filter { !primaryIDs.contains($0.message.id) && !tombstones.contains($0.message.id) },
+      into: &result
+    )
+    return result
+  }
+
+  private static func insertByCreationTime(
+    _ additions: [StoredMessage],
+    into result: inout [StoredMessage]
+  ) {
+    for addition in additions.sorted(by: { $0.message.createdAt < $1.message.createdAt }) {
+      let index = result.lastIndex(where: { $0.message.createdAt <= addition.message.createdAt })
+        .map { $0 + 1 } ?? 0
+      result.insert(addition, at: index)
+    }
+  }
+
+  private static func deliveryRank(_ message: OpenClawChatMessage) -> Int {
+    guard message.role == .user else { return 0 }
+    switch message.deliveryStatus {
+    case .sending: return 1
+    case .failed, .interrupted: return 2
+    case .sent: return 3
+    }
+  }
+
+  private static func boundedTombstones(_ values: [UUID]) -> [UUID] {
+    var seen = Set<UUID>()
+    var ordered: [UUID] = []
+    for value in values where seen.insert(value).inserted { ordered.append(value) }
+    return Array(ordered.suffix(tombstoneLimit))
   }
 
   private static func loadStoreState(legacyURL: URL) -> StoreState? {
@@ -730,59 +1063,64 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     let currentViewURL = storeURL.appendingPathComponent("manifest.json")
     let previousViewURL = storeURL.appendingPathComponent("manifest.previous.json")
     let markerURLs = [markerURL, previousMarkerURL]
+    let heads = headPointers(storeURL: storeURL)
     let markerExists = markerURLs.contains { FileManager.default.fileExists(atPath: $0.path) }
+      || hasHeadFiles(storeURL: storeURL)
+    let legacyPrimary = legacyPointer(at: markerURL)
+    let legacyPrevious = legacyPointer(at: previousMarkerURL)
 
+    // Every writer's head is an equally valid commit point. Prefer the newest
+    // complete one and reconcile the rest as synchronized branches. The
+    // historical marker is authoritative only for stores without heads.
     var recoveryCandidates: [Manifest] = []
-    if let markerData = try? Data(contentsOf: markerURL, options: .mappedIfSafe),
-       let marker = try? JSONDecoder().decode(StoreMarker.self, from: markerData),
-       marker.schema == StoreMarker.schemaValue,
-       marker.version == 1,
-       isValidDigest(marker.currentDigest),
-       marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true {
+    var completeTips: [(current: Manifest, previous: Manifest?)] = []
+    for pointer in heads.isEmpty ? [legacyPrimary].compactMap({ $0 }) : heads {
       if let current = loadManifestCandidate(
-        named: marker.currentManifest,
-        expectedDigest: marker.currentDigest,
+        named: pointer.currentManifest,
+        expectedDigest: pointer.currentDigest,
         storeURL: storeURL
       ) {
         recoveryCandidates.append(current)
         if isComplete(current, storeURL: storeURL) {
-          let previous = marker.previousManifest.flatMap {
-            loadManifest(named: $0, expectedDigest: marker.previousDigest, storeURL: storeURL)
+          let previous = pointer.previousManifest.flatMap {
+            loadManifest(named: $0, expectedDigest: pointer.previousDigest, storeURL: storeURL)
           }
-          return reconciledSyncedStoreState(
-            primary: current,
-            previous: previous,
-            storeURL: storeURL
-          )
+          completeTips.append((current, previous))
+          continue
         }
       }
-      if let previousName = marker.previousManifest,
+      if let previousName = pointer.previousManifest,
          let previous = loadManifestCandidate(
           named: previousName,
-          expectedDigest: marker.previousDigest,
+          expectedDigest: pointer.previousDigest,
           storeURL: storeURL
          ) {
         recoveryCandidates.append(previous)
       }
     }
+    if let best = completeTips.max(by: {
+      ($0.current.generation, $0.current.commitID) < ($1.current.generation, $1.current.commitID)
+    }) {
+      return reconciledSyncedStoreState(
+        primary: best.current,
+        previous: best.previous,
+        storeURL: storeURL
+      )
+    }
 
-    if let markerData = try? Data(contentsOf: previousMarkerURL, options: .mappedIfSafe),
-       let marker = try? JSONDecoder().decode(StoreMarker.self, from: markerData),
-       marker.schema == StoreMarker.schemaValue,
-       marker.version == 1,
-       isValidDigest(marker.currentDigest),
-       marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true {
+    for pointer in (heads.isEmpty ? [] : [legacyPrimary].compactMap({ $0 }))
+      + [legacyPrevious].compactMap({ $0 }) {
       if let current = loadManifestCandidate(
-        named: marker.currentManifest,
-        expectedDigest: marker.currentDigest,
+        named: pointer.currentManifest,
+        expectedDigest: pointer.currentDigest,
         storeURL: storeURL
       ) {
         recoveryCandidates.append(current)
       }
-      if let previousName = marker.previousManifest,
+      if let previousName = pointer.previousManifest,
          let previous = loadManifestCandidate(
           named: previousName,
-          expectedDigest: marker.previousDigest,
+          expectedDigest: pointer.previousDigest,
           storeURL: storeURL
          ) {
         recoveryCandidates.append(previous)
@@ -890,30 +1228,95 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   /// falls back to the exhaustive recovery scan before any data is exposed.
   private static func loadFastStoreState(legacyURL: URL) -> StoreState? {
     let storeURL = storeDirectory(for: legacyURL)
-    let markerURL = storeURL.appendingPathComponent("migration-marker.json")
-    guard let markerData = try? Data(contentsOf: markerURL, options: .mappedIfSafe),
-          let marker = try? JSONDecoder().decode(StoreMarker.self, from: markerData),
-          marker.schema == StoreMarker.schemaValue,
-          marker.version == 1,
-          isValidDigest(marker.currentDigest),
-          marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true,
-          let current = loadManifestCandidate(
-            named: marker.currentManifest,
-            expectedDigest: marker.currentDigest,
-            storeURL: storeURL
-          )
-    else { return nil }
-    let previous = marker.previousManifest.flatMap {
-      loadManifestCandidate(
-        named: $0,
-        expectedDigest: marker.previousDigest,
+    let heads = headPointers(storeURL: storeURL)
+    let pointers = heads.isEmpty
+      ? [legacyPointer(at: storeURL.appendingPathComponent("migration-marker.json"))].compactMap { $0 }
+      : heads
+    for pointer in pointers {
+      guard let current = loadManifestCandidate(
+        named: pointer.currentManifest,
+        expectedDigest: pointer.currentDigest,
+        storeURL: storeURL
+      ) else { continue }
+      let previous = pointer.previousManifest.flatMap {
+        loadManifestCandidate(
+          named: $0,
+          expectedDigest: pointer.previousDigest,
+          storeURL: storeURL
+        )
+      }
+      return reconciledSyncedStoreState(
+        primary: current,
+        previous: previous,
         storeURL: storeURL
       )
     }
-    return reconciledSyncedStoreState(
-      primary: current,
-      previous: previous,
-      storeURL: storeURL
+    return nil
+  }
+
+  private struct CommitPointer {
+    let currentManifest: String
+    let currentDigest: String
+    let previousManifest: String?
+    let previousDigest: String?
+    let generation: UInt64
+  }
+
+  /// Valid writer heads, newest generation first.
+  private static func headPointers(storeURL: URL) -> [CommitPointer] {
+    let directory = headsDirectory(storeURL: storeURL)
+    guard !isSymbolicLink(directory),
+          let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+          )
+    else { return [] }
+    let decoder = JSONDecoder()
+    return urls.compactMap { url -> CommitPointer? in
+      guard url.pathExtension == "json",
+            !isSymbolicLink(url),
+            let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+            let head = try? decoder.decode(StoreHead.self, from: data),
+            head.schema == StoreHead.schemaValue,
+            head.version == 1,
+            isValidDigest(head.currentDigest),
+            head.previousManifest == nil || head.previousDigest.map(isValidDigest) == true
+      else { return nil }
+      return CommitPointer(
+        currentManifest: head.currentManifest,
+        currentDigest: head.currentDigest,
+        previousManifest: head.previousManifest,
+        previousDigest: head.previousDigest,
+        generation: head.currentGeneration
+      )
+    }.sorted {
+      if $0.generation != $1.generation { return $0.generation > $1.generation }
+      return $0.currentManifest > $1.currentManifest
+    }
+  }
+
+  private static func hasHeadFiles(storeURL: URL) -> Bool {
+    let names = (try? FileManager.default.contentsOfDirectory(
+      atPath: headsDirectory(storeURL: storeURL).path
+    )) ?? []
+    return names.contains { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+  }
+
+  private static func legacyPointer(at url: URL) -> CommitPointer? {
+    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+          let marker = try? JSONDecoder().decode(StoreMarker.self, from: data),
+          marker.schema == StoreMarker.schemaValue,
+          marker.version == 1,
+          isValidDigest(marker.currentDigest),
+          marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true
+    else { return nil }
+    return CommitPointer(
+      currentManifest: marker.currentManifest,
+      currentDigest: marker.currentDigest,
+      previousManifest: marker.previousManifest,
+      previousDigest: marker.previousDigest,
+      generation: 0
     )
   }
 
@@ -932,7 +1335,8 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     if let previous { mergedCommitIDs.insert(previous.commitID) }
     let unseenCandidates = recoveryManifestCandidates(
       storeURL: storeURL,
-      excludingCommitIDs: mergedCommitIDs
+      excludingCommitIDs: mergedCommitIDs,
+      includesRootViews: false
     )
     guard !unseenCandidates.isEmpty else {
       return StoreState(current: primary, previous: previous, recoveryStatus: .healthy)
@@ -1005,7 +1409,8 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
   private static func recoveryManifestCandidates(
     storeURL: URL,
-    excludingCommitIDs: Set<String> = []
+    excludingCommitIDs: Set<String> = [],
+    includesRootViews: Bool = true
   ) -> [Manifest] {
     let fileManager = FileManager.default
     let manifestDirectory = manifestsDirectory(storeURL: storeURL)
@@ -1021,7 +1426,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     )) ?? []).filter {
       $0.lastPathComponent.hasPrefix("manifest") && $0.pathExtension == "json"
     }
-    urls += rootViews
+    // Root views are redundant copies (or conflict copies) of immutable
+    // commits. Routine reconciliation reads the immutable directory only.
+    if includesRootViews { urls += rootViews }
     return urls.compactMap { url in
       if url.deletingLastPathComponent().standardizedFileURL == manifestDirectory.standardizedFileURL,
          url.pathExtension == "json",
@@ -1053,7 +1460,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     var validatedEntries: [ManifestThread: Bool] = [:]
     func isValid(_ entry: ManifestThread) -> Bool {
       if let cached = validatedEntries[entry] { return cached }
-      let valid = loadThreadShard(entry, storeURL: storeURL) != nil
+      let valid = isValidShard(entry, storeURL: storeURL)
       validatedEntries[entry] = valid
       return valid
     }
@@ -1068,16 +1475,60 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     for candidate in sorted {
       for entry in candidate.threads {
         candidateEntries[entry.metadata.id, default: []].append(
-          RecoverySelectedEntry(entry: entry, generation: candidate.generation)
+          RecoverySelectedEntry(
+            entry: entry,
+            generation: candidate.generation,
+            commitID: candidate.commitID
+          )
         )
       }
     }
-    let selectedEntries = candidateEntries.compactMapValues { revisions in
+    var selectedEntries = candidateEntries.compactMapValues { revisions in
       revisions.sorted { prefersRecoveryEntry($0, over: $1) }.first(where: {
         isValid($0.entry)
       })
     }
     guard !selectedEntries.isEmpty else { return nil }
+
+    // Two writers can extend the same conversation concurrently (a phone
+    // message relayed by the server while this Mac finishes a turn). When
+    // neither branch subsumes the other, keep both sides' messages instead
+    // of letting the newer thread timestamp hide the other's work.
+    var subsumedByCommit: [String: Set<String>] = [:]
+    for candidate in sorted where subsumedByCommit[candidate.commitID] == nil {
+      subsumedByCommit[candidate.commitID] = Set(
+        [candidate.commitID]
+          + (candidate.ancestorCommitIDs ?? [])
+          + (candidate.mergedCommitIDs ?? [])
+      )
+    }
+    let tipCommitIDs = Set(subsumedByCommit.keys.filter { commitID in
+      !subsumedByCommit.contains { other, subsumed in
+        other != commitID && subsumed.contains(commitID)
+      }
+    })
+    for (threadID, selected) in selectedEntries {
+      let subsumed = subsumedByCommit[selected.commitID] ?? [selected.commitID]
+      var seenDigests: Set<String> = [selected.entry.shardDigest]
+      let divergent = (candidateEntries[threadID] ?? []).filter { revision in
+        tipCommitIDs.contains(revision.commitID)
+          && !subsumed.contains(revision.commitID)
+          && seenDigests.insert(revision.entry.shardDigest).inserted
+          && isValid(revision.entry)
+      }
+      guard !divergent.isEmpty,
+            let merged = unionMergedEntry(
+              selected.entry,
+              with: divergent.map(\.entry),
+              storeURL: storeURL
+            )
+      else { continue }
+      selectedEntries[threadID] = RecoverySelectedEntry(
+        entry: merged,
+        generation: selected.generation,
+        commitID: selected.commitID
+      )
+    }
 
     let baseIDs = completeBase.threads.map { $0.metadata.id }
     let additionalIDs = selectedEntries.keys.filter { !baseIDs.contains($0) }.sorted {
@@ -1173,9 +1624,58 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private static func isComplete(_ manifest: Manifest, storeURL: URL) -> Bool {
     guard isStructurallyValid(manifest) else { return false }
     for entry in manifest.threads {
-      guard loadThreadShard(entry, storeURL: storeURL) != nil else { return false }
+      guard isValidShard(entry, storeURL: storeURL) else { return false }
     }
     return true
+  }
+
+  /// Shards are immutable and content-addressed. Cache successful full
+  /// validations keyed by the entry and the file's size and modification
+  /// time, so selecting a commit does not rehash every conversation on each
+  /// save while a replaced, truncated, or deleted file is still revalidated.
+  private final class ShardValidationCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var validated: Set<String> = []
+
+    func contains(_ key: String) -> Bool {
+      lock.lock()
+      defer { lock.unlock() }
+      return validated.contains(key)
+    }
+
+    func insert(_ key: String) {
+      lock.lock()
+      if validated.count > 20_000 { validated.removeAll(keepingCapacity: true) }
+      validated.insert(key)
+      lock.unlock()
+    }
+  }
+
+  private static let shardValidationCache = ShardValidationCache()
+
+  private static func shardValidationKey(_ entry: ManifestThread, storeURL: URL) -> String? {
+    let url = storeURL.appendingPathComponent(entry.shard)
+    guard let values = try? url.resourceValues(forKeys: [
+      .fileSizeKey, .contentModificationDateKey, .isRegularFileKey,
+    ]),
+          values.isRegularFile == true,
+          let size = values.fileSize,
+          let modifiedAt = values.contentModificationDate
+    else { return nil }
+    let count = entry.metadata.storedMessageCount.map(String.init) ?? "-"
+    let blobs = entry.blobs?.joined(separator: ",") ?? "-"
+    return [
+      url.path, entry.shardDigest, count, blobs, String(size),
+      String(modifiedAt.timeIntervalSinceReferenceDate),
+    ].joined(separator: "|")
+  }
+
+  private static func isValidShard(_ entry: ManifestThread, storeURL: URL) -> Bool {
+    if let key = shardValidationKey(entry, storeURL: storeURL),
+       shardValidationCache.contains(key) {
+      return true
+    }
+    return loadThreadShard(entry, storeURL: storeURL) != nil
   }
 
   private static func loadThreadShard(
@@ -1209,6 +1709,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     if let blobs = entry.blobs {
       let referenced = Set(shard.messages.flatMap { $0.attachments.map(\.blob) })
       guard Set(blobs) == referenced, Set(blobs).count == blobs.count else { return nil }
+    }
+    if let key = shardValidationKey(entry, storeURL: storeURL) {
+      shardValidationCache.insert(key)
     }
     return shard
   }
@@ -1250,8 +1753,23 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       storeURL: storeURL,
       modifiedAfter: cutoff
     )
+    // Every writer's head (and its previous commit) stays loadable even when
+    // that writer has been offline longer than the grace interval.
+    let headManifests = headPointers(storeURL: storeURL).flatMap { pointer in
+      [
+        loadManifestCandidate(
+          named: pointer.currentManifest,
+          expectedDigest: pointer.currentDigest,
+          storeURL: storeURL
+        ),
+        pointer.previousManifest.flatMap {
+          loadManifestCandidate(named: $0, expectedDigest: pointer.previousDigest, storeURL: storeURL)
+        },
+      ].compactMap { $0 }
+    }
     let retainedManifests = [current, state.previous].compactMap { $0 }
       + recentManifestFiles.map(\.manifest)
+      + headManifests
     var retainedCommitFiles = Set(retainedManifests.map { "\($0.commitID).json" })
     retainedCommitFiles.formUnion(recentManifestFiles.compactMap { file in
       file.url.deletingLastPathComponent().standardizedFileURL
@@ -1301,6 +1819,53 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private struct RecoverySelectedEntry {
     let entry: ManifestThread
     let generation: UInt64
+    let commitID: String
+  }
+
+  /// Persist the message union of divergent revisions as a new immutable,
+  /// content-addressed shard. Identical inputs produce identical bytes on
+  /// every replica, so concurrent readers converge on the same file.
+  private static func unionMergedEntry(
+    _ primary: ManifestThread,
+    with others: [ManifestThread],
+    storeURL: URL
+  ) -> ManifestThread? {
+    guard let primaryShard = loadThreadShard(primary, storeURL: storeURL) else { return nil }
+    var tombstones = primary.deletedMessageIDs ?? []
+    var messages = primaryShard.messages
+    var latest = primary.metadata.updatedAt
+    for other in others {
+      guard let shard = loadThreadShard(other, storeURL: storeURL) else { continue }
+      tombstones += other.deletedMessageIDs ?? []
+      messages = unionMerge(primary: messages, other: shard.messages, tombstones: Set(tombstones))
+      latest = max(latest, other.metadata.updatedAt)
+    }
+    tombstones = boundedTombstones(tombstones)
+    guard messages != primaryShard.messages else { return nil }
+    guard let shardData = try? encoder.encode(ThreadShard(
+      schema: ThreadShard.schemaValue,
+      version: 1,
+      messages: messages
+    )) else { return nil }
+    let shardDigest = digest(shardData)
+    let threadID = primary.metadata.id
+    let shardName = "threads/\(threadID.uuidString.lowercased())-\(shardDigest.prefix(20)).json"
+    do {
+      try writeIfChanged(shardData, to: storeURL.appendingPathComponent(shardName))
+    } catch {
+      return nil
+    }
+    let metadata = primary.metadata
+      .hydrating(messages: messages.map(\.message))
+      .replacingUpdatedAt(latest)
+      .metadataOnly()
+    return ManifestThread(
+      metadata: metadata,
+      shard: shardName,
+      shardDigest: shardDigest,
+      blobs: Set(messages.flatMap { $0.attachments.map(\.blob) }).sorted(),
+      deletedMessageIDs: tombstones.isEmpty ? nil : tombstones
+    )
   }
 
   private static func recoveryManifestFiles(
@@ -1421,6 +1986,10 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private static func manifestsDirectory(storeURL: URL) -> URL {
     storeURL.appendingPathComponent("manifests", isDirectory: true)
   }
+
+  private static func headsDirectory(storeURL: URL) -> URL {
+    storeURL.appendingPathComponent(headsDirectoryName, isDirectory: true)
+  }
 }
 
 private struct StoreState {
@@ -1458,6 +2027,31 @@ private struct ManifestThread: Codable, Hashable {
   let shard: String
   let shardDigest: String
   let blobs: [String]?
+  /// Message IDs a writer deliberately removed (for example a dequeued
+  /// follow-up). Merges never resurrect them from a replica.
+  var deletedMessageIDs: [UUID]? = nil
+}
+
+private struct StoreHead: Codable {
+  static let schemaValue = "org2:ai-chat-transcript-head:v1"
+  let schema: String
+  let version: Int
+  let writerID: String
+  let writerLabel: String?
+  let currentManifest: String
+  let currentDigest: String
+  let currentGeneration: UInt64
+  let previousManifest: String?
+  let previousDigest: String?
+  let updatedAt: Date
+}
+
+struct AdoptedThreadBase: Sendable {
+  let messages: [OpenClawChatMessage]
+  /// Digest of the shard this process last committed for the thread. When
+  /// the persisted revision still has this digest no replica changed it.
+  let writtenShardDigest: String?
+  let sequence: UInt64
 }
 
 private struct LegacyManifest: Codable {
@@ -1476,12 +2070,12 @@ private struct ThreadShard: Codable {
   let messages: [StoredMessage]
 }
 
-private struct StoredMessage: Codable {
+private struct StoredMessage: Codable, Hashable {
   let message: OpenClawChatMessage
   let attachments: [StoredAttachment]
 }
 
-private struct StoredAttachment: Codable {
+private struct StoredAttachment: Codable, Hashable {
   let id: UUID
   let fileName: String
   let mimeType: String

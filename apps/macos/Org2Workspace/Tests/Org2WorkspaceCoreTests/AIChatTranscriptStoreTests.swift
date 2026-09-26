@@ -44,9 +44,11 @@ final class AIChatTranscriptStoreTests: XCTestCase {
 
     XCTAssertEqual(try Data(contentsOf: transcriptURL), legacyData)
     let storeDirectory = AIChatTranscriptStore.storeDirectory(for: transcriptURL)
-    XCTAssertTrue(FileManager.default.fileExists(
-      atPath: storeDirectory.appendingPathComponent("manifest.json").path
-    ))
+    XCTAssertTrue(AIChatTranscriptStore.hasCommittedStore(for: transcriptURL))
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: storeDirectory.appendingPathComponent("manifest.json").path),
+      "Shared mutable manifest views are no longer rewritten"
+    )
     let blobs = try FileManager.default.contentsOfDirectory(
       at: storeDirectory.appendingPathComponent("attachments"),
       includingPropertiesForKeys: nil
@@ -112,8 +114,10 @@ final class AIChatTranscriptStoreTests: XCTestCase {
       loaded.snapshot.threads.filter { !$0.messages.isEmpty }.map(\.id),
       Array(threads.prefix(12).map(\.id))
     )
-    let manifest = AIChatTranscriptStore.storeDirectory(for: transcriptURL)
-      .appendingPathComponent("manifest.json")
+    let storeURL = AIChatTranscriptStore.storeDirectory(for: transcriptURL)
+    let manifest = storeURL.appendingPathComponent(
+      "manifests/\(try XCTUnwrap(try markerObject(storeURL: storeURL)["currentManifest"] as? String))"
+    )
     let manifestBytes = try XCTUnwrap(
       try manifest.resourceValues(forKeys: [.fileSizeKey]).fileSize
     )
@@ -451,6 +455,7 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     )
     AIChatTranscriptStore.shared.waitUntilIdleForTesting()
     let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    try Data("corrupt head".utf8).write(to: try headURL(storeURL: storeURL), options: .atomic)
     try Data("corrupt marker".utf8).write(
       to: storeURL.appendingPathComponent("migration-marker.json"),
       options: .atomic
@@ -488,10 +493,13 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     AIChatTranscriptStore.shared.waitUntilIdleForTesting()
 
     let storeURL = AIChatTranscriptStore.storeDirectory(for: fixture.transcriptURL)
+    let headNames = try FileManager.default.contentsOfDirectory(
+      atPath: storeURL.appendingPathComponent("heads").path
+    ).map { "heads/\($0)" }
     for name in [
       "migration-marker.json", "migration-marker.previous.json",
       "manifest.json", "manifest.previous.json",
-    ] {
+    ] + headNames {
       let candidate = storeURL.appendingPathComponent(name)
       if FileManager.default.fileExists(atPath: candidate.path) {
         try Data("corrupt \(name)".utf8).write(to: candidate, options: .atomic)
@@ -1606,10 +1614,7 @@ final class AIChatTranscriptStoreTests: XCTestCase {
     XCTAssertLessThan(synchronousDuration, .milliseconds(150))
     await store.waitForAIChatTranscriptLoadForTesting()
     XCTAssertEqual(store.openClawMessages.first?.content.count, message.content.count)
-    XCTAssertTrue(FileManager.default.fileExists(
-      atPath: AIChatTranscriptStore.storeDirectory(for: transcriptURL)
-        .appendingPathComponent("manifest.json").path
-    ))
+    XCTAssertTrue(AIChatTranscriptStore.hasCommittedStore(for: transcriptURL))
   }
 }
 
@@ -1635,9 +1640,18 @@ private extension AIChatTranscriptStoreTests {
     )
   }
 
+  /// This writer's head: the commit point of every write from this process.
   func markerObject(storeURL: URL) throws -> [String: Any] {
-    let data = try Data(contentsOf: storeURL.appendingPathComponent("migration-marker.json"))
+    let data = try Data(contentsOf: try headURL(storeURL: storeURL))
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  }
+
+  func headURL(storeURL: URL) throws -> URL {
+    let heads = storeURL.appendingPathComponent("heads", isDirectory: true)
+    let names = try FileManager.default.contentsOfDirectory(atPath: heads.path)
+      .filter { $0.hasSuffix(".json") }
+    XCTAssertEqual(names.count, 1, "Tests expect a single writer")
+    return heads.appendingPathComponent(try XCTUnwrap(names.first))
   }
 
   func encodedLegacyTranscript(_ threads: [OpenClawChatThread]) throws -> Data {

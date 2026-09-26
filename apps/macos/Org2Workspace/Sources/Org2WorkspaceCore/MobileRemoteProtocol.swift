@@ -358,6 +358,8 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
   public let preview: String?
   public let latestAssistantMessageID: UUID?
   public let latestAssistantPreview: String?
+  /// The host running (or that last ran) the conversation, e.g. "OpenOrg on press".
+  public let executionHostName: String?
 
   public init(
     id: UUID,
@@ -374,7 +376,8 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     unreadMessageCount: Int,
     preview: String?,
     latestAssistantMessageID: UUID? = nil,
-    latestAssistantPreview: String? = nil
+    latestAssistantPreview: String? = nil,
+    executionHostName: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -391,6 +394,7 @@ public struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable, Sendab
     self.preview = preview
     self.latestAssistantMessageID = latestAssistantMessageID
     self.latestAssistantPreview = latestAssistantPreview
+    self.executionHostName = executionHostName
   }
 }
 
@@ -441,6 +445,13 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
   public let audienceDestinationNames: [String]?
   public let isRoomDispatchCopy: Bool
   public let roomRoundID: UUID?
+  /// Where the message came from and which host handled it, e.g.
+  /// "Avi's iPhone via OpenOrg on press · runs on AiroPress".
+  public let provenanceCaption: String?
+  public let originClient: String?
+  public let originDeviceName: String?
+  public let receivedByHostName: String?
+  public let executionHostName: String?
 
   public init(
     id: UUID,
@@ -457,8 +468,18 @@ public struct MobileRemoteChatMessage: Codable, Hashable, Identifiable, Sendable
     audience: String? = nil,
     audienceDestinationNames: [String]? = nil,
     isRoomDispatchCopy: Bool = false,
-    roomRoundID: UUID? = nil
+    roomRoundID: UUID? = nil,
+    provenanceCaption: String? = nil,
+    originClient: String? = nil,
+    originDeviceName: String? = nil,
+    receivedByHostName: String? = nil,
+    executionHostName: String? = nil
   ) {
+    self.provenanceCaption = provenanceCaption
+    self.originClient = originClient
+    self.originDeviceName = originDeviceName
+    self.receivedByHostName = receivedByHostName
+    self.executionHostName = executionHostName
     self.id = id
     self.role = role
     self.content = content

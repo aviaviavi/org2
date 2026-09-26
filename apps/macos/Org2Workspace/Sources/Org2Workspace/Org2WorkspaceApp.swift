@@ -71,6 +71,7 @@ struct Org2WorkspaceApp: App {
           mobileRemote.startIfConfigured()
           store.setSourceAutoSyncActive(true)
           store.setAutomationSchedulerActive(true)
+          store.setAIChatLivePresenceActive(true)
         }
     }
     .windowToolbarStyle(.unifiedCompact(showsTitle: false))

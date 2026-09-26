@@ -159,13 +159,16 @@ public struct MobileRemoteMessagePreview: Equatable, Sendable {
 public struct MobileRemoteThreadProjectionContext: Sendable {
   public let destinationNamesByID: [String: String]
   public let runningThreadIDs: Set<UUID>
+  public let executionHostNamesByThreadID: [UUID: String]
 
   public init(
     destinationNamesByID: [String: String],
-    runningThreadIDs: Set<UUID>
+    runningThreadIDs: Set<UUID>,
+    executionHostNamesByThreadID: [UUID: String] = [:]
   ) {
     self.destinationNamesByID = destinationNamesByID
     self.runningThreadIDs = runningThreadIDs
+    self.executionHostNamesByThreadID = executionHostNamesByThreadID
   }
 }
 
@@ -238,7 +241,12 @@ public enum MobileRemoteThreadProjection {
             context.threads.destinationNamesByID[$0]
           },
           isRoomDispatchCopy: message.isRoomDispatchCopy,
-          roomRoundID: message.roomRoundID
+          roomRoundID: message.roomRoundID,
+          provenanceCaption: message.provenance?.caption(role: message.role),
+          originClient: message.provenance?.originClient?.rawValue,
+          originDeviceName: message.provenance?.originDeviceName,
+          receivedByHostName: message.provenance?.receivedByHostName,
+          executionHostName: message.provenance?.executionHostName
         )
       },
       activeDestinationName: context.activeDestinationName,
@@ -289,7 +297,10 @@ public enum MobileRemoteThreadProjection {
       unreadMessageCount: thread.unreadMessageCount,
       preview: latestPreview?.text,
       latestAssistantMessageID: latestAssistantMessage?.id,
-      latestAssistantPreview: latestAssistantPreview?.text
+      latestAssistantPreview: latestAssistantPreview?.text,
+      executionHostName: context.executionHostNamesByThreadID[thread.id]
+        ?? thread.messages.last(where: { $0.provenance?.executionHostName != nil })?
+          .provenance?.executionHostName
     )
   }
 }

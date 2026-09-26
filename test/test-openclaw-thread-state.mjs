@@ -381,4 +381,60 @@ try {
   fs.rmSync(v1Root, { recursive: true, force: true });
 }
 
+const headsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-openclaw-heads-"));
+try {
+  const metadataFor = (id, title, updated) => ({
+    id,
+    title,
+    createdAt: appleReferenceDateSeconds(old),
+    updatedAt: appleReferenceDateSeconds(updated),
+    sessionKey: `agent:main:${id}`,
+    isPinned: false,
+    isArchived: false,
+    unreadMessageCount: 0,
+  });
+  const laptopThread = "11111111-1111-4111-8111-111111111111";
+  const serverThread = "22222222-2222-4222-8222-222222222222";
+  const stale = writeShardedV2Store(headsRoot, {
+    generation: 1,
+    threads: [{ metadata: metadataFor(laptopThread, "Stale title", old), messages: [message()] }],
+  });
+  const staleMarker = fs.readFileSync(stale.markerFile);
+  const laptop = writeShardedV2Store(headsRoot, {
+    generation: 2,
+    threads: [{ metadata: metadataFor(laptopThread, "Laptop title", recent), messages: [message()] }],
+  });
+  const server = writeShardedV2Store(headsRoot, {
+    generation: 2,
+    threads: [{ metadata: metadataFor(serverThread, "Server automation", recent), messages: [message()] }],
+  });
+  // New builds never rewrite the historical marker; each writer owns a head.
+  fs.writeFileSync(stale.markerFile, staleMarker);
+  fs.rmSync(path.join(stale.storeRoot, "manifest.json"), { force: true });
+  const headsDirectory = path.join(stale.storeRoot, "heads");
+  fs.mkdirSync(headsDirectory, { recursive: true });
+  for (const [writer, fixture] of [["laptop", laptop], ["server", server]]) {
+    fs.writeFileSync(path.join(headsDirectory, `${writer}.json`), encodedJSON({
+      schema: "org2:ai-chat-transcript-head:v1",
+      version: 1,
+      writerID: writer,
+      currentManifest: path.basename(fixture.manifestFile),
+      currentDigest: sha256(fixture.manifestData),
+      currentGeneration: 2,
+      previousManifest: null,
+      previousDigest: null,
+      updatedAt: "2026-07-25T12:00:00Z",
+    }));
+  }
+  const state = loadOpenClawThreadState(headsRoot);
+  assert.equal(state.recoveryStatus, "healthy");
+  assert.deepEqual(
+    state.threads.map((entry) => entry.title).sort(),
+    ["Laptop title", "Server automation"],
+    "Every writer head is read and divergent heads are reconciled",
+  );
+} finally {
+  fs.rmSync(headsRoot, { recursive: true, force: true });
+}
+
 console.log("OpenClaw legacy and sharded thread settlement tests passed");

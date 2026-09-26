@@ -203,9 +203,31 @@ struct AIChatTranscriptDocument: View {
   }
 
   private var liveInput: LiveInput? {
-    guard store.isSendingOpenClawMessage,
-          let threadID = store.selectedOpenClawChatThreadID
-    else { return nil }
+    guard let threadID = store.selectedOpenClawChatThreadID else { return nil }
+    guard store.isSendingOpenClawMessage else {
+      // A turn another OpenOrg host is running for this conversation.
+      guard let remote = store.aiChatRemoteLiveTurn(for: threadID) else { return nil }
+      let destination = remote.turn.destinationName
+        ?? store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID)
+      return LiveInput(
+        threadID: threadID,
+        startedAt: remote.turn.startedAt,
+        lastEventAt: remote.updatedAt,
+        runtime: store.selectedAIChatActiveRuntime,
+        destinationTitle: "\(destination) on \(remote.host.name)",
+        connectionState: .connected,
+        connectionDetail: "Running on \(remote.host.name)",
+        runID: nil,
+        preparation: OpenClawLiveTextPreparationInput(
+          rawText: remote.turn.streamingReply,
+          showsAll: showsAllLiveText,
+          hasOmittedPrefix: remote.turn.streamingReply.hasPrefix("…"),
+          reasoning: remote.turn.reasoning,
+          reasoningHasOmittedPrefix: remote.turn.reasoning.hasPrefix("…"),
+          activities: remote.turn.activities
+        )
+      )
+    }
     let snapshot = liveState.presentationSnapshot(for: threadID)
     return LiveInput(
       threadID: threadID,
@@ -479,14 +501,19 @@ struct AIChatTranscriptDocument: View {
   }
 
   private func title(_ message: OpenClawChatMessage) -> String {
+    let base: String
     if message.role == .user {
       if !message.audienceDestinationIDs.isEmpty {
-        return "You → " + message.audienceDestinationIDs.map(store.aiChatDestinationTitle).joined(separator: " + ")
+        base = "You → " + message.audienceDestinationIDs.map(store.aiChatDestinationTitle).joined(separator: " + ")
+      } else {
+        base = message.audience.map { "You → " + $0.title } ?? "You"
       }
-      return message.audience.map { "You → " + $0.title } ?? "You"
+    } else {
+      base = message.authorLabel ?? message.authorDestinationID.map(store.aiChatDestinationTitle)
+        ?? message.authorRuntime?.title ?? (message.role == .system ? "Org2" : store.selectedAIChatRuntime.title)
     }
-    return message.authorLabel ?? message.authorDestinationID.map(store.aiChatDestinationTitle)
-      ?? message.authorRuntime?.title ?? (message.role == .system ? "Org2" : store.selectedAIChatRuntime.title)
+    guard let caption = store.aiChatProvenanceCaption(for: message) else { return base }
+    return "\(base) · \(caption)"
   }
 
   private func livePayload(_ input: LiveInput) -> AIChatTranscriptHTML.Live {

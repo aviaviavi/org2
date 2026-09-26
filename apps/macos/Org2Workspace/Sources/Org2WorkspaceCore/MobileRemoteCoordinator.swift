@@ -313,12 +313,13 @@ public final class MobileRemoteCoordinator: ObservableObject {
       let threads = store.openClawChatThreads
       return .json(MobileRemoteServerStatus(
         serverName: serverName,
-        hostRef: hostRef,
+        hostRef: hostRef ?? store.aiChatHostIdentity.ref,
         hostKind: hostRef == nil ? "desktop" : "server",
         corpusName: store.corpusRoot?.lastPathComponent,
         threadCount: threads.count,
         runningThreadCount: threads.filter {
           store.isAIChatThreadRunningOnCurrentHost($0.id)
+            || store.aiChatRemoteLiveTurn(for: $0.id) != nil
         }.count,
         aiChatDestinations: store.enabledAIChatDestinations.map {
           MobileRemoteAIDestination(
@@ -673,7 +674,11 @@ public final class MobileRemoteCoordinator: ObservableObject {
         attachments: payload.attachments,
         threadID: threadID,
         delivery: payload.delivery.flatMap(AIChatMessageDeliveryPreference.init(rawValue:))
-          ?? .automatic
+          ?? .automatic,
+        origin: AIChatMessageProvenance(
+          originClient: .mobile,
+          originDeviceName: request.bearerToken.flatMap { credentialVault.device(forAccessToken: $0)?.name }
+        )
       ) else {
         return .error("The message is empty or this thread is settled.", statusCode: 409)
       }
@@ -795,11 +800,22 @@ public final class MobileRemoteCoordinator: ObservableObject {
     for threads: [OpenClawChatThread],
     store: WorkspaceStore
   ) -> MobileRemoteThreadProjectionContext {
-    MobileRemoteThreadProjectionContext(
+    var runningThreadIDs = Set<UUID>()
+    var executionHostNames: [UUID: String] = [:]
+    for thread in threads {
+      if store.isAIChatThreadRunningOnCurrentHost(thread.id) {
+        runningThreadIDs.insert(thread.id)
+        executionHostNames[thread.id] = store.aiChatHostIdentity.name
+      } else if let remote = store.aiChatRemoteLiveTurn(for: thread.id) {
+        // A turn another host runs looks the same from every paired host.
+        runningThreadIDs.insert(thread.id)
+        executionHostNames[thread.id] = remote.host.name
+      }
+    }
+    return MobileRemoteThreadProjectionContext(
       destinationNamesByID: store.aiChatDestinationTitlesByID,
-      runningThreadIDs: Set(threads.lazy.filter {
-        store.isAIChatThreadRunningOnCurrentHost($0.id)
-      }.map(\.id))
+      runningThreadIDs: runningThreadIDs,
+      executionHostNamesByThreadID: executionHostNames
     )
   }
 
@@ -822,6 +838,18 @@ public final class MobileRemoteCoordinator: ObservableObject {
   ) -> MobileRemoteThreadDetailProjectionContext {
     let activeDestinationName = store.aiChatActiveDestinationID(for: thread.id)
       .map(store.aiChatDestinationTitle)
+    if !store.isAIChatThreadRunningOnCurrentHost(thread.id),
+       let remote = store.aiChatRemoteLiveTurn(for: thread.id) {
+      return MobileRemoteThreadDetailProjectionContext(
+        threads: threadProjectionContext(for: [thread], store: store),
+        activeDestinationName: remote.turn.destinationName ?? activeDestinationName,
+        streamingReply: remote.turn.streamingReply,
+        reasoning: remote.turn.reasoning,
+        activities: remote.turn.activities,
+        connectionState: OpenClawGatewayConnectionState.connected.rawValue,
+        connectionDetail: "Running on \(remote.host.name)"
+      )
+    }
     let livePresentation = store.aiChatLivePresentationSnapshot(for: thread.id)
     return MobileRemoteThreadDetailProjectionContext(
       threads: threadProjectionContext(for: [thread], store: store),
@@ -942,6 +970,10 @@ final class MobileRemoteCredentialVault {
 
   public func contains(token: String) -> Bool {
     records.contains { Self.securelyEqual($0.token, storedToken(token)) }
+  }
+
+  public func device(forAccessToken token: String) -> MobileRemotePairedDevice? {
+    records.first { Self.securelyEqual($0.token, storedToken(token)) }?.device
   }
 
   public func pair(deviceName rawName: String) throws -> (device: MobileRemotePairedDevice, token: String) {

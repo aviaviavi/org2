@@ -845,6 +845,7 @@ struct CorpusFileEventClassification: Equatable, Sendable {
   let hasConfigurationChanges: Bool
   let hasAIChatInboxChanges: Bool
   var hasAIChatTranscriptChanges = false
+  var hasAIChatLiveChanges = false
 }
 
 private struct AIChatInboxMessage: Decodable, Sendable {
@@ -2154,6 +2155,29 @@ public final class SourceEditorInteractionModel: ObservableObject {
 @Observable
 public final class WorkspaceStore {
   private static let openClawDispatchOwnerID = ProcessInfo.processInfo.hostName.lowercased()
+  /// The OpenOrg host this process represents in chat provenance, presence,
+  /// and turn routing.
+  public private(set) var aiChatHostIdentity = AIChatHostIdentity.desktop(
+    writer: AIChatTranscriptStore.shared.writerIdentity
+  )
+  /// Presence records published by other hosts that share this corpus.
+  public private(set) var aiChatRemoteLiveHosts: [AIChatLiveHostRecord] = []
+  @ObservationIgnored private var aiChatLivePresenceTask: Task<Void, Never>?
+  @ObservationIgnored private var lastPublishedAIChatLiveRecord: AIChatLiveHostRecord?
+  @ObservationIgnored private var lastPublishedAIChatLiveTranscriptURL: URL?
+  @ObservationIgnored private var aiChatLiveRefreshTask: Task<Void, Never>?
+  @ObservationIgnored private var aiChatLiveRefreshNeeded = false
+  @ObservationIgnored private var aiChatHandoffHydrationRequests: Set<UUID> = []
+  /// Imported `sending` messages that another host owns. They label the
+  /// conversation as busy but are never dispatched by this host's queue.
+  @ObservationIgnored private var aiChatForeignPendingMessageIDs: Set<UUID> = []
+  @ObservationIgnored var aiChatLiveHeartbeatInterval: TimeInterval = 45
+  @ObservationIgnored var aiChatLiveFreshnessInterval: TimeInterval = 150
+  @ObservationIgnored var aiChatHandoffTimeout: TimeInterval = 120
+  @ObservationIgnored var aiChatLivePresenceTickNanoseconds: UInt64 = 1_000_000_000
+  /// Continue a conversation on the host that already runs it when that host
+  /// is online and has the destination enabled.
+  @ObservationIgnored public var aiChatRoutesTurnsToThreadHost = true
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
   nonisolated public static let agendaOpenStatusFilter = "__open__"
@@ -3594,6 +3618,9 @@ public final class WorkspaceStore {
     selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
     self.aiChatReadState = AIChatReadState(defaults: defaults)
+    AIChatLocalHostRegistry.shared.register(
+      AIChatHostIdentity.desktop(writer: AIChatTranscriptStore.shared.writerIdentity).ref
+    )
     self.localDocumentPublicationHost = localDocumentPublicationHost
       ?? LocalDocumentPublicationHost(
         storageDirectory: Self.localDocumentPublicationStorageDirectory()
@@ -3730,13 +3757,21 @@ public final class WorkspaceStore {
   public func bootstrapHeadless(
     corpusRoot: URL,
     hostRef: String,
+    hostName: String? = nil,
     destinations: [AIChatDestinationConfiguration]
   ) async {
     automationHostRef = hostRef
+    configureAIChatHost(AIChatHostIdentity(
+      ref: hostRef,
+      name: hostName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        ? hostName! : hostRef,
+      kind: .server
+    ))
     configureHeadlessDestinations(destinations)
     setCorpusRoot(corpusRoot, persistsDefault: false)
     if let openClawTranscriptLoadTask { await openClawTranscriptLoadTask.value }
     startPendingOpenClawTurnRecovery()
+    setAIChatLivePresenceActive(true)
     if openClawLocalEditsEnabled {
       startOpenClawLocalEditNode()
     }
@@ -5005,6 +5040,9 @@ public final class WorkspaceStore {
     }
     if requiresFullScan || classified.hasAIChatTranscriptChanges {
       scheduleSyncedAIChatTranscriptRefresh()
+    }
+    if requiresFullScan || classified.hasAIChatLiveChanges {
+      scheduleAIChatLiveRefresh()
     }
     if requiresFullScan || classified.hasAIChatInboxChanges {
       scheduleAIChatInboxDrain()
@@ -7001,7 +7039,11 @@ public final class WorkspaceStore {
         do not invent goals, decisions, sources, or tasks. Add structure only where the details justify it,
         and omit empty sections and placeholder TODOs. Apply the note edit using the workspace's reviewed edit tools.
         """
-        if !sendAIChatRemoteMessage(prompt, threadID: threadID) {
+        if !sendAIChatRemoteMessage(
+          prompt,
+          threadID: threadID,
+          origin: AIChatMessageProvenance(originClient: .automation)
+        ) {
           projectStatus = "Project created with your details. AI refinement could not start; you can retry in its chat."
         }
       }
@@ -7614,7 +7656,11 @@ public final class WorkspaceStore {
         "--dir", corpusRoot.path,
         "--json"
       ])
-      guard sendAIChatRemoteMessage(prompt, threadID: thread.id) else {
+      guard sendAIChatRemoteMessage(
+        prompt,
+        threadID: thread.id,
+        origin: AIChatMessageProvenance(originClient: .automation)
+      ) else {
         automationRunIDsByThreadID.removeValue(forKey: thread.id)
         await failAgentAutomationRun(run.id, reason: "OpenOrg could not enqueue the automation prompt for \(destination.title).")
         return nil
@@ -21422,6 +21468,7 @@ public final class WorkspaceStore {
     (drainingOpenClawThreadIDs.contains(threadID)
       && isAIChatRuntimeStateVisible(for: threadID))
       || openClawSendingThreadIDs.contains(threadID)
+      || aiChatRemoteLiveTurn(for: threadID) != nil
       || openClawChatThreads.first(where: { $0.id == threadID }).map { thread in
         thread.pendingTurn.map { pendingTurn in
           thread.messages.contains { message in
@@ -21434,6 +21481,9 @@ public final class WorkspaceStore {
             message.role == .user
               && message.deliveryStatus == .sending
               && message.deliveryKind != .followUp
+              // A host whose fresh presence no longer reports the turn has
+              // finished it; its reply is on the way through synchronization.
+              && isAIChatMessageActiveOnRemoteHost(message, in: threadID) != false
           }
       } == true
   }
@@ -22655,6 +22705,15 @@ public final class WorkspaceStore {
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else {
       return false
     }
+    if !isAIChatThreadRunningOnCurrentHost(threadID),
+       let remote = aiChatRemoteLiveTurn(for: threadID) {
+      // The provider run belongs to another host's process; stopping it here
+      // would only desynchronize this copy of the conversation.
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "This turn is running on \(remote.host.name); stop it there"
+      }
+      return false
+    }
     let activeDestinationID = activeSharedRoomDestinationByThreadID[threadID]
       ?? thread.destinationID
     if aiChatDestination(id: activeDestinationID)?.adapter.isDirectProvider == true {
@@ -22823,13 +22882,15 @@ public final class WorkspaceStore {
     _ rawText: String,
     attachments: [OpenClawChatAttachment] = [],
     threadID: UUID,
-    delivery: AIChatMessageDeliveryPreference = .automatic
+    delivery: AIChatMessageDeliveryPreference = .automatic,
+    origin: AIChatMessageProvenance? = nil
   ) -> Bool {
     sendAIChatRemoteMessageDestination(
       rawText,
       attachments: attachments,
       threadID: threadID,
-      delivery: delivery
+      delivery: delivery,
+      origin: origin
     ) != nil
   }
 
@@ -22838,7 +22899,8 @@ public final class WorkspaceStore {
     _ rawText: String,
     attachments: [OpenClawChatAttachment] = [],
     threadID: UUID,
-    delivery: AIChatMessageDeliveryPreference = .automatic
+    delivery: AIChatMessageDeliveryPreference = .automatic,
+    origin: AIChatMessageProvenance? = nil
   ) -> UUID? {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !attachments.isEmpty,
@@ -22862,7 +22924,8 @@ public final class WorkspaceStore {
         for: openClawChatThreads.first(where: { $0.id == destinationThreadID }) ?? thread
       ),
       delivery: delivery,
-      context: captureAIChatCorpusContext()
+      context: captureAIChatCorpusContext(),
+      origin: origin
     )
     if case .rejected = result {
       return nil
@@ -22935,7 +22998,12 @@ public final class WorkspaceStore {
           authorRuntime: thread.runtime,
           authorLabel: authorLabel,
           authorAgentRef: envelope.authorAgentRef,
-          source: envelope.source
+          source: envelope.source,
+          provenance: AIChatMessageProvenance(
+            originClient: .inbox,
+            receivedByHostRef: aiChatHostIdentity.ref,
+            receivedByHostName: aiChatHostIdentity.name
+          )
         )
         let current = openClawChatThreads.first(where: { $0.id == envelope.threadID }) ?? thread
         let messages = (current.messages + [message]).sorted {
@@ -24150,7 +24218,8 @@ public final class WorkspaceStore {
     workspaceContext: OpenClawWorkspaceContext? = nil,
     audience: AIChatAudience? = nil,
     delivery: AIChatMessageDeliveryPreference = .automatic,
-    context: AIChatCorpusContextToken? = nil
+    context: AIChatCorpusContextToken? = nil,
+    origin: AIChatMessageProvenance? = nil
   ) -> AIChatEnqueueResult {
     let context = context ?? captureAIChatCorpusContext()
     guard isCurrentAIChatCorpusContext(context) else { return .rejected }
@@ -24176,7 +24245,8 @@ public final class WorkspaceStore {
           workspaceContext: workspaceContext,
           audience: audience,
           delivery: delivery,
-          context: context
+          context: context,
+          origin: origin
         )
         return await self.resolveDeferredAIChatEnqueue(retry)
       }
@@ -24195,7 +24265,8 @@ public final class WorkspaceStore {
         workspaceContext: workspaceContext,
         audience: audience,
         delivery: delivery,
-        context: context
+        context: context,
+        origin: origin
       )
     }
     let shouldTrySteering = delivery == .steer
@@ -24208,7 +24279,8 @@ public final class WorkspaceStore {
         attachments: attachments,
         deliveryStatus: .sending,
         deliveryKind: .steer,
-        audience: audience
+        audience: audience,
+        provenance: aiChatUserMessageProvenance(origin: origin, routedTo: nil, at: Date())
       )
       var messages = openClawMessages(for: threadID)
       messages.append(userMessage)
@@ -24239,7 +24311,8 @@ public final class WorkspaceStore {
       workspaceContext: workspaceContext,
       deliveryKind: kind,
       audience: audience,
-      context: context
+      context: context,
+      origin: origin
     )
     if case .enqueued(threadID: let acceptedThreadID, shouldDrain: true) = result {
       Task { @MainActor [weak self] in
@@ -24596,7 +24669,8 @@ public final class WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
+      roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
     updateOpenClawChatThread(
       threadID,
@@ -24625,7 +24699,8 @@ public final class WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
+      roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
     replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
     enqueueOpenClawUserMessage(messageID, in: threadID)
@@ -24638,7 +24713,8 @@ public final class WorkspaceStore {
     workspaceContext: OpenClawWorkspaceContext? = nil,
     deliveryKind: OpenClawChatMessage.DeliveryKind = .turn,
     audience: AIChatAudience? = nil,
-    context: AIChatCorpusContextToken? = nil
+    context: AIChatCorpusContextToken? = nil,
+    origin: AIChatMessageProvenance? = nil
   ) -> AIChatEnqueueResult {
     let context = context ?? captureAIChatCorpusContext()
     guard isCurrentAIChatCorpusContext(context) else { return .rejected }
@@ -24656,7 +24732,8 @@ public final class WorkspaceStore {
           workspaceContext: workspaceContext,
           deliveryKind: deliveryKind,
           audience: audience,
-          context: context
+          context: context,
+          origin: origin
         )
         return await self.resolveDeferredAIChatEnqueue(retry)
       }
@@ -24715,7 +24792,8 @@ public final class WorkspaceStore {
         content: effectiveText,
         attachments: attachments,
         createdAt: createdAt,
-        audience: .thread
+        audience: .thread,
+        provenance: aiChatUserMessageProvenance(origin: origin, routedTo: nil, at: createdAt)
       ))
       replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
       if selectedOpenClawChatThreadID == threadID,
@@ -24737,6 +24815,18 @@ public final class WorkspaceStore {
       )
     }
     let roomRoundID = thread.isSharedRoom ? UUID() : nil
+    // Keep a conversation on the host that already runs it. Its runtime
+    // session (Codex thread, OpenCode session, OpenClaw gateway run) lives
+    // there, so every client sees the same continuation regardless of which
+    // Mac or server it is connected to.
+    let routeTarget = thread.isSharedRoom
+      ? nil
+      : aiChatRoutingTarget(for: thread, destinationID: targetDestinationIDs[0])
+    let provenance = aiChatUserMessageProvenance(
+      origin: origin,
+      routedTo: routeTarget?.host,
+      at: createdAt
+    )
     let userMessages = targetDestinationIDs.enumerated().map { index, destinationID in
       let runtime = aiChatDestinationRuntime(destinationID)
       return OpenClawChatMessage(
@@ -24752,10 +24842,20 @@ public final class WorkspaceStore {
         audienceDestinationIDs: thread.isSharedRoom ? targetDestinationIDs : [],
         targetDestinationID: destinationID,
         isRoomDispatchCopy: index > 0,
-        roomRoundID: roomRoundID
+        roomRoundID: roomRoundID,
+        provenance: provenance
       )
     }
     messages.append(contentsOf: userMessages)
+    if let routeTarget {
+      replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+      aiChatForeignPendingMessageIDs.formUnion(userMessages.map(\.id))
+      nudgeAIChatStoreSynchronization()
+      if selectedOpenClawChatThreadID == threadID {
+        openClawStatusText = "Sent to \(routeTarget.hostName); it runs this conversation"
+      }
+      return .enqueued(threadID: threadID, shouldDrain: false)
+    }
     replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
     for userMessage in userMessages {
       enqueueOpenClawUserMessage(userMessage.id, in: threadID)
@@ -24983,6 +25083,9 @@ public final class WorkspaceStore {
     }
 
     while let userMessageID = openClawPendingUserMessageIDs(for: threadID).first {
+      // Another host owns this turn (a synchronized `sending` message or a
+      // hand-off that has not been reclaimed). Never dispatch it twice.
+      if aiChatForeignPendingMessageIDs.contains(userMessageID) { break }
       guard let requestMessages = openClawMessagesThrough(
         userMessageID,
         in: threadID,
@@ -26496,6 +26599,7 @@ public final class WorkspaceStore {
   public func prepareForTermination() async -> Bool {
     guard !isPreparingForTermination else { return false }
     isPreparingForTermination = true
+    setAIChatLivePresenceActive(false)
 
     let csvEditorLaneSucceeded = await CSVDocumentEditorLifecycle.checkpointPendingTableEdits()
     _ = OrgSyntaxTextEditorLifecycle.checkpointPendingTextChanges()
@@ -28078,7 +28182,8 @@ public final class WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
+      roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
   }
 
@@ -28233,7 +28338,8 @@ public final class WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
+      roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
     return result
   }
@@ -28555,7 +28661,11 @@ public final class WorkspaceStore {
       responseTrace: trace.isEmpty ? nil : trace,
       authorRuntime: authorRuntime,
       authorDestinationID: authorDestinationID,
-      roomRoundID: roomRoundID
+      roomRoundID: roomRoundID,
+      provenance: AIChatMessageProvenance(
+        executionHostRef: aiChatHostIdentity.ref,
+        executionHostName: aiChatHostIdentity.name
+      )
     )
     guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       messages.append(assistantMessage)
@@ -28748,7 +28858,8 @@ public final class WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID
+      roomRoundID: message.roomRoundID,
+      provenance: message.provenance
     )
     replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
     syncSelectedOpenClawSendState()
@@ -29298,6 +29409,7 @@ public final class WorkspaceStore {
     var hasConfigurationChanges = false
     var hasAIChatInboxChanges = false
     var hasAIChatTranscriptChanges = false
+    var hasAIChatLiveChanges = false
 
     for rawPath in paths {
       let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
@@ -29312,6 +29424,12 @@ public final class WorkspaceStore {
       if relativePath.hasPrefix(".org2/runs/"),
          URL(fileURLWithPath: path).pathExtension.lowercased() == "org2" {
         hasAgentRunStateChanges = true
+        continue
+      }
+      if relativePath.hasPrefix(".org2/openclaw-chat.store/\(AIChatLiveHostDirectory.directoryName)/") {
+        // Presence records change every second during a remote turn. They
+        // never require re-reading the committed transcript.
+        hasAIChatLiveChanges = true
         continue
       }
       if relativePath == ".org2/openclaw-chat.json" || relativePath.hasPrefix(".org2/openclaw-chat.store/") {
@@ -29343,7 +29461,8 @@ public final class WorkspaceStore {
       hasAgentRunStateChanges: hasAgentRunStateChanges,
       hasConfigurationChanges: hasConfigurationChanges,
       hasAIChatInboxChanges: hasAIChatInboxChanges,
-      hasAIChatTranscriptChanges: hasAIChatTranscriptChanges
+      hasAIChatTranscriptChanges: hasAIChatTranscriptChanges,
+      hasAIChatLiveChanges: hasAIChatLiveChanges
     )
   }
 
@@ -29485,6 +29604,7 @@ public final class WorkspaceStore {
     guard isWorkspaceRealtimeRefreshActive else { return }
     scheduleAgendaClockInvalidation()
     scheduleSyncedAIChatTranscriptRefresh()
+    scheduleAIChatLiveRefresh()
 
     if needsFullCorpusRefreshAfterEvents {
       scheduleFullCorpusFileRefreshAfterEvents()
@@ -30508,7 +30628,8 @@ public final class WorkspaceStore {
         audienceDestinationIDs: preservesRoomMetadata ? message.audienceDestinationIDs : [],
         targetDestinationID: preservesRoomMetadata ? message.targetDestinationID : nil,
         isRoomDispatchCopy: preservesRoomMetadata && message.isRoomDispatchCopy,
-        roomRoundID: preservesRoomMetadata ? roomRoundID : nil
+        roomRoundID: preservesRoomMetadata ? roomRoundID : nil,
+        provenance: message.provenance
       )
     }
   }
@@ -30996,6 +31117,7 @@ public final class WorkspaceStore {
         return
       }
       let hydrated = self.openClawChatThreads[index].hydrating(messages: loaded.messages)
+      AIChatTranscriptStore.shared.recordAdoptedThreads([hydrated], legacyURL: transcriptURL)
       self.unloadedOpenClawChatThreadIDs.remove(id)
       let cachedMessageCount = (hydrated.isSettled
         ? self.archivedOpenClawChatThreadSummaries
@@ -39437,6 +39559,9 @@ public final class WorkspaceStore {
       )
       self.registerMissingHydratedOpenClawChatThreadsInLRU()
       self.enforceHydratedOpenClawChatThreadLimit()
+      // Other hosts should see new messages and replies without waiting on
+      // the synchronizer's filesystem-watcher delay.
+      self.nudgeAIChatStoreSynchronization()
     }
   }
 
@@ -39787,6 +39912,7 @@ public final class WorkspaceStore {
     )
     let preserved = openClawChatThreads.filter { protectedIDs.contains($0.id) }
     let refreshedIDs = Set(currentMetadata.keys).union(imported.map(\.id)).subtracting(protectedIDs)
+    let pendingBeforeRefresh = openClawPendingUserMessageIDsByThreadID
     saveOpenClawComposerForSelectedThread()
     for id in refreshedIDs {
       openClawThreadHydrationTasks.removeValue(forKey: id)?.cancel()
@@ -39808,11 +39934,29 @@ public final class WorkspaceStore {
         .replacingOpenClawChatMetadata(unreadMessageCount: 0)
       openClawThreadMessageMutationCounter &+= 1
       openClawThreadMessageRevisions[thread.id] = openClawThreadMessageMutationCounter
-      let pending = thread.messages.filter {
+      let pendingMessages = thread.messages.filter {
         $0.role == .user && $0.deliveryStatus == .sending && $0.deliveryKind != .steer
-      }.map(\.id)
+      }
+      let pending = pendingMessages.map(\.id)
       if !pending.isEmpty { openClawPendingUserMessageIDsByThreadID[thread.id] = pending }
+      let previouslyQueuedHere = Set(pendingBeforeRefresh[thread.id] ?? [])
+      var resumesLocalQueue = false
+      for message in pendingMessages {
+        // Only this process's own queue (or a hand-off it accepts below) may
+        // dispatch; everything else is another host's in-flight work.
+        if previouslyQueuedHere.contains(message.id),
+           !aiChatForeignPendingMessageIDs.contains(message.id) {
+          resumesLocalQueue = true
+        } else {
+          aiChatForeignPendingMessageIDs.insert(message.id)
+        }
+      }
+      if resumesLocalQueue, !drainingOpenClawThreadIDs.contains(thread.id) {
+        let threadID = thread.id
+        Task { @MainActor [weak self] in await self?.drainOpenClawSendQueue(for: threadID) }
+      }
     }
+    AIChatTranscriptStore.shared.recordAdoptedThreads(imported, legacyURL: target)
     if openClawThreadSettlementSettings == syncedAIChatCleanSettlementSettings,
        openClawThreadSettlementSettings == settingsBeforeRead {
       openClawThreadSettlementSettings = loaded.snapshot.settlementSettings
@@ -39833,7 +39977,343 @@ public final class WorkspaceStore {
       syncSelectedOpenClawSendState()
     }
     initializeHydratedOpenClawChatThreadLRU()
+    processAIChatHandoffs()
     return true
+  }
+
+  // MARK: - Cross-host chat presence, provenance, and routing
+
+  /// Configures the per-installation transcript writer before any store is
+  /// created. Each process owns one head file in the shared chat store.
+  nonisolated public static func configureAIChatTranscriptWriter(
+    defaults: UserDefaults,
+    label: String? = nil
+  ) {
+    AIChatTranscriptStore.shared.configureWriter(
+      .persistent(defaults: defaults, label: label)
+    )
+  }
+
+  /// Sets the identity recorded in message provenance and presence records.
+  public func configureAIChatHost(_ identity: AIChatHostIdentity) {
+    AIChatLocalHostRegistry.shared.register(identity.ref)
+    guard identity != aiChatHostIdentity else { return }
+    aiChatHostIdentity = identity
+    lastPublishedAIChatLiveRecord = nil
+  }
+
+  func aiChatUserMessageProvenance(
+    origin: AIChatMessageProvenance?,
+    routedTo target: AIChatHostIdentity?,
+    at date: Date
+  ) -> AIChatMessageProvenance {
+    let host = aiChatHostIdentity
+    return AIChatMessageProvenance(
+      originClient: origin?.originClient ?? (host.kind == .desktop ? .desktop : nil),
+      originDeviceName: origin?.originDeviceName,
+      receivedByHostRef: host.ref,
+      receivedByHostName: host.name,
+      executionHostRef: target?.ref ?? host.ref,
+      executionHostName: target?.name ?? host.name,
+      acceptedAt: target == nil ? date : nil
+    )
+  }
+
+  /// The host whose runtime most recently handled the conversation.
+  func aiChatExecutionHostRef(for messages: [OpenClawChatMessage]) -> String? {
+    messages.last(where: { $0.provenance?.executionHostRef != nil })?.provenance?.executionHostRef
+  }
+
+  private func freshAIChatRemoteHost(ref: String, now: Date = Date()) -> AIChatLiveHostRecord? {
+    aiChatRemoteLiveHosts.first {
+      $0.hostRef == ref && $0.isFresh(now: now, within: aiChatLiveFreshnessInterval)
+    }
+  }
+
+  /// The online host that should run the next turn of `thread`, or nil to run
+  /// it here. A conversation stays with the host that already runs it while
+  /// that host is online and has the destination enabled; otherwise this host
+  /// takes over so a message never waits on an unreachable machine.
+  private func aiChatRoutingTarget(
+    for thread: OpenClawChatThread,
+    destinationID: String
+  ) -> AIChatLiveHostRecord? {
+    guard aiChatRoutesTurnsToThreadHost, !thread.isSharedRoom,
+          let ownerRef = aiChatExecutionHostRef(for: openClawMessages(for: thread.id)),
+          ownerRef != aiChatHostIdentity.ref,
+          let owner = freshAIChatRemoteHost(ref: ownerRef),
+          owner.enabledDestinationIDs.contains(destinationID)
+    else { return nil }
+    return owner
+  }
+
+  /// A turn currently running on another host, as published in its presence
+  /// record.
+  public func aiChatRemoteLiveTurn(for threadID: UUID) -> AIChatRemoteLiveTurn? {
+    let now = Date()
+    for record in aiChatRemoteLiveHosts
+    where record.hostRef != aiChatHostIdentity.ref
+      && record.isFresh(now: now, within: aiChatLiveFreshnessInterval) {
+      if let turn = record.turns.first(where: { $0.threadID == threadID }) {
+        return AIChatRemoteLiveTurn(host: record.host, turn: turn, updatedAt: record.updatedAt)
+      }
+    }
+    return nil
+  }
+
+  /// A readable name for the host running or last running this conversation.
+  public func aiChatExecutionHostName(for threadID: UUID) -> String? {
+    if isAIChatThreadRunningOnCurrentHost(threadID) { return aiChatHostIdentity.name }
+    if let remote = aiChatRemoteLiveTurn(for: threadID) { return remote.host.name }
+    guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return nil }
+    return thread.messages.last(where: { $0.provenance?.executionHostName != nil })?
+      .provenance?.executionHostName
+  }
+
+  /// A provenance caption for display on this host. Messages that were sent
+  /// and answered entirely here return nil to keep ordinary chats quiet.
+  public func aiChatProvenanceCaption(for message: OpenClawChatMessage) -> String? {
+    guard let provenance = message.provenance else { return nil }
+    let here = aiChatHostIdentity.ref
+    let isLocal = (provenance.receivedByHostRef ?? here) == here
+      && (provenance.executionHostRef ?? here) == here
+      && (provenance.originClient == nil || provenance.originClient == .desktop)
+    guard !isLocal else { return nil }
+    return provenance.caption(role: message.role)
+  }
+
+  /// A remote host still owns this `sending` message only while its presence
+  /// is fresh and either reports the turn or has not refreshed since the
+  /// message was handed to it.
+  private func isAIChatMessageActiveOnRemoteHost(_ message: OpenClawChatMessage, in threadID: UUID) -> Bool? {
+    guard let ref = message.provenance?.executionHostRef, ref != aiChatHostIdentity.ref else {
+      return nil
+    }
+    guard let record = freshAIChatRemoteHost(ref: ref) else {
+      // Unknown presence (an older build, or no presence synchronized yet):
+      // keep the historical behavior and trust the persisted marker.
+      return aiChatRemoteLiveHosts.contains(where: { $0.hostRef == ref }) ? false : nil
+    }
+    if record.turns.contains(where: { $0.threadID == threadID }) { return true }
+    // A hand-off the target has not accepted yet is still in flight.
+    guard let acceptedAt = message.provenance?.acceptedAt else { return true }
+    return record.updatedAt < acceptedAt.addingTimeInterval(20)
+  }
+
+  public func setAIChatLivePresenceActive(_ active: Bool) {
+    if active {
+      guard aiChatLivePresenceTask == nil else { return }
+      scheduleAIChatLiveRefresh()
+      aiChatLivePresenceTask = Task { @MainActor [weak self] in
+        var tick = 0
+        while !Task.isCancelled {
+          guard let self else { return }
+          self.publishAIChatLivePresenceIfNeeded()
+          if tick % 5 == 0 { self.processAIChatHandoffs() }
+          if tick % 15 == 0 { self.scheduleAIChatLiveRefresh() }
+          tick &+= 1
+          try? await Task.sleep(nanoseconds: self.aiChatLivePresenceTickNanoseconds)
+        }
+      }
+    } else {
+      aiChatLivePresenceTask?.cancel()
+      aiChatLivePresenceTask = nil
+      publishAIChatOfflinePresence()
+    }
+  }
+
+  private func currentAIChatLiveRecord() -> AIChatLiveHostRecord {
+    let turns = openClawChatThreads.compactMap { thread -> AIChatLiveTurnRecord? in
+      guard isAIChatThreadRunningOnCurrentHost(thread.id) else { return nil }
+      let snapshot = aiChatLivePresentationSnapshot(for: thread.id)
+      let destinationID = aiChatActiveDestinationID(for: thread.id)
+      let activities = aiChatRunActivities(for: thread.id)
+        .suffix(AIChatLiveHostDirectory.maximumActivities)
+        .map { activity in
+          OpenClawRunActivity(
+            id: activity.id,
+            runID: activity.runID,
+            kind: activity.kind,
+            title: String(activity.title.prefix(200)),
+            detail: activity.detail.map { String($0.prefix(400)) },
+            status: activity.status,
+            updatedAt: activity.updatedAt
+          )
+        }
+      return AIChatLiveTurnRecord(
+        threadID: thread.id,
+        userMessageID: activeOpenClawUserMessageIDByThreadID[thread.id],
+        destinationID: destinationID,
+        destinationName: destinationID.map(aiChatDestinationTitle),
+        startedAt: openClawRequestStartedAtByThreadID[thread.id],
+        streamingReply: AIChatLiveHostDirectory.boundedTail(
+          snapshot.streamingReply,
+          maximum: AIChatLiveHostDirectory.maximumStreamingCharacters
+        ),
+        reasoning: AIChatLiveHostDirectory.boundedTail(
+          snapshot.reasoning,
+          maximum: AIChatLiveHostDirectory.maximumReasoningCharacters
+        ),
+        activities: Array(activities)
+      )
+    }
+    return AIChatLiveHostRecord(
+      writerID: AIChatTranscriptStore.shared.writerIdentity.id,
+      host: aiChatHostIdentity,
+      enabledDestinationIDs: enabledAIChatDestinations.map(\.id).sorted(),
+      turns: turns
+    )
+  }
+
+  func publishAIChatLivePresenceIfNeeded(force: Bool = false) {
+    guard corpusRoot != nil, hasAuthoritativeAIChatTranscriptState else { return }
+    let transcriptURL = openClawTranscriptURL.standardizedFileURL
+    if let previousURL = lastPublishedAIChatLiveTranscriptURL, previousURL != transcriptURL {
+      publishAIChatOfflinePresence()
+    }
+    let record = currentAIChatLiveRecord()
+    let now = Date()
+    let contentChanged = lastPublishedAIChatLiveRecord.map { !$0.hasSameContent(as: record) } ?? true
+    let heartbeatDue = lastPublishedAIChatLiveRecord.map {
+      now.timeIntervalSince($0.updatedAt) >= aiChatLiveHeartbeatInterval
+    } ?? true
+    guard force || contentChanged || heartbeatDue else { return }
+    lastPublishedAIChatLiveRecord = record
+    lastPublishedAIChatLiveTranscriptURL = transcriptURL
+    let root = corpusRoot
+    Task.detached(priority: .utility) {
+      try? AIChatLiveHostDirectory.write(record, transcriptURL: transcriptURL)
+      if contentChanged {
+        SyncthingScanHint.shared.scan(
+          path: AIChatLiveHostDirectory.directory(forTranscript: transcriptURL),
+          corpusRoot: root
+        )
+      }
+    }
+  }
+
+  private func publishAIChatOfflinePresence() {
+    guard let url = lastPublishedAIChatLiveTranscriptURL,
+          var record = lastPublishedAIChatLiveRecord
+    else { return }
+    record.isOnline = false
+    record.turns = []
+    record.updatedAt = Date()
+    lastPublishedAIChatLiveRecord = nil
+    lastPublishedAIChatLiveTranscriptURL = nil
+    try? AIChatLiveHostDirectory.write(record, transcriptURL: url)
+    SyncthingScanHint.shared.scan(
+      path: AIChatLiveHostDirectory.directory(forTranscript: url),
+      corpusRoot: corpusRoot
+    )
+  }
+
+  /// Ask the synchronization provider to propagate committed chat changes now.
+  private func nudgeAIChatStoreSynchronization() {
+    SyncthingScanHint.shared.scan(
+      path: AIChatTranscriptStore.storeDirectory(for: openClawTranscriptURL),
+      corpusRoot: corpusRoot
+    )
+  }
+
+  func scheduleAIChatLiveRefresh() {
+    aiChatLiveRefreshNeeded = true
+    guard aiChatLiveRefreshTask == nil else { return }
+    aiChatLiveRefreshTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(100))
+        guard let self, self.aiChatLiveRefreshNeeded else { break }
+        self.aiChatLiveRefreshNeeded = false
+        await self.refreshAIChatRemoteLiveHosts()
+      }
+      self?.aiChatLiveRefreshTask = nil
+    }
+  }
+
+  func refreshAIChatRemoteLiveHosts() async {
+    let transcriptURL = openClawTranscriptURL.standardizedFileURL
+    let writerID = AIChatTranscriptStore.shared.writerIdentity.id
+    let records = await Task.detached(priority: .utility) {
+      AIChatLiveHostDirectory.readAll(transcriptURL: transcriptURL, excludingWriterID: writerID)
+    }.value
+    guard transcriptURL == openClawTranscriptURL.standardizedFileURL else { return }
+    let hostRef = aiChatHostIdentity.ref
+    let visible = records.filter { $0.hostRef != hostRef }.sorted { $0.hostRef < $1.hostRef }
+    if visible != aiChatRemoteLiveHosts {
+      aiChatRemoteLiveHosts = visible
+      syncSelectedOpenClawSendState()
+    }
+  }
+
+  /// Accept conversations another host handed to this one, and take back
+  /// hand-offs whose target went away.
+  func processAIChatHandoffs(now: Date = Date()) {
+    guard hasAuthoritativeAIChatTranscriptState,
+          !isLoadingAIChatTranscript,
+          !aiChatTranscriptWritesBlocked,
+          !isPreparingForTermination
+    else { return }
+    let hostRef = aiChatHostIdentity.ref
+    for thread in openClawChatThreads where !thread.isSettled {
+      if thread.storedMessageCount != nil {
+        // A cold conversation whose latest message is unresolved may hold a
+        // hand-off. Hydrate it once, then examine it on the next pass.
+        if thread.storedHasUnresolvedLatestDelivery == true,
+           aiChatHandoffHydrationRequests.insert(thread.id).inserted {
+          Task { @MainActor [weak self] in
+            _ = await self?.hydrateOpenClawChatThreadIfNeeded(thread.id)
+            self?.processAIChatHandoffs()
+          }
+        }
+        continue
+      }
+      guard !thread.isSharedRoom else { continue }
+      let messages = openClawMessages(for: thread.id)
+      var accepted: [UUID] = []
+      var reclaimed: [(UUID, String)] = []
+      for message in messages
+      where message.role == .user && message.deliveryStatus == .sending && message.deliveryKind != .steer {
+        guard let provenance = message.provenance, provenance.acceptedAt == nil,
+              let target = provenance.executionHostRef
+        else { continue }
+        if target == hostRef {
+          accepted.append(message.id)
+        } else if provenance.receivedByHostRef == hostRef {
+          let targetName = provenance.executionHostName ?? target
+          if freshAIChatRemoteHost(ref: target, now: now) == nil {
+            reclaimed.append((message.id, "\(targetName) is offline"))
+          } else if now.timeIntervalSince(message.createdAt) > aiChatHandoffTimeout {
+            reclaimed.append((message.id, "\(targetName) did not pick it up"))
+          }
+        }
+      }
+      guard !accepted.isEmpty || !reclaimed.isEmpty else { continue }
+      let takeOver = Set(accepted).union(reclaimed.map(\.0))
+      let updated = messages.map { message -> OpenClawChatMessage in
+        guard takeOver.contains(message.id) else { return message }
+        var provenance = message.provenance ?? AIChatMessageProvenance()
+        provenance.executionHostRef = hostRef
+        provenance.executionHostName = aiChatHostIdentity.name
+        provenance.acceptedAt = now
+        return message.replacingProvenance(provenance)
+      }
+      replaceOpenClawMessages(updated, for: thread.id, shouldPersist: true)
+      aiChatForeignPendingMessageIDs.subtract(takeOver)
+      var pending = openClawPendingUserMessageIDs(for: thread.id)
+      for message in updated where takeOver.contains(message.id) && !pending.contains(message.id) {
+        pending.append(message.id)
+      }
+      openClawPendingUserMessageIDsByThreadID[thread.id] = pending
+      if let reason = reclaimed.first?.1, selectedOpenClawChatThreadID == thread.id {
+        openClawStatusText = "\(reason); running here on \(aiChatHostIdentity.name)"
+      }
+      nudgeAIChatStoreSynchronization()
+      guard !drainingOpenClawThreadIDs.contains(thread.id) else { continue }
+      let threadID = thread.id
+      Task { @MainActor [weak self] in
+        await self?.drainOpenClawSendQueue(for: threadID)
+      }
+    }
   }
 
   public func retryAIChatTranscriptRecovery() {
@@ -39963,18 +40443,7 @@ public final class WorkspaceStore {
     isApplyingPersistedOpenClawChatThreads = false
 
     let hasTargetTranscript = FileManager.default.fileExists(atPath: targetURL.path)
-      || FileManager.default.fileExists(
-        atPath: AIChatTranscriptStore.storeDirectory(for: targetURL)
-          .appendingPathComponent("manifest.json").path
-      )
-      || FileManager.default.fileExists(
-        atPath: AIChatTranscriptStore.storeDirectory(for: targetURL)
-          .appendingPathComponent("migration-marker.json").path
-      )
-      || FileManager.default.fileExists(
-        atPath: AIChatTranscriptStore.storeDirectory(for: targetURL)
-          .appendingPathComponent("migration-marker.previous.json").path
-      )
+      || AIChatTranscriptStore.hasCommittedStore(for: targetURL)
     if !hasTargetTranscript,
        sourceURL == nil,
        fallbackMessages.isEmpty,
@@ -40048,6 +40517,15 @@ public final class WorkspaceStore {
           cachedTranscript: cachedTargetTranscript,
           priorityThreadIDs: inFlightThreadIDs
         )
+        let loadedByID = Dictionary(
+          loaded.transcript.threads.map { ($0.id, $0) },
+          uniquingKeysWith: { first, _ in first }
+        )
+        let restoredFromMemory = restored.transcript.threads.filter { loadedByID[$0.id] != $0 }
+        AIChatTranscriptStore.shared.forgetAdoptedThreads(
+          Set(restoredFromMemory.map(\.id)),
+          legacyURL: targetURL
+        )
         return Self.prepareInitialOpenClawTranscriptLoad(
           restored,
           preferredSelectedThreadID: preferredSelectedThreadID
@@ -40074,6 +40552,8 @@ public final class WorkspaceStore {
       self.replayAIChatMutationsAfterTranscriptLoad()
       self.applyAIChatTranscriptRecoveryStatus(loaded.recoveryStatus)
       self.startPendingOpenClawTurnRecovery()
+      self.processAIChatHandoffs()
+      self.scheduleAIChatLiveRefresh()
     }
   }
 
@@ -40149,6 +40629,9 @@ public final class WorkspaceStore {
     marksInterruptedSends: Bool = true
   ) -> OpenClawWorkspaceTranscriptLoad {
     if let loaded = AIChatTranscriptStore.shared.loadIfAvailable(legacyURL: url) {
+      // The persisted revision (before any launch-time repair below) is the
+      // common ancestor for merging this copy with synchronized replicas.
+      AIChatTranscriptStore.shared.recordAdoptedThreads(loaded.snapshot.threads, legacyURL: url)
       if case .unrecoverable(let derivedFailure) = loaded.recoveryStatus,
          let visibleFallback = visibleCanonicalAIChatTranscriptForUnrecoverableStore(
            from: url,
@@ -40342,6 +40825,16 @@ public final class WorkspaceStore {
         }
       } else {
         openClawPendingUserMessageIDsByThreadID[thread.id] = messageIDs
+        // Turns another host runs, and hand-offs not yet accepted here, are
+        // visible as pending but are never dispatched from this queue.
+        for message in thread.messages where messageIDs.contains(message.id) {
+          guard let provenance = message.provenance,
+                let executionHostRef = provenance.executionHostRef
+          else { continue }
+          if provenance.acceptedAt == nil || executionHostRef != aiChatHostIdentity.ref {
+            aiChatForeignPendingMessageIDs.insert(message.id)
+          }
+        }
       }
     }
     let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
@@ -41847,6 +42340,14 @@ public final class WorkspaceStore {
           guard message.role == .user,
                 message.deliveryStatus == .sending
           else {
+            return message
+          }
+          // Another host's turn, or a hand-off nobody has started yet, was
+          // not interrupted by this process restarting.
+          if let provenance = message.provenance,
+             let executionHostRef = provenance.executionHostRef,
+             provenance.acceptedAt == nil
+              || !AIChatLocalHostRegistry.shared.isLocal(executionHostRef) {
             return message
           }
           return message.replacingDeliveryStatus(

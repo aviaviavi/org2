@@ -209,6 +209,8 @@ struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable {
   let preview: String?
   let latestAssistantMessageID: UUID?
   let latestAssistantPreview: String?
+  /// The OpenOrg host running (or that last ran) the conversation.
+  var executionHostName: String? = nil
 }
 
 struct MobileRemoteThreadDetail: Codable, Hashable {
@@ -238,6 +240,12 @@ struct MobileRemoteChatMessage: Codable, Hashable, Identifiable {
   let audienceDestinationNames: [String]?
   let isRoomDispatchCopy: Bool?
   let roomRoundID: UUID?
+  /// Where the message came from and which host handled it.
+  var provenanceCaption: String? = nil
+  var originClient: String? = nil
+  var originDeviceName: String? = nil
+  var receivedByHostName: String? = nil
+  var executionHostName: String? = nil
 }
 
 struct MobileRemoteActivity: Codable, Hashable, Identifiable {

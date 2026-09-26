@@ -74,6 +74,7 @@ struct OpenOrgServer {
         filesystemAccess != .readOnly,
         forKey: "Org2Workspace.openClawLocalEditsEnabled.v1"
       )
+      WorkspaceStore.configureAIChatTranscriptWriter(defaults: defaults, label: config.name)
       let cli = Org2CLI(repoRoot: URL(fileURLWithPath: config.repoRoot), nodePath: config.nodePath)
       let store = WorkspaceStore(
         cli: cli,
@@ -96,6 +97,7 @@ struct OpenOrgServer {
       await store.bootstrapHeadless(
         corpusRoot: URL(fileURLWithPath: config.corpusRoot),
         hostRef: config.hostRef,
+        hostName: config.name,
         destinations: config.destinations
       )
       let remote = MobileRemoteCoordinator(
@@ -132,6 +134,11 @@ struct OpenOrgServer {
                     "runningThreads": store.openClawChatThreads.filter {
                       store.isAIChatThreadRunningOnCurrentHost($0.id)
                     }.count,
+                    "peerHosts": store.aiChatRemoteLiveHosts.map {
+                      ["hostRef": $0.hostRef, "name": $0.hostName, "kind": $0.hostKind.rawValue,
+                       "online": $0.isFresh(within: 150), "updatedAt": ISO8601DateFormatter().string(from: $0.updatedAt),
+                       "runningThreads": $0.turns.count] as [String: Any]
+                    },
                     "pushConfigured": remote.pushProviderConfigured,
                     "devices": remote.pairedDevices.map { ["id": $0.id.uuidString, "name": $0.name] }]
         case "pair":

@@ -1212,9 +1212,16 @@ private struct MobileRemoteThreadRow: View {
           .foregroundStyle(.secondary)
           .lineLimit(2)
       }
-      Text(thread.updatedAt, style: .relative)
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
+      HStack(spacing: 4) {
+        Text(thread.updatedAt, style: .relative)
+        if let host = thread.executionHostName, !host.isEmpty {
+          Text("·")
+          Text(thread.isRunning ? "running on \(host)" : "on \(host)")
+            .lineLimit(1)
+        }
+      }
+      .font(.caption2)
+      .foregroundStyle(.tertiary)
     }
     .padding(.vertical, 3)
   }
@@ -2291,6 +2298,15 @@ private struct MobileRemoteMessageBubble: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(
               message.role == "user" ? Color.white.opacity(0.78) : Color.secondary
+            )
+        }
+        if let provenance = message.provenanceCaption, !provenance.isEmpty {
+          // Which device sent it, which host received it, and where it ran.
+          Text(provenance)
+            .font(.caption2)
+            .lineLimit(2)
+            .foregroundStyle(
+              message.role == "user" ? Color.white.opacity(0.66) : Color.secondary.opacity(0.8)
             )
         }
         if message.role == "user",
@@ -3784,6 +3800,15 @@ private struct MobileRemoteInProgressBubble: View {
   }
 
   private var runtimeTitle: String {
+    // Name the host so a turn looks the same from every paired Mac or server.
+    if let host = detail.thread.executionHostName?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !host.isEmpty, detail.thread.isRunning {
+      return "\(destinationTitle) on \(host)"
+    }
+    return destinationTitle
+  }
+
+  private var destinationTitle: String {
     if let activeDestinationName = detail.activeDestinationName?
       .trimmingCharacters(in: .whitespacesAndNewlines),
        !activeDestinationName.isEmpty {

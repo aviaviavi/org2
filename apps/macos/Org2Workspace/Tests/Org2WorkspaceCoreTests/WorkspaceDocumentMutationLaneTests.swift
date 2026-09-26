@@ -283,6 +283,9 @@ final class WorkspaceDocumentMutationLaneTests: XCTestCase {
       // AI chat JSON machine state, explicitly outside the ordinary document
       // mutation lane.
       "data.write(to: url, options: [.atomic])",
+      // Per-host chat presence records (heartbeat and live turn progress),
+      // machine state beside the AI chat store rather than corpus documents.
+      "AIChatLiveHostDirectory.write(record, transcriptURL:",
       // Ephemeral plugin script in a unique temporary directory.
       "source.body.write(to: scriptURL",
       // Workspace-authored agent skill source. This is non-Org Markdown,
@@ -293,7 +296,7 @@ final class WorkspaceDocumentMutationLaneTests: XCTestCase {
       "text.write(to: url, atomically: true, encoding: .utf8)",
       "previousText.write(to: backupURL",
     ]
-    XCTAssertEqual(directWriteLines.count, 13, "Classify every new direct filesystem write")
+    XCTAssertEqual(directWriteLines.count, 15, "Classify every new direct filesystem write")
     for line in directWriteLines {
       XCTAssertTrue(
         classifiedDirectWriteMarkers.contains(where: line.contains),
