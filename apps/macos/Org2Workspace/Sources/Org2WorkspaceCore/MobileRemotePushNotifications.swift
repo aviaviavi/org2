@@ -202,7 +202,9 @@ actor MobileRemotePushSender {
     request.setValue("org.org2.mobile", forHTTPHeaderField: "apns-topic")
     request.setValue("alert", forHTTPHeaderField: "apns-push-type")
     request.setValue("10", forHTTPHeaderField: "apns-priority")
-    request.setValue(String(Int(Date().addingTimeInterval(86_400).timeIntervalSince1970)), forHTTPHeaderField: "apns-expiration")
+    // Reply alerts are useful only when they are current. Do not let APNs store
+    // an undeliverable alert and surface it hours later as an apparent resend.
+    request.setValue("0", forHTTPHeaderField: "apns-expiration")
     request.setValue(envelope.threadID.uuidString, forHTTPHeaderField: "apns-collapse-id")
     request.setValue(envelope.messageID.uuidString, forHTTPHeaderField: "apns-id")
 
