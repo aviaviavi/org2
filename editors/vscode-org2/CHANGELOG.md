@@ -4,6 +4,17 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.5 - 2026-09-26
+
+## Highlights
+
+- Keep AI chat history and active status consistent across the Mac app, headless server, and iPhone, including recovery after interruptions and cross-host sync.
+- Add Pi and OpenCode as agent destinations, with model discovery, startup progress, and clearer steering.
+- Improve iPhone chat rendering for inline images and formatted replies, and make new threads start faster.
+- Fix stale notifications, background PDF refresh errors, source-import validation, and link highlighting.
+
+This release includes the changes since 0.8.4. The macOS downloads are signed and notarized for Apple Silicon and Intel; the iPhone build is distributed separately through TestFlight.
+
 ## 0.8.4 - 2026-09-24
 
 # OpenOrg 0.8.4
