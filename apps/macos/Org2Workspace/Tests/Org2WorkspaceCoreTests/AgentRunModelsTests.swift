@@ -981,6 +981,9 @@ final class AgentRunModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.corpusRoot = root
     store.replaceAgentRunsForTesting([rejectedRun, canceledRun])
+    // This test supplies decision results without run files; keep the deferred
+    // filesystem refresh from replacing those fixtures with an empty list.
+    store.deferredAgentRunsRefreshDelayNanoseconds = 60_000_000_000
     store.agentRunApprovalDecisionForTesting = { runID, approvalID, decision, note in
       XCTAssertEqual(approvalID, "\(runID)-approval")
       switch decision {

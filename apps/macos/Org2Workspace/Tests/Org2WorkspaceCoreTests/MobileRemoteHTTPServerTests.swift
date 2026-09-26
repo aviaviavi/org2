@@ -542,7 +542,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let remoteID = store.createAIChatRemoteThread(runtime: .codex)
 
     var claude = try XCTUnwrap(
-      store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)
+      AIChatDestinationConfiguration.defaults.first(where: {
+        $0.id == AIChatDestinationConfiguration.localClaudeID
+      })
     )
     claude.isEnabled = true
     store.updateAIChatDestination(claude)

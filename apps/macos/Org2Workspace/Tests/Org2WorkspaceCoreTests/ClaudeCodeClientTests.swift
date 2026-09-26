@@ -152,12 +152,11 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     )
     store.setCorpusRoot(root)
 
-    XCTAssertEqual(
-      store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)?.adapter,
-      .claudeLocal
-    )
+    XCTAssertNil(store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID))
     var claude = try XCTUnwrap(
-      store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)
+      AIChatDestinationConfiguration.defaults.first(where: {
+        $0.id == AIChatDestinationConfiguration.localClaudeID
+      })
     )
     XCTAssertFalse(claude.isEnabled)
     claude.isEnabled = true
@@ -214,7 +213,9 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    var claude = try XCTUnwrap(store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID))
+    var claude = try XCTUnwrap(AIChatDestinationConfiguration.defaults.first(where: {
+      $0.id == AIChatDestinationConfiguration.localClaudeID
+    }))
     claude.isEnabled = true
     store.updateAIChatDestination(claude)
     store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 60_000_000_000)
