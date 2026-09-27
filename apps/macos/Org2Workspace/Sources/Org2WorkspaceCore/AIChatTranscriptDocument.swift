@@ -209,14 +209,15 @@ struct AIChatTranscriptDocument: View {
       guard let remote = store.aiChatRemoteLiveTurn(for: threadID) else { return nil }
       let destination = remote.turn.destinationName
         ?? store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID)
+      let runningHost = store.aiChatHarnessHostName(for: threadID) ?? remote.host.name
       return LiveInput(
         threadID: threadID,
         startedAt: remote.turn.startedAt,
         lastEventAt: remote.updatedAt,
         runtime: store.selectedAIChatActiveRuntime,
-        destinationTitle: "\(destination) on \(remote.host.name)",
+        destinationTitle: "\(destination) on \(runningHost)",
         connectionState: .connected,
-        connectionDetail: "Running on \(remote.host.name)",
+        connectionDetail: "Running on \(runningHost)",
         runID: nil,
         preparation: OpenClawLiveTextPreparationInput(
           rawText: remote.turn.streamingReply,

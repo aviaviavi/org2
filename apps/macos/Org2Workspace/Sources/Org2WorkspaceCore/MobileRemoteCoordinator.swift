@@ -811,6 +811,11 @@ public final class MobileRemoteCoordinator: ObservableObject {
         runningThreadIDs.insert(thread.id)
         executionHostNames[thread.id] = remote.host.name
       }
+      // A remote harness (for example OpenCode over SSH) runs on its own
+      // machine, not on the OpenOrg host that drove the turn.
+      if let harnessHost = store.aiChatHarnessHostName(for: thread.id) {
+        executionHostNames[thread.id] = harnessHost
+      }
     }
     return MobileRemoteThreadProjectionContext(
       destinationNamesByID: store.aiChatDestinationTitlesByID,
@@ -847,7 +852,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
         reasoning: remote.turn.reasoning,
         activities: remote.turn.activities,
         connectionState: OpenClawGatewayConnectionState.connected.rawValue,
-        connectionDetail: "Running on \(remote.host.name)"
+        connectionDetail: "Running on \(store.aiChatHarnessHostName(for: thread.id) ?? remote.host.name)"
       )
     }
     let livePresentation = store.aiChatLivePresentationSnapshot(for: thread.id)

@@ -40088,8 +40088,19 @@ public final class WorkspaceStore {
     return nil
   }
 
+  /// The machine where the conversation's agent harness runs when its
+  /// destination is a remote (SSH or endpoint) harness. Message provenance
+  /// records the OpenOrg host that drove the turn, which is a different
+  /// machine in that case, so labels such as "OpenCode on press" use this.
+  public func aiChatHarnessHostName(for threadID: UUID) -> String? {
+    let destinationID = aiChatRemoteLiveTurn(for: threadID)?.turn.destinationID
+      ?? aiChatActiveDestinationID(for: threadID)
+    return destinationID.flatMap { aiChatDestination(id: $0)?.harnessHostName }
+  }
+
   /// A readable name for the host running or last running this conversation.
   public func aiChatExecutionHostName(for threadID: UUID) -> String? {
+    if let harnessHost = aiChatHarnessHostName(for: threadID) { return harnessHost }
     if isAIChatThreadRunningOnCurrentHost(threadID) { return aiChatHostIdentity.name }
     if let remote = aiChatRemoteLiveTurn(for: threadID) { return remote.host.name }
     guard let thread = openClawChatThreads.first(where: { $0.id == threadID }) else { return nil }

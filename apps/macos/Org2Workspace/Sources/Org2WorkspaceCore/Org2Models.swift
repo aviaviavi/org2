@@ -3196,6 +3196,49 @@ public struct AIChatDestinationConfiguration: Identifiable, Hashable, Codable, S
       && adapter != .openCodeRemote && adapter != .codexManagedRemote
   }
 
+  /// A readable name for the machine where this destination's agent harness
+  /// actually runs, when that is not the OpenOrg host driving the turn.
+  /// SSH-managed remotes run on their SSH host; endpoint-based remotes run on
+  /// their endpoint's host. Local and direct-provider destinations return nil.
+  public var harnessHostName: String? {
+    let rawHost: String?
+    switch adapter {
+    case .piRemote, .openCodeRemote, .codexManagedRemote:
+      rawHost = Self.sshHostName(endpoint)
+    case .codexRemote, .openClaw:
+      rawHost = URL(string: endpoint)?.host
+    case .codexLocal, .claudeLocal, .piLocal, .openCodeLocal,
+         .openAI, .anthropic, .openRouter, .ollama:
+      rawHost = nil
+    }
+    guard let host = rawHost?
+      .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      !host.isEmpty
+    else { return nil }
+    let lowered = host.lowercased()
+    guard !["localhost", "127.0.0.1", "::1"].contains(lowered) else { return nil }
+    // Present LAN and tailnet names as the bare machine name ("press").
+    for suffix in [".local", ".ts.net"] where lowered.hasSuffix(suffix) {
+      if let machine = host.split(separator: ".").first, !machine.isEmpty {
+        return String(machine)
+      }
+    }
+    return host
+  }
+
+  private static func sshHostName(_ target: String) -> String? {
+    var host = Substring(target.trimmingCharacters(in: .whitespacesAndNewlines))
+    if host.hasPrefix("ssh://") { host = host.dropFirst("ssh://".count) }
+    if let at = host.lastIndex(of: "@") { host = host[host.index(after: at)...] }
+    if let slash = host.firstIndex(of: "/") { host = host[..<slash] }
+    if !host.hasPrefix("["), host.filter({ $0 == ":" }).count == 1,
+       let colon = host.firstIndex(of: ":") {
+      host = host[..<colon]
+    }
+    return host.isEmpty ? nil : String(host)
+  }
+
   public static var defaults: [AIChatDestinationConfiguration] {
     [
       AIChatDestinationConfiguration(

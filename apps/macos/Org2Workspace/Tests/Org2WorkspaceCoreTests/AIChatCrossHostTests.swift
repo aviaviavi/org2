@@ -462,6 +462,60 @@ final class AIChatCrossHostTests: XCTestCase {
     return result
   }
 
+  func testRemoteHarnessDestinationsNameTheMachineTheHarnessRunsOn() {
+    func host(_ adapter: AIChatDestinationAdapter, _ endpoint: String) -> String? {
+      AIChatDestinationConfiguration(
+        name: "Agent", mention: "agent", adapter: adapter, endpoint: endpoint
+      ).harnessHostName
+    }
+    XCTAssertEqual(host(.openCodeRemote, "press"), "press")
+    XCTAssertEqual(host(.openCodeRemote, "avi@press.local"), "press")
+    XCTAssertEqual(host(.piRemote, "ssh://avi@press.tail1234.ts.net:22"), "press")
+    XCTAssertEqual(host(.codexManagedRemote, "build-box.example.com"), "build-box.example.com")
+    XCTAssertEqual(host(.codexRemote, "wss://press.local:4500"), "press")
+    XCTAssertNil(host(.openClaw, "ws://127.0.0.1:18789"))
+    XCTAssertNil(host(.openCodeLocal, ""))
+    XCTAssertNil(host(.openAI, "https://api.openai.com/v1"))
+  }
+
+  /// A laptop drives an OpenCode-over-SSH turn whose harness runs on `press`.
+  /// Provenance names the laptop, but the conversation runs on `press`.
+  @MainActor
+  func testRemoteHarnessThreadReportsTheHarnessHostInsteadOfTheDrivingHost() async throws {
+    let transcriptURL = root.appendingPathComponent("chat.json")
+    let destination = AIChatDestinationConfiguration(
+      name: "OpenCode",
+      mention: "opencode-press",
+      adapter: .openCodeRemote,
+      endpoint: "press"
+    )
+    let reply = OpenClawChatMessage(
+      role: .assistant,
+      content: "Done.",
+      provenance: AIChatMessageProvenance(
+        executionHostRef: "laptop", executionHostName: "AiroPress"
+      )
+    )
+    let thread = OpenClawChatThread(
+      title: "Remote harness",
+      runtime: .openCode,
+      destinationID: destination.id,
+      sessionKey: "remote-harness",
+      messages: [reply]
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(threads: [thread], selectedThreadID: thread.id, settlementSettings: settings),
+      legacyURL: transcriptURL
+    )
+    let store = try makeStore(transcriptURL: transcriptURL)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertEqual(store.aiChatExecutionHostName(for: thread.id), "AiroPress")
+
+    store.updateAIChatDestination(destination)
+    XCTAssertEqual(store.aiChatHarnessHostName(for: thread.id), "press")
+    XCTAssertEqual(store.aiChatExecutionHostName(for: thread.id), "press")
+  }
+
   @MainActor
   private func makeStore(
     transcriptURL: URL,
