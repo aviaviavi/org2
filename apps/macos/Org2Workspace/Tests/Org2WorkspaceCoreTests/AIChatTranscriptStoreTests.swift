@@ -1474,7 +1474,14 @@ final class AIChatTranscriptStoreTests: XCTestCase {
       store.openClawChatThreads.first(where: { $0.id == second.id })?.unreadMessageCount,
       0
     )
+    // The rebuild count above is the deterministic regression check. The
+    // wall-clock bound only catches gross slowness: unoptimized debug builds
+    // measure ~300 ms for 40 switches on an idle machine, so give them room.
+    #if DEBUG
+    XCTAssertLessThan(duration, .milliseconds(1_000))
+    #else
     XCTAssertLessThan(duration, .milliseconds(300))
+    #endif
   }
 
   @MainActor

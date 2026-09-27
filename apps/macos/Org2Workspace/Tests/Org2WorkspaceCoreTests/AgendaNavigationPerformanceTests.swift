@@ -35,8 +35,11 @@ final class AgendaNavigationPerformanceTests: XCTestCase {
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(fixture.root)
-    store.agendaEntryRenderIdleDelayNanoseconds = 100_000_000
-    store.backlinksSelectionIdleDelayNanoseconds = 100_000_000
+    // The idle window must dwarf the simulated 20 ms keystroke gap. On a
+    // loaded CI runner that sleep has overrun 100 ms, which let the first
+    // selection settle and made this test flaky without a product regression.
+    store.agendaEntryRenderIdleDelayNanoseconds = 1_000_000_000
+    store.backlinksSelectionIdleDelayNanoseconds = 1_000_000_000
     store.entrySourceLoaderForTesting = { file, _, _ in
       EntrySource(
         file: file,
@@ -63,7 +66,7 @@ final class AgendaNavigationPerformanceTests: XCTestCase {
     try await Task.sleep(nanoseconds: 20_000_000)
     store.selectAgendaItem(fixture.second)
 
-    let settled = await waitUntil {
+    let settled = await waitUntil(timeoutNanoseconds: 10_000_000_000) {
       store.selectedEntryHTML?.contains(fixture.second.file) == true
         && store.backlinks != nil
         && !store.isRenderingEntrySource

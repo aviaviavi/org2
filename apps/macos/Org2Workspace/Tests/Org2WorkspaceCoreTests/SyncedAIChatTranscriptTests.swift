@@ -59,7 +59,11 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       to: laptopStore.appendingPathComponent("manifests", isDirectory: true)
     )
 
+    // The decode counters are debug-only probes. Release-mode CI still runs
+    // the reconciliation path but must not reference symbols omitted there.
+    #if DEBUG
     AIChatTranscriptStore.resetThreadShardDecodeCountForTesting()
+    #endif
     let loaded = try XCTUnwrap(
       AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL)
     )
@@ -68,24 +72,30 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
       loaded.snapshot.threads.first(where: { $0.id == server.id })?.messages.first?.content,
       "From the server"
     )
+    #if DEBUG
     XCTAssertLessThanOrEqual(
       AIChatTranscriptStore.threadShardDecodeCountForTesting(),
       6,
       "Divergent manifests should validate each thread revision at most once"
     )
+    #endif
 
     // Persisting the reconciled snapshot records every immutable branch that
     // it subsumes. Routine follow-up loads must not reopen all of those large
     // versioned manifests (and then decode every shard) forever.
     try AIChatTranscriptStore.shared.flush(loaded.snapshot, legacyURL: laptopURL)
     AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    #if DEBUG
     AIChatTranscriptStore.resetRecoveryCandidateDecodeCountForTesting()
+    #endif
     XCTAssertNotNil(AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL))
+    #if DEBUG
     XCTAssertLessThanOrEqual(
       AIChatTranscriptStore.recoveryCandidateDecodeCountForTesting(),
       2,
       "A converged store should inspect only its two mutable manifest views"
     )
+    #endif
   }
 
   @MainActor
@@ -428,7 +438,14 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     XCTAssertTrue(refreshed, "A running local turn and queued save must not hide unrelated synced chats")
     XCTAssertEqual(Set(store.openClawChatThreads.map(\.id)), [active.id, idle.id, renamed.id, incoming.id])
     XCTAssertEqual(store.openClawChatThreads.first { $0.id == active.id }, working)
-    XCTAssertEqual(store.aiChatThreadMessageMutationVersionForTesting(active.id), revision)
+    // Versions come from one monotonic counter, so a refresh that mutated the
+    // active thread would record a newer value. An earlier queued save may
+    // legitimately be acknowledged meanwhile, which clears the entry (nil).
+    XCTAssertLessThanOrEqual(
+      store.aiChatThreadMessageMutationVersionForTesting(active.id) ?? 0,
+      revision ?? 0,
+      "Refreshing synced chats must not mutate the running local thread"
+    )
     XCTAssertTrue(store.isAIChatThreadRunning(active.id))
     XCTAssertEqual(store.openClawChatThreads.first { $0.id == renamed.id }?.title, "My unsaved local title")
     XCTAssertEqual(store.openClawChatThreads.first { $0.id == idle.id }?.messages.last?.content, "A remote reply in an existing chat")

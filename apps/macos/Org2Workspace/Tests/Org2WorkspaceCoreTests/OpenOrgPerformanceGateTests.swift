@@ -1840,6 +1840,12 @@ private final class ProbeTestClock: @unchecked Sendable {
   func now() -> CFTimeInterval {
     lock.withLock { ticks += 1; return Double(ticks) / 1000 }
   }
+
+  /// Model time that passes without a probe timestamp, such as a delayed
+  /// background timer wake-up.
+  func advance(milliseconds: Int) {
+    lock.withLock { ticks += milliseconds }
+  }
 }
 
 @MainActor
@@ -1934,22 +1940,30 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
   }
 
   func testMainActorGapProbeDoesNotCountBackgroundCadenceDelay() async {
+    // Use the deterministic clock: on a loaded CI runner the real main queue
+    // can legitimately take tens of milliseconds to service a callback, which
+    // says nothing about whether cadence delay is excluded. Each cadence step
+    // advances the clock by 50 ms without a probe timestamp; each timestamp
+    // advances it by 1 ms. Counting the cadence delay would report >= 51 ms.
+    let clock = ProbeTestClock()
     let callbackEnqueued = DispatchSemaphore(value: 0)
     let probe = MainActorGapProbe(
       intervalMilliseconds: 1,
       cadence: { _ in
         // Model delayed timer wake-up, profiler suspension, or background
         // scheduling pressure before a heartbeat reaches the main queue.
-        try await Task.sleep(nanoseconds: 50_000_000)
+        clock.advance(milliseconds: 50)
+        try await Task.sleep(nanoseconds: 1_000_000)
       },
-      didEnqueueForTesting: { callbackEnqueued.signal() }
+      didEnqueueForTesting: { callbackEnqueued.signal() },
+      now: { clock.now() }
     )
     probe.start()
-    XCTAssertEqual(callbackEnqueued.wait(timeout: .now() + 1), .success)
+    XCTAssertEqual(callbackEnqueued.wait(timeout: .now() + 5), .success)
 
     let maximumGapMilliseconds = await probe.stop()
 
-    XCTAssertLessThan(maximumGapMilliseconds, 16.7)
+    XCTAssertEqual(maximumGapMilliseconds, 1, accuracy: 0.000_001)
   }
 
   func testMainActorGapProbeDetectsThirtyMillisecondMainActorBlock() async {
