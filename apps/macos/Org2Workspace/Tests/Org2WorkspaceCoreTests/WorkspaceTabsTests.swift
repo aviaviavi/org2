@@ -454,6 +454,20 @@ final class WorkspaceTabsTests: XCTestCase {
     ))
     XCTAssertEqual(store.selectedWorkspaceTabID, secondTabID)
 
+    // Real ⌘⇧[ / ⌘⇧] events report the shifted brace characters. They must
+    // be handled here rather than falling through to the slower menu path.
+    XCTAssertTrue(store.handleGlobalKeyDown(
+      keyDown("{", keyCode: 33, modifiers: [.command, .shift]),
+      scope: .globalOnly
+    ))
+    XCTAssertEqual(store.selectedWorkspaceTabID, firstTabID)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(
+      keyDown("}", keyCode: 30, modifiers: [.command, .shift]),
+      scope: .globalOnly
+    ))
+    XCTAssertEqual(store.selectedWorkspaceTabID, secondTabID)
+
     XCTAssertTrue(store.handleGlobalKeyDown(
       keyDown("w", keyCode: 13, modifiers: [.command]),
       scope: .globalOnly

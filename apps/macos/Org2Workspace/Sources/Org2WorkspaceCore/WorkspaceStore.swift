@@ -37113,10 +37113,14 @@ public final class WorkspaceStore {
         return true
       }
       switch key {
-      case "[":
+      // `charactersIgnoringModifiers` still applies Shift, so a physical
+      // ⌘⇧[ / ⌘⇧] arrives as "{" / "}". Match both forms here; otherwise
+      // the shortcut misses this fast path and falls through to the SwiftUI
+      // menu key-equivalent path, which lags noticeably on every tab switch.
+      case "[", "{":
         selectPreviousWorkspaceTab()
         return true
-      case "]":
+      case "]", "}":
         selectNextWorkspaceTab()
         return true
       case "f":
