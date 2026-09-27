@@ -43,6 +43,7 @@ function parseOptions(args) {
     plan: false,
     requireNotarization: false,
     skipRuntimeBuild: false,
+    swiftScratchPath: "",
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -61,6 +62,9 @@ function parseOptions(args) {
         break;
       case "--skip-runtime-build":
         parsed.skipRuntimeBuild = true;
+        break;
+      case "--swift-scratch-path":
+        parsed.swiftScratchPath = args[++index] ?? "";
         break;
       case "--force":
         parsed.force = true;
@@ -81,6 +85,7 @@ function parseOptions(args) {
   }
   const suffix = parsed.architecture === "arm64" ? "" : "-Intel";
   parsed.output = resolve(parsed.output || join(repoRoot, "artifacts", `OpenOrg${suffix}.dmg`));
+  if (parsed.swiftScratchPath) parsed.swiftScratchPath = resolve(parsed.swiftScratchPath);
   return parsed;
 }
 
@@ -95,6 +100,9 @@ Options:
   --notary-profile NAME     notarytool Keychain profile (or OPENORG_NOTARY_KEYCHAIN_PROFILE)
   --require-notarization    fail instead of producing an unstapled local candidate
   --skip-runtime-build      reuse a shared runtime already built and validated
+  --swift-scratch-path DIR  persistent architecture-specific SwiftPM scratch
+                            directory for incremental release builds (default:
+                            a cold build inside the temporary staging)
   --force                   replace an existing output artifact
   --plan                    print the resolved non-secret packaging plan
   --help                    show this help`;
@@ -213,6 +221,7 @@ function printPlan() {
     notarization: notarizationAuthentication(options.notaryProfile)?.label ?? "not configured",
     output: options.output,
     swiftBuild: "isolated per artifact",
+    swiftScratch: options.swiftScratchPath || "temporary staging (cold build)",
     runtimeDependencies: "locked install under target Node in isolated staging",
     targetRuntimeSelection: "architecture-verified at execution",
     staging: "isolated temporary directory",
@@ -286,7 +295,7 @@ function main() {
         ORG2_WORKSPACE_CODE_SIGN_IDENTITY: signingIdentity,
         ORG2_WORKSPACE_NODE_PATH: nodePath,
         ORG2_WORKSPACE_SWIFT_ARCH: options.architecture,
-        ORG2_WORKSPACE_SWIFT_SCRATCH_PATH: join(workingDirectory, "swift-build"),
+        ORG2_WORKSPACE_SWIFT_SCRATCH_PATH: options.swiftScratchPath || join(workingDirectory, "swift-build"),
         ORG2_WORKSPACE_WHISPER_CPP_PATH: whisperCppPath,
         ORG2_WORKSPACE_WHISPER_MODEL_PATH: modelPath,
       },

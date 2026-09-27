@@ -37,9 +37,10 @@ The orchestrator:
 
 - fails closed on a dirty or unsynchronized `main`;
 - checkpoints every phase and each input-fingerprinted validation and packaging job under `/tmp/openorg-release-VERSION/state.json`;
-- builds the shared runtime once, runs docs, Node, and VS Code validation concurrently, then runs Swift serially in an isolated scratch directory;
-- builds the isolated arm64 DMG, isolated Intel DMG, and iOS archive concurrently, reusing the validated TypeScript output and installing each architecture's production dependencies in separate staging;
-- overlaps the GitHub tag workflow/DMG publication with the TestFlight binary upload;
+- builds the shared runtime once, then runs validation and packaging concurrently; nothing is tagged or published until both pass;
+- runs docs, Node (via `tools/run-tests-parallel.mjs`), VS Code, and Swift validation concurrently; Swift uses a persistent, release-private arm64 scratch directory so its build is incremental;
+- builds the arm64 DMG, Intel DMG, and iOS archive concurrently, reusing the validated TypeScript output, installing each architecture's production dependencies in separate staging, and reusing persistent per-architecture Swift release scratch directories under `~/Library/Caches/OpenOrg/release-build` (`--clean-build-cache` forces a cold build);
+- overlaps the GitHub tag workflow/DMG publication with the TestFlight binary upload; each DMG upload retries with backoff and is checkpointed separately, and a completed TestFlight upload is never repeated on resume;
 - leaves TestFlight metadata, group assignment, and external beta review for the signed-in App Store Connect browser flow described below;
 - synchronizes GitHub, Scarf-backed downloads, and the generated site before parallel public verification;
 - writes each long-running job to a separate log beside the checkpoint.
@@ -49,7 +50,7 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 ## Resume and repair without duplicate work
 
 1. Resume the existing versioned checkpoint before considering `--restart`. Inspect its completed phases, validation fingerprint, and per-job logs. Restart only when the recorded inputs are stale or the candidate itself changed.
-2. Do not repeat the complete Swift suite solely to chase a timing-only failure. If the full run has no functional failure, rerun each failed timing test once in isolation. Accept the full run plus focused passing retry as the release evidence; repeat the full suite only when a functional test failed or an isolated timing retry still fails.
+2. The Node lane already retries a failed test once in isolation and reports it as `FLAKY` in its log and `node-tests.json`; treat a flaky report as a follow-up, not a release blocker. Do not repeat the complete Swift suite solely to chase a timing-only failure. If the full run has no functional failure, rerun each failed timing test once in isolation. Accept the full run plus focused passing retry as the release evidence; repeat the full suite only when a functional test failed or an isolated timing retry still fails.
 3. Resume a failed packaging phase normally. Its completed jobs are retained only while the source fingerprint and outputs match: Mac sidecars must have the exact version and architecture, notarization success, and matching SHA-256; iOS archives must have the exact version/build and valid code signatures. Missing or damaged outputs rerun only their own job. Use `tools/package-openorg-macos.mjs` for an explicitly scoped architecture repair. Failed staging directories are retained and their exact paths are printed; inspect and repair the existing signed candidate before rebuilding. Notarization access is checked before compilation, and an existing protected Apple API key can be supplied through the release contract when Keychain access is unavailable.
 4. npm optional native dependencies follow the architecture of the Node process that installs them. The Mac packager now installs locked production dependencies under each target Node in its own temporary directory and loads the native DuckDB binding before compiling Swift. Do not replace the shared checkout's dependencies between parallel packaging jobs. Preserve `/usr/bin:/bin:/usr/sbin:/sbin` in `PATH` so notarization verification can invoke `/usr/sbin/spctl`.
 5. If the tag workflow times out only while publishing VS Code, do not rerun the release or republish npm. Confirm the version is absent from the Marketplace, then use the workflow's `publish_only=true` dispatch for the same version. It checks out the version tag, skips the full test and npm publication gates, retries Marketplace submission, and reattaches the small release assets. The tag workflow is intentionally allowed to continue to GitHub asset publication when Marketplace submission fails.
@@ -65,7 +66,7 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 ## 2. Validate the release candidate
 
 1. Confirm GitHub authentication with `gh auth status` and npm registry reachability with `npm ping`, without printing tokens. npm publication uses the tag workflow's Trusted Publishing/OIDC identity; a local npm credential is required only for an explicitly chosen local fallback.
-2. Run the checks required by affected surfaces. For a coordinated release, the orchestrator performs one shared build, runs the built Node and documentation checks with the extension tests, and then runs the complete macOS Swift suite serially. The tag workflow runs one independent `npm test` gate and publishes the already-packed tarball without repeating npm lifecycle tests.
+2. Run the checks required by affected surfaces. For a coordinated release, the orchestrator performs one shared build, then runs the built Node, documentation, extension, and complete macOS Swift suites concurrently with packaging. The tag workflow runs one independent `npm test` gate and publishes the already-packed tarball without repeating npm lifecycle tests.
 3. Resolve failures before versioning. Report pre-existing skips accurately.
 4. Commit and push the complete feature tree to `main` before creating release metadata.
 

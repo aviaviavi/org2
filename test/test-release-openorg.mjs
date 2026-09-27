@@ -12,6 +12,12 @@ import {
   parseReleaseOptions,
   resolveReleaseVersion,
   runCheckpointedStep,
+  releaseBuildCacheRoot,
+  validationJobs,
+  withRetry,
+  SWIFT_TIMING_TESTS,
+  failedSwiftTests,
+  swiftTimingJob,
   reusableMacArtifact,
   reusableIOSArchive,
   testFlightReviewAttributes,
@@ -42,12 +48,10 @@ assert.equal(plan.safeDefaults.failClosedOnDirtyTree, true);
 assert.equal(plan.safeDefaults.notarizationRequired, true);
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "validate").parallel,
-  ["Docs", "Node/full", "VS Code"]
+  ["Docs", "Node/full", "VS Code", "Swift"]
 );
-assert.deepEqual(
-  plan.phases.find((phase) => phase.name === "validate").then,
-  ["Swift/serial"]
-);
+assert.equal(plan.phases.find((phase) => phase.name === "validate").overlapsWith, "package");
+assert.equal(plan.phases.find((phase) => phase.name === "package").after, "Build shared runtime");
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "package").parallel,
   ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", "iOS archive"]
@@ -62,12 +66,59 @@ assert.match(TESTFLIGHT.reviewNotes, /no account system and does not require sig
 assert.match(TESTFLIGHT.reviewNotes, /locally installed OpenOrg macOS companion/);
 
 const releaseSource = readFileSync(join(repoRoot, "tools", "release-openorg.mjs"), "utf8");
-assert.ok(
-  releaseSource.indexOf('"swift", "Swift suite serial"')
-    > releaseSource.indexOf('await runParallel([', releaseSource.indexOf("async function validate"))
-);
-assert.match(releaseSource, /--scratch-path[\s\S]+swift-tests/);
-assert.match(releaseSource, /"-arm64", "swift"/);
+// Swift, Node, docs, and VS Code validation run concurrently; the Node suite
+// uses the parallel runner; Swift builds reuse persistent per-arch caches.
+const jobs = validationJobs({ artifactsDir: "/tmp/r", buildCache: "/cache" }, "fp", 8);
+assert.deepEqual(jobs.map((job) => job.key), ["docs", "node", "vscode", "swift"]);
+const nodeJob = jobs.find((job) => job.key === "node");
+assert.deepEqual(nodeJob.args.slice(0, 4), ["tools/run-tests-parallel.mjs", "test:built", "--jobs", "4"]);
+assert.equal(validationJobs({ artifactsDir: "/tmp/r", buildCache: "/cache" }, "fp", 2)
+  .find((job) => job.key === "node").args[3], "2");
+const swiftJob = jobs.find((job) => job.key === "swift");
+assert.deepEqual(swiftJob.args.slice(0, 3), ["-arm64", "swift", "test"]);
+assert.equal(swiftJob.args[swiftJob.args.indexOf("--scratch-path") + 1], "/cache/swift-tests-arm64");
+assert.equal(swiftJob.args[swiftJob.args.indexOf("--skip") + 1], SWIFT_TIMING_TESTS);
+assert.deepEqual(failedSwiftTests([
+  "Test Case '-[Mod.ATests testFast]' passed (0.1 seconds).",
+  "Test Case '-[Mod.BTests testBudget]' failed (0.5 seconds).",
+  "Test Case '-[Mod.BTests testBudget]' failed (0.5 seconds).",
+  "Test Case '-[Other.CTests testX]' failed (1.0 seconds).",
+].join("\n")), ["Mod.BTests/testBudget", "Other.CTests/testX"]);
+const retryJob = swiftTimingJob({ buildCache: "/cache" }, ["Mod.BTests/testBudget"]);
+assert.equal(retryJob.args[retryJob.args.indexOf("--filter") + 1], `${SWIFT_TIMING_TESTS}|Mod\\.BTests/testBudget$`);
+const timingJob = swiftTimingJob({ buildCache: "/cache" });
+assert.equal(timingJob.args[timingJob.args.indexOf("--filter") + 1], SWIFT_TIMING_TESTS);
+assert.equal(timingJob.args[timingJob.args.indexOf("--scratch-path") + 1], "/cache/swift-tests-arm64",
+  "the timing lane reuses the correctness lane's warm build");
+assert.ok(releaseSource.indexOf("swiftTimingJob(plan, isolatedRetries)", releaseSource.indexOf("async function validate("))
+  > releaseSource.indexOf("await runParallel(validationJobs", releaseSource.indexOf("async function validate(")),
+  "timing tests run only after the concurrent validation lanes finish");
+assert.equal(releaseBuildCacheRoot({ OPENORG_RELEASE_BUILD_CACHE: " /x/cache " }), "/x/cache");
+assert.match(releaseBuildCacheRoot({}), /Library\/Caches\/OpenOrg\/release-build$/);
+assert.match(releaseSource, /"--swift-scratch-path", join\(plan\.buildCache, "swift-release-arm64"\)/);
+assert.match(releaseSource, /"--swift-scratch-path", join\(plan\.buildCache, "swift-release-x86_64"\)/);
+// Packaging overlaps validation only after the shared runtime build.
+const overlap = releaseSource.slice(releaseSource.indexOf("async function executePlan"));
+assert.ok(overlap.indexOf("await buildSharedRuntime(plan, state);")
+  < overlap.indexOf('runPhase(plan, options, state, "package", packageArtifacts)'));
+// DMG uploads and the TestFlight upload are individually checkpointed.
+assert.match(releaseSource, /`upload-\$\{artifact\}`/);
+assert.match(releaseSource, /"testflight-upload"/);
+{
+  let calls = 0;
+  const waits = [];
+  const value = await withRetry("flaky upload", 4, async () => {
+    calls += 1;
+    if (calls < 3) throw new Error("HTTP 500");
+    return "uploaded";
+  }, { delayMs: 10, sleep: async (ms) => { waits.push(ms); } });
+  assert.equal(value, "uploaded");
+  assert.deepEqual(waits, [10, 20]);
+  await assert.rejects(
+    withRetry("dead upload", 2, async () => { throw new Error("HTTP 400"); }, { delayMs: 1, sleep: async () => {} }),
+    /HTTP 400/,
+  );
+}
 assert.ok(
   releaseSource.indexOf("await updateBetaReviewDetails();") < releaseSource.indexOf("await submitBetaReview(build.id);")
 );

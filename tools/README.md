@@ -12,9 +12,17 @@ npm run release:openorg -- patch \
 
 Add `--execute` only after reviewing the plan. Long validation and packaging lanes run concurrently, each writes its own log under `/tmp/openorg-release-VERSION/`, and successful phases are checkpointed in `state.json`. Validation jobs are checkpointed individually against a fingerprint of the release source tree, so retrying a failed lane preserves the successful build, docs, Node, VS Code, Swift, generated-artifact, and pack checks. Changing tracked or untracked release inputs invalidates those job checkpoints. `--restart` clears both phase and job checkpoints.
 
-Release validation builds the shared runtime once, then uses the `*:built` checks to avoid rebuilding identical output between the docs, Node, and generated-artifact gates. The tag workflow still runs one independent `npm test` publication gate, but publishes the already-packed tarball with lifecycle scripts disabled so `prepublishOnly` does not repeat that full suite.
+Release validation builds the shared runtime once, then uses the `*:built` checks to avoid rebuilding identical output between the docs, Node, and generated-artifact gates. Packaging needs only that build, so the arm64 DMG, Intel DMG, and iOS archive run concurrently with validation; nothing is tagged or published until both phases pass. Docs, Node, VS Code, and Swift validation run concurrently. The Node lane uses `run-tests-parallel.mjs`, and Swift test and release builds reuse persistent per-architecture SwiftPM scratch directories under `~/Library/Caches/OpenOrg/release-build` (override with `OPENORG_RELEASE_BUILD_CACHE`; discard with `--clean-build-cache`). Each DMG upload retries with backoff and is checkpointed separately, as is the TestFlight upload, so a resumed release never repeats a completed upload. The tag workflow still runs one independent `npm test` publication gate, but publishes the already-packed tarball with lifecycle scripts disabled so `prepublishOnly` does not repeat that full suite.
 
 The normal iOS path passes `--skip-testflight-groups`: the orchestrator uploads the build, then the release operator uses the signed-in App Store Connect browser to set `What to Test`, attach both tester groups, and submit external beta review. API keys are not used for those distribution actions because App Store Connect may permit upload and reads while forbidding external-group or review mutations. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`, the Sparkle EdDSA signing key stored under the `org.org2.workspace` Keychain account, and `ORG2_GOOGLE_OAUTH_CLIENT_JSON` pointing at the protected OpenOrg Desktop OAuth client JSON. The release build reads that JSON without copying it into source and fails closed if the shared Google client is absent. Each release signs architecture-specific update feeds and publishes them with the site. Run `npm run release:openorg -- --help` for repair and partial-run options.
+
+## Parallel test runner
+
+`run-tests-parallel.mjs` runs the leaves of an npm test script (default `test:built`) on a worker pool. The `&&` chains in `package.json` remain the canonical test list; the runner expands `npm run` references, starts known-slow tests first, then runs the wall-clock performance tests one at a time on an idle machine. A failure is retried once in isolation and reported as `FLAKY` if the retry passes; `--no-retry` disables that. `--report FILE` writes per-test timings.
+
+```bash
+npm run build && npm run test:parallel
+```
 
 ## Documentation coverage check
 

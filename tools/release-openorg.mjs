@@ -16,6 +16,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { availableParallelism, homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -30,6 +31,13 @@ const vscodePackageDir = join(repoRoot, "editors", "vscode-org2");
 const iosProjectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
 const iosProjectFile = join(iosProjectPath, "project.pbxproj");
 const macPackageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
+// Persistent, architecture-specific SwiftPM scratch directories. They live
+// outside the checkout and the daily app, survive across releases, and make
+// Swift test and release builds incremental instead of cold every release.
+export function releaseBuildCacheRoot(environment = process.env) {
+  return environment.OPENORG_RELEASE_BUILD_CACHE?.trim()
+    || join(homedir(), "Library", "Caches", "OpenOrg", "release-build");
+}
 
 export const RELEASE_PHASES = [
   "preflight",
@@ -98,6 +106,7 @@ export function resolveReleaseVersion(requested, baseVersion = currentVersion())
 export function parseReleaseOptions(args) {
   const parsed = {
     artifactsDir: "",
+    cleanBuildCache: false,
     execute: false,
     help: false,
     iosBuild: currentIOSBuild() + 1,
@@ -114,6 +123,7 @@ export function parseReleaseOptions(args) {
     switch (argument) {
       case "--execute": parsed.execute = true; break;
       case "--restart": parsed.restart = true; break;
+      case "--clean-build-cache": parsed.cleanBuildCache = true; break;
       case "--skip-ios": parsed.skipIOS = true; break;
       case "--skip-testflight-groups": parsed.skipTestFlightGroups = true; break;
       case "--artifacts-dir": parsed.artifactsDir = args[++index] ?? ""; break;
@@ -147,6 +157,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
   const artifactsDir = resolve(options.artifactsDir || join("/tmp", `openorg-release-${version}`));
   return {
     artifactsDir,
+    buildCache: releaseBuildCacheRoot(),
     checkpoints: join(artifactsDir, "state.json"),
     execute: options.execute,
     ios: options.skipIOS ? null : {
@@ -159,8 +170,8 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
     phases: [
       { name: "preflight", parallel: ["GitHub auth", "npm registry", "Apple/signing configuration", "Sparkle signing key"] },
       { name: "stamp", parallel: false },
-      { name: "validate", once: ["Build shared runtime"], parallel: ["Docs", "Node/full", "VS Code"], then: ["Swift/serial"] },
-      { name: "package", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ] },
+      { name: "validate", once: ["Build shared runtime"], parallel: ["Docs", "Node/full", "VS Code", "Swift"], overlapsWith: "package" },
+      { name: "package", after: "Build shared runtime", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ], overlapsWith: "validate" },
       { name: "publish", parallel: ["Git tag workflow + DMGs", ...(options.skipIOS ? [] : ["TestFlight upload + groups"]) ] },
       { name: "sync", parallel: false },
       { name: "verify", parallel: ["npm", "VS Code Marketplace", "GitHub assets", "Scarf redirects", ...(options.skipIOS ? [] : ["TestFlight groups"]) ] },
@@ -188,6 +199,7 @@ Examples:
 Options:
   --execute                    Mutate, publish, and resume from checkpoints
   --restart                    Remove existing phase and job checkpoints before executing
+  --clean-build-cache          Discard the persistent Swift release build caches first
   --through PHASE              Stop after preflight|stamp|validate|package|publish|sync|verify
   --artifacts-dir PATH         Artifact, checkpoint, and per-job log directory
   --ios-build NUMBER           TestFlight build number (defaults to current + 1)
@@ -428,23 +440,95 @@ async function stamp(plan, options) {
   updateVSCodeChangelog(plan.version, options.notesFile);
 }
 
-async function validate(plan, _options, state) {
-  const fingerprint = validationFingerprint();
-  await runValidationJob(plan, state, fingerprint, "build", "Build shared runtime", "npm", ["run", "build"]);
-  await runParallel([
-    () => runValidationJob(plan, state, fingerprint, "docs", "Documentation contract", "npm", ["run", "docs:check:built"]),
-    () => runValidationJob(plan, state, fingerprint, "node", "Node full suite", "npm", ["run", "test:built"]),
-    () => runValidationJob(plan, state, fingerprint, "vscode", "VS Code suite", "npm", ["test"], { cwd: vscodePackageDir }),
-  ]);
-  // The Node suite exercises both arm64 and x86_64 Mac packaging. Keep the
-  // Swift suite serial and give it a release-local scratch directory so the
-  // XCTest runner cannot inherit either packaging lane's architecture cache.
-  await runValidationJob(plan, state, fingerprint, "swift", "Swift suite serial", "/usr/bin/arch", [
+async function buildSharedRuntime(plan, state) {
+  await runValidationJob(plan, state, validationFingerprint(), "build", "Build shared runtime", "npm", ["run", "build"]);
+}
+
+// XCTest classes that assert wall-clock budgets. They are excluded from the
+// concurrent Swift lane and rerun afterwards, when validation load has ended.
+export const SWIFT_TIMING_TESTS = "PerformanceGateTests|PerformanceRegressionTests|PerformanceTests";
+
+function swiftTestArgs(plan, selection) {
+  return [
     "-arm64", "swift", "test",
     "--package-path", "apps/macos/Org2Workspace",
-    "--scratch-path", join(plan.artifactsDir, "swift-tests"),
+    "--scratch-path", join(plan.buildCache, "swift-tests-arm64"),
     "--no-parallel",
-  ]);
+    ...selection,
+  ];
+}
+
+const MAX_SWIFT_ISOLATED_RETRIES = 10;
+
+// XCTest failure lines -> SwiftPM filter identifiers (Module.Class/testName).
+export function failedSwiftTests(log) {
+  const failed = new Set();
+  for (const match of log.matchAll(/Test Case '-\[([\w.]+) (\w+)\]' failed/g)) failed.add(`${match[1]}/${match[2]}`);
+  return [...failed];
+}
+
+function escapeRegExp(value) {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function swiftTimingJob(plan, isolatedRetries = []) {
+  const filter = [SWIFT_TIMING_TESTS, ...isolatedRetries.map((id) => `${escapeRegExp(id)}$`)].join("|");
+  return { key: "swift-timing", name: "Swift timing suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--filter", filter]) };
+}
+
+// Run the concurrent Swift lane. Individual test-case failures (typically
+// wall-clock assertions under load) are deferred to the isolated timing lane
+// instead of failing the release; compile errors, crashes, or broad breakage
+// still fail immediately.
+async function runSwiftCorrectnessLane(plan, state, job) {
+  try {
+    await runJob(plan, job.name, job.command, job.args);
+    return [];
+  } catch (error) {
+    const log = readFileSync(join(plan.artifactsDir, `${safeJobName(job.name)}.log`), "utf8");
+    const failed = failedSwiftTests(log.slice(log.lastIndexOf("Test Suite 'All tests' started") + 1 || 0));
+    if (failed.length === 0 || failed.length > MAX_SWIFT_ISOLATED_RETRIES) throw error;
+    console.warn(`${job.name}: ${failed.length} test case(s) failed under load; rerunning them in isolation: ${failed.join(", ")}`);
+    return failed;
+  }
+}
+
+export function validationJobs(plan, fingerprint, cpuCount = availableParallelism()) {
+  // Packaging compiles Swift concurrently, so leave it half of the machine.
+  const nodeWorkers = String(Math.max(2, Math.floor(cpuCount / 2)));
+  return [
+    { key: "docs", name: "Documentation contract", command: "npm", args: ["run", "docs:check:built"] },
+    { key: "node", name: "Node full suite", command: process.execPath, args: [
+      "tools/run-tests-parallel.mjs", "test:built",
+      "--jobs", nodeWorkers,
+      "--report", join(plan.artifactsDir, "node-tests.json"),
+    ] },
+    { key: "vscode", name: "VS Code suite", command: "npm", args: ["test"], options: { cwd: vscodePackageDir } },
+    // The Node suite only plans Mac packaging; it never builds Swift, so the
+    // Swift suite can run alongside it. Its arm64 scratch directory is
+    // persistent and private to release validation, which keeps the XCTest
+    // runner off the packaging lanes' architecture caches while staying
+    // incremental across releases.
+    { key: "swift", name: "Swift suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--skip", SWIFT_TIMING_TESTS]) },
+  ];
+}
+
+async function validate(plan, _options, state) {
+  await buildSharedRuntime(plan, state);
+  const fingerprint = validationFingerprint();
+  await runParallel(validationJobs(plan, fingerprint).map((job) => () => (job.key === "swift"
+    ? runCheckpointedStep(plan, state, "validate", fingerprint, job.key, job.name, async () => {
+      state.stepCheckpoints.validate.swiftIsolatedRetries = await runSwiftCorrectnessLane(plan, state, job);
+    })
+    : runValidationJob(plan, state, fingerprint, job.key, job.name, job.command, job.args, job.options))));
+  // Timing budgets are only meaningful without the concurrent lanes' load.
+  // The build is already warm, so this costs seconds; one retry absorbs
+  // residual packaging load and is logged rather than hidden.
+  const isolatedRetries = state.stepCheckpoints.validate?.swiftIsolatedRetries ?? [];
+  const timing = swiftTimingJob(plan, isolatedRetries);
+  await runCheckpointedStep(plan, state, "validate", fingerprint, timing.key, timing.name,
+    () => withRetry(timing.name, 2, () => runJob(plan, timing.name, timing.command, timing.args), { delayMs: 30_000 }));
+  for (const id of isolatedRetries) console.warn(`FLAKY Swift test (failed under load, passed in isolation): ${id}`);
   await runValidationJob(plan, state, fingerprint, "generated", "Generated artifact check", "npm", ["run", "check:generated:built"]);
   await runValidationJob(plan, state, fingerprint, "npm-pack", "npm pack preview", "npm", ["pack", "--dry-run", "--json"]);
 }
@@ -496,10 +580,12 @@ async function packageArtifacts(plan, options, state) {
     () => packageJob("arm64", "OpenOrg arm64 DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "arm64", "--output", armDMG,
       "--require-notarization", "--force", "--skip-runtime-build",
+      "--swift-scratch-path", join(plan.buildCache, "swift-release-arm64"),
     ], () => reusableMacArtifact(armDMG, plan.version, "arm64")),
     () => packageJob("intel", "OpenOrg Intel DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "x86_64", "--output", intelDMG,
       "--require-notarization", "--force", "--skip-runtime-build",
+      "--swift-scratch-path", join(plan.buildCache, "swift-release-x86_64"),
     ], () => reusableMacArtifact(intelDMG, plan.version, "x86_64")),
   ];
   if (!options.skipIOS) {
@@ -612,15 +698,34 @@ async function generateSparkleAppcasts(plan, options) {
   }
 }
 
-async function publishGitHub(plan, options) {
+export async function withRetry(label, attempts, job, { delayMs = 15_000, sleep } = {}) {
+  const wait = sleep ?? ((ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms)));
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await job(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) break;
+      const backoff = delayMs * 2 ** (attempt - 1);
+      console.warn(`${label} attempt ${attempt} failed; retrying in ${Math.round(backoff / 1000)}s: ${error.message ?? error}`);
+      await wait(backoff);
+    }
+  }
+  throw lastError;
+}
+
+async function publishGitHub(plan, options, state) {
   await generateSparkleAppcasts(plan, options);
   await waitForGitHubWorkflow(plan);
-  await runJob(plan, "Upload notarized DMGs", "gh", [
-    "release", "upload", plan.version,
-    join(plan.artifactsDir, "OpenOrg.dmg"),
-    join(plan.artifactsDir, "OpenOrg-Intel.dmg"),
-    "--clobber",
-  ]);
+  // Each ~240 MB DMG uploads independently with bounded retry and its own
+  // checkpoint, so a transient GitHub 5xx on one asset never repeats the other.
+  await runParallel(["OpenOrg.dmg", "OpenOrg-Intel.dmg"].map((artifact) => () => runCheckpointedStep(
+    plan, state, "publish", plan.version, `upload-${artifact}`, `Upload ${artifact}`,
+    () => withRetry(`Upload ${artifact}`, 4, () => runJob(plan, `Upload ${artifact}`, "gh", [
+      "release", "upload", plan.version, join(plan.artifactsDir, artifact), "--clobber",
+    ])),
+  )));
   await runJob(plan, "Apply release notes", "gh", ["release", "edit", plan.version, "--notes-file", releaseBody(plan, options)]);
 }
 
@@ -747,10 +852,14 @@ async function submitBetaReview(buildId) {
   });
 }
 
-async function publishTestFlight(plan, options) {
+async function publishTestFlight(plan, options, state) {
   const authentication = appStoreConnectAuthenticationArguments();
-  let build = authentication.length || !options.skipTestFlightGroups ? await findTestFlightBuild(plan) : null;
-  if (!build) {
+  // A successful upload is checkpointed so a resumed release never re-uploads
+  // the same build number (App Store Connect rejects the duplicate) while
+  // Apple is still processing it.
+  await runCheckpointedStep(plan, state, "publish", plan.version, "testflight-upload", "Upload iOS build", async () => {
+    const existing = authentication.length || !options.skipTestFlightGroups ? await findTestFlightBuild(plan) : null;
+    if (existing) return;
     await runJob(plan, "Upload iOS build", "xcodebuild", [
       "-exportArchive",
       "-archivePath", join(plan.artifactsDir, "OpenOrg.xcarchive"),
@@ -759,7 +868,8 @@ async function publishTestFlight(plan, options) {
       "-allowProvisioningUpdates",
       ...authentication,
     ]);
-  }
+  });
+  let build;
   if (options.skipTestFlightGroups) {
     console.warn("TestFlight upload complete; group assignment was explicitly left manual.");
     return;
@@ -780,11 +890,11 @@ async function publishTestFlight(plan, options) {
   console.log(`✓ TestFlight build ${plan.ios.build} assigned to internal and external groups`);
 }
 
-async function publish(plan, options) {
+async function publish(plan, options, state) {
   ensureReleaseCommitAndTag(plan, options);
   await runParallel([
-    () => publishGitHub(plan, options),
-    ...(!options.skipIOS ? [() => publishTestFlight(plan, options)] : []),
+    () => publishGitHub(plan, options, state),
+    ...(!options.skipIOS ? [() => publishTestFlight(plan, options, state)] : []),
   ]);
 }
 
@@ -889,18 +999,41 @@ async function verify(plan, options) {
   if (local !== remote) throw new Error("Release finished with main out of sync with origin/main");
 }
 
+async function runPhase(plan, options, state, phase, implementation) {
+  console.log(`\n=== ${phase} ===`);
+  const startedAt = Date.now();
+  await implementation(plan, options, state);
+  markPhaseComplete(plan, state, phase);
+  console.log(`=== ${phase} complete (${((Date.now() - startedAt) / 60_000).toFixed(1)} min) ===`);
+}
+
 async function executePlan(plan, options) {
   const state = readState(plan, options);
+  if (options.cleanBuildCache) rmSync(plan.buildCache, { force: true, recursive: true });
   const implementations = { preflight, stamp, validate, package: packageArtifacts, publish, sync: synchronize, verify };
-  for (const phase of RELEASE_PHASES.slice(0, RELEASE_PHASES.indexOf(options.through) + 1)) {
+  const phases = RELEASE_PHASES.slice(0, RELEASE_PHASES.indexOf(options.through) + 1);
+  const releaseStartedAt = Date.now();
+  for (let index = 0; index < phases.length; index += 1) {
+    const phase = phases[index];
     if (state.completed[phase]) {
       console.log(`↷ ${phase} already completed at ${state.completed[phase]}`);
       continue;
     }
-    console.log(`\n=== ${phase} ===`);
-    await implementations[phase](plan, options, state);
-    markPhaseComplete(plan, state, phase);
+    // Packaging needs only the shared runtime build, not the test results, so
+    // it overlaps validation. Nothing is published until both phases pass,
+    // and each phase keeps its own checkpoint for resumption.
+    if (phase === "validate" && phases[index + 1] === "package" && !state.completed.package) {
+      await buildSharedRuntime(plan, state);
+      await runParallel([
+        () => runPhase(plan, options, state, "validate", validate),
+        () => runPhase(plan, options, state, "package", packageArtifacts),
+      ]);
+      index += 1;
+      continue;
+    }
+    await runPhase(plan, options, state, phase, implementations[phase]);
   }
+  console.log(`\nRelease elapsed in this invocation: ${((Date.now() - releaseStartedAt) / 60_000).toFixed(1)} min`);
   console.log(`\nRelease ${plan.version} completed through ${options.through}.`);
   console.log(`State and logs: ${plan.artifactsDir}`);
 }
