@@ -8451,7 +8451,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertLessThan(tickFont.pointSize, 1)
 
     let labelColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: linkLabelIndex, effectiveRange: nil) as? NSColor)
-    XCTAssertEqual(labelColor, NSColor.controlAccentColor)
+    XCTAssertEqual(labelColor, WorkspaceThemeCenter.shared.liveColor(.link))
     let labelUnderline = storage.attribute(.underlineStyle, at: linkLabelIndex, effectiveRange: nil) as? Int
     XCTAssertEqual(labelUnderline, NSUnderlineStyle.single.rawValue)
 
@@ -8532,7 +8532,7 @@ final class Org2ModelsTests: XCTestCase {
       at: 2,
       effectiveRange: nil
     ) as? NSColor
-    XCTAssertEqual(smallColor, NSColor.controlAccentColor)
+    XCTAssertEqual(smallColor, WorkspaceThemeCenter.shared.liveColor(.todo))
 
     let largeText = "* TODO Large\n" + String(
       repeating: "Body line with [[id:abc][Alice]] and <2026-06-12 Fri>.\n",
@@ -8546,7 +8546,7 @@ final class Org2ModelsTests: XCTestCase {
       at: 2,
       effectiveRange: nil
     ) as? NSColor
-    XCTAssertEqual(largeColor, NSColor.labelColor)
+    XCTAssertEqual(largeColor, WorkspaceThemeCenter.shared.liveColor(.sourceText))
   }
 
   @MainActor
@@ -9608,7 +9608,7 @@ final class Org2ModelsTests: XCTestCase {
     let starColor = storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
     let todoColor = storage.attribute(.foregroundColor, at: range.location + 2, effectiveRange: nil) as? NSColor
     XCTAssertEqual(starColor, NSColor.tertiaryLabelColor)
-    XCTAssertEqual(todoColor, NSColor.controlAccentColor)
+    XCTAssertEqual(todoColor, WorkspaceThemeCenter.shared.liveColor(.todo))
   }
 
   @MainActor
@@ -9668,7 +9668,7 @@ final class Org2ModelsTests: XCTestCase {
       at: 2,
       effectiveRange: nil
     ) as? NSColor
-    XCTAssertEqual(todoColor, NSColor.controlAccentColor)
+    XCTAssertEqual(todoColor, WorkspaceThemeCenter.shared.liveColor(.todo))
 
     let scrolledApplications = try XCTUnwrap(
       applicationsUntilQuiescent(at: NSPoint(x: 0, y: 900))
