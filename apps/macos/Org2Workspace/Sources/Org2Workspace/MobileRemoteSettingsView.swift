@@ -324,34 +324,6 @@ private struct MeetingSettingsView: View {
   }
 }
 
-private struct AppearanceSettingsView: View {
-  @Environment(WorkspaceStore.self) private var store
-
-  var body: some View {
-    @Bindable var store = store
-    Form {
-      Section {
-        Picker("Theme", selection: $store.appearanceMode) {
-          ForEach(WorkspaceAppearanceMode.allCases) { mode in
-            Text(mode.displayName).tag(mode)
-          }
-        }
-        .pickerStyle(.segmented)
-
-        Text("System follows the appearance selected in macOS. Light and Dark keep OpenOrg in that theme regardless of the system setting.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      } header: {
-        Label("App Theme", systemImage: "paintbrush")
-      }
-    }
-    .formStyle(.grouped)
-    .padding(8)
-    .frame(width: 560)
-    .frame(minHeight: 460)
-  }
-}
-
 private struct DocumentSettingsView: View {
   @Environment(WorkspaceStore.self) private var store
 

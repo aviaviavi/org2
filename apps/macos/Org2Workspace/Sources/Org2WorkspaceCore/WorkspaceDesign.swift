@@ -14,71 +14,52 @@ enum WorkspaceDesign {
   // AppKit's semantic label colors can become extremely faint when a hosted
   // editor hierarchy is treated as inactive. Keep document chrome and source
   // text tied to the current appearance, not window activation.
-  static let stablePrimaryNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance) ? NSColor(deviceWhite: 0.92, alpha: 1) : NSColor(deviceWhite: 0.12, alpha: 1)
+  //
+  // Surfaces and text follow the active light/dark theme pair (see
+  // WorkspaceTheme.swift). The OpenOrg default pair mirrors the restrained,
+  // warm editorial palette used by the Org2 site.
+  static var stablePrimaryNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.text) }
+  static var stableSecondaryNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.secondaryText) }
+  static var stableTertiaryNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.tertiaryText) }
+  static var canvasNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.canvas) }
+  static var documentNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.document) }
+  static var structuralNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.structural) }
+  static var signalNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.signal) }
+  static var hairlineNSColor: NSColor { WorkspaceThemeCenter.shared.liveColor(.hairline) }
+
+  static var primaryText: Color { themed(.text) }
+  static var secondaryText: Color { themed(.secondaryText) }
+  static var tertiaryText: Color { themed(.tertiaryText) }
+  static var structuralAccent: Color { themed(.structural) }
+  static var signalAccent: Color { themed(.signal) }
+
+  static func themed(_ role: WorkspaceThemeRole, opacity: Double = 1) -> Color {
+    WorkspaceThemeCenter.shared.trackedColor(role, opacity: opacity)
   }
 
-  static let stableSecondaryNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance) ? NSColor(deviceWhite: 0.68, alpha: 1) : NSColor(deviceWhite: 0.40, alpha: 1)
-  }
-
-  static let stableTertiaryNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance) ? NSColor(deviceWhite: 0.50, alpha: 1) : NSColor(deviceWhite: 0.58, alpha: 1)
-  }
-
-  // These surfaces mirror the restrained, warm editorial palette used by the
-  // Org2 site. They keep the app recognizably native while avoiding a stack of
-  // indistinguishable system-gray panes.
-  static let canvasNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance)
-      ? NSColor(srgbRed: 0.082, green: 0.102, blue: 0.094, alpha: 1)
-      : NSColor(srgbRed: 0.949, green: 0.941, blue: 0.914, alpha: 1)
-  }
-
-  static let documentNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance)
-      ? NSColor(srgbRed: 0.106, green: 0.129, blue: 0.122, alpha: 1)
-      : NSColor(srgbRed: 0.988, green: 0.984, blue: 0.969, alpha: 1)
-  }
-
-  static let structuralNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance)
-      ? NSColor(srgbRed: 0.525, green: 0.639, blue: 1.000, alpha: 1)
-      : NSColor(srgbRed: 0.157, green: 0.329, blue: 0.843, alpha: 1)
-  }
-
-  static let signalNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance)
-      ? NSColor(srgbRed: 1.000, green: 0.525, blue: 0.408, alpha: 1)
-      : NSColor(srgbRed: 0.761, green: 0.278, blue: 0.173, alpha: 1)
-  }
-
-  static let hairlineNSColor = NSColor(name: nil) { appearance in
-    isDark(appearance)
-      ? NSColor(srgbRed: 0.212, green: 0.251, blue: 0.235, alpha: 1)
-      : NSColor(srgbRed: 0.843, green: 0.839, blue: 0.808, alpha: 1)
-  }
-
-  static var primaryText: Color { Color(nsColor: stablePrimaryNSColor) }
-  static var secondaryText: Color { Color(nsColor: stableSecondaryNSColor) }
-  static var tertiaryText: Color { Color(nsColor: stableTertiaryNSColor) }
-  static var structuralAccent: Color { Color(nsColor: structuralNSColor) }
-  static var signalAccent: Color { Color(nsColor: signalNSColor) }
-
-  private static func isDark(_ appearance: NSAppearance) -> Bool {
-    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+  /// Heading title style. The OpenOrg pair keeps body-colored headings;
+  /// imported themes use their outline level colors.
+  static func headingStyle(level: Int) -> AnyShapeStyle {
+    guard WorkspaceThemeCenter.shared.trackedOverridesBodyText() else {
+      return AnyShapeStyle(HierarchicalShapeStyle.primary)
+    }
+    switch level {
+    case 1: return AnyShapeStyle(themed(.heading1))
+    case 2: return AnyShapeStyle(themed(.heading2))
+    default: return AnyShapeStyle(themed(.heading3))
+    }
   }
 
   static var barBackground: Color {
-    Color(nsColor: documentNSColor)
+    themed(.document)
   }
 
   static var surfaceBackground: Color {
-    Color(nsColor: documentNSColor)
+    themed(.document)
   }
 
   static var appBackground: Color {
-    Color(nsColor: canvasNSColor)
+    themed(.canvas)
   }
 
   static var subtleFill: Color {
@@ -90,7 +71,7 @@ enum WorkspaceDesign {
   }
 
   static var hairline: Color {
-    Color(nsColor: hairlineNSColor)
+    themed(.hairline)
   }
 
   static var controlFill: Color {

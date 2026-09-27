@@ -5899,12 +5899,14 @@ enum OrgSyntaxHighlighter {
     ))
   }
 
+  private static var theme: WorkspaceThemeCenter { WorkspaceThemeCenter.shared }
+
   private static func baseAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineSpacing = 2
     return [
       .font: font,
-      .foregroundColor: NSColor.labelColor,
+      .foregroundColor: theme.liveColor(.sourceText),
       .paragraphStyle: paragraph
     ]
   }
@@ -5922,48 +5924,48 @@ enum OrgSyntaxHighlighter {
     case .headingTitle:
       if !concealsSyntax {
         return [
-          .foregroundColor: NSColor.labelColor,
+          .foregroundColor: theme.liveColor(.sourceText),
           .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .semibold)
         ]
       }
       return [
-        .foregroundColor: NSColor.labelColor,
+        .foregroundColor: theme.liveColor(.sourceText),
         .font: NSFont.systemFont(ofSize: baseFont.pointSize + 2, weight: .semibold)
       ]
     case .keyword:
       return [
-        .foregroundColor: NSColor.systemPurple,
+        .foregroundColor: theme.liveColor(.keyword),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .medium)
       ]
     case .planningKeyword:
       return [
-        .foregroundColor: NSColor.systemOrange,
+        .foregroundColor: theme.liveColor(.planning),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .semibold)
       ]
     case .propertyKey:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor,
+        .foregroundColor: theme.liveColor(.comment),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .medium)
       ]
     case .todo:
       return [
-        .foregroundColor: NSColor.controlAccentColor,
-        .backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.12),
+        .foregroundColor: theme.liveColor(.todo),
+        .backgroundColor: theme.liveColor(.todo, alpha: 0.12),
         .font: NSFont.systemFont(ofSize: baseFont.pointSize, weight: .semibold)
       ]
     case .priority:
       return [
-        .foregroundColor: NSColor.systemOrange,
+        .foregroundColor: theme.liveColor(.priority),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .semibold)
       ]
     case .tag:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor,
+        .foregroundColor: theme.liveColor(.tag),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .link:
       return [
-        .foregroundColor: NSColor.controlAccentColor,
+        .foregroundColor: theme.liveColor(.link),
         .underlineStyle: NSUnderlineStyle.single.rawValue
       ]
     case .linkTarget:
@@ -5972,19 +5974,19 @@ enum OrgSyntaxHighlighter {
         : sourceSyntaxAttributes(baseFont: baseFont)
     case .code:
       return [
-        .foregroundColor: NSColor.labelColor,
-        .backgroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.12),
+        .foregroundColor: theme.liveColor(.sourceText),
+        .backgroundColor: theme.liveColor(.code, alpha: 0.12),
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .emphasis:
       return [
-        .foregroundColor: NSColor.labelColor,
+        .foregroundColor: theme.liveColor(.sourceText),
         .font: NSFont.systemFont(ofSize: baseFont.pointSize, weight: .medium)
       ]
     case .timestamp:
       return [
-        .foregroundColor: NSColor.labelColor,
-        .backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.10),
+        .foregroundColor: theme.liveColor(.sourceText),
+        .backgroundColor: theme.liveColor(.timestamp, alpha: 0.10),
         .font: NSFont.monospacedDigitSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .syntaxDelimiter:
@@ -5993,7 +5995,7 @@ enum OrgSyntaxHighlighter {
         : sourceSyntaxAttributes(baseFont: baseFont)
     case .comment:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor
+        .foregroundColor: theme.liveColor(.comment)
       ]
     }
   }

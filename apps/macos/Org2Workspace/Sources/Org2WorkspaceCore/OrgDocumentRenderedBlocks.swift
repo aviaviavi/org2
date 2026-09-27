@@ -1055,6 +1055,7 @@ private struct RenderedHeadingView: View {
       VStack(alignment: .leading, spacing: 8) {
         if !embedded.displayText.isEmpty {
           OrgInlineText(embedded.displayText, font: font)
+            .foregroundStyle(WorkspaceDesign.headingStyle(level: heading.level))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
 
@@ -1065,6 +1066,7 @@ private struct RenderedHeadingView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     } else {
       OrgInlineText(rawTitle, font: font)
+        .foregroundStyle(WorkspaceDesign.headingStyle(level: heading.level))
     }
   }
 
@@ -1163,7 +1165,7 @@ private struct RenderedHeadingPriorityMenu: View {
     } label: {
       Label(priority, systemImage: "flag.fill")
         .font(.caption.weight(.semibold))
-        .foregroundStyle(.orange)
+        .foregroundStyle(WorkspaceDesign.themed(.priority))
         .labelStyle(.titleAndIcon)
     }
     .menuStyle(.borderlessButton)

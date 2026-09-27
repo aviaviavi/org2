@@ -31,6 +31,7 @@ struct Org2WorkspaceApp: App {
     WindowGroup(WorkspaceProductIdentity.displayName) {
       ContentView()
         .environment(store)
+        .workspaceThemed()
         .preferredColorScheme(store.appearanceMode.colorScheme)
         .frame(minWidth: 1080, minHeight: 680)
         .background(WorkspaceWindowConfigurator())

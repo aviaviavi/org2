@@ -2651,6 +2651,24 @@ public final class WorkspaceStore {
       defaults.set(appearanceMode.rawValue, forKey: appearanceModeKey)
     }
   }
+  /// Theme used while the effective appearance is light.
+  public var lightThemeID: String = WorkspaceThemeCatalog.defaultLightID {
+    didSet {
+      defaults.set(lightThemeID, forKey: lightThemeIDKey)
+      applyThemeSelection()
+    }
+  }
+  /// Theme used while the effective appearance is dark.
+  public var darkThemeID: String = WorkspaceThemeCatalog.defaultDarkID {
+    didSet {
+      defaults.set(darkThemeID, forKey: darkThemeIDKey)
+      applyThemeSelection()
+    }
+  }
+
+  private func applyThemeSelection() {
+    WorkspaceThemeCenter.shared.select(lightThemeID: lightThemeID, darkThemeID: darkThemeID)
+  }
   public var experimentalFeaturesEnabled = false {
     didSet {
       defaults.set(experimentalFeaturesEnabled, forKey: experimentalFeaturesEnabledKey)
@@ -3018,6 +3036,8 @@ public final class WorkspaceStore {
   private let codexSandboxAccessKey = "Org2Workspace.aiChat.codexSandboxAccess.v1"
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
+  private let lightThemeIDKey = "Org2Workspace.appearance.lightTheme.v1"
+  private let darkThemeIDKey = "Org2Workspace.appearance.darkTheme.v1"
   private let experimentalFeaturesEnabledKey = "Org2Workspace.experimentalFeatures.enabled.v1"
   private let automaticDailyNoteCreationDisabledByCorpusKey =
     "Org2Workspace.dailyNotes.automaticCreationDisabledByCorpus.v1"
@@ -3684,6 +3704,9 @@ public final class WorkspaceStore {
     openClawIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     appearanceMode = defaults.string(forKey: appearanceModeKey)
       .flatMap(WorkspaceAppearanceMode.init(rawValue:)) ?? .system
+    lightThemeID = WorkspaceThemeCatalog.theme(id: defaults.string(forKey: lightThemeIDKey), for: .light).id
+    darkThemeID = WorkspaceThemeCatalog.theme(id: defaults.string(forKey: darkThemeIDKey), for: .dark).id
+    applyThemeSelection()
     experimentalFeaturesEnabled = defaults.bool(forKey: experimentalFeaturesEnabledKey)
     openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
     if let data = defaults.data(forKey: nodeBriefConfigurationKey),

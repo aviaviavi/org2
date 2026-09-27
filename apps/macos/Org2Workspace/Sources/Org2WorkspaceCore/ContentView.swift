@@ -1686,6 +1686,7 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
           .environment(\.openOrgFileReference) { reference in
             store.openChatFileReference(reference)
           }
+          .workspaceThemed()
           .id("\(workspaceTabID.uuidString):\(surface.rawValue)")
       )
     }
@@ -14594,10 +14595,10 @@ struct StatusPill: View {
 
   private var statusColor: Color {
     switch text.uppercased() {
-    case "TODO", "QUEUED": .blue.opacity(0.13)
+    case "TODO", "QUEUED": WorkspaceDesign.themed(.todo, opacity: 0.13)
     case "PROG", "IN_PROGRESS", "RUNNING": .indigo.opacity(0.14)
     case "WAIT", "HOLD", "PAUSED", "WAITING-APPROVAL", "BLOCKED": .orange.opacity(0.14)
-    case "DONE", "COMPLETED": .green.opacity(0.14)
+    case "DONE", "COMPLETED": WorkspaceDesign.themed(.done, opacity: 0.14)
     case "FAILED": .red.opacity(0.13)
     case "CANCELLED", "CANCELED": Color.secondary.opacity(0.11)
     default: WorkspaceDesign.subtleFill
@@ -14606,10 +14607,10 @@ struct StatusPill: View {
 
   private var statusForeground: Color {
     switch text.uppercased() {
-    case "TODO", "QUEUED": .blue
+    case "TODO", "QUEUED": WorkspaceDesign.themed(.todo)
     case "PROG", "IN_PROGRESS", "RUNNING": .indigo
     case "WAIT", "HOLD", "PAUSED", "WAITING-APPROVAL", "BLOCKED": .orange
-    case "DONE", "COMPLETED": .green
+    case "DONE", "COMPLETED": WorkspaceDesign.themed(.done)
     case "FAILED": .red
     case "CANCELLED", "CANCELED": .secondary
     default: .secondary
