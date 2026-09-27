@@ -531,6 +531,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
   var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
+  /// Active theme overrides for the rendered page. The default argument is
+  /// evaluated in the caller's body, so theme changes re-run `updateNSView`.
+  var themeStylesheet: String = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -606,6 +609,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.restorationSourceLine = restorationSourceLine
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
+    let themeChanged = coordinator.themeStylesheet != themeStylesheet
+    coordinator.themeStylesheet = themeStylesheet
 
     let renderID = renderIdentity ?? "\(source.id)|\(html.utf8.count)|\(html.hashValue)"
     if coordinator.renderID != renderID {
@@ -613,11 +618,15 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       coordinator.searchQuery = searchQuery
       coordinator.searchOccurrenceIndex = searchOccurrenceIndex
       webView.loadHTMLString(
-        OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in: html),
+        WorkspaceThemeDocumentStyle.injecting(
+          themeStylesheet,
+          into: OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in: html)
+        ),
         baseURL: Self.sourceFileURL(source, corpusRoot: corpusRoot).deletingLastPathComponent()
       )
-    } else if layoutChanged {
-      coordinator.applyLayout(to: webView)
+    } else if layoutChanged || themeChanged {
+      if layoutChanged { coordinator.applyLayout(to: webView) }
+      if themeChanged { coordinator.applyTheme(to: webView) }
     } else if checkboxMutationsChanged {
       coordinator.applyCheckboxMutations(to: webView)
     } else if tablePersistenceChanged {
@@ -699,6 +708,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var scrollRequest: DetailScrollRequest?
     var restorationSourceLine: Int?
     var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
+    var themeStylesheet = ""
     var openOrgFileReference: @MainActor (OpenClawFileReference) -> Void = { _ in }
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
@@ -1027,6 +1037,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       document.documentElement.style.setProperty('--org2-page-padding', '\(layout.margin.cssValue)');
       """
       webView.evaluateJavaScript(script)
+    }
+
+    func applyTheme(to webView: WKWebView) {
+      webView.evaluateJavaScript(WorkspaceThemeDocumentStyle.replacementScript(themeStylesheet))
     }
 
     func applyTablePersistence(to webView: WKWebView) {

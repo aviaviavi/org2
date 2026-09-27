@@ -565,6 +565,15 @@ public final class WorkspaceThemeCenter: @unchecked Sendable {
     }
   }
 
+  /// CSS overrides that apply the active pair to rendered HTML documents,
+  /// re-evaluated when the pair changes.
+  public func trackedDocumentStylesheet() -> String {
+    _ = lightThemeID
+    _ = darkThemeID
+    let (light, dark) = lock.withLock { (lightTheme, darkTheme) }
+    return WorkspaceThemeDocumentStyle.stylesheet(light: light, dark: dark)
+  }
+
   static func isDark(_ appearance: NSAppearance) -> Bool {
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
   }
@@ -583,6 +592,110 @@ public final class WorkspaceThemeCenter: @unchecked Sendable {
     for subview in view.subviews {
       markNeedsDisplay(subview)
     }
+  }
+}
+
+// MARK: - Rendered HTML documents
+
+/// Maps a theme pair onto the CSS custom properties and Org selectors of the
+/// shared Org2 HTML export. The OpenOrg defaults emit nothing, so the
+/// export's own light/dark palette stays authoritative for them.
+public enum WorkspaceThemeDocumentStyle {
+  public static let styleElementID = "org2-workspace-theme"
+
+  public static func stylesheet(light: WorkspaceTheme, dark: WorkspaceTheme) -> String {
+    var css = ""
+    if light.palette.overridesBodyText {
+      css += rules(for: light, selectorPrefix: ":root")
+    }
+    if dark.palette.overridesBodyText {
+      css += "@media (prefers-color-scheme: dark) {\n" + rules(for: dark, selectorPrefix: ":root") + "}\n"
+    }
+    return css
+  }
+
+  static func rules(for theme: WorkspaceTheme, selectorPrefix root: String) -> String {
+    func c(_ role: WorkspaceThemeRole) -> String { cssColor(theme.resolvedColor(role)) }
+    func mix(_ role: WorkspaceThemeRole, _ percent: Int) -> String {
+      "color-mix(in srgb, \(c(role)) \(percent)%, transparent)"
+    }
+    return """
+    \(root) {
+      --org2-text: \(c(.text));
+      --org2-muted: \(c(.secondaryText));
+      --org2-faint: \(mix(.structural, 9));
+      --org2-rule: \(c(.hairline));
+      --org2-code: \(c(.canvas));
+      --org2-surface: \(c(.document));
+      --org2-elevated-surface: color-mix(in srgb, \(c(.document)) 94%, \(c(.text)));
+      --org2-link: \(c(.link));
+      --org2-accent: \(c(.structural));
+      --org2-signal: \(c(.signal));
+      --org2-success: \(c(.done));
+      --org2-chart-axis: \(c(.tertiaryText));
+      --org2-chart-grid: \(c(.hairline));
+      --org2-chart-mark: \(c(.structural));
+      --org2-chart-label: \(c(.secondaryText));
+      --org2-chart-title: \(c(.text));
+      --org2-chart-surface: \(c(.document));
+    }
+    \(root), \(root) body { background: \(c(.document)); }
+    \(root) h1 { color: \(c(.heading1)); }
+    \(root) h2 { color: \(c(.heading2)); }
+    \(root) h3 { color: \(c(.heading3)); }
+    \(root) .org2-todo { color: \(c(.todo)); background: \(mix(.todo, 13)); }
+    \(root) .org2-todo.todo-done { color: \(c(.done)); background: \(mix(.done, 13)); }
+    \(root) .org2-priority { color: \(c(.priority)); }
+    \(root) .org2-planning-kind { color: \(c(.planning)); }
+    \(root) .org2-tag { color: \(c(.tag)); }
+    \(root) :not(pre) > code { color: \(c(.code)); }
+    \(root) .org2-comment, \(root) .org2-comment-keyword { color: \(c(.comment)); }
+
+    """
+  }
+
+  static func cssColor(_ color: NSColor) -> String {
+    let rgb = color.usingColorSpace(.sRGB) ?? color
+    func byte(_ value: CGFloat) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+    let hex = String(format: "#%02x%02x%02x", byte(rgb.redComponent), byte(rgb.greenComponent), byte(rgb.blueComponent))
+    return rgb.alphaComponent < 1 ? "color-mix(in srgb, \(hex) \(Int((rgb.alphaComponent * 100).rounded()))%, transparent)" : hex
+  }
+
+  /// Place the theme stylesheet after the export's own styles and before a
+  /// corpus's custom app stylesheet, so user CSS still has the last word.
+  public static func injecting(_ stylesheet: String, into html: String) -> String {
+    guard !stylesheet.isEmpty else { return html }
+    let element = "<style id=\"\(styleElementID)\">\n\(stylesheet)</style>"
+    if let range = html.range(of: "<style id=\"org2-app-user-style\">") {
+      var result = html
+      result.replaceSubrange(range.lowerBound..<range.lowerBound, with: element)
+      return result
+    }
+    if let range = html.range(of: "</head>", options: [.caseInsensitive, .backwards]) {
+      var result = html
+      result.replaceSubrange(range, with: element + "</head>")
+      return result
+    }
+    return element + html
+  }
+
+  /// JavaScript that swaps the theme stylesheet in an already loaded page.
+  public static func replacementScript(_ stylesheet: String) -> String {
+    let data = (try? JSONSerialization.data(withJSONObject: [stylesheet], options: [])) ?? Data("[\"\"]".utf8)
+    let literal = String(decoding: data, as: UTF8.self)
+    return """
+    (() => {
+      const css = \(literal)[0];
+      let style = document.getElementById('\(styleElementID)');
+      if (!css) { style?.remove(); return; }
+      if (!style) {
+        style = document.createElement('style');
+        style.id = '\(styleElementID)';
+        (document.head || document.documentElement).appendChild(style);
+      }
+      style.textContent = css;
+    })();
+    """
   }
 }
 
