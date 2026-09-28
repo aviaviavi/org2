@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -531,9 +532,6 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
   var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
-  /// Active theme overrides for the rendered page. The default argument is
-  /// evaluated in the caller's body, so theme changes re-run `updateNSView`.
-  var themeStylesheet: String = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -609,8 +607,12 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.restorationSourceLine = restorationSourceLine
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
+    // Read the theme here rather than relying on the parent view: this is
+    // tracked by SwiftUI, and the coordinator also observes theme changes.
+    let themeStylesheet = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
     let themeChanged = coordinator.themeStylesheet != themeStylesheet
     coordinator.themeStylesheet = themeStylesheet
+    coordinator.observeThemeChanges()
 
     let renderID = renderIdentity ?? "\(source.id)|\(html.utf8.count)|\(html.hashValue)"
     if coordinator.renderID != renderID {
@@ -739,6 +741,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
+      themeStylesheet = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
+      applyTheme(to: webView)
       applyCheckboxMutations(to: webView)
       applyTablePersistence(to: webView)
       installRichCopyHandler(in: webView)
@@ -1041,6 +1045,29 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
     func applyTheme(to webView: WKWebView) {
       webView.evaluateJavaScript(WorkspaceThemeDocumentStyle.replacementScript(themeStylesheet))
+    }
+
+    private var isObservingTheme = false
+
+    /// Recolor the loaded page whenever the active theme pair changes, even if
+    /// SwiftUI does not call `updateNSView` for this representable.
+    func observeThemeChanges() {
+      guard !isObservingTheme else { return }
+      isObservingTheme = true
+      withObservationTracking {
+        _ = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
+      } onChange: { [weak self] in
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          self.isObservingTheme = false
+          let stylesheet = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
+          if stylesheet != self.themeStylesheet, let webView = self.webView {
+            self.themeStylesheet = stylesheet
+            self.applyTheme(to: webView)
+          }
+          self.observeThemeChanges()
+        }
+      }
     }
 
     func applyTablePersistence(to webView: WKWebView) {

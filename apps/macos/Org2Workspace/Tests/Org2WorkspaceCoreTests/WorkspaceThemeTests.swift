@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -99,6 +100,49 @@ final class WorkspaceThemeTests: XCTestCase {
     XCTAssertTrue(script.contains(#"["a { color: \"x\" }\n<\/style>"]"#) || script.contains(#"["a { color: \"x\" }\n</style>"]"#))
   }
 
+  @MainActor
+  func testThemeStylesheetRecolorsARenderedDarkPageAndSwapsLive() async throws {
+    // Mirrors the shared export: palette variables on :root with a dark override.
+    let exportHTML = """
+    <!doctype html><html><head><style id="org2-app-document-style">
+    :root { color-scheme: light dark; --org2-text: #18201e; }
+    @media (prefers-color-scheme: dark) { :root { --org2-text: #dce3de; } }
+    html, body { background: transparent; } body { color: var(--org2-text); }
+    h1 { color: var(--org2-text); } .org2-todo { color: #86a3ff; }
+    </style></head><body><h1><span class="org2-todo">TODO</span> Groceries</h1></body></html>
+    """
+    let paper = WorkspaceThemeCatalog.theme(id: nil, for: .light)
+    let spacemacs = WorkspaceThemeCatalog.theme(id: "spacemacs-dark", for: .dark)
+    let nord = WorkspaceThemeCatalog.theme(id: "nord", for: .dark)
+
+    let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+    webView.appearance = NSAppearance(named: .darkAqua)
+    let loader = ThemeTestNavigationWaiter()
+    webView.navigationDelegate = loader
+    webView.loadHTMLString(
+      WorkspaceThemeDocumentStyle.injecting(
+        WorkspaceThemeDocumentStyle.stylesheet(light: paper, dark: spacemacs),
+        into: exportHTML
+      ),
+      baseURL: nil
+    )
+    await loader.waitForLoad()
+
+    let styles = "JSON.stringify([getComputedStyle(document.body).backgroundColor, getComputedStyle(document.body).color, getComputedStyle(document.querySelector('h1')).color, getComputedStyle(document.querySelector('.org2-todo')).color])"
+    var computed = try await webView.evaluateJavaScript(styles) as? String
+    XCTAssertEqual(computed, #"["rgb(41, 43, 46)","rgb(178, 178, 178)","rgb(79, 151, 215)","rgb(220, 117, 47)"]"#)
+
+    _ = try await webView.evaluateJavaScript(
+      WorkspaceThemeDocumentStyle.replacementScript(WorkspaceThemeDocumentStyle.stylesheet(light: paper, dark: nord))
+    )
+    computed = try await webView.evaluateJavaScript(styles) as? String
+    XCTAssertEqual(computed?.hasPrefix(#"["rgb(46, 52, 64)","rgb(216, 222, 233)""#), true, computed ?? "")
+
+    _ = try await webView.evaluateJavaScript(WorkspaceThemeDocumentStyle.replacementScript(""))
+    computed = try await webView.evaluateJavaScript(styles) as? String
+    XCTAssertEqual(computed?.hasPrefix(#"["rgba(0, 0, 0, 0)","rgb(220, 227, 222)""#), true, computed ?? "")
+  }
+
   private static func hex(_ color: NSColor, in name: NSAppearance.Name) throws -> UInt32 {
     let appearance = try XCTUnwrap(NSAppearance(named: name))
     var resolved: NSColor?
@@ -125,5 +169,22 @@ final class WorkspaceThemeTests: XCTestCase {
     let la = luminance(a)
     let lb = luminance(b)
     return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+  }
+}
+
+@MainActor
+private final class ThemeTestNavigationWaiter: NSObject, WKNavigationDelegate {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var finished = false
+
+  func waitForLoad() async {
+    if finished { return }
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    finished = true
+    continuation?.resume()
+    continuation = nil
   }
 }
