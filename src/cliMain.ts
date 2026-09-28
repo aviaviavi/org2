@@ -11079,7 +11079,12 @@ Flags:
         : "";
       const ogImageUrl = ogBaseUrl ? `${ogBaseUrl}/${ogRelPath}` : ogRelPath;
       const ogImageType = ogImageFormat === "png" ? "image/png" : "image/svg+xml";
-      const ogImageAlt = truncateMetadataText(`${ogTitle} — ${ogDesc}`, 300);
+      // Join title and description without an em dash; a title that already
+      // ends in punctuation is followed by a plain space.
+      const ogImageAlt = truncateMetadataText(
+        /[.!?:]$/.test(ogTitle) ? `${ogTitle} ${ogDesc}` : `${ogTitle}: ${ogDesc}`,
+        300
+      );
       const ogHeadIncludes = [
         !firstPass.metadata?.description ? `<meta name="description" content="${escapeHeadAttr(ogDesc)}" />` : "",
         pageUrl ? `<link rel="canonical" href="${escapeHeadAttr(pageUrl)}" />` : "",

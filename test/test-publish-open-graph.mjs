@@ -77,9 +77,9 @@ try {
   assert.match(homeHtml, /<meta property="og:image:type" content="image\/png" \/>/);
   assert.match(homeHtml, /<meta property="og:image:width" content="1200" \/>/);
   assert.match(homeHtml, /<meta property="og:image:height" content="630" \/>/);
-  assert.match(homeHtml, /<meta property="og:image:alt" content="OpenOrg Test — Local-first knowledge &amp; durable work for people and agents\." \/>/);
+  assert.match(homeHtml, /<meta property="og:image:alt" content="OpenOrg Test: Local-first knowledge &amp; durable work for people and agents\." \/>/);
   assert.match(homeHtml, /<meta name="twitter:url" content="https:\/\/openorg\.example\/" \/>/);
-  assert.match(homeHtml, /<meta name="twitter:image:alt" content="OpenOrg Test — Local-first knowledge &amp; durable work for people and agents\." \/>/);
+  assert.match(homeHtml, /<meta name="twitter:image:alt" content="OpenOrg Test: Local-first knowledge &amp; durable work for people and agents\." \/>/);
 
   const guideHtml = fs.readFileSync(path.join(fixtureRoot, "site", "guide.html"), "utf8");
   assert.match(guideHtml, /<meta name="description" content="A dedicated description for the guide page\." \/>/);
