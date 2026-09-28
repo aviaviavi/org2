@@ -13580,6 +13580,53 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testEntryPublishesEnhancedHTMLWithoutWaitingForNativeParse() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-html-preview-first-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let note = root.appendingPathComponent("html-first.org2")
+    try "* HTML first\nBody\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": null,
+      "headline": "HTML first",
+      "kind": "NONE",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.agendaEntryRenderIdleDelayNanoseconds = 0
+    store.entryHTMLRenderTimeoutNanoseconds = 40_000_000
+    store.entryNativeRendererPreparationForTesting = {
+      try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+    store.entryHTMLRendererForTesting = { _, _, _, _ in
+      "<html><body>Ready HTML preview</body></html>"
+    }
+
+    store.select(.agenda(item))
+
+    try await waitForCondition {
+      store.selectedEntryHTML?.contains("Ready HTML preview") == true
+    }
+    try await Task.sleep(nanoseconds: 80_000_000)
+    XCTAssertNil(store.selectedEntryRenderError)
+    XCTAssertNotEqual(store.statusText, "Preview rendering timed out")
+
+    try await waitForCondition {
+      store.isSelectedRenderedBlocksReady && !store.isRenderingEntrySource
+    }
+  }
+
+  @MainActor
   func testEntryLoadingCanBeStoppedManually() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-source-cancel-\(UUID().uuidString)", isDirectory: true)

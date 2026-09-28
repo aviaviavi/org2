@@ -41,6 +41,9 @@ Child text.
 Private sibling text.
 `;
 const decode = value => value.replace(/&quot;/g, '"').replace(/&#96;/g, "`").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const appTargetHref = target => `org2-workspace://open-link?target=${encodeURIComponent(target)}`;
+const anchorPattern = (href, label) => new RegExp(`<a href="${escapeRegex(href)}"[^>]*>${escapeRegex(label)}</a>`);
 function allFrames(html) {
   return [...html.matchAll(/srcdoc="([^"]*)"/g)].flatMap(match => {
     const decoded = decode(match[1]);
@@ -86,13 +89,14 @@ try {
   assert.ok(frame.includes(encodeURIComponent(`file:${fs.realpathSync(note)}::${source.split("\n").findIndex(line => line === "** Child") + 1}`)));
   assert.doesNotMatch(frame, /Private sibling|data-org2-start-line|<script|allow-scripts/);
   assert.match(frame, new RegExp(encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}`)));
-  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}`)}">Bare relative source</a>`));
-  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}::*Section/Child`)}">Case-insensitive source with heading search</a>`));
-  assert.ok(frame.includes(`target=${encodeURIComponent(`file:${path.join(fs.realpathSync(root), "host.org")}`)}">Parent note</a>`));
-  assert.ok(frame.includes(`target=${encodeURIComponent("Another Heading")}">Fuzzy heading title</a>`));
-  assert.ok(frame.includes('target=id%3Awhole-note">Stable note link</a>'));
-  assert.ok(frame.includes('href="https://example.com/article.org">External note</a>'));
-  assert.ok(frame.includes(`target=${encodeURIComponent("file:~/notes/another.org")}">Home relative note</a>`));
+  assert.match(frame, anchorPattern(appTargetHref(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}`), "Bare relative source"));
+  assert.match(frame, anchorPattern(appTargetHref(`file:${path.join(fs.realpathSync(root), "notes", "another.org")}::*Section/Child`), "Case-insensitive source with heading search"));
+  assert.match(frame, anchorPattern(appTargetHref(`file:${path.join(fs.realpathSync(root), "host.org")}`), "Parent note"));
+  assert.match(frame, anchorPattern(appTargetHref("Another Heading"), "Fuzzy heading title"));
+  assert.match(frame, anchorPattern(appTargetHref("id:whole-note"), "Stable note link"));
+  assert.match(frame, anchorPattern("https://example.com/article.org", "External note"));
+  assert.match(frame, anchorPattern(appTargetHref("file:~/notes/another.org"), "Home relative note"));
+  assert.match(frame, /title="External link\nhttps:\/\/example\.com\/article\.org"/);
   assert.match(frame, new RegExp(`org2-resource://local\\?target=${encodeURIComponent(path.join(fs.realpathSync(root), "notes", "image.png"))}`));
 
   // Embedded fragments route anchors through the full canonical source AST.
@@ -131,11 +135,11 @@ Sibling content is outside fragment.
   const anchorFrame = allFrames(render("#+EMBED: id:embed-with-anchors\n"))[0];
   const actualAnchorLine = anchorSource.split("\n").indexOf("* Actual sibling") + 1;
   const numericAnchorTarget = encodeURIComponent(`file:${fs.realpathSync(anchorFile)}::${actualAnchorLine}`);
-  assert.ok(anchorFrame.includes(`target=${numericAnchorTarget}">Custom sibling</a>`));
-  assert.ok(anchorFrame.includes(`target=${numericAnchorTarget}">Title sibling</a>`));
+  assert.match(anchorFrame, anchorPattern(`org2-workspace://open-link?target=${numericAnchorTarget}`, "Custom sibling"));
+  assert.match(anchorFrame, anchorPattern(`org2-workspace://open-link?target=${numericAnchorTarget}`, "Title sibling"));
   const anchorSourceTarget = encodeURIComponent(`file:${fs.realpathSync(anchorFile)}`);
-  assert.ok(anchorFrame.includes(`target=${anchorSourceTarget}">Missing anchor</a>`));
-  assert.ok(anchorFrame.includes(`target=${anchorSourceTarget}">Ambiguous anchor</a>`));
+  assert.match(anchorFrame, anchorPattern(`org2-workspace://open-link?target=${anchorSourceTarget}`, "Missing anchor"));
+  assert.match(anchorFrame, anchorPattern(`org2-workspace://open-link?target=${anchorSourceTarget}`, "Ambiguous anchor"));
   assert.doesNotMatch(anchorFrame, /Sibling content is outside fragment/);
 
   // Re-rendering reads current canonical content without copying it into the host.

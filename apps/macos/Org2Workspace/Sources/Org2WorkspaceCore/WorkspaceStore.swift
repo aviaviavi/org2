@@ -875,6 +875,11 @@ private struct RenderedBlocksMetadata: Sendable {
   let indexes: [OrgEditableBlock.ID: Int]
 }
 
+private enum EntryRenderResult: @unchecked Sendable {
+  case native([OrgEditableBlock], RenderedBlocksMetadata)
+  case html(Result<String, Error>)
+}
+
 private struct PendingBlockSelection {
   let file: String
   let line: Int
@@ -3401,6 +3406,7 @@ public final class WorkspaceStore {
   var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   var nodeActionItemsLoaderForTesting: (@Sendable (String, URL) async throws -> NodeActionItemsPayload)?
   var entryHTMLRendererForTesting: (@Sendable (String, String, Int, String?) async throws -> String)?
+  var entryNativeRendererPreparationForTesting: (@Sendable () async -> Void)?
   var documentPDFRendererForTesting: ((String, URL?) async throws -> Data)?
   var documentPDFExportFileOpenerForTesting: ((URL) -> Bool)?
   var slideExportFileOpenerForTesting: ((URL) -> Bool)?
@@ -41017,102 +41023,102 @@ public final class WorkspaceStore {
           return
         }
       }
-      // Start the enhanced renderer immediately. Native blocks remain the
-      // first dependable frame, but their Swift parse no longer sits in front
-      // of the independent HTML parse on the critical path.
-      let htmlTask: Task<String, Error>? = cachedHTML == nil
-        ? Task { @MainActor [weak self] in
-            guard let self else { throw CancellationError() }
-            let sourceLineOffset = max(0, source.startLine - 1)
-            let stylesheetPath = self.appHTMLStylesheetPath
-            if let testRenderer = self.entryHTMLRendererForTesting {
-              return try await testRenderer(
-                source.text,
-                source.file,
-                sourceLineOffset,
-                stylesheetPath
-              )
-            }
-            return try await self.cli.renderAppHTML(
-              source.text,
-              sourcePath: source.file,
-              sourceLineOffset: sourceLineOffset,
-              stylesheetPath: stylesheetPath,
-              corpusRootPath: self.corpusRoot?.path
-            )
-          }
-        : nil
-      defer { htmlTask?.cancel() }
+      // Publish whichever renderer finishes first. Large native block parses
+      // must not hold an already-finished HTML page behind the watchdog.
+      let sourceLineOffset = max(0, source.startLine - 1)
+      let stylesheetPath = self.appHTMLStylesheetPath
+      let corpusRootPath = self.corpusRoot?.path
+      let testHTMLRenderer = self.entryHTMLRendererForTesting
+      let nativePreparation = self.entryNativeRendererPreparationForTesting
+      let cli = self.cli
       let modifiedAt = self.selectedEntrySource?.id == source.id
         ? self.selectedEntrySourceModifiedAt
         : self.corpusFilesByPath[
           URL(fileURLWithPath: source.file).standardizedFileURL.path
         ]?.modifiedAt
-      let blocks: [OrgEditableBlock]
-      let blockMetadata: RenderedBlocksMetadata
-      let loadedBlocksFromCache: Bool
-      if let cached = self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
-        blocks = cached.blocks
-        blockMetadata = cached.metadata
-        loadedBlocksFromCache = true
-      } else {
-        let parsed = await Task.detached(priority: .userInitiated) {
-          let blocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-          return (blocks, Self.renderedBlocksMetadata(for: blocks))
-        }.value
-        blocks = parsed.0
-        blockMetadata = parsed.1
-        loadedBlocksFromCache = false
+      let cachedBlocks = self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt)
+      if let cached = cachedBlocks {
+        self.applyRenderedBlocks(cached.blocks, metadata: cached.metadata, for: source)
       }
+
+      await withTaskGroup(of: EntryRenderResult.self) { group in
+        if cachedBlocks == nil {
+          group.addTask(priority: .userInitiated) {
+            if let nativePreparation { await nativePreparation() }
+            guard !Task.isCancelled else { return .native([], Self.renderedBlocksMetadata(for: [])) }
+            let blocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+            return .native(blocks, Self.renderedBlocksMetadata(for: blocks))
+          }
+        }
+        if cachedHTML == nil {
+          group.addTask(priority: .userInitiated) {
+            do {
+              let html: String
+              if let testHTMLRenderer {
+                html = try await testHTMLRenderer(
+                  source.text,
+                  source.file,
+                  sourceLineOffset,
+                  stylesheetPath
+                )
+              } else {
+                html = try await cli.renderAppHTML(
+                  source.text,
+                  sourcePath: source.file,
+                  sourceLineOffset: sourceLineOffset,
+                  stylesheetPath: stylesheetPath,
+                  corpusRootPath: corpusRootPath
+                )
+              }
+              return .html(.success(html))
+            } catch {
+              return .html(.failure(error))
+            }
+          }
+        }
+
+        while let result = await group.next() {
+          guard generation == self.entrySourceLoadGeneration,
+                renderGeneration == self.entryHTMLRenderGeneration,
+                self.selectedEntrySource?.id == source.id,
+                self.selectedEntryHTMLRenderKey == renderKey
+          else {
+            group.cancelAll()
+            break
+          }
+
+          switch result {
+          case .native(let blocks, let blockMetadata):
+            guard !Task.isCancelled else { continue }
+            self.cacheRenderedBlocks(
+              blocks,
+              metadata: blockMetadata,
+              for: source,
+              modifiedAt: modifiedAt
+            )
+            self.applyRenderedBlocks(blocks, metadata: blockMetadata, for: source)
+          case .html(.success(let html)):
+            let presentedHTML = Self.applyingPropertyDrawerDefault(
+              to: html,
+              expanded: self.propertyDrawersExpandedByDefault
+            )
+            self.cacheRenderedHTML(presentedHTML, key: renderKey)
+            self.selectedEntryHTML = presentedHTML
+            self.liveEmbedSourceID = LiveEmbedPresentation.containsEmbeds(presentedHTML) ? source.id : nil
+            self.selectedEntryRenderError = nil
+          case .html(.failure(let error)):
+            self.selectedEntryHTML = nil
+            self.selectedEntryRenderError = error.localizedDescription
+          }
+        }
+      }
+
       guard generation == self.entrySourceLoadGeneration,
             renderGeneration == self.entryHTMLRenderGeneration,
             self.selectedEntrySource?.id == source.id,
             self.selectedEntryHTMLRenderKey == renderKey
       else {
         return
-      }
-      if !loadedBlocksFromCache {
-        self.cacheRenderedBlocks(
-          blocks,
-          metadata: blockMetadata,
-          for: source,
-          modifiedAt: modifiedAt
-        )
-      }
-      // The native Org renderer is the dependable baseline and is fast enough
-      // to publish first. HTML/plugin rendering can then enhance the page
-      // without ever leaving the default document view blocked on a process.
-      self.applyRenderedBlocks(blocks, metadata: blockMetadata, for: source)
-
-      if let htmlTask {
-        do {
-          let html = try await htmlTask.value
-          guard generation == self.entrySourceLoadGeneration,
-                renderGeneration == self.entryHTMLRenderGeneration,
-                self.selectedEntrySource?.id == source.id,
-                self.selectedEntryHTMLRenderKey == renderKey
-          else {
-            return
-          }
-          let presentedHTML = Self.applyingPropertyDrawerDefault(
-            to: html,
-            expanded: self.propertyDrawersExpandedByDefault
-          )
-          self.cacheRenderedHTML(presentedHTML, key: renderKey)
-          self.selectedEntryHTML = presentedHTML
-          self.liveEmbedSourceID = LiveEmbedPresentation.containsEmbeds(presentedHTML) ? source.id : nil
-          self.selectedEntryRenderError = nil
-        } catch {
-          guard generation == self.entrySourceLoadGeneration,
-                renderGeneration == self.entryHTMLRenderGeneration,
-                self.selectedEntrySource?.id == source.id,
-                self.selectedEntryHTMLRenderKey == renderKey
-          else {
-            return
-          }
-          self.selectedEntryHTML = nil
-          self.selectedEntryRenderError = error.localizedDescription
-        }
       }
       self.entryHTMLRenderWatchdogTask?.cancel()
       self.entryHTMLRenderWatchdogTask = nil
@@ -41139,7 +41145,7 @@ public final class WorkspaceStore {
             renderGeneration == self.entryHTMLRenderGeneration,
             self.selectedEntrySource?.id == source.id,
             self.selectedEntryHTML == nil,
-            self.selectedEntryRenderError == nil,
+            (self.selectedEntryRenderError == nil || !self.isSelectedRenderedBlocksReady),
             self.isRenderingEntrySource
       else { return }
 

@@ -1696,6 +1696,23 @@ function appLinkHref(rawTarget: string, expandedTarget: string, context: RenderC
   return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
 }
 
+function appLinkTooltip(rawTarget: string, expandedTarget: string): string {
+  if (/^https?:/i.test(expandedTarget)) return `External link\n${expandedTarget}`;
+  if (/^mailto:/i.test(expandedTarget)) return `Email link\n${expandedTarget.slice("mailto:".length)}`;
+
+  const target = expandedTarget.replace(/^file:/i, "");
+  const pathPart = target.split("::", 1)[0]?.split(/[?#]/, 1)[0] || "";
+  const extension = path.extname(pathPart).slice(1).toLowerCase();
+  if (extension === "org" || extension === "org2") {
+    return `Org document\n${expandedTarget}`;
+  }
+  if (extension) return `${extension.toUpperCase()} file\n${expandedTarget}`;
+  if (/^(?:id:|#|\*)/i.test(rawTarget) || !/^[a-z][a-z0-9+.-]*:/i.test(rawTarget)) {
+    return `Workspace link\n${rawTarget}`;
+  }
+  return `File\n${expandedTarget}`;
+}
+
 function renderLink(node: LinkNode, context: RenderContext): string {
   const hrefRaw = String(node.targetRaw || "").trim();
   const colorBinding = node.descriptionRaw !== undefined
@@ -1720,7 +1737,10 @@ function renderLink(node: LinkNode, context: RenderContext): string {
   const explicitDescription = String(node.descriptionRaw || "").trim();
   const defaultInternalText = resolveDefaultInternalLinkText(hrefRaw);
   const text = explicitDescription || defaultInternalText || String(node.targetRaw || "").trim() || href;
-  return `<a href="${escapeAttr(href)}">${escapeHtml(text)}</a>`;
+  const tooltip = context.profile === "app"
+    ? ` title="${escapeAttr(appLinkTooltip(hrefRaw, expandedHrefRaw))}"`
+    : "";
+  return `<a href="${escapeAttr(href)}"${tooltip}>${escapeHtml(text)}</a>`;
 }
 
 function colorBindingStyles(binding: OrgColorBinding, wholeCell: boolean): string {

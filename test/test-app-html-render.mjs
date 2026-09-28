@@ -43,7 +43,7 @@ SCHEDULED: <2026-07-09 Thu>
 :PROPERTIES:
 :ID: render-target
 :END:
-A [[id:render-target][linked note]], [[file:notes/other.org2][file]], and [[https://example.com][website]].
+A [[id:render-target][linked note]], [[file:notes/other.org2][file]], [[file:brief.pdf][PDF]], and [[https://example.com][website]].
 This is [[color:red][urgent]], [[color:bg=yellow][highlighted]], and [[color:fg=white;bg=#b42318][blocked]].
 #+begin_quote
 First line
@@ -145,6 +145,10 @@ assert.match(rendered.html, /\.org2-headline-body > \.org2-headline\.level-2 \{ 
 assert.match(rendered.html, /org2-workspace:\/\/open-link\?target=id%3Arender-target/);
 assert.match(rendered.html, /org2-workspace:\/\/open-link\?target=file%3Anotes%2Fother\.org2/);
 assert.match(rendered.html, /href="https:\/\/example\.com"/);
+assert.match(rendered.html, /title="Workspace link\nid:render-target"/);
+assert.match(rendered.html, /title="Org document\nfile:notes\/other\.org2"/);
+assert.match(rendered.html, /title="PDF file\nfile:brief\.pdf"/);
+assert.match(rendered.html, /title="External link\nhttps:\/\/example\.com"/);
 assert.doesNotMatch(rendered.html, /globalThis\.documentHeadRan/);
 assert.doesNotMatch(rendered.html, /<script>globalThis\.exportBlockRan/);
 assert.match(rendered.html, /&lt;script&gt;globalThis\.exportBlockRan/);
@@ -163,6 +167,7 @@ assert.match(published.html, /<td>Green<\/td>/);
 assert.doesNotMatch(published.html, /org2-color-token|org2-color-swatch/);
 assert.doesNotMatch(published.html, /Save view to source/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
+assert.doesNotMatch(published.html, /title="(?:Workspace|Org document|External) link/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
 
