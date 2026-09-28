@@ -2732,14 +2732,17 @@ details[open] > summary::before { content: "\u25BC"; }
   letter-spacing: 0;
   vertical-align: middle;
   transform: translateY(-2px);
-  opacity: 0.46;
+  opacity: 0;
+  pointer-events: none;
   cursor: pointer;
   transition: opacity 110ms ease-out, color 110ms ease-out, background-color 110ms ease-out;
 }
 .org2-headline-summary:hover > .org2-heading-ai-action,
 .org2-section-label:hover > .org2-heading-ai-action,
+.org2-headline-summary:focus-within > .org2-heading-ai-action,
 .org2-heading-ai-action:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 .org2-heading-ai-action:hover,
 .org2-heading-ai-action:focus-visible {
@@ -3958,6 +3961,29 @@ ${rows}
     }
     return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
   }
+  function appLinkTooltip(rawTarget, expandedTarget) {
+    if (/^https?:/i.test(expandedTarget)) return `External link
+${expandedTarget}`;
+    if (/^mailto:/i.test(expandedTarget)) return `Email link
+${expandedTarget.slice("mailto:".length)}`;
+    const target = expandedTarget.replace(/^file:/i, "");
+    const pathPart = target.split("::", 1)[0]?.split(/[?#]/, 1)[0] || "";
+    const fileName = pathPart.split("/").pop() ?? "";
+    const dot = fileName.lastIndexOf(".");
+    const extension = dot > 0 ? fileName.slice(dot + 1).toLowerCase() : "";
+    if (extension === "org" || extension === "org2") {
+      return `Org document
+${expandedTarget}`;
+    }
+    if (extension) return `${extension.toUpperCase()} file
+${expandedTarget}`;
+    if (/^(?:id:|#|\*)/i.test(rawTarget) || !/^[a-z][a-z0-9+.-]*:/i.test(rawTarget)) {
+      return `Workspace link
+${rawTarget}`;
+    }
+    return `File
+${expandedTarget}`;
+  }
   function renderLink(node, context) {
     const hrefRaw = String(node.targetRaw || "").trim();
     const colorBinding = node.descriptionRaw !== void 0 ? parseOrgColorBindingTarget(hrefRaw) : null;
@@ -3975,7 +4001,8 @@ ${rows}
     const explicitDescription = String(node.descriptionRaw || "").trim();
     const defaultInternalText = resolveDefaultInternalLinkText(hrefRaw);
     const text2 = explicitDescription || defaultInternalText || String(node.targetRaw || "").trim() || href;
-    return `<a href="${escapeAttr(href)}">${escapeHtml(text2)}</a>`;
+    const tooltip = context.profile === "app" ? ` title="${escapeAttr(appLinkTooltip(hrefRaw, expandedHrefRaw))}"` : "";
+    return `<a href="${escapeAttr(href)}"${tooltip}>${escapeHtml(text2)}</a>`;
   }
   function colorBindingStyles(binding, wholeCell) {
     const styles = [];

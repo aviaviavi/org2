@@ -39,6 +39,11 @@ assert.doesNotMatch(html, /Steep 3 minutes|discussed pour over yesterday/);
 assert.match(runtime.renderDocument(source, coffee.path).html, /Steep 3 minutes/);
 assert.match(runtime.renderDocument("\n" + source, coffee.path, coffee.line, coffee.nodeID).html, /225 g/);
 assert.throws(() => runtime.renderDocument(source, coffee.path, 2, "", [], "Pour over"), /entry changed/);
+// App-profile link tooltips must render without node:path in JavaScriptCore.
+const linked = runtime.renderDocument("* Links\nSee [[file:notes/plan.org][plan]], [[file:data/sheet.csv][sheet]], and [[id:coffee-entry][coffee]].\n", "notes/links.org").html;
+assert.match(linked, /title="Org document\nfile:notes\/plan\.org"/);
+assert.match(linked, /title="CSV file\nfile:data\/sheet\.csv"/);
+assert.match(linked, /title="Workspace link\nid:coffee-entry"/);
 const unsafe = runtime.renderDocument('#+HTML_HEAD: <script>unsafe()</script>\n* Hello\n#+begin_export html\n<script>unsafe()</script>\n#+end_export', 'test.org').html;
 assert.match(unsafe, /script-src 'none'/);
 assert.doesNotMatch(unsafe, /<script>unsafe\(\)<\/script>/);

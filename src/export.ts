@@ -1705,7 +1705,11 @@ function appLinkTooltip(rawTarget: string, expandedTarget: string): string {
 
   const target = expandedTarget.replace(/^file:/i, "");
   const pathPart = target.split("::", 1)[0]?.split(/[?#]/, 1)[0] || "";
-  const extension = path.extname(pathPart).slice(1).toLowerCase();
+  // String-only extension parsing: the iOS JavaScriptCore runtime provides
+  // no node:path beyond basename, so path.extname would throw there.
+  const fileName = pathPart.split("/").pop() ?? "";
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot > 0 ? fileName.slice(dot + 1).toLowerCase() : "";
   if (extension === "org" || extension === "org2") {
     return `Org document\n${expandedTarget}`;
   }
