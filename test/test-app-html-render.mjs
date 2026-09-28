@@ -120,7 +120,9 @@ assert.match(rendered.html, /\.org2-table-scroll \{[^}]*min-width: 0;[^}]*overfl
 assert.match(rendered.html, /id="org2-app-document-script"/);
 assert.match(rendered.html, /className = "org2-heading-ai-action"/);
 assert.match(rendered.html, /org2-workspace:\/\/ask-ai\?line=/);
-assert.match(rendered.html, /opacity: 0\.46;/);
+// The per-section Ask AI action stays hidden until the heading is hovered or focused.
+assert.match(rendered.html, /\.org2-heading-ai-action \{[^}]*opacity: 0;[^}]*pointer-events: none;/);
+assert.match(rendered.html, /\.org2-headline-summary:hover > \.org2-heading-ai-action,[^{]*\.org2-heading-ai-action:focus-visible \{[^}]*opacity: 1;[^}]*pointer-events: auto;/);
 assert.match(rendered.html, /vertical-align: middle;/);
 assert.match(rendered.html, /transform: translateY\(-2px\);/);
 assert.match(rendered.html, /paragraph\.classList\.add\("org2-section-label"\)/);

@@ -335,14 +335,17 @@ details[open] > summary::before { content: "▼"; }
   letter-spacing: 0;
   vertical-align: middle;
   transform: translateY(-2px);
-  opacity: 0.46;
+  opacity: 0;
+  pointer-events: none;
   cursor: pointer;
   transition: opacity 110ms ease-out, color 110ms ease-out, background-color 110ms ease-out;
 }
 .org2-headline-summary:hover > .org2-heading-ai-action,
 .org2-section-label:hover > .org2-heading-ai-action,
+.org2-headline-summary:focus-within > .org2-heading-ai-action,
 .org2-heading-ai-action:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 .org2-heading-ai-action:hover,
 .org2-heading-ai-action:focus-visible {
