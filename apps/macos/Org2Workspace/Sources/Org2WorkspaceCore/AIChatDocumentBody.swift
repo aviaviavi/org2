@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 import WebKit
 
@@ -235,7 +236,39 @@ struct AIChatDocumentWebView: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
       loaded = true
+      applyTheme(to: webView)
       update(webView)
+    }
+
+    private(set) var themeStylesheet = ""
+    private var isObservingTheme = false
+
+    /// Apply the active theme pair and keep the loaded page in step with it.
+    @MainActor
+    func applyTheme(to view: WKWebView) {
+      themeStylesheet = WorkspaceThemeCenter.shared.trackedChatStylesheet()
+      view.evaluateJavaScript(WorkspaceThemeDocumentStyle.replacementScript(themeStylesheet))
+      observeThemeChanges(of: view)
+    }
+
+    @MainActor
+    private func observeThemeChanges(of view: WKWebView) {
+      guard !isObservingTheme else { return }
+      isObservingTheme = true
+      withObservationTracking {
+        _ = WorkspaceThemeCenter.shared.trackedChatStylesheet()
+      } onChange: { [weak self, weak view] in
+        Task { @MainActor [weak self, weak view] in
+          guard let self else { return }
+          self.isObservingTheme = false
+          guard let view else { return }
+          if WorkspaceThemeCenter.shared.trackedChatStylesheet() != self.themeStylesheet {
+            self.applyTheme(to: view)
+          } else {
+            self.observeThemeChanges(of: view)
+          }
+        }
+      }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {

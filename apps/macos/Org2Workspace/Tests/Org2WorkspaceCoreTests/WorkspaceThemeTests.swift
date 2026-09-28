@@ -143,6 +143,41 @@ final class WorkspaceThemeTests: XCTestCase {
     XCTAssertEqual(computed?.hasPrefix(#"["rgba(0, 0, 0, 0)","rgb(220, 227, 222)""#), true, computed ?? "")
   }
 
+  func testChatStylesheetAddsTranscriptRulesOnlyForImportedThemes() {
+    let paper = WorkspaceThemeCatalog.theme(id: nil, for: .light)
+    let night = WorkspaceThemeCatalog.theme(id: nil, for: .dark)
+    let spacemacs = WorkspaceThemeCatalog.theme(id: "spacemacs-light", for: .light)
+    XCTAssertEqual(WorkspaceThemeDocumentStyle.chatStylesheet(light: paper, dark: night), "")
+    let css = WorkspaceThemeDocumentStyle.chatStylesheet(light: spacemacs, dark: night)
+    XCTAssertTrue(css.contains(":root .message-card { background: #fbf8ef; border-color: #e0dad6; }"))
+    XCTAssertFalse(css.contains("@media"), "the default dark half keeps the built-in chat colors")
+  }
+
+  @MainActor
+  func testChatThemeRecolorsTranscriptCardsInARealWebView() async throws {
+    let page = """
+    <!doctype html><html><head><style>\(AIChatTranscriptHTML.style)</style></head>
+    <body><article class="assistant"><div class="message-card"><div class="message-header"><strong>Codex</strong></div><main>Hi</main></div></article></body></html>
+    """
+    let spacemacs = WorkspaceThemeCatalog.theme(id: "spacemacs-dark", for: .dark)
+    let paper = WorkspaceThemeCatalog.theme(id: nil, for: .light)
+    let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+    webView.appearance = NSAppearance(named: .darkAqua)
+    let loader = ThemeTestNavigationWaiter()
+    webView.navigationDelegate = loader
+    webView.loadHTMLString(page, baseURL: nil)
+    await loader.waitForLoad()
+    _ = try await webView.evaluateJavaScript(WorkspaceThemeDocumentStyle.replacementScript(
+      WorkspaceThemeDocumentStyle.chatStylesheet(light: paper, dark: spacemacs)
+    ))
+    let computed = try await webView.evaluateJavaScript("""
+    JSON.stringify([getComputedStyle(document.body).backgroundColor, getComputedStyle(document.body).color,
+      getComputedStyle(document.querySelector('.message-card')).backgroundColor,
+      getComputedStyle(document.querySelector('.message-header')).color])
+    """) as? String
+    XCTAssertEqual(computed, #"["rgba(0, 0, 0, 0)","rgb(178, 178, 178)","rgb(41, 43, 46)","rgb(147, 147, 147)"]"#)
+  }
+
   private static func hex(_ color: NSColor, in name: NSAppearance.Name) throws -> UInt32 {
     let appearance = try XCTUnwrap(NSAppearance(named: name))
     var resolved: NSColor?

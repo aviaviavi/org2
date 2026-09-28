@@ -62,6 +62,12 @@ enum WorkspaceDesign {
     themed(.canvas)
   }
 
+  /// Behind the AI chat transcript and composer. OpenOrg defaults keep the
+  /// window color; imported themes use their canvas.
+  static var paneBackground: Color {
+    themed(.pane)
+  }
+
   static var subtleFill: Color {
     Color.secondary.opacity(0.045)
   }

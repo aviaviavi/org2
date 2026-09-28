@@ -58,6 +58,9 @@ public enum WorkspaceThemeRole: String, CaseIterable, Sendable {
   case heading1
   case heading2
   case heading3
+  /// Background behind panes that historically used the window color, such
+  /// as the AI chat transcript. OpenOrg defaults keep the system color.
+  case pane
 }
 
 public struct WorkspaceThemePalette: @unchecked Sendable {
@@ -115,6 +118,7 @@ public struct WorkspaceThemePalette: @unchecked Sendable {
     case .heading1: heading1 ?? text
     case .heading2: heading2 ?? text
     case .heading3: heading3 ?? text
+    case .pane: overridesBodyText ? canvas : .windowBackgroundColor
     }
   }
 }
@@ -574,6 +578,14 @@ public final class WorkspaceThemeCenter: @unchecked Sendable {
     return WorkspaceThemeDocumentStyle.stylesheet(light: light, dark: dark)
   }
 
+  /// CSS overrides for the HTML AI chat transcript and message documents.
+  public func trackedChatStylesheet() -> String {
+    _ = lightThemeID
+    _ = darkThemeID
+    let (light, dark) = lock.withLock { (lightTheme, darkTheme) }
+    return WorkspaceThemeDocumentStyle.chatStylesheet(light: light, dark: dark)
+  }
+
   static func isDark(_ appearance: NSAppearance) -> Bool {
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
   }
@@ -604,14 +616,63 @@ public enum WorkspaceThemeDocumentStyle {
   public static let styleElementID = "org2-workspace-theme"
 
   public static func stylesheet(light: WorkspaceTheme, dark: WorkspaceTheme) -> String {
+    pairStylesheet(light: light, dark: dark) { rules(for: $0, selectorPrefix: ":root") }
+  }
+
+  /// Document rules plus the chat transcript's cards, headers, pills, and
+  /// status text. Page backgrounds stay transparent over the themed pane.
+  public static func chatStylesheet(light: WorkspaceTheme, dark: WorkspaceTheme) -> String {
+    pairStylesheet(light: light, dark: dark) {
+      rules(for: $0, selectorPrefix: ":root") + chatRules(for: $0, selectorPrefix: ":root")
+    }
+  }
+
+  static func pairStylesheet(
+    light: WorkspaceTheme,
+    dark: WorkspaceTheme,
+    rules: (WorkspaceTheme) -> String
+  ) -> String {
     var css = ""
     if light.palette.overridesBodyText {
-      css += rules(for: light, selectorPrefix: ":root")
+      css += rules(light)
     }
     if dark.palette.overridesBodyText {
-      css += "@media (prefers-color-scheme: dark) {\n" + rules(for: dark, selectorPrefix: ":root") + "}\n"
+      css += "@media (prefers-color-scheme: dark) {\n" + rules(dark) + "}\n"
     }
     return css
+  }
+
+  static func chatRules(for theme: WorkspaceTheme, selectorPrefix r: String) -> String {
+    func c(_ role: WorkspaceThemeRole) -> String { cssColor(theme.resolvedColor(role)) }
+    func mix(_ role: WorkspaceThemeRole, _ percent: Int, _ base: String = "transparent") -> String {
+      "color-mix(in srgb, \(c(role)) \(percent)%, \(base))"
+    }
+    let muted = [
+      ".message-header", ".message-placeholder", ".attachment-name", ".queued-actions", ".expansion",
+      ".reasoning-text", ".activity-detail", ".show-earlier", ".more-files", "#live", ".live-detail",
+      ".live-elapsed", ".live-text-toggle", ".live-activity-toggle", "#status",
+    ].map { "\(r) \($0)" }.joined(separator: ", ")
+    return """
+    \(r) body { color: \(c(.text)); }
+    \(r) .message-card { background: \(c(.document)); border-color: \(c(.hairline)); }
+    \(r) article.user .message-card { background: \(mix(.structural, 9, c(.document))); }
+    \(r) article.match .message-card { outline-color: \(c(.structural)); }
+    \(r) .avatar { color: \(c(.secondaryText)); background: \(mix(.text, 8, c(.document))); }
+    \(r) .avatar.user-avatar { color: \(c(.structural)); background: \(mix(.structural, 14, c(.document))); }
+    \(muted) { color: \(c(.secondaryText)); }
+    \(r) .message-header strong, \(r) .detail-header, \(r) .change-summary .detail-header, \(r) .live-text { color: \(c(.text)); }
+    \(r) .detail-block { border-top-color: \(c(.hairline)); }
+    \(r) .context-pill { color: \(c(.link)); background: \(mix(.link, 10)); border-color: \(mix(.link, 35)); }
+    \(r) .system-badge { color: \(c(.planning)); background: \(mix(.planning, 14)); }
+    \(r) .queued-badge { background: \(mix(.text, 10)); }
+    \(r) .attachment-preview { border-color: \(c(.hairline)); background: \(c(.canvas)); }
+    \(r) button:hover { background: \(mix(.text, 10)); }
+    \(r) .icon-button.copied, \(r) .insertions { color: \(c(.done)); }
+    \(r) .deletions { color: \(c(.todo)); }
+    \(r) #latest { background: \(c(.document)); border-color: \(c(.hairline)); }
+    \(r) .live-stop { background: \(mix(.text, 8)); }
+
+    """
   }
 
   static func rules(for theme: WorkspaceTheme, selectorPrefix root: String) -> String {

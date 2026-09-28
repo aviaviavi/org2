@@ -10620,6 +10620,7 @@ private struct OpenClawChatView: View {
       )
       .padding(presentation.isCompact ? 10 : 16)
     }
+    .background(WorkspaceDesign.paneBackground)
   }
 
   @ViewBuilder
