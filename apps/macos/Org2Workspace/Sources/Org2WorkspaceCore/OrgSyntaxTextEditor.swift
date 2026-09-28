@@ -1967,6 +1967,42 @@ struct OrgSyntaxTextEditorSelectionSnapshot: Equatable {
   let localTextRange: NSRange
 }
 
+/// Keys an inline completion panel can claim from the editor before the
+/// editor applies its own Tab, Return, arrow, or Escape behavior.
+enum OrgSyntaxTextEditorCompletionKey: Equatable {
+  case accept
+  case moveUp
+  case moveDown
+  case dismiss
+
+  init?(selector: Selector, modifiers: NSEvent.ModifierFlags) {
+    let relevant = modifiers.intersection([.shift, .option, .control, .command])
+    switch selector {
+    case #selector(NSResponder.insertTab(_:)),
+         #selector(NSResponder.insertNewline(_:)):
+      guard relevant.isEmpty else { return nil }
+      self = .accept
+    case #selector(NSResponder.moveUp(_:)):
+      guard relevant.isEmpty else { return nil }
+      self = .moveUp
+    case #selector(NSResponder.moveDown(_:)):
+      guard relevant.isEmpty else { return nil }
+      self = .moveDown
+    case #selector(NSResponder.cancelOperation(_:)):
+      self = .dismiss
+    default:
+      return nil
+    }
+  }
+}
+
+enum OrgSyntaxTextEditorCompletionKeyResult: Equatable {
+  case ignored
+  case handled
+  /// Replace a UTF-16 range of the editor text and place the caret after it.
+  case replace(range: NSRange, text: String)
+}
+
 struct OrgSyntaxTextEditor: NSViewRepresentable {
   @Binding var text: String
   let monospaced: Bool
@@ -2007,6 +2043,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let documentSelectionContext: OrgSyntaxTextSelectionContext?
   let onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   let onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
+  let completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)?
 
   init(
     text: Binding<String>,
@@ -2047,7 +2084,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     onDeleteBackwardContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
     documentSelectionContext: OrgSyntaxTextSelectionContext? = nil,
     onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)? = nil,
-    onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)? = nil
+    onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)? = nil,
+    completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? = nil
   ) {
     _text = text
     self.monospaced = monospaced
@@ -2088,6 +2126,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.documentSelectionContext = documentSelectionContext
     self.onDeleteDocumentSelection = onDeleteDocumentSelection
     self.onReplaceDocumentSelection = onReplaceDocumentSelection
+    self.completionKeyHandler = completionKeyHandler
   }
 
   func makeCoordinator() -> Coordinator {
@@ -3195,6 +3234,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      if handleCompletionKeyCommand(commandSelector, in: textView) {
+        return true
+      }
+
       if handleBoundaryArrowCommand(commandSelector, in: textView) {
         return true
       }
@@ -3242,6 +3285,33 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return false
       }
       return onSubmit()
+    }
+
+    private func handleCompletionKeyCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
+      guard let handler = parent.completionKeyHandler,
+            !textView.hasMarkedText(),
+            let key = OrgSyntaxTextEditorCompletionKey(
+              selector: commandSelector,
+              modifiers: NSApp.currentEvent?.modifierFlags ?? []
+            ),
+            let snapshot = selectionSnapshot(textView.selectedRange(), from: textView)
+      else {
+        return false
+      }
+      switch handler(key, snapshot) {
+      case .ignored:
+        return false
+      case .handled:
+        return true
+      case .replace(let range, let text):
+        let length = textView.textStorage?.length ?? 0
+        guard range.location >= 0, NSMaxRange(range) <= length else { return false }
+        textView.insertText(text, replacementRange: range)
+        let caret = NSRange(location: range.location + (text as NSString).length, length: 0)
+        textView.setSelectedRange(caret)
+        publishSelectionIfNeeded(caret, from: textView)
+        return true
+      }
     }
 
     private func handleOrgIndentCommand(
@@ -5141,8 +5211,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       from textView: NSTextView
     ) {
       guard let publish = parent.onSelectionSnapshot,
-            let storage = textView.textStorage?.mutableString
+            let snapshot = selectionSnapshot(requestedRange, from: textView)
       else { return }
+      guard snapshot != lastPublishedSelectionSnapshot else { return }
+      lastPublishedSelectionSnapshot = snapshot
+      publish(snapshot)
+    }
+
+    /// A bounded snapshot of the text before the caret. It never copies the
+    /// whole buffer, so completion handlers can use it on every key command.
+    func selectionSnapshot(
+      _ requestedRange: NSRange,
+      from textView: NSTextView
+    ) -> OrgSyntaxTextEditorSelectionSnapshot? {
+      guard let storage = textView.textStorage?.mutableString else { return nil }
 
       let selectedRange = OrgSyntaxTextEditor.clampedRange(
         requestedRange,
@@ -5169,15 +5251,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       } else {
         sourceLine = nil
       }
-      let snapshot = OrgSyntaxTextEditorSelectionSnapshot(
+      return OrgSyntaxTextEditorSelectionSnapshot(
         selectedRange: selectedRange,
         sourceLine: sourceLine,
         localText: storage.substring(with: localRange),
         localTextRange: localRange
       )
-      guard snapshot != lastPublishedSelectionSnapshot else { return }
-      lastPublishedSelectionSnapshot = snapshot
-      publish(snapshot)
     }
 
     static func shouldPublishSelection(

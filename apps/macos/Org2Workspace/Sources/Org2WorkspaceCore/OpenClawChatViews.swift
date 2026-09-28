@@ -3923,6 +3923,11 @@ struct OpenClawComposerView: View {
         AIChatMentionSuggestion.removingActiveMention(in: presentation.userText)
       )
       localDraft = store.openClawDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
+    case .dailyNote(_, let file):
+      let draftWithoutMention = presentation.replacingUserText(
+        AIChatComposerMentionSuggestion.removingActiveDateMention(in: presentation.userText)
+      )
+      localDraft = store.openClawDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
     }
     moveComposerCursorToEndRequest &+= 1
   }
@@ -3944,7 +3949,8 @@ struct OpenClawComposerView: View {
       allDestinationIDs: store.selectedAIChatIsSharedRoom
         ? store.selectedAIChatRoomDestinationIDs
         : store.enabledAIChatDestinations.map(\.id),
-      corpusFiles: store.corpusFiles
+      corpusFiles: store.corpusFiles,
+      dailyNoteFile: { store.existingDailyNoteFile(for: $0.date) }
     )
   }
 
@@ -4134,11 +4140,14 @@ struct AIChatMentionSuggestion: Identifiable, Equatable {
 enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
   case destination(AIChatMentionSuggestion)
   case corpusFile(CorpusFile)
+  /// An existing daily note resolved from `@today`, `@july 10`, and similar.
+  case dailyNote(WorkspaceDateMentionCandidate, CorpusFile)
 
   var id: String {
     switch self {
     case .destination(let suggestion): "destination:\(suggestion.id)"
     case .corpusFile(let file): "file:\(file.id)"
+    case .dailyNote(_, let file): "daily:\(file.id)"
     }
   }
 
@@ -4146,6 +4155,7 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     switch self {
     case .destination(let suggestion): suggestion.title
     case .corpusFile(let file): file.name
+    case .dailyNote(let candidate, _): candidate.title
     }
   }
 
@@ -4153,6 +4163,7 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     switch self {
     case .destination(let suggestion): suggestion.detail
     case .corpusFile(let file): file.relativePath
+    case .dailyNote(_, let file): "Daily note · \(file.relativePath)"
     }
   }
 
@@ -4160,7 +4171,13 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     switch self {
     case .destination(let suggestion): suggestion.systemImage
     case .corpusFile: "doc.text"
+    case .dailyNote: "calendar"
     }
+  }
+
+  static func removingActiveDateMention(in text: String) -> String {
+    guard let match = WorkspaceDateMentions.matchAtEnd(of: text) else { return text }
+    return WorkspaceDateMentions.removingMatch(match, in: text)
   }
 
   static func suggestions(
@@ -4168,15 +4185,28 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     destinations: [AIChatDestinationConfiguration],
     allDestinationIDs: [String],
     corpusFiles: [CorpusFile],
+    dailyNoteFile: (WorkspaceDateMentionCandidate) -> CorpusFile? = { _ in nil },
+    now: Date = Date(),
     limit: Int = 10
   ) -> [AIChatComposerMentionSuggestion] {
-    guard let query = AIChatMentionSuggestion.activeMentionQuery(in: text) else { return [] }
+    let dailyNoteSuggestions = WorkspaceDateMentions.matchAtEnd(of: text).map { match in
+      WorkspaceDateMentions.candidates(for: match.query, now: now).compactMap { candidate in
+        dailyNoteFile(candidate).map { AIChatComposerMentionSuggestion.dailyNote(candidate, $0) }
+      }
+    } ?? []
+    guard let query = AIChatMentionSuggestion.activeMentionQuery(in: text) else {
+      return Array(dailyNoteSuggestions.prefix(limit))
+    }
     let destinationSuggestions = AIChatMentionSuggestion.suggestions(
       for: text,
       destinations: destinations,
       allDestinationIDs: allDestinationIDs
     )
-    let fileLimit = max(0, limit - destinationSuggestions.count)
+    let dailyNotePaths = Set(dailyNoteSuggestions.compactMap { suggestion -> String? in
+      if case .dailyNote(_, let file) = suggestion { return file.path }
+      return nil
+    })
+    let fileLimit = max(0, limit - destinationSuggestions.count - dailyNoteSuggestions.count)
     let matchingFiles: [CorpusFile]
     if query.isEmpty {
       matchingFiles = Array(corpusFiles.prefix(fileLimit))
@@ -4189,7 +4219,10 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     }
     return Array(
       (destinationSuggestions.map(AIChatComposerMentionSuggestion.destination)
-        + matchingFiles.map(AIChatComposerMentionSuggestion.corpusFile))
+        + dailyNoteSuggestions
+        + matchingFiles
+          .filter { !dailyNotePaths.contains($0.path) }
+          .map(AIChatComposerMentionSuggestion.corpusFile))
         .prefix(limit)
     )
   }

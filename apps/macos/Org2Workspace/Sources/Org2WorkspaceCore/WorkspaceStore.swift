@@ -47025,6 +47025,52 @@ public final class WorkspaceStore {
     }.value
   }
 
+  /// The active corpus's existing daily note for `date`, read from the file
+  /// catalog without touching disk so completion can call it per keystroke.
+  func existingDailyNoteFile(for date: Date) -> CorpusFile? {
+    guard let corpusRoot else { return nil }
+    let root = corpusRoot.standardizedFileURL
+    let directory = dailyNoteDirectoriesByCorpusPath[root.path]
+      ?? root.appendingPathComponent("daily", isDirectory: true).standardizedFileURL
+    return Self.existingDailyNoteFile(
+      baseName: Self.formatDate(date),
+      in: directory,
+      filesByPath: corpusFilesByPath,
+      corpusFiles: corpusFiles
+    )
+  }
+
+  nonisolated static func existingDailyNoteFile(
+    baseName: String,
+    in directory: URL,
+    filesByPath: [String: CorpusFile],
+    corpusFiles: [CorpusFile]
+  ) -> CorpusFile? {
+    let candidates = OrgDocumentDefaults.candidateURLs(in: directory, baseName: baseName)
+      .map { $0.standardizedFileURL.path }
+    for path in candidates {
+      if let file = filesByPath[path] { return file }
+    }
+    // The path index is projected asynchronously after catalog changes.
+    let names = Set(candidates.map { NSString(string: $0).lastPathComponent })
+    let matches = corpusFiles.filter { names.contains($0.name) && candidates.contains($0.path) }
+    return candidates.lazy.compactMap { path in matches.first { $0.path == path } }.first
+  }
+
+  /// Date stamp and daily note link completions for an `@date` mention in
+  /// a document editor. `sourceFile` is the document receiving the link.
+  func dateMentionEditorOptions(
+    for match: WorkspaceDateMentionMatch,
+    sourceFile: String?
+  ) -> [WorkspaceDateMentionOption] {
+    WorkspaceDateMentions.editorOptions(
+      for: match,
+      sourceFile: sourceFile,
+      corpusRoot: corpusRoot,
+      dailyNoteFile: { existingDailyNoteFile(for: $0.date) }
+    )
+  }
+
   private func dailyNoteExists(at url: URL) async -> Bool {
     await Task.detached(priority: .userInitiated) {
       var isDirectory: ObjCBool = false

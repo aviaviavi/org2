@@ -1534,6 +1534,7 @@ private struct ParagraphBlockEditor: View {
   @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
   @State private var reservedLineCount: Int
   @State private var measuredEditorContentHeight: CGFloat = 0
+  @State private var dateMentionState = WorkspaceDateMentionCompletionState()
 
   init(block: OrgEditableBlock, text: String, initialSelection: NSRange?) {
     self.block = block
@@ -1574,6 +1575,11 @@ private struct ParagraphBlockEditor: View {
     let wikiLinkCompletionCandidates = wikiLinkCompletionMatch.map {
       store.orgRoamLinkResolver.searchCandidates(matching: $0.query, limit: 6)
     } ?? []
+    let dateMention = visibleDateMention(
+      text: presentationText,
+      selectedRange: selectedRange,
+      hasWikiLinkCompletion: wikiLinkCompletionMatch != nil
+    )
     let hasInlineDetails = ParagraphInlineDetailsAvailability.hasDetails(in: presentationText)
     let embeddedMedia = ParagraphEditorInlineMediaPreview.embedded(
       raw: presentationText,
@@ -1602,7 +1608,8 @@ private struct ParagraphBlockEditor: View {
           onSubmitContext: submitParagraph,
           documentSelectionContext: documentSelectionContext,
           onDeleteDocumentSelection: deleteDocumentSelection,
-          onReplaceDocumentSelection: replaceDocumentSelection
+          onReplaceDocumentSelection: replaceDocumentSelection,
+          completionKeyHandler: handleDateMentionKey
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
@@ -1665,6 +1672,20 @@ private struct ParagraphBlockEditor: View {
           },
           create: {
             createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+          }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorPanelOffsetHeight))
+        .zIndex(1)
+      } else if let dateMention {
+        WorkspaceDateMentionCompletionPanel(
+          options: dateMention.options,
+          selectedIndex: dateMentionState.selectedIndex(
+            for: dateMention.match,
+            optionCount: dateMention.options.count
+          ),
+          choose: { option in
+            completeDateMention(dateMention.match, with: option)
           }
         )
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1899,6 +1920,41 @@ private struct ParagraphBlockEditor: View {
     scheduleParagraphAutosave()
   }
 
+  private func visibleDateMention(
+    text: String,
+    selectedRange: NSRange,
+    hasWikiLinkCompletion: Bool
+  ) -> (match: WorkspaceDateMentionMatch, options: [WorkspaceDateMentionOption])? {
+    guard !hasWikiLinkCompletion,
+          let match = WorkspaceDateMentions.match(in: text, selectedRange: selectedRange),
+          !dateMentionState.isDismissed(match)
+    else { return nil }
+    let options = store.dateMentionEditorOptions(for: match, sourceFile: store.selectedEntrySource?.file)
+    return options.isEmpty ? nil : (match, options)
+  }
+
+  private func handleDateMentionKey(
+    _ key: OrgSyntaxTextEditorCompletionKey,
+    snapshot: OrgSyntaxTextEditorSelectionSnapshot
+  ) -> OrgSyntaxTextEditorCompletionKeyResult {
+    guard ParagraphWikiLinkCompletion.match(in: snapshot) == nil,
+          let match = WorkspaceDateMentions.match(in: snapshot)
+    else { return .ignored }
+    let options = store.dateMentionEditorOptions(for: match, sourceFile: store.selectedEntrySource?.file)
+    return dateMentionState.handle(key, match: match, options: options)
+  }
+
+  private func completeDateMention(_ match: WorkspaceDateMentionMatch, with option: WorkspaceDateMentionOption) {
+    guard let edit = option.replacement(in: currentParagraphText, match: match) else { return }
+    draftText = edit.text
+    selectedRange = edit.selectedRange
+    liveText.update(edit.text)
+    presentationText = edit.text
+    reserveEditorLines(for: edit.text)
+    store.updateEditingBlockDraft(block, draft: edit.text)
+    scheduleParagraphAutosave()
+  }
+
   private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
     let text = currentParagraphText
     Task {
@@ -1968,6 +2024,7 @@ struct LiveRenderedTextBlockEditor: View {
   @State private var availableEditorWidth: CGFloat = 0
   @State private var appliedRenderIdentity: OrgEditableBlockRenderIdentity
   @State private var appliedInitialSelection: NSRange?
+  @State private var dateMentionState = WorkspaceDateMentionCompletionState()
 
   init(block: OrgEditableBlock, initialSelection: NSRange? = nil) {
     self.block = block
@@ -2009,7 +2066,12 @@ struct LiveRenderedTextBlockEditor: View {
         slashCommandMatch: slashCommandMatch,
         focusedInlineToken: focusedInlineToken,
         wikiLinkCompletionMatch: wikiLinkCompletionMatch,
-        wikiLinkCompletionCandidates: wikiLinkCompletionCandidates
+        wikiLinkCompletionCandidates: wikiLinkCompletionCandidates,
+        dateMention: visibleDateMention(
+          text: presentationText,
+          selectedRange: selectedRange,
+          hasWikiLinkCompletion: wikiLinkCompletionMatch != nil
+        )
       )
     }
     .onChange(of: draftText) {
@@ -2098,7 +2160,8 @@ struct LiveRenderedTextBlockEditor: View {
     slashCommandMatch: ParagraphSlashCommand.Match,
     focusedInlineToken: OrgEditableInlineToken?,
     wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch?,
-    wikiLinkCompletionCandidates: [OrgRoamNodeReference]
+    wikiLinkCompletionCandidates: [OrgRoamNodeReference],
+    dateMention: (match: WorkspaceDateMentionMatch, options: [WorkspaceDateMentionOption])?
   ) -> some View {
     let checkpointTarget = store.blockEditorCheckpointTarget(
       for: block,
@@ -2128,7 +2191,8 @@ struct LiveRenderedTextBlockEditor: View {
         onDeleteBackwardContext: deleteBackwardFromStart,
         documentSelectionContext: documentSelectionContext,
         onDeleteDocumentSelection: deleteDocumentSelection,
-        onReplaceDocumentSelection: replaceDocumentSelection
+        onReplaceDocumentSelection: replaceDocumentSelection,
+        completionKeyHandler: handleDateMentionKey
       )
       .frame(minHeight: editorHeight, maxHeight: editorHeight)
       .background(
@@ -2174,8 +2238,51 @@ struct LiveRenderedTextBlockEditor: View {
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 2)
+      } else if let dateMention {
+        WorkspaceDateMentionCompletionPanel(
+          options: dateMention.options,
+          selectedIndex: dateMentionState.selectedIndex(
+            for: dateMention.match,
+            optionCount: dateMention.options.count
+          ),
+          choose: { option in
+            completeDateMention(dateMention.match, with: option)
+          }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 2)
       }
     }
+  }
+
+  private func visibleDateMention(
+    text: String,
+    selectedRange: NSRange,
+    hasWikiLinkCompletion: Bool
+  ) -> (match: WorkspaceDateMentionMatch, options: [WorkspaceDateMentionOption])? {
+    guard !hasWikiLinkCompletion,
+          isTextFocused || store.editingBlockID == block.id,
+          let match = WorkspaceDateMentions.match(in: text, selectedRange: selectedRange),
+          !dateMentionState.isDismissed(match)
+    else { return nil }
+    let options = store.dateMentionEditorOptions(for: match, sourceFile: store.selectedEntrySource?.file)
+    return options.isEmpty ? nil : (match, options)
+  }
+
+  private func handleDateMentionKey(
+    _ key: OrgSyntaxTextEditorCompletionKey,
+    snapshot: OrgSyntaxTextEditorSelectionSnapshot
+  ) -> OrgSyntaxTextEditorCompletionKeyResult {
+    guard ParagraphWikiLinkCompletion.match(in: snapshot) == nil,
+          let match = WorkspaceDateMentions.match(in: snapshot)
+    else { return .ignored }
+    let options = store.dateMentionEditorOptions(for: match, sourceFile: store.selectedEntrySource?.file)
+    return dateMentionState.handle(key, match: match, options: options)
+  }
+
+  private func completeDateMention(_ match: WorkspaceDateMentionMatch, with option: WorkspaceDateMentionOption) {
+    guard let edit = option.replacement(in: currentText, match: match) else { return }
+    applyInlineEdit(edit)
   }
 
   @ViewBuilder

@@ -13239,6 +13239,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   @State private var sourceCaretLocalLine: Int?
   @State private var sourceSelectionSnapshot: OrgSyntaxTextEditorSelectionSnapshot?
   @State private var sourcePreviewScrollTask: Task<Void, Never>?
+  @State private var dateMentionState = WorkspaceDateMentionCompletionState()
 
   var body: some View {
     @Bindable var store = store
@@ -13359,7 +13360,8 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.noteSourceEditorLocalTextChanged(context.text)
           Task { await store.saveEditedEntry() }
           return true
-        }
+        },
+        completionKeyHandler: handleDateMentionKey
       )
       .frame(minHeight: 320, maxHeight: .infinity)
       .layoutPriority(1)
@@ -13390,9 +13392,45 @@ private struct OrgSourceEditorWithLinkTools: View {
             createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
           }
         )
+      } else if let dateMentionMatch = sourceSelectionSnapshot.flatMap(WorkspaceDateMentions.match(in:)),
+                !dateMentionState.isDismissed(dateMentionMatch) {
+        let options = dateMentionOptions(for: dateMentionMatch)
+        if !options.isEmpty {
+          WorkspaceDateMentionCompletionPanel(
+            options: options,
+            selectedIndex: dateMentionState.selectedIndex(for: dateMentionMatch, optionCount: options.count),
+            choose: { option in
+              completeDateMention(dateMentionMatch, with: option)
+            }
+          )
+        }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private func dateMentionOptions(for match: WorkspaceDateMentionMatch) -> [WorkspaceDateMentionOption] {
+    store.dateMentionEditorOptions(for: match, sourceFile: store.selectedEntrySource?.file)
+  }
+
+  private func handleDateMentionKey(
+    _ key: OrgSyntaxTextEditorCompletionKey,
+    snapshot: OrgSyntaxTextEditorSelectionSnapshot
+  ) -> OrgSyntaxTextEditorCompletionKeyResult {
+    guard ParagraphWikiLinkCompletion.match(in: snapshot) == nil,
+          let match = WorkspaceDateMentions.match(in: snapshot)
+    else { return .ignored }
+    let result = dateMentionState.handle(key, match: match, options: dateMentionOptions(for: match))
+    if case .replace = result {
+      sourceSelectionSnapshot = nil
+    }
+    return result
+  }
+
+  private func completeDateMention(_ match: WorkspaceDateMentionMatch, with option: WorkspaceDateMentionOption) {
+    OrgSyntaxTextEditor.publishPendingTextChanges()
+    guard let edit = option.replacement(in: interaction.text, match: match) else { return }
+    applyInlineEdit(edit)
   }
 
   private var sourcePreview: some View {
