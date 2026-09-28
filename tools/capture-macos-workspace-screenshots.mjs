@@ -12,6 +12,9 @@ const corpusRoot = join(repoRoot, "examples", "macos-workspace-demo");
 const renderCorpusContainer = "/tmp/org2-macos-workspace-demo";
 const renderCorpusRoot = join(renderCorpusContainer, "Org2 Demo");
 const screenshotDir = join(repoRoot, "docs", "site", "assets", "screenshots");
+// Published screenshots use one catalog theme so the site stays visually
+// consistent. Override with --theme=ID (for example --theme=spacemacs-dark).
+const defaultTheme = "spacemacs-light";
 
 const scenarios = [
   {
@@ -117,7 +120,7 @@ function run(command, args, options = {}) {
   return result.stdout?.trim() ?? "";
 }
 
-function captureScenario(scenario) {
+function captureScenario(scenario, theme) {
   const outputPath = join(screenshotDir, scenario.fileName);
   const scale = scenario.scale ?? 1;
   // Cropped homepage shots render the full window first, then keep only the
@@ -137,6 +140,7 @@ function captureScenario(scenario) {
       ORG2_WORKSPACE_SCREENSHOT_WIDTH: String(scenario.width ?? 1400),
       ORG2_WORKSPACE_SCREENSHOT_HEIGHT: String(scenario.height ?? 900),
       ORG2_WORKSPACE_SCREENSHOT_SCALE: String(scale),
+      ORG2_WORKSPACE_SCREENSHOT_THEME: theme,
       ...(scenario.settleMs ? { ORG2_WORKSPACE_SCREENSHOT_SETTLE_MS: String(scenario.settleMs) } : {}),
     },
   });
@@ -173,8 +177,9 @@ function main() {
   if (selected.length === 0) {
     throw new Error(`No screenshot scenarios match --only=${only}`);
   }
+  const theme = process.argv.find((arg) => arg.startsWith("--theme="))?.slice("--theme=".length) || defaultTheme;
   for (const scenario of selected) {
-    captureScenario(scenario);
+    captureScenario(scenario, theme);
   }
 
   run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);

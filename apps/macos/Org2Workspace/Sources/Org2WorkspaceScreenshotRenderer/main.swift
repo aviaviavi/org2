@@ -15,11 +15,31 @@ struct Org2WorkspaceScreenshotRenderer {
       let verifiesChatSelection = CommandLine.arguments.contains("--verify-chat-selection")
       let verifiesCodeCopy = CommandLine.arguments.contains("--verify-code-copy") || verifiesChatSelection
 
+      // ORG2_WORKSPACE_SCREENSHOT_THEME selects a catalog theme ID; the
+      // window renders in that theme's own appearance.
+      let themeID = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_THEME"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let theme = themeID.flatMap { $0.isEmpty ? nil : WorkspaceThemeCatalog.theme(id: $0) }
+      if let themeID, !themeID.isEmpty, theme == nil {
+        throw ScreenshotRenderError.unknownTheme(themeID)
+      }
+      let isDarkTheme = theme?.appearance == .dark
       _ = await MainActor.run {
         NSApplication.shared.setActivationPolicy(.prohibited)
-        NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        NSApplication.shared.appearance = NSAppearance(named: isDarkTheme ? .darkAqua : .aqua)
       }
       let defaults = UserDefaults(suiteName: "org2-workspace-screenshot-\(UUID().uuidString)") ?? .standard
+      if let theme {
+        defaults.set(isDarkTheme ? "dark" : "light", forKey: "Org2Workspace.appearance.mode.v1")
+        defaults.set(
+          theme.appearance == .light ? theme.id : WorkspaceThemeCatalog.defaultLightID,
+          forKey: "Org2Workspace.appearance.lightTheme.v1"
+        )
+        defaults.set(
+          theme.appearance == .dark ? theme.id : WorkspaceThemeCatalog.defaultDarkID,
+          forKey: "Org2Workspace.appearance.darkTheme.v1"
+        )
+      }
       if verifiesCodeCopy {
         defaults.set(true, forKey: "Org2Workspace.openOrgLaunchGuideCompleted.v1")
       }
@@ -172,9 +192,11 @@ struct Org2WorkspaceScreenshotRenderer {
       Color(nsColor: .windowBackgroundColor)
       ContentView()
         .environment(store)
+        .workspaceThemed()
         .frame(width: width, height: height)
     }
     .frame(width: width, height: height)
+    .preferredColorScheme(store.appearanceMode.colorScheme)
     let hostingView = NSHostingView(rootView: content)
     let bounds = NSRect(x: 0, y: 0, width: width, height: height)
     hostingView.frame = bounds
@@ -565,6 +587,7 @@ private enum ScreenshotRenderError: LocalizedError {
   case renderFailed
   case tabVerificationFailed(String)
   case codeCopyVerificationFailed(String)
+  case unknownTheme(String)
 
   var errorDescription: String? {
     switch self {
@@ -576,6 +599,8 @@ private enum ScreenshotRenderError: LocalizedError {
       return "Tab interaction verification failed: \(reason)"
     case .codeCopyVerificationFailed(let reason):
       return "Code copy interaction verification failed: \(reason)"
+    case .unknownTheme(let id):
+      return "Unknown ORG2_WORKSPACE_SCREENSHOT_THEME \(id)"
     }
   }
 }
