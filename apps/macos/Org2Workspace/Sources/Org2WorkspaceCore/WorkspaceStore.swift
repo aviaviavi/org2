@@ -3993,6 +3993,10 @@ public final class WorkspaceStore {
         await runSearch()
       }
     case "ai-room":
+      if let target, !target.isEmpty,
+         let thread = openClawChatThreads.first(where: { $0.title.lowercased().contains(target) }) {
+        selectOpenClawChatThread(thread.id)
+      }
       expandSurface(.openClaw)
       openClawStatusText = "Ready for an @mention or thread post"
     case "openclaw", "chat":

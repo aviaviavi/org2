@@ -37,6 +37,13 @@ struct Org2WorkspaceScreenshotRenderer {
           store.nodeContextTab = contextTab
         }
       }
+      // The selection was made before the Context pane opened, so request its
+      // backlinks explicitly instead of relying on the selection-change load.
+      if let contextLocation = await MainActor.run(body: {
+        store.isNodeContextPanePresented ? store.selectedLocation : nil
+      }) {
+        await store.loadBacklinks(for: contextLocation)
+      }
       if verifiesCodeCopy {
         await MainActor.run {
           store.selectedSurface = .openClaw
@@ -186,9 +193,14 @@ struct Org2WorkspaceScreenshotRenderer {
     // HTML-backed document panes are created only after the SwiftUI hierarchy is
     // attached to a window. Give WKWebView enough time to finish its first paint
     // so deterministic docs captures include the selected document body.
-    let renderSettleNanoseconds: UInt64 = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] == nil
+    let defaultSettleNanoseconds: UInt64 = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] == nil
       ? 2_000_000_000
       : 2_500_000_000
+    // Scenes with extra panes (such as Context) can need longer for the
+    // document web view to repaint after layout.
+    let renderSettleNanoseconds = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SETTLE_MS"]
+      .flatMap(UInt64.init)
+      .map { $0 * 1_000_000 } ?? defaultSettleNanoseconds
     try? await Task.sleep(nanoseconds: renderSettleNanoseconds)
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
@@ -477,36 +489,20 @@ struct Org2WorkspaceScreenshotRenderer {
     webFrame: NSRect,
     size: NSSize
   ) -> NSBitmapImageRep? {
-    guard let bitmap = NSBitmapImageRep(
-      bitmapDataPlanes: nil,
-      pixelsWide: max(1, Int(size.width)),
-      pixelsHigh: max(1, Int(size.height)),
-      bitsPerSample: 8,
-      samplesPerPixel: 4,
-      hasAlpha: true,
-      isPlanar: false,
-      colorSpaceName: .deviceRGB,
-      bytesPerRow: 0,
-      bitsPerPixel: 0
-    ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
-      return nil
+    // Keep the cached view's backing resolution so 2x captures stay 2x after
+    // the web snapshot is composited over it.
+    drawScaled(pixelWidth: base.pixelsWide, pixelHeight: base.pixelsHigh, size: size) {
+      let baseImage = NSImage(size: size)
+      baseImage.addRepresentation(base)
+      baseImage.draw(in: NSRect(origin: .zero, size: size))
+      let bitmapWebFrame = NSRect(
+        x: webFrame.minX,
+        y: size.height - webFrame.maxY,
+        width: webFrame.width,
+        height: webFrame.height
+      )
+      webSnapshot.draw(in: bitmapWebFrame)
     }
-
-    let baseImage = NSImage(size: size)
-    baseImage.addRepresentation(base)
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = context
-    baseImage.draw(in: NSRect(origin: .zero, size: size))
-    let bitmapWebFrame = NSRect(
-      x: webFrame.minX,
-      y: size.height - webFrame.maxY,
-      width: webFrame.width,
-      height: webFrame.height
-    )
-    webSnapshot.draw(in: bitmapWebFrame)
-    context.flushGraphics()
-    NSGraphicsContext.restoreGraphicsState()
-    return bitmap
   }
 
   @MainActor
@@ -516,29 +512,49 @@ struct Org2WorkspaceScreenshotRenderer {
     pixelWidth: Int,
     pixelHeight: Int
   ) -> NSBitmapImageRep? {
-    guard let bitmap = NSBitmapImageRep(
-      bitmapDataPlanes: nil,
-      pixelsWide: pixelWidth,
-      pixelsHigh: pixelHeight,
-      bitsPerSample: 8,
-      samplesPerPixel: 4,
-      hasAlpha: true,
-      isPlanar: false,
-      colorSpaceName: .deviceRGB,
-      bytesPerRow: 0,
-      bitsPerPixel: 0
-    ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+    drawScaled(pixelWidth: pixelWidth, pixelHeight: pixelHeight, size: size) {
+      let baseImage = NSImage(size: size)
+      baseImage.addRepresentation(base)
+      baseImage.draw(in: NSRect(origin: .zero, size: size))
+    }
+  }
+
+  /// Draws point-space content into a bitmap of the requested pixel size.
+  /// A bitmap-backed graphics context uses pixel coordinates, so the point
+  /// geometry must be scaled explicitly or it lands in the lower-left corner.
+  @MainActor
+  static func drawScaled(
+    pixelWidth: Int,
+    pixelHeight: Int,
+    size: NSSize,
+    draw: () -> Void
+  ) -> NSBitmapImageRep? {
+    guard size.width > 0, size.height > 0,
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: max(1, pixelWidth),
+        pixelsHigh: max(1, pixelHeight),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+      ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
       return nil
     }
-
-    bitmap.size = size
-    let baseImage = NSImage(size: size)
-    baseImage.addRepresentation(base)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = context
-    baseImage.draw(in: NSRect(origin: .zero, size: size))
+    context.imageInterpolation = .high
+    context.cgContext.scaleBy(
+      x: CGFloat(bitmap.pixelsWide) / size.width,
+      y: CGFloat(bitmap.pixelsHigh) / size.height
+    )
+    draw()
     context.flushGraphics()
     NSGraphicsContext.restoreGraphicsState()
+    bitmap.size = size
     return bitmap
   }
 
