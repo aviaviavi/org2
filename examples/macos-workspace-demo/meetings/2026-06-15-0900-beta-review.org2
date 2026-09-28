@@ -12,17 +12,24 @@
 :TRANSCRIPTION_STATUS: complete
 :END:
 
-Attendees: Maya Chen, Jordan Lee, Priya Shah
+Attendees: [[id:55555555-5555-4555-8555-555555555555][Maya Chen]], Jordan Lee, Priya Shah
+
+Project: [[id:11111111-1111-4111-8111-111111111111][Beacon Launch]]
 
 ** Summary
 - Onboarding copy is ready for the private beta.
-- The sample dashboard still needs a final offline import check.
-- OpenClaw should prepare a readiness summary with citations.
+- The [[file:../views/launch-readiness-data.org2][sample dashboard]] still needs a final offline import check.
+- An agent should prepare a readiness summary with citations.
 
 ** Decisions
 - Keep the first beta cohort to five customers.
 - Show local provenance by default in generated recommendations.
 
 ** Action items
-- TODO Draft launch readiness summary
-- TODO Verify CSV import without network access
+*** TODO Draft launch readiness summary :agent:
+SCHEDULED: <2026-06-16 Tue>
+Cite the [[file:../views/launch-readiness-data.org2][readiness data]] and this meeting.
+
+*** TODO Verify CSV import without network access :design:
+DEADLINE: <2026-06-18 Thu>
+Owner: [[id:55555555-5555-4555-8555-555555555555][Maya Chen]]

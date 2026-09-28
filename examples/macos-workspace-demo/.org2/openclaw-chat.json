@@ -58,6 +58,75 @@
       "sessionKey": "agent:main:org2-site-shared-room",
       "title": "Beacon launch council",
       "updatedAt": 803577720
+    },
+    {
+      "createdAt": 803664000,
+      "destinationID": "builtin.openclaw",
+      "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "isSharedRoom": true,
+      "messages": [
+        {
+          "audience": "openClaw",
+          "audienceDestinationIDs": [
+            "builtin.openclaw"
+          ],
+          "content": "@openclaw The Atlas Clinic pilot terms are encrypted to your key only. Read them and write a handoff Codex can use for the launch dashboard. Leave out names, pricing, and contract dates.",
+          "createdAt": 803664000,
+          "deliveryKind": "turn",
+          "deliveryStatus": "sent",
+          "id": "eeeeeeee-0000-4000-8000-000000000001",
+          "role": "user",
+          "roomRoundID": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01"
+        },
+        {
+          "authorDestinationID": "builtin.openclaw",
+          "authorRuntime": "openClaw",
+          "content": "* Handoff for Codex\n\nI decrypted the pilot terms on this Mac. Only this summary leaves the note:\n\n- *Success metric:* 20 clinicians active each week by week 6.\n- *Data:* the =clinician_sessions= table already in the Beacon database.\n\nPricing, contacts, and dates stay encrypted. Suggested next step: Codex adds this target to the launch readiness notebook.",
+          "createdAt": 803664060,
+          "id": "eeeeeeee-0000-4000-8000-000000000002",
+          "role": "assistant",
+          "roomRoundID": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01"
+        },
+        {
+          "audience": "codex",
+          "audienceDestinationIDs": [
+            "builtin.codex"
+          ],
+          "content": "@codex Use OpenClaw's handoff to add the pilot target to the launch readiness notebook.",
+          "createdAt": 803664120,
+          "deliveryKind": "turn",
+          "deliveryStatus": "sent",
+          "id": "eeeeeeee-0000-4000-8000-000000000003",
+          "role": "user",
+          "roomRoundID": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02"
+        },
+        {
+          "authorDestinationID": "builtin.codex",
+          "authorRuntime": "codex",
+          "content": "* Pilot target added\n\nI can't open the encrypted note, so I worked only from OpenClaw's handoff. The notebook now has a =pilot_active_clinicians= query with a target line at 20.\n\nI re-ran it: week 5 is at 14, so the pilot is behind pace. The change is waiting for your approval.",
+          "createdAt": 803664180,
+          "id": "eeeeeeee-0000-4000-8000-000000000004",
+          "role": "assistant",
+          "roomRoundID": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02"
+        }
+      ],
+      "roomAudience": "thread",
+      "roomDestinationIDs": [
+        "builtin.codex",
+        "builtin.openclaw"
+      ],
+      "roomModels": {
+        "codex": "gpt-5.6-sol",
+        "openClaw": "openai/gpt-5.6"
+      },
+      "roomModelsByDestination": {
+        "builtin.codex": "gpt-5.6-sol",
+        "builtin.openclaw": "openai/gpt-5.6"
+      },
+      "runtime": "openClaw",
+      "sessionKey": "agent:main:org2-site-access-handoff",
+      "title": "Atlas pilot handoff",
+      "updatedAt": 803664180
     }
   ],
   "version": 6
