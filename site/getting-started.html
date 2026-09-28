@@ -22,13 +22,13 @@
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Getting started — Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
+<meta property="og:image:alt" content="Getting started: Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Getting started" />
 <meta name="twitter:description" content="Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <meta name="twitter:url" content="https://openorg.so/getting-started.html" />
 <meta name="twitter:image" content="https://openorg.so/assets/og/getting-started.png" />
-<meta name="twitter:image:alt" content="Getting started — Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
+<meta name="twitter:image:alt" content="Getting started: Install OpenOrg, write today's note, capture a task, and see it in Agenda." />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -124,7 +124,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 </section>
 <section class="org2-headline level-1">
 <h1 id="when-youre-ready-the-mental-model">When you're ready: the mental model</h1>
-<p>OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your <strong>corpus</strong>—the ordinary folder of <code>.org</code>, <code>.org2</code>, and related files—is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.</p>
+<p>OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your <strong>corpus</strong> (the ordinary folder of <code>.org</code>, <code>.org2</code>, and related files) is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.</p>
 <p>The agent harness you connect is a <strong>runtime</strong>: the engine that actually reasons and acts. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.</p>
 <p>A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools OpenOrg exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.</p>
 <p>That leads to a useful rule: <strong>put durable intent in the corpus, not only in chat</strong>. Chat is a good place to explore and ask for help setting something up, but the result should become the appropriate inspectable record when you want OpenOrg to remember or repeat it.</p>
@@ -151,7 +151,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <ol>
 <li><p>The <strong>trigger</strong> answers <em>what wakes the agent?</em>. It might be a schedule owned by the runtime, an OpenOrg event such as a completed meeting, a workflow schedule, an external event, or a person clicking <strong>Run Now</strong>.</p></li>
 <li><p>The <strong>instructions</strong> answer <em>what should this execution do?</em>. They might live in the scheduled prompt, a prepackaged skill, or an authored Org2 workflow. A skill can teach any compatible runtime how to discover the installed <code>org2</code> capabilities and follow the same lifecycle correctly.</p></li>
-<li><p>The <strong>durable record</strong> answers <em>where can everyone see what happened?</em>. The scheduled agent can call the Org2 CLI directly—or follow a skill that does so—to create or instantiate a run, record its runtime and progress, attach artifacts and validation, request approvals, and complete it with a reviewer-facing summary.</p></li>
+<li><p>The <strong>durable record</strong> answers <em>where can everyone see what happened?</em>. The scheduled agent can call the Org2 CLI directly, or follow a skill that does so, to create or instantiate a run, record its runtime and progress, attach artifacts and validation, request approvals, and complete it with a reviewer-facing summary.</p></li>
 </ol>
 <p>These layers deliberately compose. OpenOrg can own the clock and send the prompt to any configured AI destination, or an advanced deployment can let a harness-native scheduler invoke the same workflow. In either case <code>.org2/runs/</code> remains the shared, runtime-neutral record rendered by OpenOrg.</p>
 </section>
@@ -169,7 +169,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <li><p><strong>Choose the corpus.</strong> Confirm which folder should hold the work and give it a portable identity in <strong>Settings → Workspace</strong>. Writes always belong to one active corpus, even when Search or Agenda can read several.</p></li>
 <li><p><strong>Connect a runtime.</strong> Start with any supported harness that can access the corpus and the Org2 CLI or MCP tools. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the current out-of-the-box choices, not a limit on the model.</p></li>
 <li><p><strong>Work the process once.</strong> Keep the source notes and tasks where they naturally belong, select the relevant context, and ask the runtime to help with one concrete outcome.</p></li>
-<li><p><strong>Track consequential delegation.</strong> Use a durable run when the work needs status, artifacts, validation, approvals, or a reviewer-facing outcome—not for every casual question.</p></li>
+<li><p><strong>Track consequential delegation.</strong> Use a durable run when the work needs status, artifacts, validation, approvals, or a reviewer-facing outcome. Casual questions do not need one.</p></li>
 <li><p><strong>Package proven repetition.</strong> Put runtime operating instructions in a skill, or generalize the process into an Org2 workflow with inputs, steps, expected outputs, checks, and approval boundaries. Keep generated material in <code>views/</code> or <code>compiled/</code> until reviewed.</p></li>
 <li><p><strong>Name stable responsibility only when useful.</strong> Create an agent profile and goal when the same role or outcome should survive a change of model, runtime, or chat thread.</p></li>
 <li><p><strong>Test before scheduling.</strong> First run the prompt, skill, or workflow manually and inspect both its output and its Org2 run. Then choose the trigger independently: a runtime schedule, an OpenOrg event, or another scheduler can wake the agent as long as it follows the same corpus lifecycle. Sending messages, publishing, deleting, or other consequential actions should still stop for explicit approval.</p></li>
@@ -186,7 +186,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <h2 id="ask-openorg-to-help-with-setup">Ask OpenOrg to help with setup</h2>
 <p>“Teach OpenOrg our flow” is a reasonable starting request, but make the desired durable result explicit. For example:</p>
 <blockquote>Help me set up a weekday startup review. First inspect this corpus and the installed Org2 capabilities. Separate the trigger, reusable instructions, and durable run record. Recommend whether the instructions should be a packaged skill or an Org2 workflow, and show how each execution will create and update its Org2 run. Propose the inputs, outputs, approval boundaries, and best available trigger without activating anything. Then help me test one manual run; only after I review its corpus record should we enable the trigger.</blockquote>
-<p>This uses chat as the setup conversation while making the corpus records—not the agent's memory—the lasting configuration.</p>
+<p>This uses chat as the setup conversation while making the corpus records, not the agent's memory, the lasting configuration.</p>
 </section>
 </section>
 <section class="org2-headline level-1">

@@ -28,7 +28,7 @@
   <section class="org2-feature-story org2-feature-story-reverse" id="agent-work" aria-labelledby="agent-work-title">
     <div class="org2-feature-copy">
       <h2 id="agent-work-title">Decisions become durable work</h2>
-      <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action—and what evidence proves it finished.</p>
+      <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action, and what evidence proves it finished.</p>
       <ul>
         <li>Bounded context packs carry explicit file-and-line citations.</li>
         <li>Generated work remains separate from canonical notes until someone reviews it.</li>

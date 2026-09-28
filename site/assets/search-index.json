@@ -1,5 +1,5 @@
 [
-  {"title":"Home","url":"index.html","description":"A local-first workspace for your life, work, and AI agents, built around plain-text Org files you own."},
+  {"title":"Home","url":"index.html","description":"A Mac and iPhone workspace for notes, tasks, meetings, and data, with the AI agents you choose, approvals, and one-step sharing, all in plain-text files you own."},
   {"title":"Features","url":"features.html","description":"Context records, planning, graph maintenance, agent workflows, data-backed reports, publishing, and editor support."},
   {"title":"Getting started","url":"getting-started.html","description":"Install OpenOrg, write today's note, capture a task, and see it in Agenda before exploring deeper agent workflows."},
   {"title":"Reference overview","url":"reference.html","description":"Entry point for the Org2 reference pages."},

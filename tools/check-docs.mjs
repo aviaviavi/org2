@@ -181,7 +181,7 @@ if (
   fail("public onboarding must explain the provider-neutral agent boundary");
 }
 if (
-  !homepage.includes("#+TITLE: A workspace for your life, work, and AI agents.")
+  !homepage.includes("#+TITLE: Your notes, your files, and your AI agents, working together.")
   || !homepage.includes("Org2 provides the independently specified compiler/runtime")
   || !productArchitecture.includes("A local-first workspace built on ordinary files and an open toolkit.")
   || !productArchitecture.includes("=@aviaviavi/org2=")
@@ -286,6 +286,12 @@ if (fs.existsSync(scarfLogoPath)) {
 const publicSourcePages = fs.readdirSync(path.join(repoRoot, "docs", "site"))
   .filter((name) => /\.org2?$/i.test(name))
   .sort();
+for (const sourcePage of publicSourcePages) {
+  const source = fs.readFileSync(path.join(repoRoot, "docs", "site", sourcePage), "utf8");
+  if (source.includes("\u2014")) {
+    fail(`docs/site/${sourcePage} must not use em dashes; use a comma, colon, parentheses, or a new sentence`);
+  }
+}
 for (const sourcePage of publicSourcePages) {
   const slug = sourcePage.replace(/\.org2?$/i, "");
   const htmlPath = path.join(repoRoot, "site", `${slug}.html`);

@@ -1,48 +1,130 @@
-#+TITLE: A workspace for your life, work, and AI agents.
-#+SUBTITLE: Keep your notes, tasks, and projects in local plain-text files you own. Organize your day, develop ideas, and put your knowledge to work with the agents you choose.
+#+TITLE: Your notes, your files, and your AI agents, working together.
+#+SUBTITLE: OpenOrg is a Mac and iPhone workspace for notes, tasks, meetings, and data. Bring in the agents you choose, approve what matters from anywhere, and share polished results, all from plain-text files you own.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
   <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
-    <a class="org2-hero-action org2-hero-action-primary" href="getting-started.html">Get started <span aria-hidden="true">→</span></a>
-    <a class="org2-hero-action" href="openorg-and-org2.html">How OpenOrg and Org2 fit <span aria-hidden="true">→</span></a>
+    <a class="org2-hero-action org2-hero-action-primary" href="downloads.html">Download for Mac <span aria-hidden="true">→</span></a>
+    <a class="org2-hero-action" href="features.html">See how it works <span aria-hidden="true">→</span></a>
   </nav>
+  <p class="org2-home-hero-note">Open source · No account required · Works without AI until you connect an agent</p>
+  <figure class="org2-home-hero-shot">
+    <img src="assets/screenshots/home-agents-room.png" alt="A shared OpenOrg conversation where one AI agent summarizes a note that only it can decrypt, and a second agent uses that summary to update a data notebook" loading="eager" />
+    <figcaption>One agent reads a note only it can decrypt and hands off a redacted summary. A second agent builds on it, and the change waits for your approval.</figcaption>
+  </figure>
 </section>
-<section class="org2-home-follow-through" aria-labelledby="org2-follow-through-title">
-  <div class="org2-sample-intro">
-    <h2 id="org2-follow-through-title">From decision to done.</h2>
-    <p>Start with a meeting, note, message, or TODO. OpenOrg keeps the source context attached while the work moves, and interrupts you only when a decision needs you.</p>
+
+<nav class="org2-home-pillars" aria-label="What OpenOrg does">
+  <a href="#home-agents"><strong>Many agents, one workspace</strong><span>Use the AI tools you already have, together.</span></a>
+  <a href="#home-approvals"><strong>You approve what matters</strong><span>One review queue on your Mac and phone.</span></a>
+  <a href="#home-data"><strong>Data notebooks</strong><span>Queries, tables, and charts inside your notes.</span></a>
+  <a href="#home-share"><strong>Share in one step</strong><span>A private link, Google Docs, Slides, Sheets, or PDF.</span></a>
+</nav>
+
+<section class="org2-home-story" id="home-agents" aria-labelledby="home-agents-title">
+  <div class="org2-home-story-copy">
+    <h2 id="home-agents-title">Bring every AI agent you use into one workspace.</h2>
+    <p>Connect the coding agents, chat assistants, and local models you already run, on this Mac or another one. Put them in one conversation, compare their answers, and pass work from one to the next where you can see every step.</p>
+    <ul>
+      <li><strong>Different access for different agents.</strong> Encrypt a note to one agent's key. Other agents only see what that agent hands off.</li>
+      <li><strong>Shared memory.</strong> Every agent reads and cites the same plain-text notes, so you don't re-explain context for each tool.</li>
+      <li><strong>Shared to-do list.</strong> Assign an ordinary TODO to a person or an agent and follow its progress, even when you switch tools.</li>
+    </ul>
+    <p class="org2-home-links"><a href="features.html#multi-agent-chat">Multi-agent chat</a><a href="collaboration.html">Shared workspaces</a></p>
   </div>
-  <div class="org2-compiler-flow" aria-label="OpenOrg follow-through workflow">
-    <article><strong>Capture</strong><p>Keep decisions, commitments, and imported source context together in local files.</p></article>
-    <article><strong>Delegate</strong><p>Send bounded work to a person or through any configured model or harness, local or remote.</p></article>
-    <article><strong>Review</strong><p>Bring consequential actions and uncertain results back for approval.</p></article>
-    <article><strong>Verify</strong><p>Record the outcome and its evidence where the work began.</p></article>
+  <figure class="org2-home-story-media">
+    <img src="assets/screenshots/home-agent-work.png" alt="Agent Work view showing a delegated task that is running, with its progress, outputs, and a pending approval" loading="lazy" />
+    <figcaption>Delegated work shows what is running, what it produced, and what is waiting on you.</figcaption>
+  </figure>
+</section>
+
+<section class="org2-home-story org2-home-story-wide" id="home-approvals" aria-labelledby="home-approvals-title">
+  <div class="org2-home-story-copy">
+    <h2 id="home-approvals-title">Agents do the busywork. You make the calls.</h2>
+    <p>Routine steps run in the background. Anything consequential, like publishing a page, sending a follow-up, or accepting an AI-written summary, waits in one approval queue until you say yes.</p>
+    <ul>
+      <li>Approve, reject, or request changes from your Mac or your iPhone. Deciding in one place updates the other.</li>
+      <li>See exactly what you're approving, with a link to the draft and the notes it came from.</li>
+      <li>AI-written content stays marked as a draft until a person accepts it.</li>
+    </ul>
+  </div>
+  <div class="org2-home-story-media org2-home-media-duo">
+    <figure>
+      <img src="assets/screenshots/home-approval-desktop.png" alt="An approval card on the Mac with Approve, Request Changes, and Reject buttons for publishing a launch brief" loading="lazy" />
+      <figcaption>On your Mac</figcaption>
+    </figure>
+    <figure class="org2-home-phone">
+      <img src="assets/screenshots/ios-mobile-approvals.png" alt="OpenOrg approvals list on iPhone with items that need review" loading="lazy" />
+      <figcaption>On your iPhone</figcaption>
+    </figure>
   </div>
 </section>
-<section class="org2-home-preview" aria-labelledby="org2-home-preview-title">
-  <div class="org2-sample-intro">
-    <h2 id="org2-home-preview-title">One place to see what is moving.</h2>
-    <p>Plan your own work, follow delegated work, review decisions, and keep the underlying context intact.</p>
+
+<section class="org2-home-story" id="home-data" aria-labelledby="home-data-title">
+  <div class="org2-home-story-copy">
+    <h2 id="home-data-title">Your numbers live next to your notes.</h2>
+    <p>Point a note at a CSV or database, write a query, and get a table and chart right in the document. Results are saved with the note, so they open instantly and refresh only when you ask.</p>
+    <ul>
+      <li>Filter and sort tables in place, and save the view back to the note.</li>
+      <li>Every result records when it last ran and how fresh it needs to be.</li>
+      <li>Agents read the same saved results you see, so their answers match your charts.</li>
+    </ul>
   </div>
-  <div class="org2-shot-grid">
-    <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="OpenOrg Agenda showing launch readiness tasks and linked context" loading="eager" /><figcaption>Know what you promised, what is due, and the context behind each item.</figcaption></figure>
-    <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="OpenOrg Agent Work showing an approval-ready delegated launch brief" loading="lazy" /><figcaption>See what agents are doing, what needs you, and what finished with evidence.</figcaption></figure>
-    <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="OpenOrg meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Turn conversations into source-backed decisions and follow-through.</figcaption></figure>
-    <figure><img src="assets/screenshots/macos-workspace-data.png" alt="OpenOrg rendering a launch-readiness data notebook with an interactive chart" loading="lazy" /><figcaption>Data notebooks: keep materialized results, freshness metadata, and interactive charts beside the notes that use them.</figcaption></figure>
-    <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="OpenOrg shared AI room showing two configured agents answering the same launch question" loading="lazy" /><figcaption>Multi-agent chat: ask named local or remote agents—or <code>@all</code>—and compare independently attributed answers in one shared thread.</figcaption></figure>
-    <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="OpenOrg approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
+  <figure class="org2-home-story-media">
+    <img src="assets/screenshots/home-data-notebook.png" alt="A data notebook note showing a query result table of weekly activated teams and a line chart" loading="lazy" />
+    <figcaption>A query, its results, and a chart in a note.</figcaption>
+  </figure>
+</section>
+
+<section class="org2-home-story org2-home-story-reverse" id="home-share" aria-labelledby="home-share-title">
+  <div class="org2-home-story-copy">
+    <h2 id="home-share-title">Share a note with anyone, in the format they use.</h2>
+    <p>Pick a note or one section of it and choose where it goes. OpenOrg removes the private parts first: tasks, internal IDs, comments, and anything else that should stay in your notes.</p>
+    <ul>
+      <li><strong>Private link.</strong> A secret web page, PDF, or slide deck served from your Mac to anyone on your network.</li>
+      <li><strong>Google Drive.</strong> An editable Google Doc, Slides deck, or Sheets workbook, or a PDF.</li>
+      <li><strong>Update in place.</strong> Publish again and the same link or file updates, so people always see the latest version.</li>
+    </ul>
+    <p class="org2-home-links"><a href="editors-macos.html#publish-a-document">How publishing works</a></p>
+  </div>
+  <div class="org2-home-story-media org2-home-share">
+    <ul class="org2-home-share-targets" aria-label="Publishing destinations">
+      <li>Local link</li><li>Web page</li><li>Google Docs</li><li>Google Slides</li><li>Google Sheets</li><li>PDF</li>
+    </ul>
+    <figure class="org2-home-browser">
+      <div class="org2-home-browserbar" aria-hidden="true"><i></i><i></i><i></i><span>Shared from OpenOrg</span></div>
+      <img src="assets/screenshots/home-published-page.png" alt="A published OpenOrg note as a clean web page, with the chart included and private task details removed" loading="lazy" />
+      <figcaption>What your reader sees: the published page, with private details removed.</figcaption>
+    </figure>
   </div>
 </section>
-<section class="org2-home-outputs" aria-labelledby="org2-home-outputs-title">
+
+<section class="org2-home-story" id="home-meetings" aria-labelledby="home-meetings-title">
+  <div class="org2-home-story-copy">
+    <h2 id="home-meetings-title">From conversation to done.</h2>
+    <p>Record a meeting on your Mac and it's transcribed locally. You get a summary, the decisions, and action items that are real tasks on your agenda.</p>
+    <ul>
+      <li><strong>Everything links up.</strong> Link people, projects, and data from any note.</li>
+      <li><strong>Backlinks for free.</strong> Every note shows what links to it, so the project page, the person, and the day all lead back to this meeting.</li>
+    </ul>
+    <p class="org2-home-links"><a href="getting-started.html">Plan your first day</a></p>
+  </div>
+  <figure class="org2-home-story-media">
+    <img src="assets/screenshots/home-meeting-notes.png" alt="Meeting notes with linked attendees, decisions, and TODO action items, next to a Context pane listing the notes that link to the meeting" loading="lazy" />
+    <figcaption>Action items are tasks with dates. The Context pane lists every note that links here.</figcaption>
+  </figure>
+</section>
+
+<section class="org2-home-own" aria-labelledby="home-own-title">
   <div class="org2-sample-intro">
-    <h2 id="org2-home-outputs-title">Work ends in something useful.</h2>
-    <p>OpenOrg keeps finished artifacts connected to the decisions, data, and source material that produced them.</p>
+    <h2 id="home-own-title">No lock-in. No database. Just files.</h2>
+    <p>Everything is stored as readable text files in a folder on your Mac. Open them in any editor, keep them in Git, and switch apps or AI models without migrating anything.</p>
   </div>
   <div class="org2-feature-card-grid">
-    <article><h3>Talks and slides</h3><p>Develop a talk beside its research, preview it as slides, and export a presentation-ready PDF.</p></article>
-    <article><h3>Analytics and visualizations</h3><p>Query data, materialize reviewable results, and publish tables and charts with freshness and provenance intact.</p></article>
-    <article><h3>Customer-ready PDFs</h3><p>Turn approved source material into quotes, reports, and marketing collateral without losing the evidence behind it.</p></article>
+    <article><h3>Local by default</h3><p>Nothing leaves your Mac unless you connect an agent or publish something. There's no account to create.</p></article>
+    <article><h3>Sync your way</h3><p>Use iCloud, Git, Syncthing, or any folder sync. Share a workspace with teammates the same way.</p></article>
+    <article><h3>Encrypt what's sensitive</h3><p>Encrypt a single section to yourself, a device, or one agent, and keep the rest of the file readable.</p></article>
+    <article><h3>Edit anywhere</h3><p>Open the same files in VS Code, Vim, or Emacs, or script them with the Org2 command line.</p></article>
   </div>
 </section>
 #+END_EXPORT
@@ -143,50 +225,18 @@
 </section>
 #+END_EXPORT
 
-* A durable follow-through system
-
-Most second brains help you find what you knew. OpenOrg also tracks what you decided, who or what is acting on it, which decisions still need you, and what evidence proves the work finished.
-
-Your files are the source of truth. Apps and agents share the context, people keep clear review boundaries, and your work stays portable across models, harnesses, agents, and clients.
-
-* What you can do with it
-
-- *Turn commitments into follow-through* without separating them from the conversation or document that created them.
-- *Bring outside context home* by crawling systems such as Slack and Notion into provenance-preserving local =.org= files.
-- *Delegate across people and agents* while keeping responsibility, progress, and context visible.
-- *Review the decisions that matter* in one approval queue while routine agent steps continue in the background.
-- *Produce useful artifacts* including talks, analytics, visualizations, reports, PDFs, and published sites.
-- *Keep durable memory* that people can read, agents can cite, and no single model or application owns.
-
-* Private-by-default agent collaboration
-
-A useful agent workspace needs precise sharing boundaries. OpenOrg keeps files local by default and can encrypt individual subtrees to you, a device, or a specific agent key. Encrypted notes are ordinary files that can sync through Git, iCloud, Syncthing, or any transport you choose.
-
-* How it works
-
-OpenOrg reads ordinary =.org= and =.org2= files through the Org2 compiler, which turns tasks, links, dates, properties, provenance, and agent boundaries into one shared semantic model. The native workspace, editors, CLI and MCP clients, runtime adapters, and configured models all work from that same source-backed context.
-
-The result is deliberately boring composability: inspectable files that can drive daily planning, agent workflows, data views, and publishing without locking the work into one application.
-
-* Start here
-
-OpenOrg Alpha is for people who want notes, tasks, projects, and AI agents working from local files they own. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace.
-
-- [[file:getting-started.org][Getting started]]
-- [[file:openorg-and-org2.org][OpenOrg and Org2 architecture]]
-- [[file:features.org][Features]]
-- [[file:editors-macos.org][OpenOrg for macOS]]
-- [[file:corpus-flow.org][Corpus flow]]
-- [[file:workflows.org][Automations and workflows]]
-- [[file:collaboration.org][Shared corpora and collaboration]]
-- [[file:ai-processing-architecture.org][AI processing architecture]]
-- [[file:agent-quickstart.org][Agent and model integration]]
-- [[file:org2-vs-markdown.org][Org2 vs Markdown]]
-- [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
-- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
-
-Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
-
-* Repository
-
-- [[https://github.com/aviaviavi/org2][github.com/aviaviavi/org2]]
+#+BEGIN_EXPORT html
+<section class="org2-home-start" aria-labelledby="home-start-title">
+  <div class="org2-sample-intro">
+    <h2 id="home-start-title">Start with your day. Add agents when you're ready.</h2>
+    <p>OpenOrg Alpha is useful on its own for notes, tasks, and planning. Connect an agent whenever you want help. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace, so the same files also work in VS Code, Vim, and Emacs.</p>
+  </div>
+  <nav class="org2-home-start-links" aria-label="Next steps">
+    <a href="downloads.html"><strong>Download</strong><span>Mac app, iPhone beta, CLI, and editor plugins</span></a>
+    <a href="getting-started.html"><strong>Getting started</strong><span>Your first useful day in ten minutes</span></a>
+    <a href="features.html"><strong>All features</strong><span>A tour of everything OpenOrg does</span></a>
+    <a href="openorg-and-org2.html"><strong>Architecture</strong><span>How OpenOrg and Org2 fit together</span></a>
+  </nav>
+  <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="org2-vs-obsidian.html">Obsidian</a>, <a href="org2-vs-markdown.html">Markdown</a>, or <a href="org2-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/org2">GitHub</a>.</p>
+</section>
+#+END_EXPORT
