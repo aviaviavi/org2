@@ -8,6 +8,10 @@ public enum OpenCodeError: LocalizedError, Sendable {
   case invalidResponse(String)
   case turnFailed(String)
   case interrupted
+  /// OpenOrg lost its SSH channel; the turn may still be running remotely.
+  case connectionLost(String)
+  /// No detached turn for this chat is running or waiting on the host.
+  case detachedRunUnavailable
 
   public var errorDescription: String? {
     switch self {
@@ -25,6 +29,10 @@ public enum OpenCodeError: LocalizedError, Sendable {
       "OpenCode turn failed: \(detail)"
     case .interrupted:
       "OpenCode was stopped."
+    case .connectionLost(let detail):
+      "Lost the connection to remote OpenCode: \(detail)"
+    case .detachedRunUnavailable:
+      "This OpenCode turn is no longer running."
     }
   }
 }
@@ -154,11 +162,16 @@ public actor OpenCodeClient {
   private struct ActiveRun {
     let process: Process
     let serverProcess: Process?
-    let serverURL: String
+    /// Nil while following a detached turn, which cannot be steered.
+    let serverURL: String?
     let serverPassword: String
   }
 
   private var activeRuns: [UUID: ActiveRun] = [:]
+  private var interruptedThreadIDs: Set<UUID> = []
+  /// Set while OpenOrg quits: managed remote turns keep running on their host
+  /// and are reattached by the next launch instead of being stopped.
+  private var isDetachingForTermination = false
 
   public init(
     transport: OpenCodeTransport = .local,
@@ -306,6 +319,33 @@ public actor OpenCodeClient {
     ]
   }
 
+  nonisolated static func managedRemoteAttachSSHArguments(sshHost: String) throws -> [String] {
+    [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      "-o", "ServerAliveInterval=15",
+      "-o", "ServerAliveCountMax=12",
+      try validatedSSHHost(sshHost),
+      managedRemotePythonCommand(managedRemoteAttachPythonBootstrap, name: "openorg-opencode-attach")
+    ]
+  }
+
+  nonisolated static func managedRemoteStopSSHArguments(sshHost: String) throws -> [String] {
+    [
+      "-T",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=15",
+      try validatedSSHHost(sshHost),
+      managedRemotePythonCommand(managedRemoteStopPythonBootstrap, name: "openorg-opencode-stop")
+    ]
+  }
+
+  private nonisolated static func managedRemotePythonCommand(_ source: String, name: String) -> String {
+    let script = Data(source.utf8).base64EncodedString()
+    return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<\#(name)>\",\"exec\"))"'"#
+  }
+
   private nonisolated static func managedRemoteCommand() -> String {
     let script = Data(managedRemotePythonBootstrap.utf8).base64EncodedString()
     return #"exec /bin/sh -lc 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH; command -v python3 >/dev/null 2>&1 || { echo "Remote OpenCode requires python3." >&2; exit 127; }; exec python3 -c "import base64;exec(compile(base64.b64decode(\"\#(script)\"),\"<openorg-opencode-adapter>\",\"exec\"))"'"#
@@ -352,6 +392,83 @@ sys.stderr.write(result.stderr)
 sys.exit(result.returncode)
 """#
 
+  /// Shared helpers for the durable run record kept on the OpenCode host.
+  /// A record exists only while a turn runs, or after it finished while no
+  /// OpenOrg client was connected to receive its output.
+  nonisolated static let managedRemoteRunRecordPython = #"""
+import json
+import os
+import re
+import signal
+import time
+
+OPENORG_RUN_DIRECTORY = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+    "openorg",
+    "opencode-runs",
+)
+
+def openorg_run_files(payload):
+    thread_id = str(payload.get("threadID") or "").lower()
+    if not re.fullmatch(r"[0-9a-f-]{36}", thread_id):
+        return None
+    os.makedirs(OPENORG_RUN_DIRECTORY, mode=0o700, exist_ok=True)
+    base = os.path.join(OPENORG_RUN_DIRECTORY, thread_id)
+    return {
+        "threadID": thread_id,
+        "token": str(payload.get("runToken") or ""),
+        "record": base + ".json",
+        "events": base + ".events.jsonl",
+    }
+
+def openorg_read_record(run):
+    try:
+        with open(run["record"], "r") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+def openorg_owns_run(run):
+    record = openorg_read_record(run)
+    return record is not None and record.get("pid") == os.getpid()
+
+def openorg_write_record(run, fields):
+    record = {
+        "version": 1,
+        "threadID": run["threadID"],
+        "token": run["token"],
+        "pid": os.getpid(),
+        "updatedAt": time.time(),
+    }
+    record.update(fields)
+    temporary = run["record"] + ".tmp"
+    with open(temporary, "w") as handle:
+        json.dump(record, handle)
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, run["record"])
+
+def openorg_remove_run(run):
+    for path in (run["record"], run["events"]):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+def openorg_pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+def openorg_stop_previous_run(run):
+    record = openorg_read_record(run)
+    if record and record.get("state") == "running" and record.get("pid") != os.getpid():
+        if openorg_pid_alive(record.get("pid")):
+            os.kill(int(record["pid"]), signal.SIGTERM)
+    openorg_remove_run(run)
+"""#
+
   nonisolated static let managedRemotePythonBootstrap = #"""
 import base64
 import json
@@ -362,6 +479,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+
+"""# + managedRemoteRunRecordPython + #"""
 
 payload = json.load(sys.stdin)
 workspace = os.path.expanduser(payload["workspacePath"])
@@ -415,13 +534,64 @@ try:
     sys.stdout.flush()
 
     arguments[1:1] = ["--server", server_url]
-    process = subprocess.Popen([opencode] + arguments, cwd=workspace, env=environment)
+    # The turn must outlive the SSH channel: OpenOrg may quit or be rebuilt
+    # mid-turn. Relay the event stream through this process, keep a durable
+    # copy, and let a later `attach` replay it once OpenOrg reconnects.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    detached = [False]
+    run = openorg_run_files(payload)
+    if run is not None:
+        openorg_stop_previous_run(run)
+        events = open(run["events"], "wb")
+        os.chmod(run["events"], 0o600)
+        openorg_write_record(run, {"state": "running"})
+    process = subprocess.Popen(
+        [opencode] + arguments,
+        cwd=workspace,
+        env=environment,
+        stdout=subprocess.PIPE,
+        start_new_session=True,
+    )
     def forward(signum, _frame):
         if process.poll() is None:
-            process.send_signal(signum)
+            try:
+                os.killpg(process.pid, signum)
+            except OSError:
+                process.send_signal(signum)
     signal.signal(signal.SIGINT, forward)
     signal.signal(signal.SIGTERM, forward)
-    sys.exit(process.wait())
+    def relay():
+        for line in iter(process.stdout.readline, b""):
+            if run is not None:
+                events.write(line)
+                events.flush()
+            if not detached[0]:
+                try:
+                    sys.stdout.buffer.write(line)
+                    sys.stdout.buffer.flush()
+                except OSError:
+                    detached[0] = True
+    relay_thread = threading.Thread(target=relay, daemon=True)
+    relay_thread.start()
+    status = process.wait()
+    # A stray descendant may keep the pipe open after the turn exits.
+    relay_thread.join(5)
+    if run is not None:
+        events.close()
+        # A newer turn in this chat replaces (and stops) this one; never
+        # overwrite its record.
+        if not openorg_owns_run(run):
+            pass
+        elif detached[0]:
+            openorg_write_record(run, {"state": "finished", "exitCode": status})
+        else:
+            openorg_remove_run(run)
+    if detached[0]:
+        # stdout is gone; skip interpreter shutdown flushes that would fail.
+        server.terminate()
+        shutil.rmtree(temporary_root, ignore_errors=True)
+        os._exit(status)
+    sys.exit(status)
 finally:
     if "server" in locals() and server.poll() is None:
         server.terminate()
@@ -430,6 +600,81 @@ finally:
         except subprocess.TimeoutExpired:
             server.kill()
     shutil.rmtree(temporary_root, ignore_errors=True)
+"""#
+
+  /// Exit status reported by the attach script when no matching turn exists.
+  nonisolated static let detachedRunMissingStatus: Int32 = 86
+  /// Exit status reported when the turn's supervisor died without finishing.
+  nonisolated static let detachedRunLostStatus: Int32 = 87
+
+  /// Replays a detached turn's event stream from the start, follows it until
+  /// the turn ends, and exits with the turn's status. The output has the same
+  /// shape as `opencode run --format json`, so one decoder serves both.
+  nonisolated static let managedRemoteAttachPythonBootstrap = #"""
+import json
+import os
+import sys
+import time
+
+"""# + managedRemoteRunRecordPython + #"""
+
+payload = json.load(sys.stdin)
+run = openorg_run_files(payload)
+record = openorg_read_record(run) if run else None
+if record is None or (run["token"] and record.get("token") != run["token"]):
+    sys.exit(\#(detachedRunMissingStatus))
+
+def relay(handle):
+    while True:
+        line = handle.readline()
+        if not line or not line.endswith(b"\n"):
+            if line:
+                handle.seek(-len(line), os.SEEK_CUR)
+            return
+        try:
+            sys.stdout.buffer.write(line)
+            sys.stdout.buffer.flush()
+        except OSError:
+            os._exit(0)
+
+try:
+    handle = open(run["events"], "rb")
+except OSError:
+    sys.exit(\#(detachedRunLostStatus))
+while True:
+    relay(handle)
+    record = openorg_read_record(run)
+    if record is None:
+        # The supervisor delivered the result to another client and cleaned up.
+        relay(handle)
+        sys.exit(0)
+    if record.get("state") == "finished":
+        relay(handle)
+        openorg_remove_run(run)
+        sys.exit(int(record.get("exitCode") or 0))
+    if not openorg_pid_alive(record.get("pid")):
+        relay(handle)
+        openorg_remove_run(run)
+        sys.exit(\#(detachedRunLostStatus))
+    time.sleep(0.25)
+"""#
+
+  /// Stops a chat's detached turn, if one is still running on the host.
+  nonisolated static let managedRemoteStopPythonBootstrap = #"""
+import json
+import os
+import signal
+import sys
+
+"""# + managedRemoteRunRecordPython + #"""
+
+payload = json.load(sys.stdin)
+run = openorg_run_files(payload)
+record = openorg_read_record(run) if run else None
+if record and record.get("state") == "running" and openorg_pid_alive(record.get("pid")):
+    os.kill(int(record["pid"]), signal.SIGTERM)
+elif run:
+    openorg_remove_run(run)
 """#
 
   nonisolated static let managedRemoteSteerPythonBootstrap = #"""
@@ -535,7 +780,8 @@ sys.exit(result.returncode)
     cwd: URL,
     model: String?,
     reasoningEffort: String?,
-    sandboxAccess: CodexSandboxAccess
+    sandboxAccess: CodexSandboxAccess,
+    runToken: String? = nil
   ) async throws -> OpenCodeTurnResult {
     if let existing = activeRuns[openOrgThreadID]?.process, existing.isRunning {
       throw OpenCodeError.launchFailed("another turn is already running in this chat")
@@ -609,6 +855,8 @@ sys.exit(result.returncode)
       )
       let payload = OpenCodeRemotePayload(
         workspacePath: workspacePath,
+        threadID: openOrgThreadID.uuidString.lowercased(),
+        runToken: runToken,
         arguments: Array(remoteArguments.dropLast()),
         message: message,
         configuration: configuration,
@@ -656,6 +904,72 @@ sys.exit(result.returncode)
       throw OpenCodeError.launchFailed(error.localizedDescription)
     }
 
+    return try await followTurn(
+      process: process,
+      standardOutput: standardOutput,
+      standardError: standardError,
+      openOrgThreadID: openOrgThreadID,
+      mayOutliveConnection: transport != .local
+    )
+  }
+
+  /// Follows a turn that a previous OpenOrg process started on a managed
+  /// remote host, replaying its progress from the start. Throws
+  /// ``OpenCodeError/detachedRunUnavailable`` when no such turn exists.
+  public func attachDetachedTurn(
+    openOrgThreadID: UUID,
+    runToken: String?
+  ) async throws -> OpenCodeTurnResult {
+    guard case .managedRemote(let sshHost, _) = transport else {
+      throw OpenCodeError.detachedRunUnavailable
+    }
+    if let existing = activeRuns[openOrgThreadID]?.process, existing.isRunning {
+      throw OpenCodeError.launchFailed("another turn is already running in this chat")
+    }
+    let process = Process()
+    let standardInput = Pipe()
+    let standardOutput = Pipe()
+    let standardError = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+    process.arguments = try Self.managedRemoteAttachSSHArguments(sshHost: sshHost)
+    process.environment = environment
+    process.standardInput = standardInput
+    process.standardOutput = standardOutput
+    process.standardError = standardError
+    let input = try JSONEncoder().encode(OpenCodeRemoteRunReference(
+      threadID: openOrgThreadID.uuidString.lowercased(),
+      runToken: runToken
+    ))
+    do {
+      try process.run()
+      try standardInput.fileHandleForWriting.write(contentsOf: input)
+      try standardInput.fileHandleForWriting.close()
+    } catch {
+      if process.isRunning { process.terminate() }
+      throw OpenCodeError.connectionLost(error.localizedDescription)
+    }
+    activeRuns[openOrgThreadID] = ActiveRun(
+      process: process,
+      serverProcess: nil,
+      serverURL: nil,
+      serverPassword: ""
+    )
+    return try await followTurn(
+      process: process,
+      standardOutput: standardOutput,
+      standardError: standardError,
+      openOrgThreadID: openOrgThreadID,
+      mayOutliveConnection: true
+    )
+  }
+
+  private func followTurn(
+    process: Process,
+    standardOutput: Pipe,
+    standardError: Pipe,
+    openOrgThreadID: UUID,
+    mayOutliveConnection: Bool
+  ) async throws -> OpenCodeTurnResult {
     let handler = eventHandler
     let outputTask = Task.detached(priority: .userInitiated) {
       try await Self.consumeOutput(
@@ -684,10 +998,30 @@ sys.exit(result.returncode)
     }
     let stderr = (try? await errorTask.value)?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    activeRuns.removeValue(forKey: openOrgThreadID)
+    let wasInterrupted = activeRuns[openOrgThreadID]?.process === process
+      ? interruptedThreadIDs.remove(openOrgThreadID) != nil
+      : false
+    if activeRuns[openOrgThreadID]?.process === process {
+      activeRuns.removeValue(forKey: openOrgThreadID)
+    }
 
-    if Task.isCancelled || process.terminationReason == .uncaughtSignal {
+    if mayOutliveConnection, isDetachingForTermination {
+      throw OpenCodeError.connectionLost("OpenOrg is quitting; the turn continues on the host")
+    }
+    if Task.isCancelled || wasInterrupted || process.terminationReason == .uncaughtSignal {
       throw OpenCodeError.interrupted
+    }
+    if mayOutliveConnection {
+      switch status {
+      case Self.detachedRunMissingStatus, Self.detachedRunLostStatus:
+        throw OpenCodeError.detachedRunUnavailable
+      case 255:
+        // ssh reports its own failures as 255. The remote supervisor keeps
+        // the turn running and can be reattached.
+        throw OpenCodeError.connectionLost(stderr.isEmpty ? "ssh exited with status 255" : stderr)
+      default:
+        break
+      }
     }
     guard status == 0, decoded.succeeded, decoded.errors.isEmpty else {
       let detail = decoded.errors.joined(separator: "\n")
@@ -701,9 +1035,28 @@ sys.exit(result.returncode)
     return OpenCodeTurnResult(sessionID: sessionID, reply: decoded.reply)
   }
 
-  public func interrupt(openOrgThreadID: UUID) {
-    guard let process = activeRuns[openOrgThreadID]?.process, process.isRunning else { return }
-    process.interrupt()
+  /// Stops this chat's turn. On a managed remote host this also stops a turn
+  /// that is still running after an earlier OpenOrg process went away.
+  public func interrupt(openOrgThreadID: UUID) async {
+    if let process = activeRuns[openOrgThreadID]?.process, process.isRunning {
+      interruptedThreadIDs.insert(openOrgThreadID)
+      process.interrupt()
+    }
+    guard !isDetachingForTermination,
+          case .managedRemote(let sshHost, _) = transport,
+          let arguments = try? Self.managedRemoteStopSSHArguments(sshHost: sshHost),
+          let input = try? JSONEncoder().encode(OpenCodeRemoteRunReference(
+            threadID: openOrgThreadID.uuidString.lowercased(),
+            runToken: nil
+          ))
+    else { return }
+    _ = try? await Self.runCommand(
+      executableURL: URL(fileURLWithPath: "/usr/bin/ssh"),
+      arguments: arguments,
+      cwd: nil,
+      environment: environment,
+      input: input
+    )
   }
 
   public func steer(
@@ -715,6 +1068,11 @@ sys.exit(result.returncode)
     guard let active = activeRuns[openOrgThreadID], active.process.isRunning else {
       throw OpenCodeError.invalidResponse("there is no active OpenCode turn to steer")
     }
+    guard let serverURL = active.serverURL else {
+      throw OpenCodeError.invalidResponse(
+        "the active OpenCode turn was reconnected after OpenOrg restarted and cannot be steered; queue a follow-up instead"
+      )
+    }
     let data = try Self.steerRequestData(
       message: message,
       attachments: attachments
@@ -725,7 +1083,7 @@ sys.exit(result.returncode)
       _ = try await Self.runCommand(
         executableURL: executableURL,
         arguments: Self.steerArguments(
-          serverURL: active.serverURL,
+          serverURL: serverURL,
           sessionID: sessionID,
           data: data
         ),
@@ -737,7 +1095,7 @@ sys.exit(result.returncode)
       )
     case .managedRemote(let sshHost, _):
       let input = try JSONEncoder().encode(OpenCodeRemoteSteerPayload(
-        serverURL: active.serverURL,
+        serverURL: serverURL,
         sessionID: sessionID,
         requestData: data,
         serverPassword: active.serverPassword
@@ -750,6 +1108,12 @@ sys.exit(result.returncode)
         input: input
       )
     }
+  }
+
+  /// Lets managed remote turns outlive this process. Call before canceling
+  /// their requests during termination; their local SSH channels still close.
+  public func detachForTermination() {
+    isDetachingForTermination = true
   }
 
   public func shutdown() {
@@ -999,11 +1363,18 @@ sys.exit(result.returncode)
 
 private struct OpenCodeRemotePayload: Encodable {
   let workspacePath: String
+  let threadID: String
+  let runToken: String?
   let arguments: [String]
   let message: String
   let configuration: String
   let serverPassword: String
   let attachments: [OpenCodeRemoteAttachment]
+}
+
+private struct OpenCodeRemoteRunReference: Encodable {
+  let threadID: String
+  let runToken: String?
 }
 
 private struct OpenCodeRemoteModelPayload: Encodable {

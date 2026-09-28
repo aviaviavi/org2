@@ -3184,6 +3184,11 @@ public final class WorkspaceStore {
     )
   }
   private var openClawRecoveryTasksByThreadID: [UUID: Task<Void, Never>] = [:]
+  /// Chats following a detached OpenCode turn, which cannot be steered.
+  private var openCodeReattachedThreadIDs: Set<UUID> = []
+  /// Sends accepted on this host before this process started cannot be driven
+  /// by it unless a saved pending turn is being recovered.
+  private let aiChatProcessStartedAt = Date()
   private var openClawRecoveryTaskTokensByThreadID: [UUID: UUID] = [:]
   private var deferredOpenClawTranscriptPersistenceTask: Task<Void, Never>?
   private var openClawTranscriptPersistenceGeneration: UInt64 = 0
@@ -3770,6 +3775,7 @@ public final class WorkspaceStore {
         initializeHydratedOpenClawChatThreadLRU()
         applyAIChatTranscriptRecoveryStatus(loaded.recoveryStatus)
         if loaded.requiresMigration { persistOpenClawTranscript() }
+        persistStaleLocalAIChatSendRepair(loaded.interruptedSendThreadIDs)
       }
     }
     shouldPersistOpenClawMessages = true
@@ -22864,7 +22870,9 @@ public final class WorkspaceStore {
         in: threadID,
         statusText: thread.isSharedRoom ? "Shared room stopped" : "OpenCode stopped"
       )
-      await openCodeClientsByDestinationID[activeDestinationID]?.interrupt(
+      // After a restart the client may not exist yet, but a managed remote
+      // host can still be running this chat's detached turn.
+      await (try? openCodeClient(forDestinationID: activeDestinationID))?.interrupt(
         openOrgThreadID: threadID
       )
       aiChatDrainTasksByThreadID[threadID]?.task.cancel()
@@ -24384,6 +24392,7 @@ public final class WorkspaceStore {
     case .openCode:
       return openCodeClientsByDestinationID[thread.destinationID] != nil
         && openClawActiveRunIDByThreadID[threadID] != nil
+        && !openCodeReattachedThreadIDs.contains(threadID)
     }
   }
 
@@ -24546,7 +24555,7 @@ public final class WorkspaceStore {
         return message.localizedCaseInsensitiveContains("active OpenCode turn")
           || message.localizedCaseInsensitiveContains("session not found")
       case .executableNotFound, .invalidSSHHost, .missingRemoteWorkspace,
-           .turnFailed, .interrupted:
+           .turnFailed, .interrupted, .connectionLost, .detachedRunUnavailable:
         return false
       }
     }
@@ -25453,7 +25462,8 @@ public final class WorkspaceStore {
         || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
       else { return nil }
       let destinationID = pendingTurn.destinationID ?? thread.destinationID
-      guard aiChatDestination(id: destinationID)?.adapter != .openClaw else { return nil }
+      guard !Self.aiChatAdapterRecoversPendingTurns(aiChatDestination(id: destinationID)?.adapter)
+      else { return nil }
       return (
         thread.id,
         pendingTurn,
@@ -25484,7 +25494,8 @@ public final class WorkspaceStore {
         || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
       else { return nil }
       let destinationID = pendingTurn.destinationID ?? thread.destinationID
-      return aiChatDestination(id: destinationID)?.adapter == .openClaw ? thread.id : nil
+      return Self.aiChatAdapterRecoversPendingTurns(aiChatDestination(id: destinationID)?.adapter)
+        ? thread.id : nil
     }
   }
 
@@ -25498,7 +25509,7 @@ public final class WorkspaceStore {
       || pendingTurn.dispatchOwnerID == Self.openClawDispatchOwnerID
     else { return false }
     let destinationID = pendingTurn.destinationID ?? thread.destinationID
-    return aiChatDestination(id: destinationID)?.adapter == .openClaw
+    return Self.aiChatAdapterRecoversPendingTurns(aiChatDestination(id: destinationID)?.adapter)
   }
 
   private func startPendingOpenClawTurnRecovery() {
@@ -25553,22 +25564,33 @@ public final class WorkspaceStore {
       return
     }
 
+    let pendingDestinationID = pendingTurn.destinationID ?? thread.destinationID
+    let recoversOpenCode = aiChatDestination(id: pendingDestinationID)?.adapter == .openCodeRemote
     prepareOpenClawRunPresentation(for: threadID)
     drainingOpenClawThreadIDs.insert(threadID)
     activeOpenClawUserMessageIDByThreadID[threadID] = pendingUserMessage.id
     openClawRequestStartedAtByThreadID[threadID] = pendingTurn.startedAt
     openClawActiveRunIDByThreadID[threadID] = pendingTurn.runID
+    if recoversOpenCode {
+      openCodeReattachedThreadIDs.insert(threadID)
+    }
     syncSelectedOpenClawSendState()
     if isActiveAIChatSendOrigin(sendOrigin) {
-      openClawStatusText = "Reconnecting to \(aiChatDestinationTitle(pendingTurn.destinationID ?? thread.destinationID))"
+      openClawStatusText = "Reconnecting to \(aiChatDestinationTitle(pendingDestinationID))"
     }
 
-    let pendingDestinationID = pendingTurn.destinationID ?? thread.destinationID
     var completed = false
     do {
       let reply: String
       if let openClawRecoveryHandler {
         reply = try await openClawRecoveryHandler(pendingTurn, thread.sessionKey)
+      } else if recoversOpenCode {
+        reply = try await reattachDetachedOpenCodeTurn(
+          pendingTurn,
+          threadID: threadID,
+          destinationID: pendingDestinationID,
+          transcriptURL: sendOrigin.transcriptURL
+        )
       } else {
         let gateway = OpenClawGatewayClient(
           settings: openClawSettings(
@@ -25617,11 +25639,12 @@ public final class WorkspaceStore {
           authorRuntime: thread.isSharedRoom ? .openClaw : nil,
           authorDestinationID: thread.isSharedRoom ? pendingDestinationID : nil
         )
-        removeFirstPendingOpenClawUserMessage(in: threadID)
+        // Remove exactly the recovered message; never drop a queued follow-up.
+        removePendingOpenClawUserMessage(pendingTurn.userMessageID, in: threadID)
         clearOpenClawCompletedRunPresentation(for: threadID)
         if isActiveAIChatSendOrigin(sendOrigin) {
           openClawStatusText = openClawPendingUserMessageIDs(for: threadID).isEmpty
-            ? "OpenClaw reconnected and replied"
+            ? "\(aiChatDestinationTitle(pendingDestinationID)) reconnected and replied"
             : openClawQueuedStatusText()
         }
         completed = true
@@ -25657,13 +25680,14 @@ public final class WorkspaceStore {
         openClawGatewayDetailByThreadID[threadID] =
           "This turn is saved and will reconnect without sending it twice."
         if isActiveAIChatSendOrigin(sendOrigin) {
-          openClawStatusText = "OpenClaw will reconnect to this saved turn"
+          openClawStatusText = "\(aiChatDestinationTitle(pendingDestinationID)) will reconnect to this saved turn"
         }
         scheduleOpenClawPendingTurnRecovery(for: threadID)
       }
     }
 
     openClawGatewayClientsByThreadID.removeValue(forKey: threadID)
+    openCodeReattachedThreadIDs.remove(threadID)
     activeOpenClawUserMessageIDByThreadID.removeValue(forKey: threadID)
     drainingOpenClawThreadIDs.remove(threadID)
     openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
@@ -25672,6 +25696,46 @@ public final class WorkspaceStore {
       await drainOpenClawSendQueue(for: threadID)
     } else if completed {
       aiChatSendOriginsByThreadID.removeValue(forKey: threadID)
+    }
+  }
+
+  /// Follows a managed remote OpenCode turn that kept running while OpenOrg
+  /// was restarting, replaying its progress into the live presentation.
+  private func reattachDetachedOpenCodeTurn(
+    _ pendingTurn: OpenClawPendingTurn,
+    threadID: UUID,
+    destinationID: String,
+    transcriptURL: URL
+  ) async throws -> String {
+    do {
+      let result = try await openCodeClient(forDestinationID: destinationID).attachDetachedTurn(
+        openOrgThreadID: threadID,
+        runToken: pendingTurn.runID
+      )
+      if let thread = openClawChatThread(threadID, transcriptURL: transcriptURL) {
+        persistRuntimeSessionID(
+          result.sessionID,
+          destinationID: destinationID,
+          thread: thread,
+          transcriptURL: transcriptURL
+        )
+      }
+      openClawGatewayStateByThreadID[threadID] = .connected
+      let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+      return reply.isEmpty ? "OpenCode completed the turn without a text response." : reply
+    } catch let error as OpenCodeError {
+      switch error {
+      case .connectionLost:
+        throw error
+      case .interrupted:
+        throw OpenClawGatewayError.aborted(nil)
+      case .detachedRunUnavailable:
+        throw OpenClawGatewayError.acceptedRunTerminated(
+          "OpenOrg restarted and \(aiChatDestinationTitle(destinationID)) is no longer running this turn, so its response could not be recovered. Retry to send it again."
+        )
+      default:
+        throw OpenClawGatewayError.acceptedRunTerminated(error.localizedDescription)
+      }
     }
   }
 
@@ -26262,24 +26326,71 @@ public final class WorkspaceStore {
     if destination.adapter == .openCodeRemote {
       workspaceContext = workspaceContext.replacingRuntimeCorpusRoot(destination.workspaceRoot)
     }
-    let result = try await openCodeClient(forDestinationID: destinationID).runTurn(
-      openOrgThreadID: threadID,
-      existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
-      message: Self.expandingOpenClawAgentCommand(
-        requestUserMessage,
-        corpusSkills: corpusAgentSkillCommands
-      ).content,
-      systemPrompt: workspaceContext.localAgentSystemPrompt(
-        runtime: "opencode",
-        runtimeTitle: "OpenCode",
-        runtimeFilesystemAccess: destination.adapter == .openCodeRemote
-      ),
-      attachments: requestUserMessage.attachments,
-      cwd: corpusRoot,
-      model: thread.model(forDestinationID: destinationID) ?? destination.model,
-      reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
-      sandboxAccess: codexSandboxAccess
-    )
+    // A managed remote turn keeps running on its host if OpenOrg quits or is
+    // rebuilt. Persist it first so the next launch reattaches to its progress
+    // (or stops it) instead of showing a turn nobody can control.
+    var pendingTurn: OpenClawPendingTurn?
+    if destination.adapter == .openCodeRemote, !thread.isSharedRoom {
+      let turn = OpenClawPendingTurn(
+        userMessageID: userMessage.id,
+        runID: userMessage.id.uuidString.lowercased(),
+        idempotencyKey: userMessage.id.uuidString.lowercased(),
+        dispatchOwnerID: Self.openClawDispatchOwnerID,
+        agentID: "opencode",
+        destinationID: destinationID,
+        gatewayMessage: ""
+      )
+      replaceOpenClawPendingTurn(
+        turn,
+        in: threadID,
+        transcriptURL: sendOrigin.transcriptURL,
+        shouldPersist: true
+      )
+      if await persistOpenClawTranscriptDurably(context: sendOrigin.context) {
+        pendingTurn = turn
+      } else {
+        clearOpenClawPendingTurn(
+          turn.runID,
+          in: threadID,
+          transcriptURL: sendOrigin.transcriptURL,
+          shouldPersist: false
+        )
+      }
+    }
+    let result: OpenCodeTurnResult
+    do {
+      result = try await openCodeClient(forDestinationID: destinationID).runTurn(
+        openOrgThreadID: threadID,
+        existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
+        message: Self.expandingOpenClawAgentCommand(
+          requestUserMessage,
+          corpusSkills: corpusAgentSkillCommands
+        ).content,
+        systemPrompt: workspaceContext.localAgentSystemPrompt(
+          runtime: "opencode",
+          runtimeTitle: "OpenCode",
+          runtimeFilesystemAccess: destination.adapter == .openCodeRemote
+        ),
+        attachments: requestUserMessage.attachments,
+        cwd: corpusRoot,
+        model: thread.model(forDestinationID: destinationID) ?? destination.model,
+        reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
+        sandboxAccess: codexSandboxAccess,
+        runToken: pendingTurn?.runID
+      )
+    } catch {
+      // Only a lost SSH channel leaves the remote turn running; keep its
+      // pending record so recovery reattaches. Anything else is terminal.
+      if let pendingTurn, !Self.openCodeRunMayStillBeWorking(after: error) {
+        clearOpenClawPendingTurn(
+          pendingTurn.runID,
+          in: threadID,
+          transcriptURL: sendOrigin.transcriptURL,
+          shouldPersist: true
+        )
+      }
+      throw error
+    }
     persistRuntimeSessionID(
       result.sessionID,
       destinationID: destinationID,
@@ -26666,6 +26777,11 @@ public final class WorkspaceStore {
     aiChatInboxDrainRequested = false
     let sendDrainTasks = aiChatDrainTasksByThreadID.values.map(\.task)
     let recoveryTasks = Array(openClawRecoveryTasksByThreadID.values)
+    // Remote OpenCode turns keep running on their host while OpenOrg quits or
+    // is rebuilt; their saved pending turns reattach on the next launch.
+    for client in openCodeClientsByDestinationID.values {
+      await client.detachForTermination()
+    }
     recoveryTasks.forEach { $0.cancel() }
     openClawRecoveryTasksByThreadID.removeAll()
     sendDrainTasks.forEach { $0.cancel() }
@@ -27893,6 +28009,18 @@ public final class WorkspaceStore {
     }
   }
 
+  nonisolated private static func openCodeRunMayStillBeWorking(after error: Error) -> Bool {
+    guard let error = error as? OpenCodeError, case .connectionLost = error else { return false }
+    return true
+  }
+
+  /// Destinations whose saved pending turn can be resumed after a restart.
+  nonisolated static func aiChatAdapterRecoversPendingTurns(
+    _ adapter: AIChatDestinationAdapter?
+  ) -> Bool {
+    adapter == .openClaw || adapter == .openCodeRemote
+  }
+
   nonisolated private static func openClawRunMayStillBeWorking(after error: Error) -> Bool {
     guard let gatewayError = error as? OpenClawGatewayError else { return false }
     if case .acceptedRunRecovery = gatewayError { return true }
@@ -29032,7 +29160,8 @@ public final class WorkspaceStore {
     openClawGatewayDetailByThreadID[threadID] = failureText
     if selectedOpenClawChatThreadID == threadID,
        isActiveAIChatTranscript(targetTranscriptURL) {
-      openClawStatusText = "OpenClaw could not complete this turn"
+      let title = pendingTurn.destinationID.map(aiChatDestinationTitle) ?? "OpenClaw"
+      openClawStatusText = "\(title) could not complete this turn"
     }
   }
 
@@ -31194,6 +31323,9 @@ public final class WorkspaceStore {
         )
         self.enforceHydratedOpenClawChatThreadLimit()
       }
+      // Cold threads skip launch-time interruption repair; apply it now that
+      // their messages are loaded.
+      self.repairStaleLocalAIChatSends(in: id, transcriptURL: transcriptURL)
       // Presentation enrichment is not required for a readable transcript:
       // AIChatTranscriptDocument immediately publishes a safe plain excerpt.
       // Warm the structured cache only after that first frame can be drawn.
@@ -31213,6 +31345,112 @@ public final class WorkspaceStore {
       }
     }
     openClawThreadHydrationTasks[id] = task
+  }
+
+  /// Persists launch-time interruption of this host's stale sends. The
+  /// loader marks them in memory only, so a later replica refresh would
+  /// otherwise bring back a turn that looks busy but has no driver.
+  private func persistStaleLocalAIChatSendRepair(_ threadIDs: Set<UUID>) {
+    guard !threadIDs.isEmpty,
+          hasAuthoritativeAIChatTranscriptState,
+          !aiChatTranscriptWritesBlocked
+    else { return }
+    let transcriptURL = openClawTranscriptURL.standardizedFileURL
+    for threadID in threadIDs
+    where !unloadedOpenClawChatThreadIDs.contains(threadID)
+      && !isAIChatThreadRunningOnCurrentHost(threadID) {
+      guard openClawChatThread(threadID, transcriptURL: transcriptURL) != nil else { continue }
+      updateOpenClawChatThread(
+        threadID,
+        messages: openClawMessages(for: threadID, transcriptURL: transcriptURL),
+        transcriptURL: transcriptURL,
+        shouldPersist: true
+      )
+    }
+  }
+
+  /// Marks this host's sends from an earlier OpenOrg process as interrupted
+  /// when nothing in this process drives or recovers them. Otherwise the chat
+  /// looks busy forever while Stop and Retry have nothing to act on.
+  private func repairStaleLocalAIChatSends(in threadID: UUID, transcriptURL: URL) {
+    guard !unloadedOpenClawChatThreadIDs.contains(threadID),
+          !isAIChatThreadRunningOnCurrentHost(threadID),
+          let thread = openClawChatThread(threadID, transcriptURL: transcriptURL)
+    else { return }
+    let messages = openClawMessages(for: threadID, transcriptURL: transcriptURL)
+    let repaired = Self.interruptStaleLocalAIChatSends(
+      in: [thread.replacingMessages(messages)],
+      processStartedAt: aiChatProcessStartedAt
+    )
+    guard repaired.changed, let repairedThread = repaired.threads.first else { return }
+    updateOpenClawChatThread(
+      threadID,
+      messages: repairedThread.messages,
+      transcriptURL: transcriptURL,
+      shouldPersist: true
+    )
+    dequeueInterruptedAIChatSends(in: repairedThread)
+  }
+
+  /// Drops interrupted sends from the in-memory dispatch queue.
+  private func dequeueInterruptedAIChatSends(in thread: OpenClawChatThread) {
+    for message in thread.messages
+    where message.role == .user && message.deliveryStatus == .interrupted {
+      aiChatForeignPendingMessageIDs.remove(message.id)
+      if openClawPendingUserMessageIDs(for: thread.id).contains(message.id) {
+        removePendingOpenClawUserMessage(message.id, in: thread.id)
+      }
+    }
+    if selectedOpenClawChatThreadID == thread.id {
+      restoreInterruptedOpenClawSendStatusIfNeeded()
+    }
+  }
+
+  /// Interrupts sends that this host accepted before `processStartedAt`.
+  /// Unlike the launch loader, this runs on synchronized replicas too, so it
+  /// requires explicit local provenance. Threads with a recoverable pending
+  /// turn are left for turn recovery.
+  /// Metadata-only (cold) threads are skipped until their messages load.
+  nonisolated static func interruptStaleLocalAIChatSends(
+    in threads: [OpenClawChatThread],
+    processStartedAt: Date,
+    isLocalHost: (String) -> Bool = { AIChatLocalHostRegistry.shared.isLocal($0) }
+  ) -> (threads: [OpenClawChatThread], changed: Bool) {
+    var changed = false
+    let repaired = threads.map { thread -> OpenClawChatThread in
+      guard thread.storedMessageCount == nil else { return thread }
+      if let pendingTurn = thread.pendingTurn,
+         thread.messages.contains(where: {
+           $0.id == pendingTurn.userMessageID && $0.role == .user && $0.deliveryStatus == .sending
+         }) {
+        return thread
+      }
+      var threadChanged = false
+      let messages = thread.messages.map { message -> OpenClawChatMessage in
+        guard message.role == .user,
+              message.deliveryStatus == .sending,
+              message.deliveryKind != .steer,
+              (message.provenance?.acceptedAt ?? message.createdAt) < processStartedAt
+        else { return message }
+        // Only a turn this host explicitly accepted is known to be stale. A
+        // replica's unattributed send may be another host's live turn, and a
+        // hand-off nobody has started is still waiting for its host.
+        guard let provenance = message.provenance,
+              let executionHostRef = provenance.executionHostRef,
+              provenance.acceptedAt != nil,
+              isLocalHost(executionHostRef)
+        else { return message }
+        threadChanged = true
+        return message.replacingDeliveryStatus(
+          .interrupted,
+          sendFailure: openClawInterruptedSendFailureText
+        )
+      }
+      guard threadChanged else { return thread }
+      changed = true
+      return thread.replacingMessages(messages)
+    }
+    return (repaired, changed)
   }
 
   private func hydrateOpenClawChatThreadIfNeeded(_ id: UUID) async -> OpenClawChatThread? {
@@ -40015,6 +40253,10 @@ public final class WorkspaceStore {
     }
     initializeHydratedOpenClawChatThreadLRU()
     processAIChatHandoffs()
+    // A replica can still carry this host's sends from before a restart.
+    for thread in imported {
+      repairStaleLocalAIChatSends(in: thread.id, transcriptURL: target)
+    }
     return true
   }
 
@@ -40420,6 +40662,7 @@ public final class WorkspaceStore {
       if !loaded.requiresMigration { self.initializeHydratedOpenClawChatThreadLRU() }
       self.replayAIChatMutationsAfterTranscriptLoad()
       self.applyAIChatTranscriptRecoveryStatus(loaded.recoveryStatus)
+      self.persistStaleLocalAIChatSendRepair(loaded.interruptedSendThreadIDs)
     }
   }
 
@@ -40599,6 +40842,7 @@ public final class WorkspaceStore {
       if !loaded.requiresMigration { self.initializeHydratedOpenClawChatThreadLRU() }
       self.replayAIChatMutationsAfterTranscriptLoad()
       self.applyAIChatTranscriptRecoveryStatus(loaded.recoveryStatus)
+      self.persistStaleLocalAIChatSendRepair(loaded.interruptedSendThreadIDs)
       self.startPendingOpenClawTurnRecovery()
       self.processAIChatHandoffs()
       self.scheduleAIChatLiveRefresh()
@@ -40638,7 +40882,8 @@ public final class WorkspaceStore {
       ),
       unloadedThreadIDs: loaded.unloadedThreadIDs.subtracting(restoredThreadIDs),
       requiresMigration: loaded.requiresMigration,
-      recoveryStatus: loaded.recoveryStatus
+      recoveryStatus: loaded.recoveryStatus,
+      interruptedSendThreadIDs: loaded.interruptedSendThreadIDs.subtracting(restoredThreadIDs)
     )
   }
 
@@ -40648,14 +40893,20 @@ public final class WorkspaceStore {
   ) -> (
     transcript: OpenClawTranscriptState,
     requiresMigration: Bool,
-    recoveryStatus: AIChatTranscriptRecoveryStatus
+    recoveryStatus: AIChatTranscriptRecoveryStatus,
+    interruptedSendThreadIDs: Set<UUID>
   ) {
     let loaded = Self.readOpenClawTranscriptForWorkspace(
       from: url,
       marksInterruptedSends: marksInterruptedSends
     )
     unloadedOpenClawChatThreadIDs = loaded.unloadedThreadIDs
-    return (loaded.transcript, loaded.requiresMigration, loaded.recoveryStatus)
+    return (
+      loaded.transcript,
+      loaded.requiresMigration,
+      loaded.recoveryStatus,
+      loaded.interruptedSendThreadIDs
+    )
   }
 
   private func applyAIChatTranscriptRecoveryStatus(
@@ -40693,14 +40944,23 @@ public final class WorkspaceStore {
         selectedThreadID: loaded.snapshot.selectedThreadID,
         settlementSettings: loaded.snapshot.settlementSettings
       )
+      var interruptedSendThreadIDs = Set<UUID>()
       if marksInterruptedSends {
+        let persisted = Dictionary(
+          transcript.threads.map { ($0.id, $0.messages) },
+          uniquingKeysWith: { first, _ in first }
+        )
         transcript = Self.openClawTranscriptStateByMarkingInterruptedSends(transcript)
+        interruptedSendThreadIDs = Set(transcript.threads.compactMap { thread in
+          persisted[thread.id] == thread.messages ? nil : thread.id
+        })
       }
       return OpenClawWorkspaceTranscriptLoad(
         transcript: transcript,
         unloadedThreadIDs: loaded.unloadedThreadIDs,
         requiresMigration: loaded.recoveryStatus == .recoveredPreviousManifest,
-        recoveryStatus: loaded.recoveryStatus
+        recoveryStatus: loaded.recoveryStatus,
+        interruptedSendThreadIDs: interruptedSendThreadIDs
       )
     }
     let transcript = Self.loadOpenClawTranscript(
@@ -47847,6 +48107,8 @@ private struct OpenClawWorkspaceTranscriptLoad: Sendable {
   let unloadedThreadIDs: Set<UUID>
   let requiresMigration: Bool
   let recoveryStatus: AIChatTranscriptRecoveryStatus
+  /// Threads whose stale sends were marked interrupted in memory at load.
+  var interruptedSendThreadIDs: Set<UUID> = []
 }
 
 private struct OpenClawPreparedWorkspaceTranscriptLoad: Sendable {
