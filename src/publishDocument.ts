@@ -142,6 +142,22 @@ export type GoogleDriveFileMetadata = {
   };
 };
 
+type GoogleDriveV2FileMetadata = {
+  id: string;
+  title?: string;
+  mimeType?: string;
+  modifiedDate?: string;
+  version?: string;
+  alternateLink?: string;
+  etag?: string;
+  labels?: {
+    trashed?: boolean;
+  };
+  capabilities?: {
+    canEdit?: boolean;
+  };
+};
+
 export type GoogleDocsPublicationResult = {
   $schema: typeof GOOGLE_DOCS_PUBLICATION_SCHEMA;
   destination: "google-docs";
@@ -911,7 +927,7 @@ function requestBodyBytes(value: Buffer): ArrayBuffer {
   return bytes.buffer;
 }
 
-async function googleJsonResponse(response: Response, operation: string, secrets: string[] = []): Promise<GoogleDriveFileMetadata> {
+async function googleJsonResponse<T extends object = GoogleDriveFileMetadata>(response: Response, operation: string, secrets: string[] = []): Promise<T> {
   const body = await response.text();
   if (!response.ok) {
     let detail = body.trim().slice(0, 1_000);
@@ -927,7 +943,7 @@ async function googleJsonResponse(response: Response, operation: string, secrets
     throw new Error(`Google Drive ${operation} returned invalid JSON`);
   }
   if (!parsed || typeof parsed !== "object") throw new Error(`Google Drive ${operation} returned an invalid file record`);
-  return parsed as GoogleDriveFileMetadata;
+  return parsed as T;
 }
 
 async function googleCommentsPresent(response: Response, accessToken: string): Promise<boolean> {
@@ -951,6 +967,23 @@ async function googleCommentsPresent(response: Response, accessToken: string): P
 
 function googleFileFields(): string {
   return "id,name,mimeType,modifiedTime,version,webViewLink,trashed,capabilities(canEdit)";
+}
+
+function googleDriveV2FileFields(): string {
+  return "id,title,mimeType,modifiedDate,version,alternateLink,etag,labels(trashed),capabilities(canEdit)";
+}
+
+function normalizeGoogleDriveV2File(file: GoogleDriveV2FileMetadata): GoogleDriveFileMetadata {
+  return {
+    id: file.id,
+    ...(file.title ? { name: file.title } : {}),
+    ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+    ...(file.modifiedDate ? { modifiedTime: file.modifiedDate } : {}),
+    ...(file.version ? { version: file.version } : {}),
+    ...(file.alternateLink ? { webViewLink: file.alternateLink } : {}),
+    ...(file.labels?.trashed !== undefined ? { trashed: file.labels.trashed } : {}),
+    ...(file.capabilities ? { capabilities: file.capabilities } : {}),
+  };
 }
 
 function googleWorkspaceSpec(destination: GoogleWorkspaceDestination): {
@@ -1122,16 +1155,16 @@ export async function publishToGoogleWorkspace(
   }
 
   const documentId = encodeURIComponent(options.documentId);
-  const metadataQuery = new URLSearchParams({ supportsAllDrives: "true", fields: googleFileFields() });
-  const metadataResponse = await request(`https://www.googleapis.com/drive/v3/files/${documentId}?${metadataQuery}`, {
+  const metadataQuery = new URLSearchParams({ supportsAllDrives: "true", fields: googleDriveV2FileFields() });
+  const metadataResponse = await request(`https://www.googleapis.com/drive/v2/files/${documentId}?${metadataQuery}`, {
     method: "GET",
     headers: { authorization },
   });
-  const current = await googleJsonResponse(metadataResponse, "metadata check", [accessToken]);
-  if (current.trashed) throw new Error(`The ${spec.displayName} file is in the trash`);
+  const current = await googleJsonResponse<GoogleDriveV2FileMetadata>(metadataResponse, "metadata check", [accessToken]);
+  if (current.labels?.trashed) throw new Error(`The ${spec.displayName} file is in the trash`);
   if (current.mimeType !== spec.targetMediaType) throw new Error(`The target Google Drive file is not a ${spec.displayName} file`);
   if (current.capabilities?.canEdit === false) throw new Error("The connected Google account cannot edit the target file");
-  const etag = metadataResponse.headers.get("etag");
+  const etag = String(current.etag || "").trim();
   if (!etag) throw new Error(`Google Drive did not return an ETag for the ${spec.displayName} file; refusing an unguarded replacement`);
 
   const commentQuery = new URLSearchParams({
@@ -1150,22 +1183,24 @@ export async function publishToGoogleWorkspace(
   const updateQuery = new URLSearchParams({
     uploadType: "multipart",
     supportsAllDrives: "true",
-    fields: googleFileFields(),
+    fields: googleDriveV2FileFields(),
   });
-  const response = await request(`https://www.googleapis.com/upload/drive/v3/files/${documentId}?${updateQuery}`, {
-    method: "PATCH",
+  const response = await request(`https://www.googleapis.com/upload/drive/v2/files/${documentId}?${updateQuery}`, {
+    method: "PUT",
     headers: {
       authorization,
       "content-type": `multipart/related; boundary=${boundary}`,
       "if-match": etag,
     },
-    body: requestBodyBytes(multipartBody(boundary, { appProperties }, upload.mediaType, upload.bytes)),
+    body: requestBodyBytes(multipartBody(boundary, {
+      properties: Object.entries(appProperties).map(([key, value]) => ({ key, value, visibility: "PRIVATE" })),
+    }, upload.mediaType, upload.bytes)),
   });
   return googleResult(
     publication,
     upload,
     destination,
-    await googleJsonResponse(response, "update", [accessToken]),
+    normalizeGoogleDriveV2File(await googleJsonResponse<GoogleDriveV2FileMetadata>(response, "update", [accessToken])),
     "update",
   );
 }

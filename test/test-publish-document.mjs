@@ -342,24 +342,28 @@ y: value
         }
         return new Response(JSON.stringify({
           id: "doc-created",
-          name: "Quantum Sensing Brief",
+          title: "Quantum Sensing Brief",
           mimeType: "application/vnd.google-apps.document",
           version: "7",
+          etag: '"remote-etag"',
           capabilities: { canEdit: true },
-        }), { status: 200, headers: { etag: '"remote-etag"' } });
+        }), { status: 200 });
       }
       return new Response(JSON.stringify({
         id: "doc-created",
-        name: "Quantum Sensing Brief",
+        title: "Quantum Sensing Brief",
         mimeType: "application/vnd.google-apps.document",
         version: "8",
-        webViewLink: "https://docs.google.com/document/d/doc-created/edit",
+        alternateLink: "https://docs.google.com/document/d/doc-created/edit",
       }), { status: 200 });
     },
   });
-  assert.deepEqual(updateCalls.map((call) => call.init.method), ["GET", "GET", "PATCH"]);
+  assert.deepEqual(updateCalls.map((call) => call.init.method), ["GET", "GET", "PUT"]);
+  assert.match(updateCalls[0].url, /\/drive\/v2\/files\/doc-created\?/);
   assert.match(updateCalls[1].url, /\/comments\?/);
+  assert.match(updateCalls[2].url, /\/upload\/drive\/v2\/files\/doc-created\?/);
   assert.equal(updateCalls[2].init.headers["if-match"], '"remote-etag"');
+  assert.match(Buffer.from(updateCalls[2].init.body).toString("latin1"), /"visibility":"PRIVATE"/);
   assert.equal(updated.action, "update");
   assert.equal(updated.version, "8");
 
@@ -379,18 +383,19 @@ y: value
           id: "doc-created",
           mimeType: "application/vnd.google-apps.document",
           version: "13",
+          etag: '"drifted-etag"',
           capabilities: { canEdit: true },
-        }), { status: 200, headers: { etag: '"drifted-etag"' } });
+        }), { status: 200 });
       }
       return new Response(JSON.stringify({
         id: "doc-created",
         mimeType: "application/vnd.google-apps.document",
         version: "14",
-        webViewLink: "https://docs.google.com/document/d/doc-created/edit",
+        alternateLink: "https://docs.google.com/document/d/doc-created/edit",
       }), { status: 200 });
     },
   });
-  assert.deepEqual(driftedVersionCalls.map((call) => call.init.method), ["GET", "GET", "PATCH"]);
+  assert.deepEqual(driftedVersionCalls.map((call) => call.init.method), ["GET", "GET", "PUT"]);
   assert.equal(driftedVersionCalls[2].init.headers["if-match"], '"drifted-etag"');
   assert.equal(driftedVersionUpdate.version, "14", "Google-side version drift must not strand a linked publication");
 
@@ -430,8 +435,9 @@ y: value
           id: "doc-created",
           mimeType: "application/vnd.google-apps.document",
           version: "7",
+          etag: '"remote-etag"',
           capabilities: { canEdit: true },
-        }), { status: 200, headers: { etag: '"remote-etag"' } });
+        }), { status: 200 });
       },
     }),
     /has comments.*publish as a new copy/i,
