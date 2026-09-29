@@ -452,7 +452,7 @@ struct Org2WorkspaceApp: App {
     }
 
     Settings {
-      WorkspaceSettingsView(softwareUpdates: softwareUpdates)
+      WorkspaceSettingsView(softwareUpdates: softwareUpdates, telemetry: appDelegate.telemetry)
         .environment(store)
         .environmentObject(mobileRemote)
         .preferredColorScheme(store.appearanceMode.colorScheme)
@@ -462,6 +462,7 @@ struct Org2WorkspaceApp: App {
 
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
+  let telemetry = OpenOrgLaunchTelemetry()
   private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
   var prepareForTermination: (() async -> Bool)?
   var hasActiveWork: (() -> Bool)?
@@ -494,6 +495,20 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    #if !DEBUG
+    let os = ProcessInfo.processInfo.operatingSystemVersion
+    #if arch(arm64)
+    let architecture = "arm64"
+    #else
+    let architecture = "x86_64"
+    #endif
+    telemetry.recordLaunch(
+      bundleIdentifier: Bundle.main.bundleIdentifier,
+      version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+      osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
+      architecture: architecture
+    )
+    #endif
     // AppKit defers its default quit Apple event while a sheet is open.
     // Route it directly so build --restart and a second external Quit work.
     NSAppleEventManager.shared().setEventHandler(

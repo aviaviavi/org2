@@ -352,7 +352,7 @@ org2 roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</c
 org2 todo set --file notes.org --line 42 --status in_progress --apply
 org2 todo set --file notes.org --line 42 --keyword SKIPPED --apply
 org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
-<p>Set corpus defaults through Settings → Workspace → TODO States in OpenOrg, or with the guarded CLI:</p>
+<p>Set corpus defaults through Settings → General → TODO States in OpenOrg, or with the guarded CLI:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 todo-config show --dir ~/notes
 org2 todo-config set --dir ~/notes --sequences-json '[&quot;TODO WAITING | DONE SKIPPED&quot;]'
 org2 todo-config set --dir ~/notes --sequences-json '[&quot;TODO WAITING | DONE SKIPPED&quot;]' --apply</code></pre>

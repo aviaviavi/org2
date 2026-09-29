@@ -5707,7 +5707,7 @@ private struct WorkflowsView: View {
               openSettings()
             }
             .controlSize(.small)
-            .help("Open Settings → Workspace")
+            .help("Open Settings → General")
           }
           Text(scheduler.detail)
             .foregroundStyle(.tertiary)

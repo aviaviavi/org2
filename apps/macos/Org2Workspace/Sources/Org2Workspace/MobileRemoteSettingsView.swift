@@ -6,14 +6,15 @@ import UniformTypeIdentifiers
 
 struct WorkspaceSettingsView: View {
   @ObservedObject var softwareUpdates: SoftwareUpdateController
+  @ObservedObject var telemetry: OpenOrgLaunchTelemetry
   @AppStorage(WorkspaceSettingsNavigation.selectionKey) private var selection = WorkspaceSettingsNavigation.workspace
 
   var body: some View {
     TabView(selection: $selection) {
-      CorpusSettingsView()
+      GeneralSettingsView(telemetry: telemetry)
         .tag(WorkspaceSettingsNavigation.workspace)
         .tabItem {
-          Label("Workspace", systemImage: "folder")
+          Label("General", systemImage: "gearshape")
         }
 
       AppearanceSettingsView()
@@ -62,7 +63,8 @@ struct WorkspaceSettingsView: View {
   }
 }
 
-private struct CorpusSettingsView: View {
+private struct GeneralSettingsView: View {
+  @ObservedObject var telemetry: OpenOrgLaunchTelemetry
   @Environment(WorkspaceStore.self) private var store
   @State private var corpusName = ""
   @State private var corpusKind = "personal"
@@ -70,6 +72,13 @@ private struct CorpusSettingsView: View {
 
   var body: some View {
     Form {
+      Section {
+        Toggle("Send launch telemetry", isOn: $telemetry.enabled)
+      } header: {
+        Label("Telemetry", systemImage: "chart.bar")
+      } footer: {
+        Text("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
+      }
       Section {
         Toggle("Experimental features", isOn: Binding(
           get: { store.experimentalFeaturesEnabled },

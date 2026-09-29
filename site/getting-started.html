@@ -83,7 +83,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Choose <strong>Continue to Home</strong>.</p></li>
 </ol>
 <p>OpenOrg creates a small workspace automatically, then opens Home with today's note and an optional chat box. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.</p>
-<p>If you already keep notes in another folder, expand <strong>Workspace options</strong> during setup or open it later. Use <strong>OpenOrg → Settings… → Workspace</strong> to rename the corpus identity, reveal its folder, or switch locations.</p>
+<p>If you already keep notes in another folder, expand <strong>Workspace options</strong> during setup or open it later. Use <strong>OpenOrg → Settings… → General</strong> to rename the corpus identity, reveal its folder, or switch locations.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="2-write-todays-note">2) Write today's note</h1>
@@ -119,7 +119,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 </section>
 <section class="org2-headline level-1">
 <h1 id="4-use-today-and-agenda">4) Use Today and Agenda</h1>
-<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose <strong>Daily → Choose Date…</strong> in the sidebar or press <code>Cmd-Shift-7</code>; OpenOrg opens the existing note or creates it in the configured daily folder. If an external job creates your daily files, enable <strong>Disable automatic daily note creation</strong> in <strong>Settings → Workspace</strong>. A missing date will then show a message and a <strong>Create Daily Note</strong> button without writing anything automatically.</p>
+<p>Open <strong>Today</strong> for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose <strong>Daily → Choose Date…</strong> in the sidebar or press <code>Cmd-Shift-7</code>; OpenOrg opens the existing note or creates it in the configured daily folder. If an external job creates your daily files, enable <strong>Disable automatic daily note creation</strong> in <strong>Settings → General</strong>. A missing date will then show a message and a <strong>Create Daily Note</strong> button without writing anything automatically.</p>
 <p>Open <strong>Agenda</strong> to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.</p>
 </section>
 <section class="org2-headline level-1">
@@ -166,7 +166,7 @@ SCHEDULED: &lt;2030-01-15 Tue&gt;
 <h2 id="grow-a-reliable-flow-in-layers">Grow a reliable flow in layers</h2>
 <p>You do not need to design a metaharness on day one. Use this order:</p>
 <ol>
-<li><p><strong>Choose the corpus.</strong> Confirm which folder should hold the work and give it a portable identity in <strong>Settings → Workspace</strong>. Writes always belong to one active corpus, even when Search or Agenda can read several.</p></li>
+<li><p><strong>Choose the corpus.</strong> Confirm which folder should hold the work and give it a portable identity in <strong>Settings → General</strong>. Writes always belong to one active corpus, even when Search or Agenda can read several.</p></li>
 <li><p><strong>Connect a runtime.</strong> Start with any supported harness that can access the corpus and the Org2 CLI or MCP tools. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the current out-of-the-box choices, not a limit on the model.</p></li>
 <li><p><strong>Work the process once.</strong> Keep the source notes and tasks where they naturally belong, select the relevant context, and ask the runtime to help with one concrete outcome.</p></li>
 <li><p><strong>Track consequential delegation.</strong> Use a durable run when the work needs status, artifacts, validation, approvals, or a reviewer-facing outcome. Casual questions do not need one.</p></li>
