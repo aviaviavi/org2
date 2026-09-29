@@ -2353,6 +2353,7 @@ public final class WorkspaceStore {
   public private(set) var isLoadingAgentWorkflows = false
   public private(set) var mutatingAgentWorkflowIDs: Set<AgentWorkflowItem.ID> = []
   public private(set) var automationSchedulerStatusText = "Automation scheduler is starting"
+  @ObservationIgnored private var hasSettledAutomationSchedulerStatus = false
   public private(set) var automationSchedulerErrorText: String?
   public private(set) var automationOwnerHostRef: String?
   public private(set) var agentGoals: [AgentGoalItem] = []
@@ -5810,8 +5811,13 @@ public final class WorkspaceStore {
       automationSchedulerErrorText = nil
       return
     }
-    automationSchedulerStatusText = "Checking automations…"
+    // Routine minute/activation checks keep the last settled status so an
+    // idle Automations surface does not flicker between states.
+    if !hasSettledAutomationSchedulerStatus {
+      automationSchedulerStatusText = "Checking automations…"
+    }
     automationSchedulerErrorText = nil
+    defer { hasSettledAutomationSchedulerStatus = true }
     do {
       let formatter = ISO8601DateFormatter()
       formatter.formatOptions = [.withInternetDateTime]
@@ -6427,7 +6433,8 @@ public final class WorkspaceStore {
 
     isRefreshingApprovals = true
     approvalLoadErrorText = nil
-    let showsLoading = updatesStatus || approvalItems.isEmpty
+    let showsLoading = updatesStatus
+      || (approvalItems.isEmpty && !runReviewPageLoadState(for: .review).isLoaded)
     if showsLoading {
       isLoadingApprovals = true
     }
@@ -6856,7 +6863,8 @@ public final class WorkspaceStore {
     guard let refreshContext = captureRunReviewPageRefresh(.runs) else { return }
 
     isRefreshingAgentRuns = true
-    let showsLoading = updatesStatus || agentRuns.isEmpty
+    let showsLoading = updatesStatus
+      || (agentRuns.isEmpty && !runReviewPageLoadState(for: .runs).isLoaded)
     if showsLoading {
       isLoadingAgentRuns = true
     }
@@ -6930,7 +6938,10 @@ public final class WorkspaceStore {
     }
     guard let refreshContext = captureRunReviewPageRefresh(.workflows) else { return }
     isRefreshingAgentWorkflows = true
-    let showsLoading = updatesStatus || agentWorkflows.isEmpty
+    // Background refreshes of a loaded empty list must not flash the loading
+    // placeholder; only the first load or an explicit refresh shows it.
+    let showsLoading = updatesStatus
+      || (agentWorkflows.isEmpty && !runReviewPageLoadState(for: .workflows).isLoaded)
     if showsLoading { isLoadingAgentWorkflows = true }
     if updatesStatus { statusText = "Loading workflows..." }
     defer {
@@ -7170,7 +7181,8 @@ public final class WorkspaceStore {
     }
     guard let refreshContext = captureRunReviewPageRefresh(.goals) else { return }
     isRefreshingAgentGoals = true
-    let showsLoading = updatesStatus || agentGoals.isEmpty
+    let showsLoading = updatesStatus
+      || (agentGoals.isEmpty && !runReviewPageLoadState(for: .goals).isLoaded)
     if showsLoading { isLoadingAgentGoals = true }
     if updatesStatus { statusText = "Loading goals..." }
     defer {
@@ -7218,7 +7230,8 @@ public final class WorkspaceStore {
     }
     guard let refreshContext = captureRunReviewPageRefresh(.agents) else { return }
     isRefreshingAgentProfiles = true
-    let showsLoading = updatesStatus || agentProfiles.isEmpty
+    let showsLoading = updatesStatus
+      || (agentProfiles.isEmpty && !runReviewPageLoadState(for: .agents).isLoaded)
     if showsLoading { isLoadingAgentProfiles = true }
     if updatesStatus { statusText = "Loading agents..." }
     defer {

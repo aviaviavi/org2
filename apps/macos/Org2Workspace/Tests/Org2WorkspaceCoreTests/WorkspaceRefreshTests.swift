@@ -106,6 +106,75 @@ final class WorkspaceRefreshTests: XCTestCase {
     XCTAssertEqual(store.errorText, "Unreadable goal")
     XCTAssertTrue(store.isRunReviewPageLoadedForTesting(.agents))
   }
+
+  /// An empty Automations surface must not flash its loading placeholder on
+  /// every background refresh (app activation, mobile snapshot, file change).
+  func testBackgroundRefreshOfLoadedEmptyAutomationsDoesNotShowLoading() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()))
+    store.setWorkspaceRealtimeRefreshActive(false)
+    store.setCorpusRoot(root, persistsDefault: false)
+    let empty = try JSONDecoder().decode(
+      WorkspaceAgentStateSection<AgentWorkflowListPayload>.self,
+      from: Data(#"{"value":{"schema":"org2:workflow-list:v1","workflows":[]},"elapsedMilliseconds":1}"#.utf8)
+    )
+
+    func observedLoading(_ refresh: @escaping @MainActor () async -> Void) async -> Bool {
+      var sawLoading = false
+      let task = Task { @MainActor in await refresh() }
+      for _ in 0..<20 {
+        await Task.yield()
+        if store.isLoadingAgentWorkflows { sawLoading = true }
+      }
+      await task.value
+      return sawLoading
+    }
+
+    let firstLoadShowedLoading = await observedLoading {
+      await store.refreshAgentWorkflows(prefetched: empty)
+    }
+    XCTAssertTrue(firstLoadShowedLoading, "The first load still shows progress")
+    XCTAssertTrue(store.agentWorkflows.isEmpty)
+    XCTAssertTrue(store.isRunReviewPageLoadedForTesting(.workflows))
+
+    let backgroundRefreshShowedLoading = await observedLoading {
+      await store.refreshAgentWorkflows(prefetched: empty)
+    }
+    XCTAssertFalse(backgroundRefreshShowedLoading)
+    XCTAssertFalse(store.isLoadingAgentWorkflows)
+
+    let explicitRefreshShowedLoading = await observedLoading {
+      await store.refreshAgentWorkflows(updatesStatus: true, prefetched: empty)
+    }
+    XCTAssertTrue(explicitRefreshShowedLoading, "An explicit Refresh still shows progress")
+  }
+
+  func testRoutineAutomationChecksKeepSettledSchedulerStatus() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()))
+    store.setWorkspaceRealtimeRefreshActive(false)
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 3_600_000_000_000)
+    defer { store.setAutomationSchedulerActive(false) }
+
+    await store.checkDueAgentAutomations()
+    let settled = store.automationSchedulerStatusText
+    XCTAssertNotEqual(settled, "Checking automations…")
+
+    var observed: [String] = []
+    let task = Task { @MainActor in await store.checkDueAgentAutomations() }
+    for _ in 0..<20 {
+      await Task.yield()
+      observed.append(store.automationSchedulerStatusText)
+    }
+    await task.value
+    XCTAssertFalse(observed.contains("Checking automations…"))
+    XCTAssertEqual(store.automationSchedulerStatusText, settled)
+  }
 }
 
 private final class RefreshMetricCollector: @unchecked Sendable {
