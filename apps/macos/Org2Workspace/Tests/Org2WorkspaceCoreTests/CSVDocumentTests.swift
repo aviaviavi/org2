@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
@@ -343,11 +344,16 @@ final class CSVDocumentTests: XCTestCase {
     XCTAssertFalse(model.pendingTableCellValues.isEmpty)
   }
 
-  func testRenderedDocumentRoutesStructuredAndPDFLinksIntoWorkspace() {
+  func testRenderedDocumentRoutesStructuredPDFAndMediaLinksIntoWorkspace() {
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/sample.CSV")))
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/note.org2")))
     XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.PDF")))
-    XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/report.png")))
+    XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/chart.png")))
+    XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/photo.HEIC")))
+    XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/demo.mp4")))
+    XCTAssertTrue(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/demo.MOV")))
+    XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/archive.zip")))
+    XCTAssertFalse(OrgHTMLDocumentLinkRouting.opensInWorkspace(URL(fileURLWithPath: "/tmp/clip.webm")))
   }
 
   @MainActor
@@ -490,6 +496,54 @@ final class CSVDocumentTests: XCTestCase {
     }
     XCTAssertEqual(store.linkedPDFPreviewData, refreshedData)
     XCTAssertNil(store.linkedPDFPreviewError)
+  }
+
+  @MainActor
+  func testChatImageAndVideoLinksOpenInTheNativeMediaPreviewWithoutOrgRendering() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-media-\(UUID().uuidString)", isDirectory: true)
+    let media = root.appendingPathComponent("media", isDirectory: true)
+    try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let image = media.appendingPathComponent("chart.png")
+    let video = media.appendingPathComponent("demo.mp4")
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: image)
+    try Data([0x00]).write(to: video)
+
+    let store = try makeStore()
+    store.setCorpusRoot(root, persistsDefault: false)
+    let entrySourceLoads = OSAllocatedUnfairLock(initialState: 0)
+    store.entrySourceLoaderForTesting = { _, _, _ in
+      entrySourceLoads.withLock { $0 += 1 }
+      throw CocoaError(.fileReadUnsupportedScheme)
+    }
+
+    store.openChatFileReference(OpenClawFileReference(path: "media/chart.png", line: nil))
+    XCTAssertEqual(store.selectedLocation?.file, image.path)
+    XCTAssertTrue(store.selectedFileIsImage)
+    XCTAssertFalse(store.selectedFileIsVideo)
+    XCTAssertTrue(store.selectedFileIsNativePreview)
+    XCTAssertFalse(store.selectedFileIsPDF)
+
+    let revision = store.linkedMediaPreviewRevision
+    store.handleCorpusFileEvents([image.path], corpusRoot: root, requiresFullScan: false)
+    XCTAssertEqual(store.linkedMediaPreviewRevision, revision + 1)
+
+    store.openChatFileReference(OpenClawFileReference(path: "media/demo.mp4", line: nil))
+    XCTAssertEqual(store.selectedLocation?.file, video.path)
+    XCTAssertTrue(store.selectedFileIsVideo)
+    XCTAssertTrue(store.selectedFileIsNativePreview)
+
+    // Changes to an unselected media file do not reload the visible preview.
+    let videoRevision = store.linkedMediaPreviewRevision
+    store.handleCorpusFileEvents([image.path], corpusRoot: root, requiresFullScan: false)
+    XCTAssertEqual(store.linkedMediaPreviewRevision, videoRevision)
+
+    try await Task.sleep(nanoseconds: 200_000_000)
+    XCTAssertEqual(entrySourceLoads.withLock { $0 }, 0)
+    XCTAssertNil(store.selectedEntrySource)
+    XCTAssertNil(store.selectedEntryRenderError)
+    XCTAssertNil(store.errorText)
   }
 
   @MainActor

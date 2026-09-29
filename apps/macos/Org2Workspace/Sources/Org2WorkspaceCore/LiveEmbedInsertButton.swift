@@ -30,7 +30,7 @@ struct LiveEmbedInsertButton: View {
     Button { store.isLiveEmbedInsertPresented = true } label: {
       Label("Live Embed…", systemImage: "doc.on.doc")
     }
-    .disabled(store.selectedEntrySource == nil || store.selectedFileIsCSV || store.selectedFileIsPDF)
+    .disabled(store.selectedEntrySource == nil || store.selectedFileIsCSV || store.selectedFileIsNativePreview)
   }
 }
 

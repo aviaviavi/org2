@@ -94,7 +94,25 @@ final class CorpusFileWatcherTests: XCTestCase {
 
     XCTAssertEqual(classification.contentPaths, [note, markdown, csv])
     XCTAssertEqual(classification.pdfPreviewPaths, [pdf])
+    XCTAssertTrue(classification.mediaPreviewPaths.isEmpty)
     XCTAssertTrue(classification.hasAgentRunStateChanges)
+    XCTAssertFalse(classification.hasConfigurationChanges)
+  }
+
+  func testClassifiesImageAndVideoEventsForTheNativeMediaPreview() {
+    let root = URL(fileURLWithPath: "/tmp/org2-corpus").standardizedFileURL
+    let image = root.appendingPathComponent("images/chart.PNG").path
+    let video = root.appendingPathComponent("media/demo.mov").path
+    let unsupported = root.appendingPathComponent("media/clip.webm").path
+    let classification = WorkspaceStore.classifyCorpusFileEvents(
+      [image, video, image, unsupported],
+      corpusRoot: root
+    )
+
+    XCTAssertTrue(classification.contentPaths.isEmpty)
+    XCTAssertTrue(classification.pdfPreviewPaths.isEmpty)
+    XCTAssertEqual(classification.mediaPreviewPaths, [image, video])
+    XCTAssertFalse(classification.hasAgentRunStateChanges)
     XCTAssertFalse(classification.hasConfigurationChanges)
   }
 

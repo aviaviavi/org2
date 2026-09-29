@@ -11607,6 +11607,14 @@ private struct DetailView: View {
           } else if store.selectedFileIsPDF {
             LinkedPDFPreviewPane()
               .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
+          } else if store.selectedFileIsImage || store.selectedFileIsVideo {
+            LinkedMediaPreviewPane(
+              file: location.file,
+              kind: store.selectedFileIsVideo ? .video : .image,
+              revision: store.linkedMediaPreviewRevision
+            )
+            .id(location.file)
+            .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else if store.isLiveFileEditorSelected {
             LiveFileEditorBody(
               location: location,
@@ -11921,7 +11929,7 @@ private struct DetailHeader: View {
           Text(location.title)
             .font(.title3.weight(.semibold))
             .lineLimit(nil)
-          if !store.selectedFileIsPDF,
+          if !store.selectedFileIsNativePreview,
              !store.selectedFileIsCSV,
              store.selectedEntrySource != nil {
             NodeEntityTypeMenu()
@@ -11938,7 +11946,7 @@ private struct DetailHeader: View {
             .foregroundStyle(WorkspaceDesign.secondaryText)
             .lineLimit(nil)
         }
-        Text(store.relativePath(location.file) + (store.selectedFileIsPDF ? "" : ":\(location.lineForEditor)"))
+        Text(store.relativePath(location.file) + (store.selectedFileIsNativePreview ? "" : ":\(location.lineForEditor)"))
           .font(.caption2.monospaced())
           .foregroundStyle(WorkspaceDesign.tertiaryText)
           .textSelection(.enabled)
@@ -11964,6 +11972,8 @@ private struct DetailHeader: View {
       return "link"
     case .openClaw:
       if store.selectedFileIsPDF { return "doc.richtext" }
+      if store.selectedFileIsImage { return "photo" }
+      if store.selectedFileIsVideo { return "film" }
       return store.selectedFileIsCSV ? "tablecells" : "doc.text"
     case .meeting:
       return "waveform.and.mic"
@@ -11977,7 +11987,7 @@ private struct DetailHeader: View {
           Button("Reveal Canvas", systemImage: "folder") { store.revealFile(path: location.file) }
           Spacer(minLength: 0)
         }
-      } else if store.selectedFileIsPDF {
+      } else if store.selectedFileIsNativePreview {
         HStack {
           WorkspaceControlStrip { sourceMenu }
           Spacer(minLength: 0)
@@ -12219,14 +12229,14 @@ private struct DetailHeader: View {
       Divider()
 
       Button {
-        if store.selectedFileIsPDF {
+        if store.selectedFileIsNativePreview {
           NSWorkspace.shared.open(URL(fileURLWithPath: location.file))
         } else {
           store.open(location)
         }
       } label: {
         Label(
-          store.selectedFileIsPDF ? "Open in Default App" : "Open Source",
+          store.selectedFileIsNativePreview ? "Open in Default App" : "Open Source",
           systemImage: "arrow.up.forward.square"
         )
       }
@@ -12237,7 +12247,7 @@ private struct DetailHeader: View {
         Label("Reveal in Finder", systemImage: "folder")
       }
 
-      if !store.selectedFileIsPDF {
+      if !store.selectedFileIsNativePreview {
         Divider()
 
         Button {

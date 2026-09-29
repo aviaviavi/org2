@@ -1387,6 +1387,7 @@ enum OrgHTMLDocumentLinkRouting {
 
   static func opensInWorkspace(_ url: URL) -> Bool {
     workspaceExtensions.contains(url.pathExtension.lowercased())
+      || WorkspaceStore.isMediaFile(url.path)
   }
 }
 

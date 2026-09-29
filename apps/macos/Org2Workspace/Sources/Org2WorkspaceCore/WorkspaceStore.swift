@@ -841,6 +841,7 @@ private struct CorpusChangeObservation {
 struct CorpusFileEventClassification: Equatable, Sendable {
   let contentPaths: [String]
   let pdfPreviewPaths: [String]
+  var mediaPreviewPaths: [String] = []
   let hasAgentRunStateChanges: Bool
   let hasConfigurationChanges: Bool
   let hasAIChatInboxChanges: Bool
@@ -2884,6 +2885,9 @@ public final class WorkspaceStore {
   public private(set) var linkedPDFPreviewData: Data?
   public private(set) var linkedPDFPreviewError: String?
   public private(set) var isLoadingLinkedPDFPreview = false
+  /// Bumped when the selected image or video changes on disk so the native
+  /// media preview reloads without the user reselecting the file.
+  public private(set) var linkedMediaPreviewRevision = 0
   public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -5035,6 +5039,9 @@ public final class WorkspaceStore {
 
     if !requiresFullScan, !classified.pdfPreviewPaths.isEmpty {
       scheduleSelectedPDFPreviewRefresh(for: classified.pdfPreviewPaths)
+    }
+    if !requiresFullScan, !classified.mediaPreviewPaths.isEmpty {
+      refreshSelectedMediaPreview(for: classified.mediaPreviewPaths)
     }
     recordCorpusFileEvents(classified.contentPaths)
     if requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
@@ -8499,7 +8506,9 @@ public final class WorkspaceStore {
       return
     }
     let inAppExtensions = Set(["org", "org2", "md", "markdown", "txt"])
-    guard inAppExtensions.contains(url.pathExtension.lowercased()) else {
+    guard inAppExtensions.contains(url.pathExtension.lowercased())
+            || Self.isMediaFile(url.path)
+    else {
       openFile(path: url.path, line: 1)
       statusText = "Opened \(artifact.displayTitle)"
       return
@@ -12116,7 +12125,7 @@ public final class WorkspaceStore {
     isSourceEditorPreviewPaused = state.isPreviewPaused
     guard state.isEditingEntry,
           let location = selectedLocation,
-          !Self.isPDFFile(location.file)
+          !Self.isNativePreviewFile(location.file)
     else { return }
 
     workspaceTabEditorRestoreGeneration += 1
@@ -12455,6 +12464,13 @@ public final class WorkspaceStore {
     if Self.isPDFFile(location.file) {
       cancelBacklinksLoad(clearResults: true)
       scheduleLinkedPDFPreviewLoad(for: location)
+    } else if Self.isMediaFile(location.file) {
+      // Images and videos render natively from the file URL; there is no Org
+      // source to parse or render.
+      cancelBacklinksLoad(clearResults: true)
+      cancelLinkedPDFPreview(clearStatus: false)
+      linkedPDFPreviewData = nil
+      linkedPDFPreviewError = nil
     } else {
       scheduleBacklinksLoad(for: location)
       scheduleEntrySourceLoad(for: location)
@@ -12658,6 +12674,9 @@ public final class WorkspaceStore {
     if Self.isPDFFile(location.file) {
       return linkedPDFPreviewData != nil || isLoadingLinkedPDFPreview
     }
+    if Self.isMediaFile(location.file) {
+      return true
+    }
     return selectedEntrySource != nil || isRenderingEntrySource
   }
 
@@ -12665,7 +12684,7 @@ public final class WorkspaceStore {
     for location: WorkspaceLocation,
     mode: EntrySourceMode
   ) {
-    guard !Self.isPDFFile(location.file),
+    guard !Self.isNativePreviewFile(location.file),
           editingBlockID == nil,
           !isEditingEntry,
           (!isLiveFileEditorSelected || !liveFileEditorHasUnsavedChanges)
@@ -12719,6 +12738,9 @@ public final class WorkspaceStore {
       await loadLinkedPDFPreview(for: location, generation: linkedPDFLoadGeneration)
       return
     }
+    if Self.isMediaFile(location.file) {
+      return
+    }
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
     await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0)
@@ -12729,6 +12751,18 @@ public final class WorkspaceStore {
     let generation = entrySourceLoadGeneration
     applyCachedEntrySourceIfAvailable(for: location, generation: generation)
     Task { await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0) }
+  }
+
+  private func refreshSelectedMediaPreview(for changedPaths: [String]) {
+    guard let selectedLocation,
+          Self.isMediaFile(selectedLocation.file),
+          changedPaths.contains(URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path)
+    else { return }
+    linkedMediaPreviewRevision &+= 1
+  }
+
+  public func retryLinkedMediaPreview() {
+    linkedMediaPreviewRevision &+= 1
   }
 
   private func scheduleSelectedPDFPreviewRefresh(for changedPaths: [String]) {
@@ -15036,6 +15070,48 @@ public final class WorkspaceStore {
 
   nonisolated static func isPDFFile(_ path: String) -> Bool {
     URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf"
+  }
+
+  /// Raster image formats the native file view renders with ImageIO.
+  nonisolated static let nativeImagePreviewExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "heic", "heif", "webp"
+  ]
+  /// Video containers AVFoundation plays in the native file view.
+  nonisolated static let nativeVideoPreviewExtensions: Set<String> = [
+    "mov", "mp4", "m4v"
+  ]
+
+  nonisolated static func isImageFile(_ path: String) -> Bool {
+    nativeImagePreviewExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+  }
+
+  nonisolated static func isVideoFile(_ path: String) -> Bool {
+    nativeVideoPreviewExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+  }
+
+  nonisolated static func isMediaFile(_ path: String) -> Bool {
+    isImageFile(path) || isVideoFile(path)
+  }
+
+  /// Files rendered by a native viewer rather than as Org/text source.
+  nonisolated static func isNativePreviewFile(_ path: String) -> Bool {
+    isPDFFile(path) || isMediaFile(path)
+  }
+
+  public var selectedFileIsImage: Bool {
+    guard let file = selectedLocation?.file else { return false }
+    return Self.isImageFile(file)
+  }
+
+  public var selectedFileIsVideo: Bool {
+    guard let file = selectedLocation?.file else { return false }
+    return Self.isVideoFile(file)
+  }
+
+  /// PDF, image, or video: the detail pane shows a native preview with no
+  /// editable source, entity type, or publishing actions.
+  public var selectedFileIsNativePreview: Bool {
+    selectedFileIsPDF || selectedFileIsImage || selectedFileIsVideo
   }
 
   public var isLiveFileEditorAvailable: Bool {
@@ -29567,6 +29643,8 @@ public final class WorkspaceStore {
     var seenContentPaths = Set<String>()
     var pdfPreviewPaths: [String] = []
     var seenPDFPreviewPaths = Set<String>()
+    var mediaPreviewPaths: [String] = []
+    var seenMediaPreviewPaths = Set<String>()
     var hasAgentRunStateChanges = false
     var hasConfigurationChanges = false
     var hasAIChatInboxChanges = false
@@ -29608,6 +29686,12 @@ public final class WorkspaceStore {
         pdfPreviewPaths.append(path)
         continue
       }
+      if isMediaFile(path),
+         !isDefaultIgnoredSyncArtifactPath(path),
+         seenMediaPreviewPaths.insert(path).inserted {
+        mediaPreviewPaths.append(path)
+        continue
+      }
       guard contentExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
             !isDefaultIgnoredSyncArtifactPath(path),
             seenContentPaths.insert(path).inserted
@@ -29620,6 +29704,7 @@ public final class WorkspaceStore {
     return CorpusFileEventClassification(
       contentPaths: contentPaths,
       pdfPreviewPaths: pdfPreviewPaths,
+      mediaPreviewPaths: mediaPreviewPaths,
       hasAgentRunStateChanges: hasAgentRunStateChanges,
       hasConfigurationChanges: hasConfigurationChanges,
       hasAIChatInboxChanges: hasAIChatInboxChanges,
