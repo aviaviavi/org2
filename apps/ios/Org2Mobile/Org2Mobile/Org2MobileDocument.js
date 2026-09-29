@@ -2648,7 +2648,7 @@ details.org2-headline,
   background: var(--org2-elevated-surface);
   box-shadow: 0 1px 2px var(--org2-shadow);
 }
-.org2-file-properties .org2-keyword { margin: 0.16rem 0; font-size: inherit; }
+.org2-file-properties .org2-properties { margin: 0; padding: 0; border-top: 0; }
 .org2-headline { margin: 0; }
 .org2-headline + .org2-headline { margin-top: 0.72rem; }
 .org2-headline-summary {
@@ -4411,16 +4411,45 @@ ${childrenHtml}
   }
   function splitAppFileProperties(nodes) {
     const properties = [];
+    const seen = /* @__PURE__ */ new Set();
     const body = [];
     let inPreamble = true;
+    let drawerSeen = false;
+    const add = (key, value) => {
+      const identity = `${key.toUpperCase()}\0${value}`;
+      if (seen.has(identity)) return;
+      seen.add(identity);
+      properties.push({ key, value });
+    };
     for (const node of nodes) {
-      if (inPreamble && node.type === "CommentLine") continue;
-      if (inPreamble && node.type === "KeywordLine") {
-        const key = String(node.keyRaw || "").trim().toUpperCase();
-        if (key === "EMBED") {
+      if (!inPreamble) {
+        body.push(node);
+        continue;
+      }
+      if (node.type === "CommentLine") continue;
+      if (node.type === "PropertyDrawer" && !drawerSeen) {
+        drawerSeen = true;
+        for (const property2 of node.properties) add(property2.key, property2.value);
+        continue;
+      }
+      if (node.type === "KeywordLine") {
+        const key = String(node.keyRaw || "").trim();
+        const upper = key.toUpperCase();
+        if (upper === "EMBED") {
           inPreamble = false;
           body.push(node);
-        } else if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
+          continue;
+        }
+        if (HIDDEN_DOCUMENT_KEYWORDS.has(upper)) continue;
+        const value = node.valueRaw.trim();
+        if (upper === "PROPERTY") {
+          const match = /^(\S+)\s*(.*)$/.exec(value);
+          if (match) {
+            add(match[1], match[2].trim());
+            continue;
+          }
+        }
+        add(key, value);
         continue;
       }
       inPreamble = false;
@@ -4428,14 +4457,15 @@ ${childrenHtml}
     }
     return { properties, body };
   }
-  function renderAppFileProperties(nodes, context) {
-    if (nodes.length === 0) return "";
-    const rows = renderNodes(nodes, context);
-    if (!rows.trim()) return "";
+  function renderAppFileProperties(properties) {
+    if (properties.length === 0) return "";
+    const rows = properties.map((property2) => `<dt>${escapeHtml(property2.key)}</dt><dd>${escapeHtml(property2.value)}</dd>`).join("\n");
     return `<details class="org2-file-properties">
-<summary>File properties <span class="org2-file-properties-count">${nodes.length}</span></summary>
+<summary>File properties <span class="org2-file-properties-count">${properties.length}</span></summary>
 <div class="org2-file-properties-body">
+<dl class="org2-properties">
 ${rows}
+</dl>
 </div>
 </details>`;
   }
@@ -4549,7 +4579,7 @@ ${rows}
     const appDocument = opts.context.profile === "app";
     const split = appDocument ? splitAppFileProperties(opts.doc.children) : { properties: [], body: opts.doc.children };
     const body = renderNodes(split.body, opts.context);
-    const fileProperties = appDocument ? renderAppFileProperties(split.properties, opts.context) : "";
+    const fileProperties = appDocument ? renderAppFileProperties(split.properties) : "";
     const tocHtml = opts.includeToc ? renderToc(opts.tocItems) : "";
     const documentHeader = opts.includeDocumentHeader ? renderDocumentHeader({ title: opts.title, subtitle: opts.subtitle }) : "";
     return [documentHeader, fileProperties, tocHtml, body].filter((segment) => String(segment || "").trim().length > 0).join("\n");

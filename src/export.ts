@@ -251,7 +251,7 @@ details.org2-headline,
   background: var(--org2-elevated-surface);
   box-shadow: 0 1px 2px var(--org2-shadow);
 }
-.org2-file-properties .org2-keyword { margin: 0.16rem 0; font-size: inherit; }
+.org2-file-properties .org2-properties { margin: 0; padding: 0; border-top: 0; }
 .org2-headline { margin: 0; }
 .org2-headline + .org2-headline { margin-top: 0.72rem; }
 .org2-headline-summary {
@@ -2230,17 +2230,45 @@ function renderNodes(nodes: Node[], context: RenderContext = {}): string {
     .join("\n");
 }
 
-function splitAppFileProperties(nodes: Node[]): { properties: Node[]; body: Node[] } {
-  const properties: Node[] = [];
+type AppFileProperty = { key: string; value: string };
+
+// File-level metadata can be written as a leading :PROPERTIES: drawer, as
+// #+KEYWORD lines, or both. They describe the same thing (the file), so the app
+// view shows them as one uniform "File properties" list instead of a drawer box
+// followed by loose keyword paragraphs.
+function splitAppFileProperties(nodes: Node[]): { properties: AppFileProperty[]; body: Node[] } {
+  const properties: AppFileProperty[] = [];
+  const seen = new Set<string>();
   const body: Node[] = [];
   let inPreamble = true;
+  let drawerSeen = false;
+
+  const add = (key: string, value: string) => {
+    const identity = `${key.toUpperCase()}\u0000${value}`;
+    if (seen.has(identity)) return;
+    seen.add(identity);
+    properties.push({ key, value });
+  };
 
   for (const node of nodes) {
-    if (inPreamble && node.type === "CommentLine") continue;
-    if (inPreamble && node.type === "KeywordLine") {
-      const key = String(node.keyRaw || "").trim().toUpperCase();
-      if (key === "EMBED") { inPreamble = false; body.push(node); }
-      else if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
+    if (!inPreamble) { body.push(node); continue; }
+    if (node.type === "CommentLine") continue;
+    if (node.type === "PropertyDrawer" && !drawerSeen) {
+      drawerSeen = true;
+      for (const property of node.properties) add(property.key, property.value);
+      continue;
+    }
+    if (node.type === "KeywordLine") {
+      const key = String(node.keyRaw || "").trim();
+      const upper = key.toUpperCase();
+      if (upper === "EMBED") { inPreamble = false; body.push(node); continue; }
+      if (HIDDEN_DOCUMENT_KEYWORDS.has(upper)) continue;
+      const value = node.valueRaw.trim();
+      if (upper === "PROPERTY") {
+        const match = /^(\S+)\s*(.*)$/.exec(value);
+        if (match) { add(match[1]!, match[2]!.trim()); continue; }
+      }
+      add(key, value);
       continue;
     }
     inPreamble = false;
@@ -2250,11 +2278,12 @@ function splitAppFileProperties(nodes: Node[]): { properties: Node[]; body: Node
   return { properties, body };
 }
 
-function renderAppFileProperties(nodes: Node[], context: RenderContext): string {
-  if (nodes.length === 0) return "";
-  const rows = renderNodes(nodes, context);
-  if (!rows.trim()) return "";
-  return `<details class="org2-file-properties">\n<summary>File properties <span class="org2-file-properties-count">${nodes.length}</span></summary>\n<div class="org2-file-properties-body">\n${rows}\n</div>\n</details>`;
+function renderAppFileProperties(properties: AppFileProperty[]): string {
+  if (properties.length === 0) return "";
+  const rows = properties
+    .map((property) => `<dt>${escapeHtml(property.key)}</dt><dd>${escapeHtml(property.value)}</dd>`)
+    .join("\n");
+  return `<details class="org2-file-properties">\n<summary>File properties <span class="org2-file-properties-count">${properties.length}</span></summary>\n<div class="org2-file-properties-body">\n<dl class="org2-properties">\n${rows}\n</dl>\n</div>\n</details>`;
 }
 
 function findTitleFromKeywords(doc: DocumentNode): string | null {
@@ -2431,9 +2460,9 @@ function renderMainBody(opts: {
   const appDocument = opts.context.profile === "app";
   const split = appDocument
     ? splitAppFileProperties(opts.doc.children)
-    : { properties: [] as Node[], body: opts.doc.children };
+    : { properties: [] as AppFileProperty[], body: opts.doc.children };
   const body = renderNodes(split.body, opts.context);
-  const fileProperties = appDocument ? renderAppFileProperties(split.properties, opts.context) : "";
+  const fileProperties = appDocument ? renderAppFileProperties(split.properties) : "";
   const tocHtml = opts.includeToc ? renderToc(opts.tocItems) : "";
   const documentHeader = opts.includeDocumentHeader
     ? renderDocumentHeader({ title: opts.title, subtitle: opts.subtitle })

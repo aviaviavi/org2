@@ -300,9 +300,39 @@ assert.match(fileMetadataRendered.html, /<h1 class="org2-document-title">Machine
 assert.match(fileMetadataRendered.html, /<details class="org2-file-properties">/);
 assert.doesNotMatch(fileMetadataRendered.html, /<details class="org2-file-properties" open/);
 assert.match(fileMetadataRendered.html, /File properties <span class="org2-file-properties-count">4<\/span>/);
-assert.match(fileMetadataRendered.html, /<span class="org2-keyword-name">id<\/span>: report-id/i);
+assert.match(fileMetadataRendered.html, /<dt>id<\/dt><dd>report-id<\/dd>/i);
+assert.match(fileMetadataRendered.html, /<dt>ORG2_PROVENANCE<\/dt><dd>deterministic-query<\/dd>/);
 assert.ok(fileMetadataRendered.html.indexOf("org2-file-properties") < fileMetadataRendered.html.indexOf("Human introduction."));
 assert.doesNotMatch(fileMetadataRendered.html, /org2-keyword-name">title/);
+
+// A leading file-level :PROPERTIES: drawer and #+ keywords are both file
+// metadata; they render as one collapsed list, not a drawer box plus loose
+// keyword paragraphs.
+const mixedFileMetadataSource = `:PROPERTIES:
+:ID: 7249c4ad-895e-4bba-93c8-b0e156e33a17
+:ORG2_ARTIFACT_ROLE: view
+:END:
+
+#+TITLE: Mixed metadata report
+#+ORG2_ARTIFACT_ROLE: view
+#+REVIEW_STATUS: needs-human-review
+
+* Status
+:PROPERTIES:
+:OWNER: avi
+:END:
+Body.
+`;
+const mixedRendered = renderOrgDocumentToAppHtml(parseOrgToCanonicalAst(mixedFileMetadataSource, { sourceRanges: true }));
+assert.match(mixedRendered.html, /<h1 class="org2-document-title">Mixed metadata report<\/h1>/);
+assert.equal((mixedRendered.html.match(/<details class="org2-file-properties">/g) || []).length, 1);
+assert.match(mixedRendered.html, /File properties <span class="org2-file-properties-count">3<\/span>/);
+assert.match(mixedRendered.html, /<dt>ID<\/dt><dd>7249c4ad-895e-4bba-93c8-b0e156e33a17<\/dd>/);
+assert.match(mixedRendered.html, /<dt>REVIEW_STATUS<\/dt><dd>needs-human-review<\/dd>/);
+assert.doesNotMatch(mixedRendered.html, /class="org2-keyword"/);
+const mixedFileBox = mixedRendered.html.slice(mixedRendered.html.indexOf("<main"), mixedRendered.html.indexOf(">Status<"));
+assert.doesNotMatch(mixedFileBox, /org2-properties-drawer/);
+assert.match(mixedRendered.html, /<details class="org2-properties-drawer" open[^>]*>\n<summary>Properties<\/summary>\n<dl class="org2-properties">\n<dt>OWNER<\/dt>/);
 
 const tabIndentedQuoteSource = `#+begin_quote
 \tBest,
