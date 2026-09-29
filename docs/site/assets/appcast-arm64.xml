@@ -1,6 +1,8 @@
-<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>OpenOrg</title>
         <item>
@@ -20,10 +22,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 
 This release includes the changes since 0.8.4. The macOS downloads are signed and notarized for Apple Silicon and Intel; the iPhone build is distributed separately through TestFlight.
 ]]></description>
-            <enclosure url="https://github.com/aviaviavi/org2/releases/download/0.8.5/OpenOrg.dmg" length="232095070" type="application/octet-stream" sparkle:edSignature="yAEvC7HGool0+9sUzYWU0cqQYUBneBVomshjwsZtPx1zwDJgpZVOZQKAY4EohRZRM6l6BZmMmGjlX4VnmaVwBg=="></enclosure>
+            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.5/OpenOrg.dmg" length="232095070" type="application/octet-stream" sparkle:edSignature="yAEvC7HGool0+9sUzYWU0cqQYUBneBVomshjwsZtPx1zwDJgpZVOZQKAY4EohRZRM6l6BZmMmGjlX4VnmaVwBg=="/>
         </item>
     </channel>
-</rss><!-- sparkle-signatures:
-edSignature: Zcv3NT33v5i+z8ZqLiA42gVuNBIHyI9IQrRy/OBa/vdovGsQ8ohyZNbmpoSNej7A7agDjNtxYAWjKVvRhsUBBA==
-length: 1934
+</rss>
+<!-- sparkle-signatures:
+edSignature: sI0sB+6DdX0eTrGBnLtu0ZzZVBufHhclcE1pzK7y5SYeTucH+e1dYg7FLg/Iqy5KZVgbSGRVPVyNfp/B6gWHDg==
+length: 1914
 -->

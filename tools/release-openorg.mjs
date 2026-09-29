@@ -23,6 +23,8 @@ import {
   OPENORG_SPARKLE_ACCOUNT,
   OPENORG_SPARKLE_PUBLIC_KEY,
   OPENORG_SPARKLE_TARGETS,
+  openOrgSparkleDownloadPrefix,
+  openOrgSparkleDownloadURL,
 } from "./openorg-sparkle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -680,7 +682,7 @@ async function generateSparkleAppcasts(plan, options) {
     copyFileSync(resolve(options.notesFile), archive.replace(/\.dmg$/, ".md"));
     await runJob(plan, `Sign ${target.architecture} update feed`, tool, [
       "--account", OPENORG_SPARKLE_ACCOUNT,
-      "--download-url-prefix", `https://github.com/aviaviavi/org2/releases/download/${plan.version}/`,
+      "--download-url-prefix", openOrgSparkleDownloadPrefix(plan.version),
       "--link", "https://openorg.so/downloads.html",
       "--embed-release-notes",
       "--maximum-versions", "1",
@@ -689,10 +691,11 @@ async function generateSparkleAppcasts(plan, options) {
     const generated = join(staging, target.output);
     if (!existsSync(generated)) throw new Error(`Sparkle did not generate ${target.output}`);
     const contents = readFileSync(generated, "utf8");
-    if (!contents.includes(`/${plan.version}/${target.artifact}`)
+    const expectedURL = openOrgSparkleDownloadURL(plan.version, target.artifact);
+    if (!contents.includes(`enclosure url="${expectedURL}"`)
         || !contents.includes("sparkle:edSignature=")
         || !contents.includes("sparkle-signatures:")) {
-      throw new Error(`Generated ${target.output} is missing its release URL or signature`);
+      throw new Error(`Generated ${target.output} is missing its Scarf release URL or signature`);
     }
     writeFileSync(join(repoRoot, "docs", "site", "assets", target.output), contents);
   }
@@ -930,10 +933,11 @@ async function verifySparkleAppcasts(plan) {
     const response = await fetch(`https://openorg.so/assets/${target.output}`);
     if (!response.ok) throw new Error(`Sparkle feed ${target.output} returned ${response.status}`);
     const contents = await response.text();
-    if (!contents.includes(`/${plan.version}/${target.artifact}`)
+    const expectedURL = openOrgSparkleDownloadURL(plan.version, target.artifact);
+    if (!contents.includes(`enclosure url="${expectedURL}"`)
         || !contents.includes("sparkle:edSignature=")
         || !contents.includes("sparkle-signatures:")) {
-      throw new Error(`Sparkle feed ${target.output} does not advertise signed ${plan.version}`);
+      throw new Error(`Sparkle feed ${target.output} does not advertise signed ${plan.version} through Scarf`);
     }
   }
   console.log(`✓ Sparkle feeds advertise ${plan.version}`);

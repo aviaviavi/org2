@@ -24,6 +24,11 @@ import {
 } from "../tools/release-openorg.mjs";
 
 import { notarizationAuthentication } from "../tools/openorg-notarization.mjs";
+import {
+  OPENORG_SPARKLE_DOWNLOAD_BASE,
+  openOrgSparkleDownloadPrefix,
+  openOrgSparkleDownloadURL,
+} from "../tools/openorg-sparkle.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -128,6 +133,28 @@ assert.ok(
 );
 assert.match(releaseSource, /appcast-arm64\.xml/);
 assert.match(releaseSource, /appcast-intel\.xml/);
+assert.equal(OPENORG_SPARKLE_DOWNLOAD_BASE, "https://org2.gateway.scarf.sh/downloads");
+assert.equal(
+  openOrgSparkleDownloadPrefix("0.8.5"),
+  "https://org2.gateway.scarf.sh/downloads/0.8.5/"
+);
+assert.equal(
+  openOrgSparkleDownloadURL("0.8.5", "OpenOrg-Intel.dmg"),
+  "https://org2.gateway.scarf.sh/downloads/0.8.5/OpenOrg-Intel.dmg"
+);
+assert.match(
+  releaseSource,
+  /"--download-url-prefix", openOrgSparkleDownloadPrefix\(plan\.version\)/
+);
+assert.doesNotMatch(
+  releaseSource,
+  /"--download-url-prefix", `https:\/\/github\.com\/aviaviavi\/org2\/releases\/download/
+);
+assert.equal(
+  (releaseSource.match(/contents\.includes\(`enclosure url="\$\{expectedURL\}"`\)/g) ?? []).length,
+  2,
+  "generated and published appcasts must both require the exact Scarf enclosure URL"
+);
 assert.match(releaseSource, /VS Code Marketplace has not exposed.*catalog propagation is a non-blocking follow-up/);
 assert.doesNotMatch(releaseSource, /pollUntil\("VS Code Marketplace public version"/);
 assert.match(releaseSource, /--require-google-oauth-client/);
