@@ -88,6 +88,40 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertFalse(arguments.contains("--folder-id"))
   }
 
+  func testLinkedGooglePublicationWithoutDriveVersionStillUpdatesExistingFile() throws {
+    let binding = GoogleDrivePublicationBinding(
+      format: .googleDocs,
+      fileID: "doc-stable",
+      url: try XCTUnwrap(URL(string: "https://docs.google.com/document/d/doc-stable/edit"))
+    )
+    let arguments = WorkspaceStore.documentPublishArguments(
+      sourceFile: URL(fileURLWithPath: "/tmp/brief.org2"),
+      request: DocumentPublishRequest(
+        destination: .googleDrive,
+        format: .googleDocs,
+        googleFolderID: "ignored-after-linking"
+      ),
+      outputDirectory: nil,
+      googleBinding: binding,
+      apply: true
+    )
+
+    XCTAssertEqual(
+      arguments,
+      [
+        "publish", "document",
+        "--file", "/tmp/brief.org2",
+        "--to", "google-docs",
+        "--format", "json",
+        "--document-id", "doc-stable",
+        "--replace-existing",
+        "--apply",
+      ]
+    )
+    XCTAssertFalse(arguments.contains("--if-version"))
+    XCTAssertFalse(arguments.contains("--folder-id"))
+  }
+
   func testGooglePublicationBindingPersistsAndUpdatesInFileProperties() throws {
     let source = """
     #+TITLE: Stable Brief

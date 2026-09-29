@@ -217,7 +217,7 @@ struct DocumentPublishSheet: View {
             Label("Linked \(linkedPublication.format.title)", systemImage: "link.circle.fill")
               .font(.subheadline.weight(.semibold))
               .foregroundStyle(.green)
-            Text("Publishing again updates this same Google Drive file. Its link and guarded Drive version are saved in the \(linkedPublication.scopeLabel.lowercased()) properties.")
+            Text("Publishing again replaces this same Google Drive file after checking its type, edit access, comments, and current ETag. Its link and latest observed Drive version are saved in the \(linkedPublication.scopeLabel.lowercased()) properties.")
               .font(.caption)
               .foregroundStyle(.secondary)
             HStack {

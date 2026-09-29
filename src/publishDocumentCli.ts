@@ -65,7 +65,7 @@ function usage(exitCode: number): never {
   org2 publish document --file FILE --to google-slides [--folder-id ID] [--line N] [--apply] [--format text|json]
   org2 publish document --file FILE --to google-sheets [--folder-id ID] [--line N] [--apply] [--format text|json]
   org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--line N] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-docs|google-slides|google-sheets --document-id ID --if-version VERSION --replace-existing [--apply] [--format text|json]
+  org2 publish document --file FILE --to google-docs|google-slides|google-sheets --document-id ID [--if-version VERSION] --replace-existing [--apply] [--format text|json]
 
 Publishes a disclosure-safe document or subtree. Commands preview by default.
 Google credentials are read from ORG2_GOOGLE_DRIVE_ACCESS_TOKEN (or the
@@ -146,7 +146,6 @@ function parseArguments(args: string[]): PublishDocumentArguments {
     if (allowIndexing) throw new Error("--allow-indexing only applies to --to web");
     if (documentId && folderId) throw new Error("--folder-id cannot be used when updating --document-id");
     if (documentId && !replaceExisting) throw new Error("updating --document-id requires --replace-existing");
-    if (documentId && !expectedVersion) throw new Error("updating --document-id requires --if-version VERSION");
     if (!documentId && expectedVersion) throw new Error("--if-version requires --document-id");
     if (!documentId && replaceExisting) throw new Error("--replace-existing requires --document-id for Google publishing");
     if (destination === "google-drive-pdf" && apply && !pdfFile) {
@@ -233,7 +232,8 @@ function printTextPreview(
   } else if (arguments_.destination === "beamer-pdf") {
     console.log(`destination: Beamer PDF at ${String(destination.outFile || arguments_.outFile)}`);
   } else if (arguments_.documentId) {
-    console.log(`destination: ${googleDestinationLabel(arguments_.destination)} ${arguments_.documentId} at expected version ${arguments_.expectedVersion}`);
+    const lastObserved = arguments_.expectedVersion ? `; last observed Drive version ${arguments_.expectedVersion}` : "";
+    console.log(`destination: ${googleDestinationLabel(arguments_.destination)} ${arguments_.documentId}; current ETag checked before replacement${lastObserved}`);
   } else {
     console.log(`destination: new ${googleDestinationLabel(arguments_.destination)}${arguments_.folderId ? ` in folder ${arguments_.folderId}` : ""}`);
   }
@@ -329,7 +329,7 @@ export async function runPublishDocumentCommand(args: string[]): Promise<boolean
         maxArtifactBytes: GOOGLE_DRIVE_MULTIPART_MAX_BYTES,
         requiredOAuthScope: GOOGLE_DRIVE_FILE_SCOPE,
         sharing: "Google Drive permissions are inherited and are not changed by this command",
-        updateGuards: "existing content version must match and the target must have no comments",
+        updateGuards: "the target must have no comments and its current ETag must still match when replacement begins",
         ...(arguments_.documentId ? { documentId: arguments_.documentId, expectedVersion: arguments_.expectedVersion } : {}),
         ...(arguments_.folderId ? { folderId: arguments_.folderId } : {}),
       };

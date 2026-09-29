@@ -40,6 +40,7 @@ SCHEDULED: <2026-09-01 Tue>
 :SECRET: ${secretValue}
 :END:
 The cited market is growing. [[id:${privateId}][Internal source]] [[https://example.com/report][External source]] [[unsafe:alert(1)][Unsafe alias]].
+Formatting: *bold*, /italic/, _underlined_, +struck+, =setting=value=, and ~code()~.
 Inline export must disappear: @@html:<script>${secretValue}</script>@@
 
 [[file:chart.png]]
@@ -246,6 +247,19 @@ y: value
   assert.ok(googlePreviewPayload.destination.uploadBytes > 0);
   assert.doesNotMatch(googlePreview.stdout, /Bearer|access.?token/i);
 
+  const googleUpdatePreview = runCli([
+    "--to", "google-docs",
+    "--document-id", "doc-created",
+    "--replace-existing",
+    "--format", "json",
+  ]);
+  assert.equal(googleUpdatePreview.status, 0, googleUpdatePreview.stderr || googleUpdatePreview.stdout);
+  const googleUpdatePreviewPayload = JSON.parse(googleUpdatePreview.stdout);
+  assert.equal(googleUpdatePreviewPayload.destination.action, "update");
+  assert.equal(googleUpdatePreviewPayload.destination.documentId, "doc-created");
+  assert.equal(googleUpdatePreviewPayload.destination.expectedVersion, undefined);
+  assert.match(googleUpdatePreviewPayload.destination.updateGuards, /ETag/);
+
   const missingCredential = runCli(["--to", "google-docs", "--apply"]);
   assert.notEqual(missingCredential.status, 0);
   assert.match(missingCredential.stderr, /ORG2_GOOGLE_DRIVE_ACCESS_TOKEN/);
@@ -264,6 +278,12 @@ y: value
   assert.match(documentXml, /Private evidence row/);
   assert.match(documentXml, /<w:tbl>/);
   assert.match(documentXml, /r:embed="rId/);
+  assert.match(documentXml, /<w:rPr><w:b\/><\/w:rPr><w:t[^>]*>bold<\/w:t>/);
+  assert.match(documentXml, /<w:rPr><w:i\/><\/w:rPr><w:t[^>]*>italic<\/w:t>/);
+  assert.match(documentXml, /<w:rPr><w:u w:val="single"\/><\/w:rPr><w:t[^>]*>underlined<\/w:t>/);
+  assert.match(documentXml, /<w:rPr><w:strike\/><\/w:rPr><w:t[^>]*>struck<\/w:t>/);
+  assert.match(documentXml, /<w:rPr><w:rStyle w:val="CodeChar"\/><\/w:rPr><w:t[^>]*>setting=value<\/w:t>/);
+  assert.match(documentXml, /<w:rPr><w:rStyle w:val="CodeChar"\/><\/w:rPr><w:t[^>]*>code\(\)<\/w:t>/);
   assert.deepEqual([...documentXml.matchAll(/<wp:docPr id="(\d+)"/g)].map((match) => match[1]), ["1", "2"]);
   assert.doesNotMatch(documentXml, new RegExp(privateId));
   assert.doesNotMatch(documentXml, new RegExp(secretValue));
@@ -343,26 +363,56 @@ y: value
   assert.equal(updated.action, "update");
   assert.equal(updated.version, "8");
 
-  let mismatchCallCount = 0;
+  const driftedVersionCalls = [];
+  const driftedVersionUpdate = await publishToGoogleDocs(prepared, {
+    accessToken: "ephemeral-test-token",
+    documentId: "doc-created",
+    expectedVersion: "6",
+    replaceExisting: true,
+    fetchImpl: async (url, init) => {
+      driftedVersionCalls.push({ url: String(url), init });
+      if (init?.method === "GET") {
+        if (String(url).includes("/comments?")) {
+          return new Response(JSON.stringify({ comments: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          id: "doc-created",
+          mimeType: "application/vnd.google-apps.document",
+          version: "13",
+          capabilities: { canEdit: true },
+        }), { status: 200, headers: { etag: '"drifted-etag"' } });
+      }
+      return new Response(JSON.stringify({
+        id: "doc-created",
+        mimeType: "application/vnd.google-apps.document",
+        version: "14",
+        webViewLink: "https://docs.google.com/document/d/doc-created/edit",
+      }), { status: 200 });
+    },
+  });
+  assert.deepEqual(driftedVersionCalls.map((call) => call.init.method), ["GET", "GET", "PATCH"]);
+  assert.equal(driftedVersionCalls[2].init.headers["if-match"], '"drifted-etag"');
+  assert.equal(driftedVersionUpdate.version, "14", "Google-side version drift must not strand a linked publication");
+
+  const missingEtagCalls = [];
   await assert.rejects(
     () => publishToGoogleDocs(prepared, {
       accessToken: "ephemeral-test-token",
       documentId: "doc-created",
-      expectedVersion: "6",
       replaceExisting: true,
-      fetchImpl: async () => {
-        mismatchCallCount += 1;
+      fetchImpl: async (url, init) => {
+        missingEtagCalls.push({ url: String(url), init });
         return new Response(JSON.stringify({
           id: "doc-created",
           mimeType: "application/vnd.google-apps.document",
-          version: "7",
+          version: "13",
           capabilities: { canEdit: true },
         }), { status: 200 });
       },
     }),
-    /version changed.*Import the remote changes or publish as a new copy/i,
+    /did not return an ETag.*refusing an unguarded replacement/i,
   );
-  assert.equal(mismatchCallCount, 1, "a version mismatch must not send the replacement upload");
+  assert.deepEqual(missingEtagCalls.map((call) => call.init.method), ["GET"]);
 
   const commentedCalls = [];
   await assert.rejects(

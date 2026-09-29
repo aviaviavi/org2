@@ -1120,8 +1120,6 @@ export async function publishToGoogleWorkspace(
   if (options.replaceExisting !== true) {
     throw new Error(`Updating ${spec.displayName} requires replaceExisting: true`);
   }
-  const expectedVersion = String(options.expectedVersion || "").trim();
-  if (!expectedVersion) throw new Error(`Updating ${spec.displayName} requires an expected remote version`);
 
   const documentId = encodeURIComponent(options.documentId);
   const metadataQuery = new URLSearchParams({ supportsAllDrives: "true", fields: googleFileFields() });
@@ -1133,9 +1131,8 @@ export async function publishToGoogleWorkspace(
   if (current.trashed) throw new Error(`The ${spec.displayName} file is in the trash`);
   if (current.mimeType !== spec.targetMediaType) throw new Error(`The target Google Drive file is not a ${spec.displayName} file`);
   if (current.capabilities?.canEdit === false) throw new Error("The connected Google account cannot edit the target file");
-  if (String(current.version || "") !== expectedVersion) {
-    throw new Error(`${spec.displayName} version changed: expected ${expectedVersion}, found ${current.version || "unknown"}. Import the remote changes or publish as a new copy.`);
-  }
+  const etag = metadataResponse.headers.get("etag");
+  if (!etag) throw new Error(`Google Drive did not return an ETag for the ${spec.displayName} file; refusing an unguarded replacement`);
 
   const commentQuery = new URLSearchParams({
     includeDeleted: "false",
@@ -1155,13 +1152,12 @@ export async function publishToGoogleWorkspace(
     supportsAllDrives: "true",
     fields: googleFileFields(),
   });
-  const etag = metadataResponse.headers.get("etag");
   const response = await request(`https://www.googleapis.com/upload/drive/v3/files/${documentId}?${updateQuery}`, {
     method: "PATCH",
     headers: {
       authorization,
       "content-type": `multipart/related; boundary=${boundary}`,
-      ...(etag ? { "if-match": etag } : {}),
+      "if-match": etag,
     },
     body: requestBodyBytes(multipartBody(boundary, { appProperties }, upload.mediaType, upload.bytes)),
   });

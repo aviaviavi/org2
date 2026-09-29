@@ -201,7 +201,7 @@ function inlineRuns(nodes: InlineNode[], context: DocxContext): string {
             ? '<w:u w:val="single"/>'
             : node.kind === "strike"
               ? "<w:strike/>"
-              : "<w:rFonts w:ascii=\"Menlo\" w:hAnsi=\"Menlo\"/>";
+              : '<w:rStyle w:val="CodeChar"/>';
       return runText(node.content, properties);
     }
     if (node.type === "Script") {

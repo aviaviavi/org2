@@ -14636,13 +14636,14 @@ public final class WorkspaceStore {
       }
     }
     if let googleBinding,
-       request.destination == .googleDrive,
-       let version = googleBinding.version {
+       request.destination == .googleDrive {
       arguments.append(contentsOf: [
         "--document-id", googleBinding.fileID,
-        "--if-version", version,
-        "--replace-existing",
       ])
+      if let version = googleBinding.version {
+        arguments.append(contentsOf: ["--if-version", version])
+      }
+      arguments.append("--replace-existing")
     } else if let folderID = request.googleFolderID, request.destination == .googleDrive {
       arguments.append(contentsOf: ["--folder-id", folderID])
     }
@@ -14682,9 +14683,6 @@ public final class WorkspaceStore {
         line: line
       )
     }.value
-    if let binding, binding.version == nil {
-      throw DocumentPublishingError.missingGooglePublicationVersion(binding.url)
-    }
     return binding
   }
 

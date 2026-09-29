@@ -472,7 +472,6 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
   case pendingEdits
   case missingGoogleCredential
   case invalidGoogleResponse
-  case missingGooglePublicationVersion(URL)
   case googlePublicationPersistenceFailed(URL, String)
   case missingWebBundle(String)
   case unsupportedFormat
@@ -489,8 +488,6 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
       "Connect Google Drive before publishing."
     case .invalidGoogleResponse:
       "Google Drive completed without returning a usable document link."
-    case .missingGooglePublicationVersion(let url):
-      "The linked Google Drive artifact has no saved Drive version, so OpenOrg will not risk creating a duplicate or overwriting remote changes. Open the existing artifact at \(url.absoluteString)."
     case .googlePublicationPersistenceFailed(let url, let reason):
       "Google Drive published the artifact, but OpenOrg could not save its stable link in the source file: \(reason). Recover it at \(url.absoluteString)."
     case .missingWebBundle(let path):
