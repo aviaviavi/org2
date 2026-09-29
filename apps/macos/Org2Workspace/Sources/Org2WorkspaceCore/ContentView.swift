@@ -10527,6 +10527,8 @@ private struct OpenClawChatView: View {
   @State private var threadFindNavigationGeneration = 0
   @State private var transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
   @State private var transcriptWindowAnchor: OpenClawChatTranscriptAnchor?
+  @State private var threadOutputs = AIChatThreadOutputs.empty
+  @State private var threadOutputsThreadID: UUID?
   let presentation: OpenClawChatPresentation
   let surface: WorkspaceSurface?
 
@@ -10565,6 +10567,9 @@ private struct OpenClawChatView: View {
     .environment(\.aiChatMediaCorpusRoot, store.corpusRoot)
     .task {
       await store.refreshOpenClawCommands()
+    }
+    .task(id: threadOutputsSignature) {
+      await refreshThreadOutputs()
     }
     .onChange(of: store.aiChatFindRequestGeneration) { _, _ in
       guard surface == store.selectedSurface else { return }
@@ -10652,6 +10657,9 @@ private struct OpenClawChatView: View {
             .truncationMode(.tail)
         }
         Spacer(minLength: 0)
+        threadOutputsChip
+          .controlSize(.small)
+
         AIChatSettingsButton()
           .labelStyle(.iconOnly)
 
@@ -10689,7 +10697,16 @@ private struct OpenClawChatView: View {
   }
 
   @ViewBuilder
+  private var threadOutputsChip: some View {
+    if !threadOutputs.isEmpty {
+      AIChatThreadOutputsChip(outputs: threadOutputs, onJumpToMessage: jumpToMessage)
+    }
+  }
+
+  @ViewBuilder
   private var headerActions: some View {
+    threadOutputsChip
+
     newChatButton
 
     Button {
@@ -10726,6 +10743,8 @@ private struct OpenClawChatView: View {
 
   @ViewBuilder
   private var homeHeaderActions: some View {
+    threadOutputsChip
+
     newChatButton
 
     Menu {
@@ -10865,6 +10884,65 @@ private struct OpenClawChatView: View {
 
   private func requestThreadFindScroll() {
     guard selectedThreadFindMessageID != nil else { return }
+    threadFindNavigationGeneration &+= 1
+  }
+
+  private struct ThreadOutputsSignature: Equatable {
+    let threadID: UUID?
+    let corpusRoot: String?
+    let messageCount: Int
+    let lastMessageID: UUID?
+    let lastMessageLength: Int
+    let lastMessageChangeCount: Int
+  }
+
+  private var threadOutputsSignature: ThreadOutputsSignature {
+    let last = store.openClawMessages.last
+    return ThreadOutputsSignature(
+      threadID: store.selectedOpenClawChatThreadID,
+      corpusRoot: store.corpusRoot?.path,
+      messageCount: store.openClawMessages.count,
+      lastMessageID: last?.id,
+      lastMessageLength: last?.content.utf8.count ?? 0,
+      lastMessageChangeCount: last?.changeSummary?.files.count ?? -1
+    )
+  }
+
+  private func refreshThreadOutputs() async {
+    let threadID = store.selectedOpenClawChatThreadID
+    let messages = store.openClawMessages
+    let corpusRoot = store.corpusRoot?.standardizedFileURL.path
+    let remoteRoot = store.aiChatOutputsRemoteCorpusPath
+    if threadOutputsThreadID != threadID || threadOutputs.corpusRoot != corpusRoot || messages.isEmpty {
+      threadOutputs = .empty
+    }
+    // Streaming replies change the signature often; settle before rescanning.
+    try? await Task.sleep(for: .milliseconds(250))
+    guard !Task.isCancelled else { return }
+    let outputs = await Task.detached(priority: .utility) {
+      AIChatThreadOutputs.derive(
+        messages: messages,
+        corpusRoot: corpusRoot,
+        remoteCorpusRoot: remoteRoot
+      ).resolvingFileStatus()
+    }.value
+    guard !Task.isCancelled, threadID == store.selectedOpenClawChatThreadID else { return }
+    threadOutputs = outputs
+    threadOutputsThreadID = threadID
+  }
+
+  /// Scrolls the transcript to a reply, reusing the find bar's navigation.
+  private func jumpToMessage(_ messageID: UUID) {
+    let candidates = AIChatThreadSearch.candidates(
+      in: store.openClawMessages,
+      isSharedRoom: store.selectedAIChatIsSharedRoom
+    )
+    guard let candidate = candidates.first(where: { $0.messageID == messageID }) else { return }
+    transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
+      itemID: candidate.scrollTargetID,
+      rawMessageIndex: candidate.anchorRawMessageIndex
+    )
+    selectedThreadFindMessageID = messageID
     threadFindNavigationGeneration &+= 1
   }
 

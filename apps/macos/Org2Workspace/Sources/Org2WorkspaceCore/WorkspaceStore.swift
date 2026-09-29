@@ -42465,6 +42465,12 @@ public final class WorkspaceStore {
       .map { mappedPathForOpenClaw($0.path) }
   }
 
+  /// Remote corpus path agents may use in links, mapped back to the local
+  /// corpus when deriving a thread's outputs.
+  var aiChatOutputsRemoteCorpusPath: String? {
+    effectiveOpenClawRemoteCorpusPath()
+  }
+
   private func effectiveOpenClawRemoteCorpusPath() -> String? {
     let configured = openClawRemoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
     if !configured.isEmpty { return configured }
