@@ -348,7 +348,8 @@ public actor CodexAppServerClient {
     }
   }
 
-  private let executableURL: URL?
+  private var executableURL: URL?
+  private let executableResolver: (@Sendable () -> URL?)?
   private let sshExecutableURL: URL
   private let transport: CodexAppServerTransport
   private let eventHandler: EventHandler
@@ -380,7 +381,8 @@ public actor CodexAppServerClient {
   private static let tokenUsageCompletionGraceNanoseconds: UInt64 = 250_000_000
 
   public init(
-    executableURL: URL? = CodexAppServerClient.resolveExecutableURL(),
+    executableURL: URL? = nil,
+    executableResolver: (@Sendable () -> URL?)? = nil,
     sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
     transport: CodexAppServerTransport = .local,
     requestTimeoutNanoseconds: UInt64 = 30_000_000_000,
@@ -393,7 +395,16 @@ public actor CodexAppServerClient {
     eventHandler: @escaping EventHandler,
     dynamicToolHandler: @escaping DynamicToolHandler
   ) {
-    self.executableURL = executableURL
+    let resolvedExecutableResolver: (@Sendable () -> URL?)?
+    if let executableResolver {
+      resolvedExecutableResolver = executableResolver
+    } else if executableURL == nil {
+      resolvedExecutableResolver = { CodexAppServerClient.resolveExecutableURL() }
+    } else {
+      resolvedExecutableResolver = nil
+    }
+    self.executableResolver = resolvedExecutableResolver
+    self.executableURL = executableURL ?? resolvedExecutableResolver?()
     self.sshExecutableURL = sshExecutableURL
     self.transport = transport
     self.requestTimeoutNanoseconds = requestTimeoutNanoseconds
@@ -427,6 +438,8 @@ public actor CodexAppServerClient {
       candidates.append(bundled)
     }
     candidates.append(contentsOf: [
+      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+      "/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
       "/Applications/ChatGPT.app/Contents/Resources/codex",
       "/Applications/Codex.app/Contents/Resources/codex",
       "/opt/homebrew/bin/codex",
@@ -1371,6 +1384,12 @@ while True:
     let arguments: [String]
     switch transport {
     case .local:
+      if let executableResolver {
+        // Codex Desktop can replace or relocate its embedded CLI while
+        // OpenOrg is running. Resolve again whenever a fresh local transport
+        // launches so Refresh Options follows the updated installation.
+        executableURL = executableResolver()
+      }
       guard let executableURL else {
         throw CodexAppServerError.executableNotFound
       }

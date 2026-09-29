@@ -3679,7 +3679,9 @@ struct OpenClawComposerView: View {
           }
           Spacer()
           Button {
-            Task { await store.refreshAIChatConfiguration() }
+            Task {
+              await store.refreshAIChatConfiguration(forceModelCatalogReload: true)
+            }
           } label: {
             Label("Refresh Options", systemImage: "arrow.clockwise")
           }

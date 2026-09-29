@@ -3,6 +3,24 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class WorkspaceListSelectionTests: XCTestCase {
+  func testAIChatRefreshOptionsForcesModelCatalogReload() throws {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot.appendingPathComponent(
+        "Sources/Org2WorkspaceCore/OpenClawChatViews.swift"
+      ),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(
+      source.contains("refreshAIChatConfiguration(forceModelCatalogReload: true)")
+    )
+  }
+
   func testAutomationSheetsUseDestinationBackedModelAndReasoningPickers() throws {
     let testFile = URL(fileURLWithPath: #filePath)
     let packageRoot = testFile

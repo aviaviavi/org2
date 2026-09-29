@@ -22100,7 +22100,10 @@ public final class WorkspaceStore {
     }
   }
 
-  public func refreshAIChatConfiguration(applySelection: Bool = false) async {
+  public func refreshAIChatConfiguration(
+    applySelection: Bool = false,
+    forceModelCatalogReload: Bool = false
+  ) async {
     refreshCorpusAgentSkills()
     guard let thread = selectedOpenClawChatThread else {
       aiChatModelOptions = []
@@ -22153,7 +22156,13 @@ public final class WorkspaceStore {
         for destinationID in destinationIDs {
           group.addTask { [weak self] in
             guard let self else { return (destinationID, nil) }
-            return (destinationID, try? await self.modelsForAIChatDestination(destinationID))
+            return (
+              destinationID,
+              try? await self.modelsForAIChatDestination(
+                destinationID,
+                forceCodexModelCatalogReload: forceModelCatalogReload
+              )
+            )
           }
         }
         var result: [String: [AIChatModelOption]] = [:]
@@ -22188,7 +22197,10 @@ public final class WorkspaceStore {
       let resolvedReasoningConfiguration: Bool
       switch selectedAIChatDestination.adapter {
       case .codexLocal, .codexRemote, .codexManagedRemote:
-        models = try await modelsForAIChatDestination(thread.destinationID)
+        models = try await modelsForAIChatDestination(
+          thread.destinationID,
+          forceCodexModelCatalogReload: forceModelCatalogReload
+        )
         let selectedModel = thread.model.flatMap { selected in
           models.first(where: { $0.id == selected })
         } ?? models.first(where: \.isDefault)
@@ -27005,7 +27017,8 @@ public final class WorkspaceStore {
   }
 
   private func modelsForAIChatDestination(
-    _ destinationID: String
+    _ destinationID: String,
+    forceCodexModelCatalogReload: Bool = false
   ) async throws -> [AIChatModelOption] {
     guard let destination = aiChatDestination(id: destinationID) else {
       throw CodexAppServerError.invalidResponse("AI destination \(destinationID) is not configured")
@@ -27013,7 +27026,9 @@ public final class WorkspaceStore {
     switch destination.adapter {
     case .codexLocal, .codexRemote, .codexManagedRemote:
       return try await codexClient(forDestinationID: destinationID).listModels(
-        refreshingTransportIfOlderThan: Self.codexModelCatalogMaximumAge
+        refreshingTransportIfOlderThan: forceCodexModelCatalogReload
+          ? 0
+          : Self.codexModelCatalogMaximumAge
       )
     case .claudeLocal:
       return [

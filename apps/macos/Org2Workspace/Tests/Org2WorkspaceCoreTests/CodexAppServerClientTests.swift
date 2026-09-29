@@ -1165,6 +1165,60 @@ final class CodexAppServerClientTests: XCTestCase {
     await client.shutdown()
   }
 
+  func testModelRefreshRediscoversRelocatedLocalExecutable() async throws {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-codex-relocated-refresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let originalExecutable = temporaryDirectory.appendingPathComponent("codex-original")
+    let relocatedExecutable = temporaryDirectory.appendingPathComponent("codex-relocated")
+    func installFakeCodex(at executable: URL, modelID: String) throws {
+      let script = #"""
+      #!/bin/sh
+      while IFS= read -r line; do
+        request_id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+        case "$line" in
+          *'"method":"initialize"'*)
+            printf '{"id":%s,"result":{"userAgent":"fake-codex"}}\n' "$request_id"
+            ;;
+          *'"method":"initialized"'*)
+            ;;
+          *'"method":"model/list"'*)
+            printf '{"id":%s,"result":{"data":[{"id":"\#(modelID)","displayName":"\#(modelID)","isDefault":true}],"nextCursor":null}}\n' "$request_id"
+            ;;
+        esac
+      done
+      """#
+      try script.write(to: executable, atomically: true, encoding: .utf8)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: executable.path
+      )
+    }
+
+    try installFakeCodex(at: originalExecutable, modelID: "gpt-before-relocation")
+    let client = CodexAppServerClient(
+      executableResolver: {
+        FileManager.default.isExecutableFile(atPath: relocatedExecutable.path)
+          ? relocatedExecutable
+          : originalExecutable
+      },
+      eventHandler: { _ in },
+      dynamicToolHandler: { _ in
+        CodexDynamicToolResult(success: false, text: "No tools in this test.")
+      }
+    )
+
+    let first = try await client.listModels(refreshingTransportIfOlderThan: 300)
+    try installFakeCodex(at: relocatedExecutable, modelID: "gpt-after-relocation")
+    let refreshed = try await client.listModels(refreshingTransportIfOlderThan: 0)
+
+    XCTAssertEqual(first.map(\.id), ["gpt-before-relocation"])
+    XCTAssertEqual(refreshed.map(\.id), ["gpt-after-relocation"])
+    await client.shutdown()
+  }
+
   func testInitializationTimeoutResetsTransportForRetry() async throws {
     let temporaryDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-codex-initialize-reset-\(UUID().uuidString)", isDirectory: true)
