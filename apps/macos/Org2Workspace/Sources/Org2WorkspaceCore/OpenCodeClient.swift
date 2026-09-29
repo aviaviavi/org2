@@ -233,7 +233,9 @@ public actor OpenCodeClient {
     for path in attachmentPaths {
       arguments.append(contentsOf: ["--file", path])
     }
-    arguments.append(message)
+    // `--` ends option parsing. Without it a message such as "- header chip…"
+    // is read as a flag, and `opencode run` prints its help and exits 0.
+    arguments.append(contentsOf: ["--", message])
     return arguments
   }
 
@@ -510,7 +512,7 @@ try:
     arguments = list(payload["arguments"])
     for path in attachment_paths:
         arguments.extend(["--file", path])
-    arguments.append(payload["message"])
+    arguments.extend(["--", payload["message"]])
     environment = os.environ.copy()
     environment["OPENCODE_CONFIG_CONTENT"] = payload["configuration"]
     environment["OPENCODE_SERVER_PASSWORD"] = payload["serverPassword"]
@@ -857,7 +859,7 @@ sys.exit(result.returncode)
         workspacePath: workspacePath,
         threadID: openOrgThreadID.uuidString.lowercased(),
         runToken: runToken,
-        arguments: Array(remoteArguments.dropLast()),
+        arguments: Array(remoteArguments.dropLast(2)),
         message: message,
         configuration: configuration,
         serverPassword: serverPassword,

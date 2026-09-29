@@ -18,7 +18,19 @@ final class OpenCodeClientTests: XCTestCase {
     XCTAssertFalse(arguments.contains("--standalone"))
     XCTAssertTrue(arguments.containsAdjacent(["--session", "ses_123"]))
     XCTAssertTrue(arguments.containsAdjacent(["--model", "openai/gpt-5#high"]))
-    XCTAssertEqual(arguments.suffix(3), ["--file", "/tmp/file.txt", "Review this"])
+    XCTAssertEqual(arguments.suffix(4), ["--file", "/tmp/file.txt", "--", "Review this"])
+  }
+
+  func testArgumentsKeepDashLeadingMessageAsPrompt() {
+    let arguments = OpenCodeClient.arguments(
+      sessionID: nil,
+      model: nil,
+      reasoningEffort: nil,
+      attachmentPaths: [],
+      message: "- header chip sounds good!\n- ship it"
+    )
+
+    XCTAssertEqual(arguments.suffix(2), ["--", "- header chip sounds good!\n- ship it"])
   }
 
   func testJSONStreamDecodesReasoningParts() async {
