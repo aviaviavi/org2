@@ -495,6 +495,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Finder-launched apps get a minimal PATH; learn the user's login-shell
+    // PATH once so npm/nvm-installed agent CLIs such as Codex are found.
+    LocalAgentExecutableLocator.warmUp()
     #if !DEBUG
     let os = ProcessInfo.processInfo.operatingSystemVersion
     #if arch(arm64)

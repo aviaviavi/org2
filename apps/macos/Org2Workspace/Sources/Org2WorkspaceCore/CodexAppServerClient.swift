@@ -428,34 +428,27 @@ public actor CodexAppServerClient {
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default
   ) -> URL? {
-    var candidates: [String] = []
-    if let configured = environment["ORG2_CODEX_EXECUTABLE"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !configured.isEmpty {
-      candidates.append(configured)
+    let home = environment["HOME"] ?? fileManager.homeDirectoryForCurrentUser.path
+    var bundled: [String] = []
+    if let path = Bundle.main.url(forResource: "codex", withExtension: nil)?.path {
+      bundled.append(path)
     }
-    if let bundled = Bundle.main.url(forResource: "codex", withExtension: nil)?.path {
-      candidates.append(bundled)
-    }
-    candidates.append(contentsOf: [
-      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-      "/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-      "/Applications/ChatGPT.app/Contents/Resources/codex",
-      "/Applications/Codex.app/Contents/Resources/codex",
-      "/opt/homebrew/bin/codex",
-      "/usr/local/bin/codex"
-    ])
-    if let path = environment["PATH"] {
-      candidates.append(contentsOf: path.split(separator: ":").map {
-        URL(fileURLWithPath: String($0)).appendingPathComponent("codex").path
-      })
-    }
-    return candidates.lazy
-      .map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath() }
-      .first {
-        fileManager.isExecutableFile(atPath: $0.path)
-          && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
+    let applicationRoots = ["/Applications", URL(fileURLWithPath: home).appendingPathComponent("Applications").path]
+    let embedded = applicationRoots.flatMap { root in
+      ["ChatGPT.app", "Codex.app"].flatMap { app in
+        [
+          "\(root)/\(app)/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+          "\(root)/\(app)/Contents/Resources/codex"
+        ]
       }
+    }
+    return LocalAgentExecutableLocator.resolve(
+      executableName: "codex",
+      configuredKey: "ORG2_CODEX_EXECUTABLE",
+      leadingCandidates: bundled + embedded,
+      environment: environment,
+      fileManager: fileManager
+    )
   }
 
   nonisolated static func managedRemoteSSHArguments(sshHost rawSSHHost: String) throws -> [String] {
@@ -1407,7 +1400,14 @@ while True:
     process.executableURL = launchURL
     process.arguments = arguments
     process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    process.environment = ProcessInfo.processInfo.environment
+    if case .local = transport {
+      process.environment = LocalAgentExecutableLocator.processEnvironment(
+        ProcessInfo.processInfo.environment,
+        executableURL: launchURL
+      )
+    } else {
+      process.environment = ProcessInfo.processInfo.environment
+    }
 
     let input = Pipe()
     let output = Pipe()

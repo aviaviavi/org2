@@ -179,29 +179,12 @@ public actor PiAgentClient {
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default
   ) -> URL? {
-    var candidates: [String] = []
-    if let configured = environment["ORG2_PI_EXECUTABLE"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !configured.isEmpty {
-      candidates.append(configured)
-    }
-    let home = environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
-    candidates.append(contentsOf: [
-      URL(fileURLWithPath: home).appendingPathComponent(".local/bin/pi").path,
-      "/opt/homebrew/bin/pi",
-      "/usr/local/bin/pi"
-    ])
-    if let path = environment["PATH"] {
-      candidates.append(contentsOf: path.split(separator: ":").map {
-        URL(fileURLWithPath: String($0)).appendingPathComponent("pi").path
-      })
-    }
-    return candidates.lazy
-      .map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath() }
-      .first {
-        fileManager.isExecutableFile(atPath: $0.path)
-          && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
-      }
+    LocalAgentExecutableLocator.resolve(
+      executableName: "pi",
+      configuredKey: "ORG2_PI_EXECUTABLE",
+      environment: environment,
+      fileManager: fileManager
+    )
   }
 
   nonisolated static func arguments(
@@ -377,7 +360,10 @@ finally:
         message: message
       )
       process.currentDirectoryURL = cwd.standardizedFileURL
-      process.environment = environment
+      process.environment = LocalAgentExecutableLocator.processEnvironment(
+        environment,
+        executableURL: executableURL
+      )
       inputData = nil
     case .managedRemote(let sshHost, let workspacePath):
       temporaryRoot = nil

@@ -189,29 +189,12 @@ public actor OpenCodeClient {
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default
   ) -> URL? {
-    var candidates: [String] = []
-    if let configured = environment["ORG2_OPENCODE_EXECUTABLE"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !configured.isEmpty {
-      candidates.append(configured)
-    }
-    let home = environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
-    candidates.append(contentsOf: [
-      URL(fileURLWithPath: home).appendingPathComponent(".local/bin/opencode").path,
-      "/opt/homebrew/bin/opencode",
-      "/usr/local/bin/opencode"
-    ])
-    if let path = environment["PATH"] {
-      candidates.append(contentsOf: path.split(separator: ":").map {
-        URL(fileURLWithPath: String($0)).appendingPathComponent("opencode").path
-      })
-    }
-    return candidates.lazy
-      .map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath() }
-      .first {
-        fileManager.isExecutableFile(atPath: $0.path)
-          && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
-      }
+    LocalAgentExecutableLocator.resolve(
+      executableName: "opencode",
+      configuredKey: "ORG2_OPENCODE_EXECUTABLE",
+      environment: environment,
+      fileManager: fileManager
+    )
   }
 
   nonisolated static func arguments(
@@ -840,7 +823,10 @@ sys.exit(result.returncode)
       arguments.insert(contentsOf: ["--server", server.url], at: 1)
       process.arguments = arguments
       process.currentDirectoryURL = cwd.standardizedFileURL
-      process.environment = processEnvironment
+      process.environment = LocalAgentExecutableLocator.processEnvironment(
+        processEnvironment,
+        executableURL: executableURL
+      )
       inputData = nil
     case .managedRemote(let sshHost, let workspacePath):
       temporaryRoot = nil
@@ -1182,7 +1168,10 @@ sys.exit(result.returncode)
     process.executableURL = executableURL
     process.arguments = ["serve", "--hostname", "127.0.0.1", "--port", "0"]
     process.currentDirectoryURL = cwd
-    process.environment = environment
+    process.environment = LocalAgentExecutableLocator.processEnvironment(
+      environment,
+      executableURL: executableURL
+    )
     process.standardOutput = output
     process.standardError = output
     do {
@@ -1300,7 +1289,10 @@ sys.exit(result.returncode)
       process.executableURL = executableURL
       process.arguments = arguments
       process.currentDirectoryURL = cwd
-      process.environment = environment
+      process.environment = LocalAgentExecutableLocator.processEnvironment(
+        environment,
+        executableURL: executableURL
+      )
       process.standardInput = standardInput
       process.standardOutput = standardOutput
       process.standardError = standardError

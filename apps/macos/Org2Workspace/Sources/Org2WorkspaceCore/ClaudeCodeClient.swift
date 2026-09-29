@@ -146,30 +146,12 @@ public actor ClaudeCodeClient {
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default
   ) -> URL? {
-    var candidates: [String] = []
-    if let configured = environment["ORG2_CLAUDE_EXECUTABLE"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-       !configured.isEmpty {
-      candidates.append(configured)
-    }
-    let home = environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
-    candidates.append(contentsOf: [
-      URL(fileURLWithPath: home).appendingPathComponent(".local/bin/claude").path,
-      URL(fileURLWithPath: home).appendingPathComponent(".claude/local/claude").path,
-      "/opt/homebrew/bin/claude",
-      "/usr/local/bin/claude"
-    ])
-    if let path = environment["PATH"] {
-      candidates.append(contentsOf: path.split(separator: ":").map {
-        URL(fileURLWithPath: String($0)).appendingPathComponent("claude").path
-      })
-    }
-    return candidates.lazy
-      .map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath() }
-      .first {
-        fileManager.isExecutableFile(atPath: $0.path)
-          && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != false
-      }
+    LocalAgentExecutableLocator.resolve(
+      executableName: "claude",
+      configuredKey: "ORG2_CLAUDE_EXECUTABLE",
+      environment: environment,
+      fileManager: fileManager
+    )
   }
 
   nonisolated static func arguments(
@@ -253,7 +235,10 @@ public actor ClaudeCodeClient {
       attachmentDirectory: materialized.directory
     )
     process.currentDirectoryURL = cwd.standardizedFileURL
-    process.environment = environment
+    process.environment = LocalAgentExecutableLocator.processEnvironment(
+      environment,
+      executableURL: executableURL
+    )
     process.standardInput = standardInput
     process.standardOutput = standardOutput
     process.standardError = standardError
