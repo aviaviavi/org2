@@ -11823,31 +11823,39 @@ private struct DetailHeader: View {
 
   var body: some View {
     @Bindable var store = store
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 8) {
+      // The title row matches `HeaderBar` (same insets, type, and row height)
+      // so the document pane lines up with the surface pane beside it.
       ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .center, spacing: 16) {
           detailIdentity
             .frame(maxWidth: .infinity, alignment: .leading)
           if !headerMetadataRows.isEmpty {
             DetailMetadataGrid(rows: headerMetadataRows)
               .fixedSize(horizontal: true, vertical: false)
           }
+          inlineDetailActions
           DetailPaneControlGroup()
         }
+        .frame(minHeight: WorkspaceDesign.paneHeaderRowHeight)
 
         VStack(alignment: .leading, spacing: 7) {
-          HStack(alignment: .top, spacing: 8) {
+          HStack(alignment: .center, spacing: 8) {
             detailIdentity
               .frame(maxWidth: .infinity, alignment: .leading)
+            inlineDetailActions
             DetailPaneControlGroup()
           }
+          .frame(minHeight: WorkspaceDesign.paneHeaderRowHeight)
           if !headerMetadataRows.isEmpty {
             DetailMetadataGrid(rows: headerMetadataRows)
           }
         }
       }
 
-      detailActionBar
+      if !usesInlineDetailActions {
+        detailActionBar
+      }
 
       if store.selectedFileIsDataNotebook,
          let failure = store.dataNotebookRefreshFailure {
@@ -11922,13 +11930,15 @@ private struct DetailHeader: View {
   }
 
   private var detailIdentity: some View {
-    HStack(alignment: .top, spacing: 9) {
+    HStack(alignment: .center, spacing: 9) {
       WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.09))
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: 2) {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
           Text(location.title)
-            .font(.title3.weight(.semibold))
-            .lineLimit(nil)
+            .font(.headline.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(location.title)
           if !store.selectedFileIsNativePreview,
              !store.selectedFileIsCSV,
              store.selectedEntrySource != nil {
@@ -11940,17 +11950,55 @@ private struct DetailHeader: View {
             )
           }
         }
-        if !location.subtitle.isEmpty {
-          Text(location.subtitle)
-            .font(.caption)
-            .foregroundStyle(WorkspaceDesign.secondaryText)
-            .lineLimit(nil)
-        }
-        Text(store.relativePath(location.file) + (store.selectedFileIsNativePreview ? "" : ":\(location.lineForEditor)"))
-          .font(.caption2.monospaced())
-          .foregroundStyle(WorkspaceDesign.tertiaryText)
-          .textSelection(.enabled)
+        detailLocationLine
       }
+    }
+  }
+
+  /// Zone/subtitle and source path share one caption line so the identity
+  /// block stays the same height as other pane headers.
+  private var detailLocationLine: some View {
+    let path = store.relativePath(location.file)
+      + (store.selectedFileIsNativePreview ? "" : ":\(location.lineForEditor)")
+    let subtitle = location.subtitle
+    let pathText = Text(path)
+      .font(.caption2.monospaced())
+      .foregroundColor(WorkspaceDesign.tertiaryText)
+    let line: Text = subtitle.isEmpty
+      ? pathText
+      : Text(subtitle)
+        .font(.caption)
+        .foregroundColor(WorkspaceDesign.secondaryText)
+        + Text("  ·  ")
+        .font(.caption)
+        .foregroundColor(WorkspaceDesign.tertiaryText)
+        + pathText
+    return line
+      .lineLimit(1)
+      .truncationMode(.middle)
+      .textSelection(.enabled)
+      .help(subtitle.isEmpty ? path : "\(subtitle) · \(path)")
+  }
+
+  /// Previews and canvases have only a single file-level control, so it sits
+  /// in the title row instead of adding a second toolbar row.
+  private var usesInlineDetailActions: Bool {
+    store.selectedFileIsCanvas || store.selectedFileIsNativePreview
+  }
+
+  @ViewBuilder
+  private var inlineDetailActions: some View {
+    if store.selectedFileIsCanvas {
+      Button("Reveal Canvas", systemImage: "folder") { store.revealFile(path: location.file) }
+        .labelStyle(.iconOnly)
+        .help("Reveal canvas in Finder")
+        .controlSize(.small)
+        .buttonStyle(WorkspaceActionButtonStyle())
+    } else if store.selectedFileIsNativePreview {
+      WorkspaceControlStrip { sourceMenu }
+        .controlSize(.small)
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .fixedSize()
     }
   }
 
@@ -11981,24 +12029,11 @@ private struct DetailHeader: View {
   }
 
   private var detailActionBar: some View {
-    Group {
-      if store.selectedFileIsCanvas {
-        HStack {
-          Button("Reveal Canvas", systemImage: "folder") { store.revealFile(path: location.file) }
-          Spacer(minLength: 0)
-        }
-      } else if store.selectedFileIsNativePreview {
-        HStack {
-          WorkspaceControlStrip { sourceMenu }
-          Spacer(minLength: 0)
-        }
-      } else {
-        ViewThatFits(in: .horizontal) {
-          fullDetailActionBar
-          condensedDetailActionBar
-          compactDetailActionBar
-        }
-      }
+    // Canvas and preview controls render inline in the title row instead.
+    ViewThatFits(in: .horizontal) {
+      fullDetailActionBar
+      condensedDetailActionBar
+      compactDetailActionBar
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
@@ -14595,6 +14630,7 @@ private struct HeaderBar<Trailing: View>: View {
       }
 
     }
+    .frame(minHeight: WorkspaceDesign.paneHeaderRowHeight)
   }
 }
 

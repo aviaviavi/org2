@@ -8,6 +8,10 @@ enum WorkspaceDesign {
   static let rowVerticalPadding: CGFloat = 8
   static let headerHorizontalInset: CGFloat = 16
   static let headerVerticalInset: CGFloat = 11
+  /// Shared height of the title row in every pane header (surface headers and
+  /// the document detail header), so adjacent panes line up. Fits a headline
+  /// title over one caption line, or a small control strip.
+  static let paneHeaderRowHeight: CGFloat = 34
   static let selectionMarkerGutterWidth: CGFloat = 22
   static let selectionMarkerVerticalOffset: CGFloat = -1
 
