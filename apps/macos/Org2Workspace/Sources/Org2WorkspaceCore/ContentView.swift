@@ -3469,6 +3469,20 @@ private struct OpenClawSidebarThreadRow: View {
       }
 
       Button {
+        Task { await store.copyChatThreadShareLink(summary.id) }
+      } label: {
+        Label("Copy Share Link", systemImage: "link")
+      }
+
+      if store.chatThreadPublication(for: summary.id) != nil {
+        Button {
+          store.stopSharingChatThread(summary.id)
+        } label: {
+          Label("Stop Sharing", systemImage: "xmark.circle")
+        }
+      }
+
+      Button {
         togglePin()
       } label: {
         Label(
@@ -3508,6 +3522,9 @@ private struct OpenClawSidebarThreadRow: View {
         togglePin: togglePin,
         settle: settle,
         reopen: reopen,
+        isShared: store.chatThreadPublication(for: summary.id) != nil,
+        copyShareLink: { id in Task { await store.copyChatThreadShareLink(id) } },
+        stopSharing: { id in store.stopSharingChatThread(id) },
         projects: store.projectNotes,
         toggleProject: { id in
           guard let project = store.projectNotes.first(where: { $0.id == id }) else { return }
@@ -3585,6 +3602,9 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   let togglePin: () -> Void
   let settle: () -> Void
   let reopen: () -> Void
+  let isShared: Bool
+  let copyShareLink: (UUID) -> Void
+  let stopSharing: (UUID) -> Void
 
   let projects: [WorkspaceProjectNote]
   let toggleProject: (String) -> Void
@@ -3605,6 +3625,9 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     view.togglePin = togglePin
     view.settle = settle
     view.reopen = reopen
+    view.isShared = isShared
+    view.copyShareLink = copyShareLink
+    view.stopSharing = stopSharing
     view.setAccessibilityIdentifier(
       OpenClawSidebarThreadAccessibilityIdentity.accessibilityIdentifier(for: threadID)
     )
@@ -3624,6 +3647,9 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     var togglePin: (() -> Void)?
     var settle: (() -> Void)?
     var reopen: (() -> Void)?
+    var isShared = false
+    var copyShareLink: ((UUID) -> Void)?
+    var stopSharing: ((UUID) -> Void)?
 
     override init(frame frameRect: NSRect) {
       super.init(frame: frameRect)
@@ -3659,6 +3685,18 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
         systemImage: "doc.on.doc",
         action: #selector(copyThreadID)
       ))
+      menu.addItem(menuItem(
+        title: "Copy Share Link",
+        systemImage: "link",
+        action: #selector(copyThreadShareLink)
+      ))
+      if isShared {
+        menu.addItem(menuItem(
+          title: "Stop Sharing",
+          systemImage: "xmark.circle",
+          action: #selector(stopSharingThread)
+        ))
+      }
       menu.addItem(menuItem(
         title: isPinned ? "Unpin Thread" : "Pin Thread",
         systemImage: isPinned ? "pin.slash" : "pin",
@@ -3718,6 +3756,16 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     @objc func copyThreadID() {
       guard let threadID else { return }
       OpenClawMessageClipboard.write(threadID.uuidString.lowercased())
+    }
+
+    @objc func copyThreadShareLink() {
+      guard let threadID else { return }
+      copyShareLink?(threadID)
+    }
+
+    @objc func stopSharingThread() {
+      guard let threadID else { return }
+      stopSharing?(threadID)
     }
 
     @objc func toggleThreadSettlement() {
@@ -10660,6 +10708,9 @@ private struct OpenClawChatView: View {
         threadOutputsChip
           .controlSize(.small)
 
+        AIChatThreadShareButton()
+          .labelStyle(.iconOnly)
+
         AIChatSettingsButton()
           .labelStyle(.iconOnly)
 
@@ -10707,6 +10758,8 @@ private struct OpenClawChatView: View {
   private var headerActions: some View {
     threadOutputsChip
 
+    AIChatThreadShareButton()
+
     newChatButton
 
     Button {
@@ -10744,6 +10797,9 @@ private struct OpenClawChatView: View {
   @ViewBuilder
   private var homeHeaderActions: some View {
     threadOutputsChip
+
+    AIChatThreadShareButton()
+      .labelStyle(.iconOnly)
 
     newChatButton
 

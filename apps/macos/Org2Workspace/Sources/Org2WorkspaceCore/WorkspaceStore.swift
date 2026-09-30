@@ -3001,7 +3001,21 @@ public final class WorkspaceStore {
   public private(set) var isExportingSlides = false
   public var isDocumentPublisherPresented = false
   public private(set) var isPublishingDocument = false
-  public private(set) var localDocumentPublications: [LocalDocumentPublication] = []
+  public internal(set) var localDocumentPublications: [LocalDocumentPublication] = []
+  /// Threads whose live share page is being rendered right now.
+  public internal(set) var publishingChatThreadIDs: Set<UUID> = []
+  @ObservationIgnored var chatThreadPublicationSignatures: [UUID: AIChatThreadPublicationSignature] = [:]
+  @ObservationIgnored var chatThreadPublicationMonitor: Task<Void, Never>?
+  @ObservationIgnored let chatThreadPublicationRenderer = AIChatThreadPublicationRenderer { text in
+    // Embeds stay references so a shared thread cannot pull in other notes.
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    return try await cli.renderAppHTML(
+      text,
+      sourcePath: FileManager.default.temporaryDirectory
+        .appendingPathComponent("shared-chat-message.org").path,
+      resolveEmbeds: false
+    )
+  }
   public private(set) var currentDocumentGoogleDrivePublications: [GoogleDrivePublicationBinding] = []
   public var exportNotice: Org2ExportNotice?
   public var editorSaveConflict: Org2EditorSaveConflict?
@@ -3022,7 +3036,7 @@ public final class WorkspaceStore {
   private let aiChatReadState: AIChatReadState
   private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
-  private let localDocumentPublicationHost: LocalDocumentPublicationHost
+  let localDocumentPublicationHost: LocalDocumentPublicationHost
   private let meetingRecorder = MeetingAudioRecorder()
   private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
@@ -14593,6 +14607,7 @@ public final class WorkspaceStore {
   private func restoreLocalDocumentPublications() async {
     do {
       localDocumentPublications = try await localDocumentPublicationHost.restorePublications()
+      ensureChatThreadPublicationMonitor()
     } catch {
       errorText = error.localizedDescription
       statusText = "Could not restore local publications"

@@ -381,7 +381,7 @@ private struct SharingSettingsView: View {
           ContentUnavailableView(
             "No Active Local Links",
             systemImage: "network.slash",
-            description: Text("Publish a document to Local Link and it will appear here while OpenOrg is hosting it.")
+            description: Text("Publish a document to Local Link or share an AI chat thread and it will appear here while OpenOrg is hosting it.")
           )
           .frame(maxWidth: .infinity, minHeight: 180)
         } else {
@@ -392,7 +392,7 @@ private struct SharingSettingsView: View {
       } header: {
         Label("Active Local Links", systemImage: "network")
       } footer: {
-        SettingsFooterText("These links serve sealed exports, not source files or corpus access. They stop working when OpenOrg quits or when you stop hosting them here.")
+        SettingsFooterText("Document links serve sealed exports. Chat thread links show the conversation and update as new messages arrive. Neither exposes source files or corpus access. Links stop working when OpenOrg quits or when you stop hosting them here.")
       }
 
       if !store.localDocumentPublications.isEmpty {
@@ -429,7 +429,7 @@ private struct SharingSettingsView: View {
 
   private func publicationRow(_ publication: LocalDocumentPublication) -> some View {
     HStack(alignment: .top, spacing: 12) {
-      Image(systemName: publication.format?.systemImage ?? "doc")
+      Image(systemName: publication.chatThreadID != nil ? "text.bubble" : publication.format?.systemImage ?? "doc")
         .font(.title3)
         .foregroundStyle(.secondary)
         .frame(width: 24)
@@ -439,7 +439,7 @@ private struct SharingSettingsView: View {
           Text(publication.title)
             .font(.callout.weight(.semibold))
             .lineLimit(1)
-          Text(publication.format?.title ?? publication.mediaType)
+          Text(publication.chatThreadID != nil ? "Live Chat Thread" : publication.format?.title ?? publication.mediaType)
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)

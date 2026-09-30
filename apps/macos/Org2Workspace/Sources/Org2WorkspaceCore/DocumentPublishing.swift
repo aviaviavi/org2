@@ -430,6 +430,8 @@ public struct LocalDocumentPublication: Identifiable, Hashable, Sendable {
   public let sourcePath: String?
   public let format: DocumentPublishFormat?
   public let createdAt: Date
+  /// The AI chat thread this link mirrors, when it is a live thread share.
+  public let chatThreadID: UUID?
 
   /// The advertised network URL used by both Open and Copy Link actions.
   public var openURL: URL { url }
@@ -442,7 +444,8 @@ public struct LocalDocumentPublication: Identifiable, Hashable, Sendable {
     mediaType: String = "text/html",
     sourcePath: String? = nil,
     format: DocumentPublishFormat? = nil,
-    createdAt: Date = Date()
+    createdAt: Date = Date(),
+    chatThreadID: UUID? = nil
   ) {
     self.id = id
     self.title = title
@@ -452,6 +455,19 @@ public struct LocalDocumentPublication: Identifiable, Hashable, Sendable {
     self.sourcePath = sourcePath
     self.format = format
     self.createdAt = createdAt
+    self.chatThreadID = chatThreadID
+  }
+
+  static let chatThreadStableKeyPrefix = "openorg-chat-thread:"
+
+  /// One stable key per thread keeps the same URL across republishes and launches.
+  static func chatThreadStableKey(_ threadID: UUID) -> String {
+    chatThreadStableKeyPrefix + threadID.uuidString.lowercased()
+  }
+
+  static func chatThreadID(fromStableKey stableKey: String?) -> UUID? {
+    guard let stableKey, stableKey.hasPrefix(chatThreadStableKeyPrefix) else { return nil }
+    return UUID(uuidString: String(stableKey.dropFirst(chatThreadStableKeyPrefix.count)))
   }
 }
 
@@ -1314,6 +1330,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     let sourcePath: String?
     let format: DocumentPublishFormat?
     let createdAt: Date
+    /// Present only for live publications. Readers poll it to detect updates.
+    let revision: String?
     let data: Data?
     let artifactURL: URL?
 
@@ -1332,6 +1350,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     let sourcePath: String?
     let format: String?
     let createdAt: Date
+    let revision: String?
   }
 
   private struct PersistedState: Codable, Sendable {
@@ -1392,7 +1411,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     mediaType: String,
     sourcePath: String? = nil,
     format: DocumentPublishFormat? = nil,
-    stableKey: String? = nil
+    stableKey: String? = nil,
+    revision: String? = nil
   ) async throws -> LocalDocumentPublication {
     guard Self.httpURL(host: advertisedHost, port: 1, path: "/") != nil else {
       throw LocalDocumentPublicationHostError.invalidAdvertisedHost
@@ -1432,6 +1452,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       sourcePath: sourcePath,
       format: format,
       createdAt: existingDocument?.createdAt ?? Date(),
+      revision: revision.flatMap(Self.normalizedRevision),
       data: data,
       artifactURL: nil
     )
@@ -1517,6 +1538,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
           sourcePath: document.sourcePath,
           format: document.format,
           createdAt: document.createdAt,
+          revision: document.revision,
           data: nil,
           artifactURL: artifactURL
         )
@@ -1686,7 +1708,9 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     }
     let requestPath = URLComponents(string: request.path)?.path ?? request.path
     let components = requestPath.split(separator: "/", omittingEmptySubsequences: true)
-    guard components.count == 2, components[0] == "a" else {
+    guard components.first == "a",
+          components.count == 2 || (components.count == 3 && components[2] == "revision")
+    else {
       return .error("Not found.", statusCode: 404)
     }
     let token = String(components[1])
@@ -1695,6 +1719,22 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     stateLock.unlock()
     guard let document else {
       return .error("This publication is unavailable or has been revoked.", statusCode: 404)
+    }
+    if components.count == 3 {
+      // Live pages poll this tiny endpoint instead of downloading themselves.
+      guard let revision = document.revision else {
+        return .error("Not found.", statusCode: 404)
+      }
+      return MobileRemoteHTTPResponse(
+        statusCode: 200,
+        headers: [
+          "Content-Type": "text/plain; charset=utf-8",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+          "X-Robots-Tag": "noindex, nofollow, noarchive",
+        ],
+        body: request.method == "HEAD" ? Data() : Data(revision.utf8)
+      )
     }
     let body: Data
     if request.method == "HEAD" {
@@ -1710,9 +1750,10 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       statusCode: 200,
       headers: [
         "Content-Type": isHTML ? "text/html; charset=utf-8" : document.mediaType,
-        "Content-Security-Policy": isHTML
-          ? "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
-          : "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+        "Content-Security-Policy": Self.contentSecurityPolicy(
+          isHTML: isHTML,
+          isLive: document.revision != nil
+        ),
         "Content-Disposition": "inline",
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
@@ -1720,6 +1761,84 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       ],
       body: body
     )
+  }
+
+  static func contentSecurityPolicy(isHTML: Bool, isLive: Bool) -> String {
+    guard isHTML else {
+      return "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+    }
+    // A live page may run exactly one script, pinned by hash, that polls this
+    // same origin. Every other publication stays script-free.
+    let live = isLive ? " script-src '\(liveUpdateScriptHash)'; connect-src 'self';" : ""
+    return "default-src 'none'; img-src data:; style-src 'unsafe-inline';\(live) base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+  }
+
+  /// Polls `<page>/revision` and swaps in the refreshed `#openorg-live-root`
+  /// without a full reload, keeping the reader's scroll position and selection.
+  static let liveUpdateScript = #"""
+  (() => {
+    const page = location.pathname.replace(/\/+$/, '');
+    const status = () => document.getElementById('openorg-live-status');
+    const revisionOf = doc => doc.querySelector('meta[name="openorg-revision"]')?.content || '';
+    let revision = revisionOf(document), failures = 0;
+    const setStatus = (text, state) => {
+      const node = status(); if (!node) return;
+      node.textContent = text; node.dataset.state = state;
+    };
+    const selecting = () => { const s = getSelection(); return s && !s.isCollapsed; };
+    const nearBottom = () => innerHeight + scrollY >= document.documentElement.scrollHeight - 120;
+    const swap = async () => {
+      const response = await fetch(page, { cache: 'no-store' });
+      if (!response.ok) throw new Error(String(response.status));
+      const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const root = next.getElementById('openorg-live-root');
+      if (!root) throw new Error('missing root');
+      const stick = nearBottom();
+      for (const style of next.querySelectorAll('head style[id]')) {
+        const current = document.getElementById(style.id);
+        if (current) current.textContent = style.textContent;
+        else document.head.append(document.importNode(style, true));
+      }
+      document.getElementById('openorg-live-root').replaceWith(document.importNode(root, true));
+      document.title = next.title;
+      revision = revisionOf(next);
+      if (stick) scrollTo(0, document.documentElement.scrollHeight);
+    };
+    const tick = async () => {
+      try {
+        const response = await fetch(page + '/revision', { cache: 'no-store' });
+        if (response.status === 404) { setStatus('Sharing stopped', 'stopped'); return; }
+        if (!response.ok) throw new Error(String(response.status));
+        const next = (await response.text()).trim();
+        if (next && next !== revision && !selecting()) await swap();
+        failures = 0;
+        setStatus('Live', 'live');
+      } catch (error) {
+        failures += 1;
+        setStatus('Reconnecting…', 'offline');
+      }
+      setTimeout(tick, failures ? Math.min(30000, 3000 * 2 ** failures) : 3000);
+    };
+    setTimeout(tick, 3000);
+  })();
+  """#
+
+  static let liveUpdateScriptHash: String = {
+    let digest = SHA256.hash(data: Data(liveUpdateScript.utf8))
+    return "sha256-" + Data(digest).base64EncodedString()
+  }()
+
+  /// The exact element live pages embed; its body must match the CSP hash.
+  static var liveUpdateScriptElement: String {
+    "<script>\(liveUpdateScript)</script>"
+  }
+
+  private static func normalizedRevision(_ revision: String) -> String? {
+    let trimmed = revision.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard (1...128).contains(trimmed.count),
+          trimmed.utf8.allSatisfy({ (33...126).contains($0) })
+    else { return nil }
+    return trimmed
   }
 
   private static func normalizedMediaType(_ mediaType: String) -> String {
@@ -1750,7 +1869,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       mediaType: document.mediaType,
       sourcePath: document.sourcePath,
       format: document.format,
-      createdAt: document.createdAt
+      createdAt: document.createdAt,
+      chatThreadID: LocalDocumentPublication.chatThreadID(fromStableKey: document.stableKey)
     )
   }
 
@@ -1784,7 +1904,8 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
           mediaType: document.mediaType,
           sourcePath: document.sourcePath,
           format: document.format?.rawValue,
-          createdAt: document.createdAt
+          createdAt: document.createdAt,
+          revision: document.revision
         )
       }
     let state = PersistedState(
@@ -1851,6 +1972,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
         sourcePath: record.sourcePath,
         format: format,
         createdAt: record.createdAt,
+        revision: record.revision.flatMap(normalizedRevision),
         data: nil,
         artifactURL: artifactURL
       )
