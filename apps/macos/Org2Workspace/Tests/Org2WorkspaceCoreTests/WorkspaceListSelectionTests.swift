@@ -69,7 +69,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(contentView.contains(#"DisclosureGroup("Workspace options""#))
     XCTAssertTrue(contentView.contains(#"Button("Continue to Home")"#))
     XCTAssertFalse(contentView.contains("Five-minute launch path"))
-    XCTAssertTrue(settings.contains(#"Label("Workspace", systemImage: "folder")"#))
+    XCTAssertTrue(settings.contains(#"Label("General", systemImage: "gearshape")"#))
     XCTAssertTrue(settings.contains(#"TextField("Name", text: $corpusName)"#))
     XCTAssertTrue(settings.contains(#"Button("Open Another Corpus…")"#))
   }

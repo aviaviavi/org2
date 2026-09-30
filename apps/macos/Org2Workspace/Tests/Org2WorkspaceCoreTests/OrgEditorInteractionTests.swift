@@ -435,7 +435,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertTrue(bridgeIsReady)
   }
 
-  func testRenderedBoldSectionShowsAndRoutesAskAIButton() async throws {
+  func testRenderedBoldSectionKeepsAskAIHiddenAndRoutesItsAction() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-section-ai-click-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -484,21 +484,33 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
     let renderedWebView = try XCTUnwrap(webView)
     let deadline = Date().addingTimeInterval(5)
-    var visibleButtonReady = false
-    while Date() < deadline && !visibleButtonReady {
-      visibleButtonReady = (try? await renderedWebView.callAsyncJavaScript(
+    var buttonReady = false
+    while Date() < deadline && !buttonReady {
+      buttonReady = (try? await renderedWebView.callAsyncJavaScript(
         """
         const button = document.querySelector('.org2-section-label > .org2-heading-ai-action');
         const label = document.querySelector('.org2-section-label > strong');
-        return Boolean(button && label && Number.parseFloat(getComputedStyle(button).opacity) > 0);
+        return Boolean(button && label);
         """,
         arguments: [:],
         in: nil,
         contentWorld: .page
       )) as? Bool == true
-      if !visibleButtonReady { try await pumpRunLoop() }
+      if !buttonReady { try await pumpRunLoop() }
     }
-    XCTAssertTrue(visibleButtonReady)
+    XCTAssertTrue(buttonReady)
+
+    let hiddenUntilInteraction = try await renderedWebView.callAsyncJavaScript(
+      """
+      const button = document.querySelector('.org2-section-label > .org2-heading-ai-action');
+      return Number.parseFloat(getComputedStyle(button).opacity) === 0
+        && getComputedStyle(button).pointerEvents === 'none';
+      """,
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? Bool
+    XCTAssertEqual(hiddenUntilInteraction, true)
 
     let centerOffset = try await renderedWebView.callAsyncJavaScript(
       """
