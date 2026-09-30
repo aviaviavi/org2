@@ -1,31 +1,38 @@
-<?xml version="1.0" standalone="yes"?>
-<!-- sparkle-sign-warning:
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
--->
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.5</title>
-            <pubDate>Sat, 26 Sep 2026 16:44:39 -0700</pubDate>
+            <title>0.8.6</title>
+            <pubDate>Tue, 29 Sep 2026 20:34:34 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.5</sparkle:version>
-            <sparkle:shortVersionString>0.8.5</sparkle:shortVersionString>
+            <sparkle:version>0.8.6</sparkle:version>
+            <sparkle:shortVersionString>0.8.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[## Highlights
 
-- Keep AI chat history and active status consistent across the Mac app, headless server, and iPhone, including recovery after interruptions and cross-host sync.
-- Add Pi and OpenCode as agent destinations, with model discovery, startup progress, and clearer steering.
-- Improve iPhone chat rendering for inline images and formatted replies, and make new threads start faster.
-- Fix stale notifications, background PDF refresh errors, source-import validation, and link highlighting.
+- Choose light and dark themes inspired by familiar editors; rendered notes and AI chat follow the active theme.
+- Complete date mentions such as `@today` and `@july 10` in chat and editors.
+- Preview images and videos in the native file view, and open a thread’s outputs directly from its chat header.
+- Improve tab switching, document link cues, file properties, and background refresh stability.
+- Keep remote OpenCode turns controllable across restarts and handle prompts beginning with dashes correctly.
+- Fix Google Drive republishing with guarded ETags and improve inline DOCX styling.
+- Find agent CLIs from Finder-launched OpenOrg and refresh Codex model options.
+- Route automatic update downloads through Scarf and add minimal, opt-out desktop launch telemetry.
 
-This release includes the changes since 0.8.4. The macOS downloads are signed and notarized for Apple Silicon and Intel; the iPhone build is distributed separately through TestFlight.
+## Installation
+
+The Apple Silicon and Intel Mac installers are Developer ID signed and notarized. Download the installer matching your Mac. iOS version 0.8.6 is distributed separately through TestFlight.
+
+## Validation
+
+The release pipeline validates the shared runtime, documentation, Node integration suite, VS Code extension, and macOS Swift suite before publication.
 ]]></description>
-            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.5/OpenOrg-Intel.dmg" length="240792673" type="application/octet-stream" sparkle:edSignature="CgTLSyfyof4KF94c8kM4QlkTAeRHNzIgqGR1+5oOKzIoVfh60ZcwmHfR7Cuqc9viTKVKTJZFvDl5aohB7LZxDQ=="/>
+            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.6/OpenOrg-Intel.dmg" length="241395942" type="application/octet-stream" sparkle:edSignature="7n7OnjULEbcdUIfJ7zKSYryPMM9Jurw0qFw9NuphPDNq3MYupCF7XoAxFnyIAu3ga3xFRMFDmgd6nLhLGyZWCg=="></enclosure>
         </item>
     </channel>
-</rss>
-<!-- sparkle-signatures:
-edSignature: KNyphj6JTUohFQ81pHbMDcbHVW8tYkdACVgwH4wbiUhZuoZ4Oh1IKIkNgzafONhPe6hZUAxZA8BQst2br+SCDg==
-length: 1841
+</rss><!-- sparkle-signatures:
+edSignature: l1Al/o1JE+jWCUafMMMYP27gEsRZtXdPdHoYoH9RYAg1sNm1G1MAzAvpPpiU6YJwvDDopIRr/cKe1KYTiCRbBA==
+length: 2329
 -->
