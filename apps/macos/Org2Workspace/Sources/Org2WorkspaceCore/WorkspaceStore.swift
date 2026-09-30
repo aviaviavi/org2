@@ -11762,20 +11762,29 @@ public final class WorkspaceStore {
     return count == 1 ? "1 \(singular) selected" : "\(count) \(singular)s selected"
   }
 
-  private func activateAgentRunDetail(_ runID: AgentRunItem.ID, recordsHistory: Bool) {
+  /// Presents a run in the detail pane. Opening a run from the Runs list
+  /// makes Agent Work the surface, but restoring a tab or back-history
+  /// snapshot must keep the surface that was showing beside the run (for
+  /// example an AI chat thread with a run open in the detail pane); otherwise
+  /// the tab silently turns into an Agent Work tab.
+  private func activateAgentRunDetail(
+    _ runID: AgentRunItem.ID,
+    surface: WorkspaceSurface = .approvals,
+    recordsHistory: Bool
+  ) {
     guard agentRunsByID[runID] != nil else { return }
-    if selectedSurface == .approvals,
+    if selectedSurface == surface,
        selectedAgentRunID == runID,
        presentedAgentRunID == runID,
        !isWorkspaceDetailPaneClosed {
       return
     }
     if recordsHistory,
-       presentedAgentRunID != runID || selectedSurface != .approvals {
+       presentedAgentRunID != runID || selectedSurface != surface {
       recordCurrentNavigationDestination()
     }
     clearDetailForNavigation()
-    selectedSurface = .approvals
+    selectedSurface = surface
     selectedAgentRunID = runID
     presentedAgentRunID = runID
     isWorkspaceDetailPaneClosed = false
@@ -12065,7 +12074,11 @@ public final class WorkspaceStore {
   private func restoreWorkspaceNavigationSnapshot(_ snapshot: WorkspaceNavigationSnapshot) {
     if let runID = snapshot.agentRunDetailID,
        agentRunsByID[runID] != nil {
-      activateAgentRunDetail(runID, recordsHistory: false)
+      activateAgentRunDetail(
+        runID,
+        surface: snapshot.selectedSurface,
+        recordsHistory: false
+      )
     } else if let missingDailyNote = snapshot.missingDailyNote,
               let corpusRoot {
       presentMissingDailyNote(

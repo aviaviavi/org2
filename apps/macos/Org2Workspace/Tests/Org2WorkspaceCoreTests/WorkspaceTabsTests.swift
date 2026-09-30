@@ -518,6 +518,45 @@ final class WorkspaceTabsTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".org2-recovery").path))
   }
 
+  func testAIChatTabWithARunInTheDetailPaneStaysAnAIChatTab() async throws {
+    let (store, defaults, suiteName) = try makeStore()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let run = try JSONDecoder().decode(AgentRunItem.self, from: Data("""
+    {"id":"run-1","goal":"Prepare a cited briefing","acceptanceCriteria":[],
+     "status":"running","riskClass":"local-draft","capabilities":[],"context":[],
+     "plan":[],"artifacts":[],"approvals":[],"validations":[],"comments":[],
+     "events":[],"createdAt":"2026-07-14T00:00:00.000Z",
+     "updatedAt":"2026-07-14T00:01:00.000Z"}
+    """.utf8))
+    store.replaceAgentRunsForTesting([run])
+    await store.waitForAgentRunProjectionForTesting()
+
+    let leftTabID = store.selectedWorkspaceTabID
+    let chatTabID = store.newWorkspaceTab()
+    // Open a run from Agent Work, then switch the surface to an AI chat
+    // thread. The run stays open in the detail pane beside the chat.
+    store.selectAgentRun(run)
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    store.makeSurfacePrimary(.aiChat)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.presentedAgentRun?.id, run.id)
+
+    store.selectWorkspaceTab(leftTabID)
+    XCTAssertEqual(store.selectedSurface, .home)
+    let chatTab = try XCTUnwrap(store.workspaceTabs.first { $0.id == chatTabID })
+    XCTAssertEqual(chatTab.systemImage, WorkspaceSurface.aiChat.systemImage)
+
+    store.selectWorkspaceTab(chatTabID)
+    XCTAssertEqual(store.selectedSurface, .aiChat, "Returning to the tab must not turn it into Agent Work")
+    XCTAssertEqual(store.presentedAgentRun?.id, run.id)
+
+    // Back history uses the same restore path.
+    store.makeSurfacePrimary(.agenda)
+    store.navigateBack()
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.presentedAgentRun?.id, run.id)
+  }
+
   private func makeStore() throws -> (WorkspaceStore, UserDefaults, String) {
     let suiteName = "org2-workspace-tabs-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
