@@ -1743,6 +1743,8 @@ private struct WorkspaceSurfaceView: View {
           RunsAndReviewView()
         case .files:
           FilesView()
+        case .canvases:
+          CanvasesView()
         case .search:
           SearchView()
         case .meetings:
@@ -2415,7 +2417,7 @@ private struct SidebarView: View {
 
       List {
         Section {
-          ForEach(WorkspaceSurface.sidebarCases) { surface in
+          ForEach(WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: store.experimentalFeaturesEnabled)) { surface in
             Button {
               activateSidebarSurface(surface)
             } label: {
@@ -3791,6 +3793,75 @@ private struct AIChatUnreadBadge: View {
     }
     .frame(width: compact ? 8 : 16, height: compact ? 8 : 16)
     .accessibilityLabel(count == 1 ? "1 unread message" : "\(count) unread messages")
+  }
+}
+
+private struct CanvasesView: View {
+  @Environment(WorkspaceStore.self) private var store
+  @FocusState private var filterFocused: Bool
+  @State private var filter = ""
+
+  private var canvases: [CorpusFile] {
+    store.corpusFiles.filter {
+      URL(fileURLWithPath: $0.path).pathExtension.lowercased() == "canvas"
+        && (filter.isEmpty || $0.relativePath.localizedCaseInsensitiveContains(filter))
+    }
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(title: "Canvases", subtitle: "Spatial workspaces", surface: .canvases) {
+        if store.experimentalFeaturesEnabled {
+          Button("New Canvas…", systemImage: "plus") {
+            Task { await store.createJSONCanvasFromPanel() }
+          }
+          .disabled(store.corpusRoot == nil)
+          Button("Import Canvas…", systemImage: "square.and.arrow.down") {
+            Task { await store.createJSONCanvasFromPanel(importing: true) }
+          }
+          .disabled(store.corpusRoot == nil)
+        }
+      }
+      if !store.experimentalFeaturesEnabled {
+        Text("Enable Experimental Features in Settings to use Canvases.")
+          .foregroundStyle(.secondary)
+          .padding()
+        Spacer()
+      } else {
+        TextField("Filter canvases", text: $filter)
+          .textFieldStyle(.roundedBorder)
+          .focused($filterFocused)
+          .padding(.horizontal, WorkspaceDesign.contentInset)
+          .padding(.bottom, 12)
+        if canvases.isEmpty {
+          EmptyStateView(title: "No Canvases", detail: "Create a spatial workspace or import a .canvas file.", action: "New Canvas…") {
+            Task { await store.createJSONCanvasFromPanel() }
+          }
+        } else {
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+              ForEach(canvases) { file in
+                Button {
+                  store.selectCorpusFile(file, surface: .canvases)
+                } label: {
+                  HStack {
+                    Label(file.name, systemImage: "rectangle.3.group")
+                    Spacer()
+                    Text(file.relativePath).foregroundStyle(.secondary)
+                  }
+                  .padding(12)
+                  .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu { CorpusFileContextMenu(file: file) }
+              }
+            }
+            .padding(.horizontal, WorkspaceDesign.contentInset)
+          }
+        }
+      }
+    }
+    .onChange(of: store.corpusFileFilterFocusToken) { filterFocused = true }
   }
 }
 

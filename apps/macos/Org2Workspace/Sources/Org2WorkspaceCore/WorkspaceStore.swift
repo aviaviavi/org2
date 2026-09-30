@@ -6290,6 +6290,7 @@ public final class WorkspaceStore {
     let root = corpusRoot.standardizedFileURL
     let sessionGeneration = corpusSessionGeneration
     let dirtyGeneration = workspaceSurfaceDirtyGenerations[.files, default: 0]
+    let canvasDirtyGeneration = workspaceSurfaceDirtyGenerations[.canvases, default: 0]
     isScanningCorpusFiles = true
     defer {
       if isCurrentCorpusSession(root: root, generation: sessionGeneration) {
@@ -6327,6 +6328,7 @@ public final class WorkspaceStore {
       }
       await reconcilePinnedFiles(for: root)
       markWorkspaceSurfaceCleanIfUnchanged(.files, generation: dirtyGeneration)
+      markWorkspaceSurfaceCleanIfUnchanged(.canvases, generation: canvasDirtyGeneration)
       if selectedSurface == .files {
         statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
       }
@@ -15096,7 +15098,10 @@ public final class WorkspaceStore {
       guard isCurrentDocumentCorpusContext(context) else { return }
       await refreshCorpusFiles()
       guard isCurrentDocumentCorpusContext(context) else { return }
-      selectCorpusFile(CorpusFile(path: result.file, relativePath: relativePath(result.file), modifiedAt: Date(), byteCount: nil))
+      selectCorpusFile(
+        CorpusFile(path: result.file, relativePath: relativePath(result.file), modifiedAt: Date(), byteCount: nil),
+        surface: selectedSurface == .canvases ? .canvases : .files
+      )
       statusText = importing ? "Imported Canvas" : "Created Canvas"
       errorText = nil
     } catch {
@@ -18706,7 +18711,7 @@ public final class WorkspaceStore {
       focusAgendaFilter(clearsFilter: false)
     case .approvals:
       focusRunsAndReviewFilter()
-    case .files:
+    case .files, .canvases:
       focusCorpusFileFilter()
     case .home, .aiChat:
       presentAIChatThreadFind()
@@ -29971,7 +29976,10 @@ public final class WorkspaceStore {
     _ surfaces: Set<WorkspaceSurface>,
     refreshVisible: Bool
   ) {
-    let invalidatedSurfaces = surfaces.filter { $0 != .home }
+    var invalidatedSurfaces = surfaces.filter { $0 != .home }
+    if invalidatedSurfaces.contains(.files) {
+      invalidatedSurfaces.insert(.canvases)
+    }
     if invalidatedSurfaces.contains(.approvals) {
       markRunReviewPagesDirty()
     }
@@ -30051,7 +30059,7 @@ public final class WorkspaceStore {
       break
     case .approvals:
       await refreshSelectedRunReviewPageIfNeeded()
-    case .files:
+    case .files, .canvases:
       await refreshCorpusFiles()
     case .search:
       if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -30090,7 +30098,7 @@ public final class WorkspaceStore {
       case .agents: isRefreshingAgentProfiles
       case .workflows: isRefreshingAgentWorkflows
       }
-    case .files:
+    case .files, .canvases:
       isScanningCorpusFiles
     case .search:
       isSearching
@@ -48459,6 +48467,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case savedViews
   case approvals
   case files
+  case canvases
   case search
   case meetings
   case sources
@@ -48473,6 +48482,13 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     [.home, .agenda, .savedViews, .approvals, .meetings, .sources, .skills, .externalThreads]
   }
 
+  public static func sidebarCases(experimentalFeaturesEnabled: Bool) -> [WorkspaceSurface] {
+    guard experimentalFeaturesEnabled else { return sidebarCases }
+    var surfaces = sidebarCases
+    surfaces.insert(.canvases, at: 3)
+    return surfaces
+  }
+
   public var title: String {
     switch self {
     case .home: "Home"
@@ -48480,6 +48496,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .savedViews: "Saved Views"
     case .approvals: "Agent Work"
     case .files: "Files"
+    case .canvases: "Canvases"
     case .search: "Search"
     case .meetings: "Meetings"
     case .sources: "Sources"
@@ -48496,6 +48513,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .savedViews: "tablecells"
     case .approvals: "bolt.horizontal.circle"
     case .files: "doc.text"
+    case .canvases: "rectangle.3.group"
     case .search: "magnifyingglass"
     case .meetings: "mic"
     case .sources: "arrow.triangle.2.circlepath.circle"
@@ -48512,6 +48530,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .savedViews: ""
     case .approvals: "⌘4"
     case .files: "⌘3"
+    case .canvases: ""
     case .search: "⌘⇧F"
     case .meetings: "⌘5/⌘M"
     case .sources: "⌘0"

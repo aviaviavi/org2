@@ -4,6 +4,12 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 final class JSONCanvasTests: XCTestCase {
+  func testCanvasNavigationRequiresExperimentalFeatures() {
+    XCTAssertFalse(WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: false).contains(.canvases))
+    XCTAssertTrue(WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: true).contains(.canvases))
+    XCTAssertFalse(WorkspaceSurface.sidebarCases.contains(.files))
+  }
+
   func testSharedCanvasContractDecodesTypesOrderingAndGeometry() throws {
     let payload = try JSONDecoder().decode(JSONCanvasPayload.self, from: Data(Self.fixture.utf8))
     let nodes = try XCTUnwrap(payload.document.nodes)
@@ -118,7 +124,8 @@ final class JSONCanvasTests: XCTestCase {
     let original = try XCTUnwrap(fixture["document"] as? [String: Any])
     let canvas = root.appendingPathComponent("work.canvas")
     try JSONSerialization.data(withJSONObject: original, options: [.sortedKeys]).write(to: canvas, options: .atomic)
-    store.selectCorpusFile(CorpusFile(path: canvas.path, relativePath: "work.canvas", modifiedAt: nil, byteCount: nil))
+    store.selectCorpusFile(CorpusFile(path: canvas.path, relativePath: "work.canvas", modifiedAt: nil, byteCount: nil), surface: .canvases)
+    XCTAssertEqual(store.selectedSurface, .canvases)
     XCTAssertTrue(store.selectedFileIsCanvas)
 
     let before: JSONCanvasPayload = try await cli.runJSON(["canvas", "show", "--dir", alias.path, "--file", canvas.path, "--json"])
