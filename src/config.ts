@@ -102,6 +102,12 @@ export interface Org2Config {
   roam?: {
     indexDir?: string;
     dailiesDir?: string;
+    /**
+     * Corpus-relative daily note path template, for example
+     * `journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md`. Overrides the
+     * `dailiesDir/YYYY-MM-DD.org` convention. See dailyNoteTemplate.ts.
+     */
+    dailyFileTemplate?: string;
     nodesDir?: string;
   };
   links?: {

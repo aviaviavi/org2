@@ -313,6 +313,17 @@ org2 todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPP
 
 File-local declarations take precedence over corpus defaults. Declare custom states in the target file, for example =#+TODO: TODO MISSED | DONE SKIPPED=. =--keyword= selects the exact spelling; =--status= also accepts declared custom states alongside standard aliases. Unknown keywords fail with an actionable error. =toggle= follows the current state’s sequence. Terminal transitions maintain =CLOSED=, and =--logbook= records exact state changes. JSON mutation results include =oldKeyword= and =newKeyword= alongside the compatible status buckets. Omit =--apply= to preview.
 
+Point daily navigation at your own dated files with =daily-config=:
+
+#+begin_src sh
+org2 daily-config infer --dir ~/notes --file journal/2026/09/2026-09-29-wind-down.md
+org2 daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md'
+org2 daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md' --apply
+org2 daily-config show --dir ~/notes --date 2026-10-01
+#+end_src
+
+=infer= ranks candidate formats from one example path (ambiguous day/month orders return both readings). Formats are corpus-relative paths using ={YYYY}=, ={YY}=, ={MM}=, ={M}=, ={DD}=, ={D}=, ={MMM}=, ={MMMM}=, ={ddd}=, and ={dddd}=, and must include a month and a day. =set= previews by default, accepts =--if-revision=, and stores the format as =roam.dailyFileTemplate=; =--clear= restores the =roam.dailiesDir/YYYY-MM-DD.org= convention. Invalid saved formats are ignored rather than writing outside the corpus.
+
 * Checkbox edits
 
 #+begin_src sh

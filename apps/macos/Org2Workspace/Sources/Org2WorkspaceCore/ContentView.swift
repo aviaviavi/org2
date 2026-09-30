@@ -11726,6 +11726,7 @@ private struct DetailView: View {
 
 private struct MissingDailyNoteView: View {
   @Environment(WorkspaceStore.self) private var store
+  @State private var isFormatSheetPresented = false
   let note: WorkspaceMissingDailyNote
 
   var body: some View {
@@ -11759,9 +11760,18 @@ private struct MissingDailyNoteView: View {
       }
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(store.isCreatingMissingDailyNote)
+      Button("Use My Own Daily Notes…") { isFormatSheetPresented = true }
+        .buttonStyle(.link)
+        .help("Point OpenOrg at one of your existing daily notes so Today, Yesterday, and Tomorrow open your own files.")
       Spacer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .sheet(isPresented: $isFormatSheetPresented) {
+      DailyNoteFormatSheet(isPresented: $isFormatSheetPresented) {
+        if note.opensHome { store.openHome() } else { store.openDailyNote(.today) }
+      }
+      .environment(store)
+    }
   }
 }
 

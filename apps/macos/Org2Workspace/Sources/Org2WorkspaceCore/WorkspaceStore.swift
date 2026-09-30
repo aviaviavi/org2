@@ -33,7 +33,7 @@ public struct WorkspaceMissingDailyNote: Hashable, Sendable {
   public let file: String
   public let relativePath: String
   public let title: String
-  fileprivate let opensHome: Bool
+  public let opensHome: Bool
   fileprivate let surface: WorkspaceSurface
 }
 
@@ -3310,9 +3310,9 @@ public final class WorkspaceStore {
   @ObservationIgnored private var dailyNoteActivationTask: Task<Void, Never>?
   @ObservationIgnored private var homeActivationTask: Task<Void, Never>?
   @ObservationIgnored private var currentHomeDailyNotePath: String?
-  @ObservationIgnored private var dailyNoteDirectoriesByCorpusPath: [String: URL] = [:]
+  @ObservationIgnored private var dailyNoteDirectoriesByCorpusPath: [String: DailyNoteLocation] = [:]
   @ObservationIgnored private var dailyNoteDirectoryTasksByCorpusPath: [
-    String: (token: UUID, task: Task<URL, Never>)
+    String: (token: UUID, task: Task<DailyNoteLocation, Never>)
   ] = [:]
   @ObservationIgnored var dailyNoteDirectoryPreparationForTesting: (@Sendable (Bool) -> Void)?
   @ObservationIgnored var dailyNoteDirectoryResolverForTesting: (@Sendable (URL) -> URL)?
@@ -47094,14 +47094,32 @@ public final class WorkspaceStore {
     return lines.joined(separator: "\n")
   }
 
-  nonisolated private static func dailyNoteDirectoryOffMain(corpusRoot: URL) -> URL {
+  /// Where daily notes live: a valid `roam.dailyFileTemplate` wins over the
+  /// `roam.dailiesDir/YYYY-MM-DD.org` convention.
+  struct DailyNoteLocation: Sendable, Equatable {
+    let directory: URL
+    let template: DailyNoteTemplate?
+  }
+
+  nonisolated private static func dailyNoteLocationOffMain(corpusRoot: URL) -> DailyNoteLocation {
     let root = corpusRoot.standardizedFileURL
+    let configURL = root.appendingPathComponent("org2.json", isDirectory: false)
+    let config = (try? Data(contentsOf: configURL))
+      .flatMap { try? JSONDecoder().decode(WorkspaceDailyNoteConfig.self, from: $0) }
+    return DailyNoteLocation(
+      directory: dailyNoteDirectoryOffMain(corpusRoot: root, config: config),
+      template: config?.roam?.dailyFileTemplate.flatMap(DailyNoteTemplate.init)
+    )
+  }
+
+  nonisolated private static func dailyNoteDirectoryOffMain(
+    corpusRoot root: URL,
+    config: WorkspaceDailyNoteConfig?
+  ) -> URL {
     let defaultDirectory = root
       .appendingPathComponent("daily", isDirectory: true)
       .standardizedFileURL
-    let configURL = root.appendingPathComponent("org2.json", isDirectory: false)
-    guard let data = try? Data(contentsOf: configURL),
-          let config = try? JSONDecoder().decode(WorkspaceDailyNoteConfig.self, from: data),
+    guard let config,
           let configured = config.roam?.dailiesDir?
             .trimmingCharacters(in: .whitespacesAndNewlines),
           !configured.isEmpty,
@@ -47132,7 +47150,10 @@ public final class WorkspaceStore {
     let token = UUID()
     let task = Task.detached(priority: .utility) {
       observer?(Self.currentThreadIsMainForTesting())
-      return resolver?(root) ?? Self.dailyNoteDirectoryOffMain(corpusRoot: root)
+      if let resolver {
+        return DailyNoteLocation(directory: resolver(root), template: nil)
+      }
+      return Self.dailyNoteLocationOffMain(corpusRoot: root)
     }
     dailyNoteDirectoryTasksByCorpusPath[key] = (token, task)
   }
@@ -47143,7 +47164,7 @@ public final class WorkspaceStore {
     dailyNoteDirectoryTasksByCorpusPath.removeValue(forKey: key)?.task.cancel()
   }
 
-  private func resolvedDailyNoteDirectory(corpusRoot: URL) async -> URL {
+  private func resolvedDailyNoteLocation(corpusRoot: URL) async -> DailyNoteLocation {
     let root = corpusRoot.standardizedFileURL
     let key = root.path
     while true {
@@ -47163,11 +47184,30 @@ public final class WorkspaceStore {
   }
 
   private func dailyNotePath(corpusRoot: URL, date: Date) async -> URL {
-    let directory = await resolvedDailyNoteDirectory(corpusRoot: corpusRoot)
+    let location = await resolvedDailyNoteLocation(corpusRoot: corpusRoot)
+    if let template = location.template {
+      return template.url(for: date, corpusRoot: corpusRoot)
+    }
+    let directory = location.directory
     let baseName = Self.formatDate(date)
     return await Task.detached(priority: .userInitiated) {
       OrgDocumentDefaults.url(in: directory, baseName: baseName)
     }.value
+  }
+
+  /// The configured `roam.dailyFileTemplate` for the active corpus, once
+  /// resolved. Nil means the `dailiesDir/YYYY-MM-DD.org` convention applies.
+  public var activeDailyNoteTemplate: DailyNoteTemplate? {
+    guard let corpusRoot else { return nil }
+    return dailyNoteDirectoriesByCorpusPath[corpusRoot.standardizedFileURL.path]?.template
+  }
+
+  /// Re-reads daily note configuration after Settings changes org2.json.
+  /// File watching also invalidates it; this avoids waiting for the event.
+  public func reloadDailyNoteConfiguration() {
+    guard let corpusRoot else { return }
+    invalidateDailyNoteDirectory(for: corpusRoot)
+    prepareDailyNoteDirectory(for: corpusRoot)
   }
 
   /// The active corpus's existing daily note for `date`, read from the file
@@ -47175,7 +47215,12 @@ public final class WorkspaceStore {
   func existingDailyNoteFile(for date: Date) -> CorpusFile? {
     guard let corpusRoot else { return nil }
     let root = corpusRoot.standardizedFileURL
-    let directory = dailyNoteDirectoriesByCorpusPath[root.path]
+    let location = dailyNoteDirectoriesByCorpusPath[root.path]
+    if let template = location?.template {
+      let path = template.url(for: date, corpusRoot: root).path
+      return corpusFilesByPath[path] ?? corpusFiles.first { $0.path == path }
+    }
+    let directory = location?.directory
       ?? root.appendingPathComponent("daily", isDirectory: true).standardizedFileURL
     return Self.existingDailyNoteFile(
       baseName: Self.formatDate(date),
@@ -47300,8 +47345,7 @@ public final class WorkspaceStore {
         at: authorizedParent,
         withIntermediateDirectories: true
       )
-      let title = url.deletingPathExtension().lastPathComponent
-      try await execution.commit("#+TITLE: \(title)\n\n", over: snapshot) {
+      try await execution.commit(DailyNoteTemplate.initialContent(for: url), over: snapshot) {
         text, url, previous in
         try Self.commitDocumentText(
           text,
@@ -48244,6 +48288,7 @@ private struct WorkspaceDailyNoteConfig: Decodable {
 
   struct Roam: Decodable {
     let dailiesDir: String?
+    let dailyFileTemplate: String?
   }
 }
 

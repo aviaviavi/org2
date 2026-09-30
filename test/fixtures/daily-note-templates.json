@@ -1,0 +1,35 @@
+{
+  "render": [
+    { "template": "daily/{YYYY}-{MM}-{DD}.org", "date": "2026-09-29", "path": "daily/2026-09-29.org" },
+    { "template": "journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md", "date": "2026-10-01", "path": "journal/2026/10/2026-10-01-wind-down.md" },
+    { "template": "ops/{MM}{DD}-startup.md", "date": "2026-01-05", "path": "ops/0105-startup.md" },
+    { "template": "days/{YY}/{M}/{D}.md", "date": "2027-03-04", "path": "days/27/3/4.md" },
+    { "template": "notes/{dddd}, {MMMM} {D}, {YYYY}.md", "date": "2026-09-29", "path": "notes/Tuesday, September 29, 2026.md" },
+    { "template": "log/{ddd} {MMM} {DD}.txt", "date": "2024-02-29", "path": "log/Thu Feb 29.txt" }
+  ],
+  "invalid": [
+    "",
+    "/abs/{YYYY}-{MM}-{DD}.md",
+    "~/notes/{MM}-{DD}.md",
+    "../outside/{MM}-{DD}.md",
+    "daily//{MM}-{DD}.md",
+    "daily/{YYYY}-{MM}.md",
+    "daily/{YYYY}-{DD}.md",
+    "daily/{YYYY}-{MM}-{DAY}.md",
+    "daily/{YYYY-{MM}-{DD}.md",
+    "daily/.{MM}-{DD}.md"
+  ],
+  "infer": [
+    { "path": "daily/2026-09-29.org", "template": "daily/{YYYY}-{MM}-{DD}.org", "date": "2026-09-29" },
+    { "path": "journal/2026/09/2026-09-29-wind-down.md", "template": "journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md", "date": "2026-09-29" },
+    { "path": "ops/2026/0929-startup.md", "template": "ops/{YYYY}/{MM}{DD}-startup.md", "date": "2026-09-29" },
+    { "path": "ops/0928 wind down.md", "template": "ops/{MM}{DD} wind down.md", "date": "2026-09-28" },
+    { "path": "notes/Tuesday, September 29, 2026.md", "template": "notes/{dddd}, {MMMM} {DD}, {YYYY}.md", "date": "2026-09-29" },
+    { "path": "logs/29-09-2026.md", "template": "logs/{DD}-{MM}-{YYYY}.md", "date": "2026-09-29" },
+    { "path": "days/2026/9/29.md", "template": "days/{YYYY}/{M}/{D}.md", "date": "2026-09-29" },
+    { "path": "20260929.md", "template": "{YYYY}{MM}{DD}.md", "date": "2026-09-29" },
+    { "path": "projects/v2/2026-09-29-standup-3.md", "template": "projects/v2/{YYYY}-{MM}-{DD}-standup-3.md", "date": "2026-09-29" },
+    { "path": "readme.md", "template": null }
+  ],
+  "inferReference": "2026-09-30"
+}

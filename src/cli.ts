@@ -51,6 +51,11 @@ async function main(): Promise<void> {
     await runTodoConfigCommand(args.slice(1));
     return;
   }
+  if (args[0] === "daily-config") {
+    const { runDailyConfigCommand } = await import("./dailyConfigCli.js");
+    await runDailyConfigCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "property-view") {
     const { runPropertyViewsCommand } = await import("./propertyViewsCli.js");
     await runPropertyViewsCommand(args.slice(1));

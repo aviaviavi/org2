@@ -161,6 +161,7 @@ private struct GeneralSettingsView: View {
           Text("When enabled, Daily links open existing files only. If a note is missing, OpenOrg shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
         }
       }
+      if store.corpusRoot != nil { DailyNoteFormatSettingsSection() }
       if store.corpusRoot != nil {
         Section {
           LabeledContent("Scheduler") {
