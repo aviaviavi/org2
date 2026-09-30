@@ -18266,6 +18266,34 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSubmittingEditedCaptureDraftDismissesCapturePanel() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-capture-dismiss-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+
+    // Agenda "c" opens the panel with an empty task draft; the sheet then
+    // edits its own copy, so the submitted draft differs from store.captureDraft.
+    store.promptAndCaptureTodoShortcut()
+    XCTAssertTrue(store.isCapturePanelPresented)
+    var edited = store.captureDraft
+    edited.title = "Typed in capture modal"
+
+    await store.submitCaptureDraft(edited)
+
+    XCTAssertFalse(store.isCapturePanelPresented)
+    let dailies = root.appendingPathComponent("dailies", isDirectory: true)
+    let captured = try FileManager.default.contentsOfDirectory(at: dailies, includingPropertiesForKeys: nil)
+      .map { try String(contentsOf: $0, encoding: .utf8) }
+      .joined()
+    XCTAssertTrue(captured.contains("* TODO Typed in capture modal"))
+  }
+
+  @MainActor
   func testGlobalCaptureDraftWritesMetadataAndAttachments() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-global-capture-\(UUID().uuidString)", isDirectory: true)

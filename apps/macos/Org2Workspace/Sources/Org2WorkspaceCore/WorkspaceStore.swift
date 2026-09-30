@@ -37161,6 +37161,9 @@ public final class WorkspaceStore {
       return
     }
 
+    // The capture sheet edits a local copy of the draft, so compare the
+    // presentation instead of the draft to decide whether to dismiss it.
+    let presentationID = capturePanelPresentationID
     let target = await dailyNotePath(corpusRoot: corpusRoot, date: Date())
     let attachmentsDirectory = corpusRoot.appendingPathComponent("attachments", isDirectory: true)
     let assignee = resolvedAgentHandoffAssignee()
@@ -37182,7 +37185,7 @@ public final class WorkspaceStore {
       }
       guard isCurrentDocumentCorpusContext(context) else { return }
       statusText = "Captured \(draft.kind.title.lowercased()) -> \(target.lastPathComponent)"
-      if captureDraft == draft {
+      if capturePanelPresentationID == presentationID {
         isCapturePanelPresented = false
       }
       invalidateCanonicalDocumentCache(for: target.path)
