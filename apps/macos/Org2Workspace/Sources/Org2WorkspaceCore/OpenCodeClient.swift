@@ -967,13 +967,13 @@ sys.exit(result.returncode)
       )
     }
     let errorTask = Task.detached(priority: .utility) {
-      String(decoding: try standardError.fileHandleForReading.readToEnd() ?? Data(), as: UTF8.self)
+      String(
+        decoding: try await BlockingIO.readToEnd(standardError.fileHandleForReading) ?? Data(),
+        as: UTF8.self
+      )
     }
     let status: Int32 = await withTaskCancellationHandler {
-      await Task.detached(priority: .userInitiated) {
-        process.waitUntilExit()
-        return process.terminationStatus
-      }.value
+      await BlockingIO.terminationStatus(of: process)
     } onCancel: {
       Task { await self.interrupt(openOrgThreadID: openOrgThreadID) }
     }
@@ -1191,7 +1191,7 @@ sys.exit(result.returncode)
         throw OpenCodeError.invalidResponse("the private server reported an invalid endpoint")
       }
       let outputDrain = Task.detached(priority: .utility) {
-        _ = try? output.fileHandleForReading.readToEnd()
+        _ = try? await BlockingIO.readToEnd(output.fileHandleForReading)
       }
       return (process, url, outputDrain)
     } catch {
@@ -1214,7 +1214,7 @@ sys.exit(result.returncode)
   }
 
   private nonisolated static func readLine(from handle: FileHandle) async throws -> String {
-    try await Task.detached(priority: .userInitiated) {
+    try await BlockingIO.run {
       var data = Data()
       while let byte = try handle.read(upToCount: 1), !byte.isEmpty {
         if byte[byte.startIndex] == 0x0A { break }
@@ -1224,7 +1224,7 @@ sys.exit(result.returncode)
         }
       }
       return String(decoding: data, as: UTF8.self)
-    }.value
+    }
   }
 
   private nonisolated static func isLoopbackServerURL(_ value: String) -> Bool {
@@ -1243,7 +1243,7 @@ sys.exit(result.returncode)
   ) async throws -> OpenCodeStreamResult {
     var decoder = OpenCodeStreamDecoder()
     var buffer = Data()
-    while let chunk = try handle.read(upToCount: 16_384), !chunk.isEmpty {
+    while let chunk = try await BlockingIO.read(handle, upToCount: 16_384), !chunk.isEmpty {
       buffer.append(chunk)
       while let newline = buffer.firstIndex(of: 0x0A) {
         let lineData = buffer[..<newline]
@@ -1281,7 +1281,7 @@ sys.exit(result.returncode)
     environment: [String: String],
     input: Data? = nil
   ) async throws -> (output: String, error: String) {
-    try await Task.detached(priority: .utility) {
+    try await BlockingIO.run {
       let process = Process()
       let standardInput = Pipe()
       let standardOutput = Pipe()
@@ -1319,7 +1319,7 @@ sys.exit(result.returncode)
         )
       }
       return (output, error)
-    }.value
+    }
   }
 
   private nonisolated static func materializeAttachments(

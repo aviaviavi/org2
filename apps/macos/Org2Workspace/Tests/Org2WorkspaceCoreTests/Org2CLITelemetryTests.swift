@@ -89,6 +89,49 @@ final class Org2CLITelemetryTests: XCTestCase {
     XCTAssertEqual(large.nodeOptions.count, 2)
   }
 
+  func testConcurrentCommandsPreserveLargeInputAndBothOutputPipes() async throws {
+    let root = try makeArgumentFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    const fs = require('node:fs');
+    const input = fs.readFileSync(0, 'utf8');
+    process.stderr.write('diagnostic'.repeat(100000));
+    process.stdout.write(JSON.stringify({ arguments: [input], script: process.argv[1] }));
+    """.write(to: root.appendingPathComponent("dist/cli.js"), atomically: true, encoding: .utf8)
+    let input = String(repeating: "🌍 chunk\n", count: 100000)
+    let cli = Org2CLI(repoRoot: root)
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for _ in 0..<8 {
+        group.addTask {
+          let payload: ArgumentFixtureOutput = try await cli.runJSON(
+            ["workflow", "due"], standardInput: Data(input.utf8)
+          )
+          XCTAssertEqual(payload.arguments, [input])
+        }
+      }
+      try await group.waitForAll()
+    }
+  }
+
+  func testInheritedPipesPreserveJSONAndReleaseDescriptorsWithoutEOF() async throws {
+    let root = try makeArgumentFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    const { spawn } = require('node:child_process');
+    spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'], {
+      detached: true, stdio: ['ignore', 1, 2]
+    }).unref();
+    process.stdout.write(JSON.stringify({ schema: 'org2:automation-due-list:v1',
+      now: '2026-09-29T23:00:00Z', due: [], skipped: [], hostRef: 'press-trial' }));
+    """.write(to: root.appendingPathComponent("dist/cli.js"), atomically: true, encoding: .utf8)
+    let baseline = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+    let payload: AgentWorkflowDueListPayload = try await Org2CLI(repoRoot: root).runJSON(["workflow", "due"])
+    XCTAssertEqual(payload.hostRef, "press-trial")
+    XCTAssertTrue(payload.due.isEmpty)
+    let after = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+    XCTAssertLessThanOrEqual(after, baseline + 2, "Inherited descriptors must not leave pipe readers behind")
+  }
+
   private struct ArgumentFixtureOutput: Decodable {
     let arguments: [String]
     let script: String

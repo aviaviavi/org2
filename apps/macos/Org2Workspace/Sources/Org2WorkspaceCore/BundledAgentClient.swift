@@ -72,7 +72,7 @@ public struct BundledAgentClient: Sendable {
       var reply: String?
       while true {
         try Task.checkCancellation()
-        let chunk = output.fileHandleForReading.availableData
+        let chunk = try await BlockingIO.read(output.fileHandleForReading, upToCount: 65_536) ?? Data()
         if chunk.isEmpty { break }
         buffer.append(chunk)
         guard buffer.count <= 8 * 1024 * 1024 else {
@@ -108,7 +108,7 @@ public struct BundledAgentClient: Sendable {
           }
         }
       }
-      process.waitUntilExit()
+      _ = await BlockingIO.terminationStatus(of: process)
       try Task.checkCancellation()
       guard process.terminationStatus == 0, buffer.isEmpty, let reply, !reply.isEmpty else {
         throw BundledAgentError(message: "The bundled agent stopped before completing its reply.")

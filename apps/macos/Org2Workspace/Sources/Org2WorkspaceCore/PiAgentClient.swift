@@ -422,13 +422,10 @@ finally:
       )
     }
     let errorTask = Task.detached(priority: .utility) {
-      String(decoding: try standardError.fileHandleForReading.readToEnd() ?? Data(), as: UTF8.self)
+      String(decoding: try await BlockingIO.readToEnd(standardError.fileHandleForReading) ?? Data(), as: UTF8.self)
     }
     let status: Int32 = await withTaskCancellationHandler {
-      await Task.detached(priority: .userInitiated) {
-        process.waitUntilExit()
-        return process.terminationStatus
-      }.value
+      await BlockingIO.terminationStatus(of: process)
     } onCancel: {
       Task { await self.interrupt(openOrgThreadID: openOrgThreadID) }
     }
@@ -475,7 +472,7 @@ finally:
   ) async throws -> PiAgentStreamResult {
     var decoder = PiAgentStreamDecoder()
     var buffer = Data()
-    while let chunk = try handle.read(upToCount: 16_384), !chunk.isEmpty {
+    while let chunk = try await BlockingIO.read(handle, upToCount: 16_384), !chunk.isEmpty {
       buffer.append(chunk)
       while let newline = buffer.firstIndex(of: 0x0A) {
         let lineData = buffer[..<newline]

@@ -163,14 +163,7 @@ public struct Org2CLI: Sendable {
     if sourceRanges {
       arguments.insert("--source-ranges", at: 0)
     }
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
     return try await decodeJSON(T.self, from: data)
   }
 
@@ -190,18 +183,11 @@ public struct Org2CLI: Sendable {
     if sourceRanges {
       arguments.insert("--source-ranges", at: 0)
     }
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(
-        scriptPath: repoRoot.appendingPathComponent("dist/parse.js"),
-        arguments: arguments,
-        standardInput: Data(text.utf8)
-      )
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(
+      scriptPath: repoRoot.appendingPathComponent("dist/parse.js"),
+      arguments: arguments,
+      standardInput: Data(text.utf8)
+    )
     return try await decodeJSON(T.self, from: data)
   }
 
@@ -287,19 +273,12 @@ public struct Org2CLI: Sendable {
     if let stylesheetPath, !stylesheetPath.isEmpty {
       arguments.append(contentsOf: ["--stylesheet", stylesheetPath])
     }
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(
-        scriptPath: repoRoot.appendingPathComponent("dist/render-html.js"),
-        arguments: arguments,
-        standardInput: Data(text.utf8),
-        timeout: timeout
-      )
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(
+      scriptPath: repoRoot.appendingPathComponent("dist/render-html.js"),
+      arguments: arguments,
+      standardInput: Data(text.utf8),
+      timeout: timeout
+    )
     return String(decoding: data, as: UTF8.self)
   }
 
@@ -333,19 +312,12 @@ public struct Org2CLI: Sendable {
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
     }
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(
-        scriptPath: repoRoot.appendingPathComponent("dist/render-presentation-pdf.js"),
-        arguments: arguments,
-        standardInput: Data(text.utf8),
-        timeout: timeout
-      )
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(
+      scriptPath: repoRoot.appendingPathComponent("dist/render-presentation-pdf.js"),
+      arguments: arguments,
+      standardInput: Data(text.utf8),
+      timeout: timeout
+    )
     guard data.starts(with: Data("%PDF".utf8)) else {
       throw Org2CLIError.commandFailed(
         status: 0,
@@ -366,19 +338,12 @@ public struct Org2CLI: Sendable {
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
     }
-    let operation = Task.detached(priority: .utility) {
-      try runProcess(
-        scriptPath: repoRoot.appendingPathComponent("dist/editor-analysis.js"),
-        arguments: arguments,
-        standardInput: Data(text.utf8),
-        timeout: timeout
-      )
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(
+      scriptPath: repoRoot.appendingPathComponent("dist/editor-analysis.js"),
+      arguments: arguments,
+      standardInput: Data(text.utf8),
+      timeout: timeout
+    )
     let payload = try await decodeJSON(Org2EditorAnalysisPayload.self, from: data)
     return OrgSourceEditorSemanticSnapshot(payload: payload)
   }
@@ -393,14 +358,7 @@ public struct Org2CLI: Sendable {
   }
 
   public func run(_ arguments: [String], environment: [String: String] = [:], standardInput: Data? = nil) async throws -> Data {
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(scriptPath: cliPath, arguments: arguments, standardInput: standardInput, environment: environment)
-    }
-    return try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    return try await runProcessOffPool(scriptPath: cliPath, arguments: arguments, standardInput: standardInput, environment: environment)
   }
 
   public func runSync(_ arguments: [String]) throws -> Data {
@@ -412,19 +370,12 @@ public struct Org2CLI: Sendable {
     canonicalOrgSyntax: Bool = false,
     timeout: TimeInterval = 8
   ) async throws -> String {
-    let operation = Task.detached(priority: .userInitiated) {
-      try runProcess(
-        scriptPath: cliPath,
-        arguments: ["fmt", "--stdin"] + (canonicalOrgSyntax ? ["--canonical-org"] : []),
-        standardInput: Data(text.utf8),
-        timeout: timeout
-      )
-    }
-    let data = try await withTaskCancellationHandler {
-      try await operation.value
-    } onCancel: {
-      operation.cancel()
-    }
+    let data = try await runProcessOffPool(
+      scriptPath: cliPath,
+      arguments: ["fmt", "--stdin"] + (canonicalOrgSyntax ? ["--canonical-org"] : []),
+      standardInput: Data(text.utf8),
+      timeout: timeout
+    )
     return String(decoding: data, as: UTF8.self)
   }
 
@@ -452,12 +403,36 @@ public struct Org2CLI: Sendable {
     return decoded.value
   }
 
-  private func runProcess(
+  /// Process polling must not occupy Swift's cooperative executor.
+  private func runProcessOffPool(
     scriptPath: URL,
     arguments: [String],
     standardInput: Data? = nil,
     timeout: TimeInterval? = nil,
     environment: [String: String] = [:]
+  ) async throws -> Data {
+    let cancellation = BlockingIOCancellation()
+    return try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      return try await BlockingIO.run {
+        try runProcess(
+          scriptPath: scriptPath, arguments: arguments,
+          standardInput: standardInput, timeout: timeout,
+          environment: environment, isCancelled: cancellation.isCancelled
+        )
+      }
+    } onCancel: {
+      cancellation.cancel()
+    }
+  }
+
+  private func runProcess(
+    scriptPath: URL,
+    arguments: [String],
+    standardInput: Data? = nil,
+    timeout: TimeInterval? = nil,
+    environment: [String: String] = [:],
+    isCancelled: () -> Bool = { Task.isCancelled }
   ) throws -> Data {
     _ = Self.ignoreBrokenPipeSignal
 
@@ -525,9 +500,17 @@ public struct Org2CLI: Sendable {
       process.standardInput = stdin
     }
 
-    let stdoutCollector = PipeOutputCollector()
-    let stderrCollector = PipeOutputCollector()
-    let readGroup = DispatchGroup()
+    // Drain on the process worker itself. Queueing blocking pipe readers on
+    // GCD can exhaust its worker threads; the old one-second join then returned
+    // empty/partial JSON even though the command succeeded.
+    var stdoutCollector = try CLIOutputPipe(stdout.fileHandleForReading)
+    var stderrCollector = try CLIOutputPipe(stderr.fileHandleForReading)
+    var inputWriter = try stdin.map { try CLIInputPipe($0.fileHandleForWriting, data: standardInput!) }
+    defer {
+      try? stdout.fileHandleForReading.close()
+      try? stderr.fileHandleForReading.close()
+      try? stdin?.fileHandleForWriting.close()
+    }
 
     do {
       try process.run()
@@ -535,44 +518,13 @@ public struct Org2CLI: Sendable {
       outcome = .launchFailed
       throw error
     }
-
-    // The child inherits its own copies. Keeping the parent's write ends open
-    // can prevent readDataToEndOfFile() from ever observing EOF after the child
-    // exits, leaving refresh tasks permanently stuck in readGroup.wait().
     try? stdout.fileHandleForWriting.close()
     try? stderr.fileHandleForWriting.close()
-    if let stdin {
-      // The child inherited the read end during launch. The parent never reads
-      // from stdin, so retaining this handle leaks one descriptor per command.
-      try? stdin.fileHandleForReading.close()
-    }
+    try? stdin?.fileHandleForReading.close()
 
-    if let standardInput, let stdin {
-      readGroup.enter()
-      DispatchQueue.global(qos: .userInitiated).async {
-        defer {
-          try? stdin.fileHandleForWriting.close()
-          readGroup.leave()
-        }
-        try? stdin.fileHandleForWriting.write(contentsOf: standardInput)
-      }
-    }
-
-    readGroup.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
-      defer {
-        try? stdout.fileHandleForReading.close()
-        readGroup.leave()
-      }
-      stdoutCollector.drain(stdout.fileHandleForReading)
-    }
-    readGroup.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
-      defer {
-        try? stderr.fileHandleForReading.close()
-        readGroup.leave()
-      }
-      stderrCollector.drain(stderr.fileHandleForReading)
+    func drainOutput() {
+      stdoutCollector.drainAvailable()
+      stderrCollector.drainAvailable()
     }
 
     let deadline = timeout.map {
@@ -581,7 +533,9 @@ public struct Org2CLI: Sendable {
     var didTimeOut = false
     var wasCancelled = false
     while process.isRunning {
-      if Task.isCancelled {
+      drainOutput()
+      inputWriter?.writeAvailable()
+      if isCancelled() {
         wasCancelled = true
         break
       }
@@ -596,6 +550,7 @@ public struct Org2CLI: Sendable {
       process.terminate()
       let terminationDeadline = DispatchTime.now() + .milliseconds(500)
       while process.isRunning && DispatchTime.now() < terminationDeadline {
+        drainOutput()
         Thread.sleep(forTimeInterval: 0.01)
       }
       if process.isRunning {
@@ -605,14 +560,14 @@ public struct Org2CLI: Sendable {
 
     process.waitUntilExit()
     exitStatus = process.terminationStatus
-    // A command (or a descendant it spawned) can keep a pipe descriptor open
-    // after the direct child exits. Never let output draining turn that into an
-    // unbounded application hang. Do not forcibly close a FileHandle while its
-    // reader is active; Foundation can raise an Objective-C exception. The
-    // reader owns the pipe and will unwind naturally when the descriptor closes.
-    // Collectors publish each chunk as it arrives, so a descendant retaining the
-    // pipe cannot make us discard output already written by the direct child.
-    _ = readGroup.wait(timeout: .now() + 1)
+    // Descendants may retain stdout/stderr. Read all available bytes without
+    // waiting for EOF indefinitely or leaving blocking readers behind.
+    let drainDeadline = DispatchTime.now() + .seconds(1)
+    repeat {
+      drainOutput()
+      if stdoutCollector.reachedEOF && stderrCollector.reachedEOF { break }
+      Thread.sleep(forTimeInterval: 0.01)
+    } while DispatchTime.now() < drainDeadline
 
     let outData = stdoutCollector.data
     let errData = stderrCollector.data
@@ -757,25 +712,68 @@ public struct Org2CLI: Sendable {
   }
 }
 
-private final class PipeOutputCollector: @unchecked Sendable {
-  private let lock = NSLock()
-  private var storage = Data()
+/// The owning process worker performs nonblocking I/O for all three pipes.
+/// No pipe reader depends on a free GCD thread, and the owner can close the
+/// descriptors safely even when a child descendant retains a write end.
+private struct CLIOutputPipe {
+  let descriptor: Int32
+  private(set) var data = Data()
+  private(set) var reachedEOF = false
 
-  func drain(_ handle: FileHandle) {
-    while true {
-      let chunk = handle.availableData
-      guard !chunk.isEmpty else { return }
-      lock.lock()
-      storage.append(chunk)
-      lock.unlock()
+  init(_ handle: FileHandle) throws {
+    descriptor = handle.fileDescriptor
+    let flags = fcntl(descriptor, F_GETFL)
+    guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
   }
 
-  var data: Data {
-    lock.lock()
-    let data = storage
-    lock.unlock()
-    return data
+  mutating func drainAvailable() {
+    guard !reachedEOF else { return }
+    var bytes = [UInt8](repeating: 0, count: 16 * 1024)
+    // Bound each pass so a noisy child cannot starve cancellation or stdin.
+    for _ in 0..<64 {
+      let count = Darwin.read(descriptor, &bytes, bytes.count)
+      if count > 0 { data.append(contentsOf: bytes.prefix(count)) }
+      else if count == 0 { reachedEOF = true; return }
+      else if errno == EINTR { continue }
+      else { return }
+    }
+  }
+}
+
+private struct CLIInputPipe {
+  let handle: FileHandle
+  let data: Data
+  private var offset = 0
+  private var closed = false
+
+  init(_ handle: FileHandle, data: Data) throws {
+    self.handle = handle
+    self.data = data
+    let flags = fcntl(handle.fileDescriptor, F_GETFL)
+    guard flags >= 0, fcntl(handle.fileDescriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+  }
+
+  mutating func writeAvailable() {
+    guard !closed else { return }
+    for _ in 0..<64 {
+      if offset == data.count { close(); return }
+      let count = data.withUnsafeBytes { bytes in
+        Darwin.write(handle.fileDescriptor, bytes.baseAddress!.advanced(by: offset), min(16 * 1024, data.count - offset))
+      }
+      if count > 0 { offset += count }
+      else if count < 0 && errno == EINTR { continue }
+      else if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { return }
+      else { close(); return }
+    }
+  }
+
+  private mutating func close() {
+    closed = true
+    try? handle.close()
   }
 }
 
