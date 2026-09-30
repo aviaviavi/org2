@@ -4,6 +4,27 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.6 - 2026-09-30
+
+## Highlights
+
+- Choose light and dark themes inspired by familiar editors; rendered notes and AI chat follow the active theme.
+- Complete date mentions such as `@today` and `@july 10` in chat and editors.
+- Preview images and videos in the native file view, and open a thread’s outputs directly from its chat header.
+- Improve tab switching, document link cues, file properties, and background refresh stability.
+- Keep remote OpenCode turns controllable across restarts and handle prompts beginning with dashes correctly.
+- Fix Google Drive republishing with guarded ETags and improve inline DOCX styling.
+- Find agent CLIs from Finder-launched OpenOrg and refresh Codex model options.
+- Route automatic update downloads through Scarf and add minimal, opt-out desktop launch telemetry.
+
+## Installation
+
+The Apple Silicon and Intel Mac installers are Developer ID signed and notarized. Download the installer matching your Mac. iOS version 0.8.6 is distributed separately through TestFlight.
+
+## Validation
+
+The release pipeline validates the shared runtime, documentation, Node integration suite, VS Code extension, and macOS Swift suite before publication.
+
 ## 0.8.5 - 2026-09-26
 
 ## Highlights
