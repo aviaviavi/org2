@@ -3587,6 +3587,7 @@ public final class WorkspaceStore {
   private var sourceAutoSyncTask: Task<Void, Never>?
   private var sourceAutoSyncActivationTask: Task<Void, Never>?
   private var isSourceAutoSyncActive = false
+  private var automationSchedulerPresentedErrorText: String?
   private var automationSchedulerTask: Task<Void, Never>?
   private var automationSchedulerActivationTask: Task<Void, Never>?
   private var isAutomationSchedulerActive = false
@@ -5842,6 +5843,12 @@ public final class WorkspaceStore {
         "--dir", corpusRoot.path,
         "--json"
       ])
+      // A successful check recovers its own warning, while preserving errors
+      // from another workspace action that arrived in the meantime.
+      if errorText == automationSchedulerPresentedErrorText {
+        errorText = nil
+      }
+      automationSchedulerPresentedErrorText = nil
       if let hostRef = payload.hostRef?.trimmingCharacters(in: .whitespacesAndNewlines),
          !hostRef.isEmpty {
         automationOwnerHostRef = hostRef
@@ -5865,7 +5872,9 @@ public final class WorkspaceStore {
     } catch {
       automationSchedulerStatusText = "Automation check failed"
       automationSchedulerErrorText = error.localizedDescription
-      errorText = "Automation scheduler: \(error.localizedDescription)"
+      let notice = "Automation scheduler: \(error.localizedDescription)"
+      automationSchedulerPresentedErrorText = notice
+      errorText = notice
     }
   }
 

@@ -151,6 +151,53 @@ final class WorkspaceRefreshTests: XCTestCase {
     XCTAssertTrue(explicitRefreshShowedLoading, "An explicit Refresh still shows progress")
   }
 
+  func testRecoveredAutomationCheckClearsOnlyItsOwnErrorBanner() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let dist = root.appendingPathComponent("dist")
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let realCLI = try Org2CLI.defaultRepoRoot().appendingPathComponent("dist/cli.js").path
+    let encodedCLI = String(decoding: try JSONEncoder().encode(realCLI), as: UTF8.self)
+    let response = root.appendingPathComponent("scheduler-response")
+    try """
+    const fs = require('node:fs');
+    if (process.argv[2] === 'workflow' && process.argv[3] === 'due') {
+      process.stdout.write(fs.readFileSync('scheduler-response'));
+    } else {
+      process.stdout.write(require('node:child_process').execFileSync(process.execPath,
+        [\(encodedCLI), ...process.argv.slice(2)]));
+    }
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+    try "invalid JSON".write(to: response, atomically: true, encoding: .utf8)
+    let suite = "scheduler-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: root), defaults: defaults)
+    store.setWorkspaceRealtimeRefreshActive(false)
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 3_600_000_000_000)
+    defer { store.setAutomationSchedulerActive(false) }
+    let deadline = Date().addingTimeInterval(5)
+    while store.automationSchedulerErrorText == nil && Date() < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(store.errorText?.hasPrefix("Automation scheduler:") == true)
+    let valid = #"{"schema":"org2:automation-due-list:v1","now":"2026-09-29T23:00:00Z","due":[],"skipped":[],"hostRef":"press-trial"}"#
+    try valid.write(to: response, atomically: true, encoding: .utf8)
+    await store.checkDueAgentAutomations()
+    XCTAssertNil(store.automationSchedulerErrorText)
+    XCTAssertNil(store.errorText)
+    XCTAssertEqual(store.automationOwnerHostRef, "press-trial")
+
+    try "invalid JSON".write(to: response, atomically: true, encoding: .utf8)
+    await store.checkDueAgentAutomations()
+    store.errorText = "Saving the document failed"
+    try valid.write(to: response, atomically: true, encoding: .utf8)
+    await store.checkDueAgentAutomations()
+    XCTAssertNil(store.automationSchedulerErrorText)
+    XCTAssertEqual(store.errorText, "Saving the document failed")
+  }
+
   func testRoutineAutomationChecksKeepSettledSchedulerStatus() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
