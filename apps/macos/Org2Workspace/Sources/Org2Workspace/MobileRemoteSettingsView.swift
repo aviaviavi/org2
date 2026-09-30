@@ -73,21 +73,6 @@ private struct GeneralSettingsView: View {
   var body: some View {
     Form {
       Section {
-        Toggle("Send launch telemetry", isOn: $telemetry.enabled)
-      } header: {
-        Label("Telemetry", systemImage: "chart.bar")
-      } footer: {
-        SettingsFooterText("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
-      }
-      Section {
-        Toggle("Experimental features", isOn: Binding(
-          get: { store.experimentalFeaturesEnabled },
-          set: { store.experimentalFeaturesEnabled = $0 }
-        ))
-      } footer: {
-        SettingsFooterText("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
-      }
-      Section {
         if let root = store.corpusRoot {
           TextField("Name", text: $corpusName)
 
@@ -179,6 +164,25 @@ private struct GeneralSettingsView: View {
         }
       }
       if store.corpusRoot != nil { CorpusTodoSettingsSection() }
+      // App-wide preferences stay below the workspace settings: experimental
+      // features second from the bottom, telemetry last.
+      Section {
+        Toggle("Experimental features", isOn: Binding(
+          get: { store.experimentalFeaturesEnabled },
+          set: { store.experimentalFeaturesEnabled = $0 }
+        ))
+      } header: {
+        Label("Experimental", systemImage: "flask")
+      } footer: {
+        SettingsFooterText("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
+      }
+      Section {
+        Toggle("Send launch telemetry", isOn: $telemetry.enabled)
+      } header: {
+        Label("Telemetry", systemImage: "chart.bar")
+      } footer: {
+        SettingsFooterText("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
+      }
     }
     .formStyle(.grouped)
     .padding(8)
@@ -906,21 +910,5 @@ private struct MobileRemoteSettingsView: View {
     let image = NSImage(size: representation.size)
     image.addRepresentation(representation)
     return image
-  }
-}
-
-/// Grouped `Form` footers are trailing-aligned on macOS; settings prose reads
-/// better as leading-aligned paragraphs.
-private struct SettingsFooterText: View {
-  private let text: Text
-
-  init(_ content: LocalizedStringKey) {
-    text = Text(content)
-  }
-
-  var body: some View {
-    text
-      .multilineTextAlignment(.leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

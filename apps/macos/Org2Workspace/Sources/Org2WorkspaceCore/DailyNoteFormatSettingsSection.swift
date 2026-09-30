@@ -39,7 +39,7 @@ public struct DailyNoteFormatSettingsSection: View {
     } header: {
       Label("Daily Note Format", systemImage: "calendar.badge.clock")
     } footer: {
-      Text("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and OpenOrg works out the pattern. The format is stored in org2.json as roam.dailyFileTemplate and is shared with this corpus.")
+      SettingsFooterText("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and OpenOrg works out the pattern. The format is stored in org2.json as roam.dailyFileTemplate and is shared with this corpus.")
     }
     .disabled(isBusy)
     .task(id: store.corpusRoot?.path) { await load() }
