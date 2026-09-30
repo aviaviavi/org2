@@ -77,7 +77,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Telemetry", systemImage: "chart.bar")
       } footer: {
-        Text("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
+        SettingsFooterText("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
       }
       Section {
         Toggle("Experimental features", isOn: Binding(
@@ -85,7 +85,7 @@ private struct GeneralSettingsView: View {
           set: { store.experimentalFeaturesEnabled = $0 }
         ))
       } footer: {
-        Text("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
+        SettingsFooterText("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
       }
       Section {
         if let root = store.corpusRoot {
@@ -147,7 +147,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Corpus", systemImage: "folder")
       } footer: {
-        Text("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
+        SettingsFooterText("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
       }
       if store.corpusRoot != nil {
         Section {
@@ -158,7 +158,7 @@ private struct GeneralSettingsView: View {
         } header: {
           Label("Daily Notes", systemImage: "calendar")
         } footer: {
-          Text("When enabled, Daily links open existing files only. If a note is missing, OpenOrg shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
+          SettingsFooterText("When enabled, Daily links open existing files only. If a note is missing, OpenOrg shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
         }
       }
       if store.corpusRoot != nil { DailyNoteFormatSettingsSection() }
@@ -175,7 +175,7 @@ private struct GeneralSettingsView: View {
         } header: {
           Label("Automations", systemImage: "clock.arrow.circlepath")
         } footer: {
-          Text("Scheduler ownership applies to every automation in this corpus and is configured in org2.json.")
+          SettingsFooterText("Scheduler ownership applies to every automation in this corpus and is configured in org2.json.")
         }
       }
       if store.corpusRoot != nil { CorpusTodoSettingsSection() }
@@ -225,7 +225,7 @@ private struct MeetingSettingsView: View {
       } header: {
         Label("Meeting Transcription", systemImage: "waveform.badge.mic")
       } footer: {
-        Text("These settings apply to recorded and imported meetings. Automatic prefers local Whisper and falls back to macOS Speech when necessary.")
+        SettingsFooterText("These settings apply to recorded and imported meetings. Automatic prefers local Whisper and falls back to macOS Speech when necessary.")
       }
 
       Section {
@@ -392,7 +392,7 @@ private struct SharingSettingsView: View {
       } header: {
         Label("Active Local Links", systemImage: "network")
       } footer: {
-        Text("These links serve sealed exports, not source files or corpus access. They stop working when OpenOrg quits or when you stop hosting them here.")
+        SettingsFooterText("These links serve sealed exports, not source files or corpus access. They stop working when OpenOrg quits or when you stop hosting them here.")
       }
 
       if !store.localDocumentPublications.isEmpty {
@@ -693,5 +693,21 @@ private struct MobileRemoteSettingsView: View {
     let image = NSImage(size: representation.size)
     image.addRepresentation(representation)
     return image
+  }
+}
+
+/// Grouped `Form` footers are trailing-aligned on macOS; settings prose reads
+/// better as leading-aligned paragraphs.
+private struct SettingsFooterText: View {
+  private let text: Text
+
+  init(_ content: LocalizedStringKey) {
+    text = Text(content)
+  }
+
+  var body: some View {
+    text
+      .multilineTextAlignment(.leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
