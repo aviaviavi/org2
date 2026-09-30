@@ -37632,11 +37632,20 @@ public final class WorkspaceStore {
     }
 
     if modifiers == [.command, .option] {
-      if key == "a" {
+      switch key {
+      case "a":
         openAutomations()
-        return true
+      case "v":
+        makeSurfacePrimary(.savedViews)
+      case "c":
+        guard experimentalFeaturesEnabled else { return false }
+        makeSurfacePrimary(.canvases)
+      case "e":
+        makeSurfacePrimary(.externalThreads)
+      default:
+        return false
       }
-      return false
+      return true
     }
 
     if modifiers == [.command, .shift] {
@@ -48578,15 +48587,18 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
 
   public var id: String { rawValue }
 
+  /// Sidebar order. Saved Views and Canvases sit at the bottom of the
+  /// Workspace section, below Review Queue and Automations.
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .savedViews, .approvals, .meetings, .sources, .skills, .externalThreads]
+    [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
   }
+
+  /// Surfaces listed after the Agent Work pages (Review Queue, Automations).
+  public static let sidebarTrailingCases: Set<WorkspaceSurface> = [.savedViews, .canvases]
 
   public static func sidebarCases(experimentalFeaturesEnabled: Bool) -> [WorkspaceSurface] {
     guard experimentalFeaturesEnabled else { return sidebarCases }
-    var surfaces = sidebarCases
-    surfaces.insert(.canvases, at: 3)
-    return surfaces
+    return sidebarCases + [.canvases]
   }
 
   public var title: String {
@@ -48627,15 +48639,15 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "⌘1"
     case .agenda: "⌘2"
-    case .savedViews: ""
+    case .savedViews: "⌥⌘V"
     case .approvals: "⌘4"
     case .files: "⌘3"
-    case .canvases: ""
+    case .canvases: "⌥⌘C"
     case .search: "⌘⇧F"
     case .meetings: "⌘5/⌘M"
     case .sources: "⌘0"
     case .aiChat: "⌘6"
-    case .externalThreads: ""
+    case .externalThreads: "⌥⌘E"
     case .skills: "⌘⇧K"
     }
   }

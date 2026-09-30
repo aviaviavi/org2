@@ -12302,7 +12302,9 @@ final class Org2ModelsTests: XCTestCase {
   func testWorkspaceSurfaceShortcutTitlesMatchCommandNavigation() {
     XCTAssertEqual(WorkspaceSurface.home.commandShortcutTitle, "⌘1")
     XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘2")
-    XCTAssertEqual(WorkspaceSurface.savedViews.commandShortcutTitle, "")
+    XCTAssertEqual(WorkspaceSurface.savedViews.commandShortcutTitle, "⌥⌘V")
+    XCTAssertEqual(WorkspaceSurface.canvases.commandShortcutTitle, "⌥⌘C")
+    XCTAssertEqual(WorkspaceSurface.externalThreads.commandShortcutTitle, "⌥⌘E")
     XCTAssertEqual(WorkspaceSurface.approvals.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
@@ -12312,8 +12314,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.skills.commandShortcutTitle, "⌘⇧K")
     XCTAssertEqual(
       WorkspaceSurface.sidebarCases,
-      [.home, .agenda, .savedViews, .approvals, .meetings, .sources, .skills, .externalThreads]
+      [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
     )
+    XCTAssertEqual(
+      WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: true).suffix(2),
+      [.savedViews, .canvases]
+    )
+    for surface in WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: true) {
+      XCTAssertFalse(surface.commandShortcutTitle.isEmpty, "\(surface.title) needs a shortcut")
+    }
   }
 
   func testSidebarShortcutHintsOnlyRevealForCommandModifier() {

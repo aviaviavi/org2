@@ -2416,40 +2416,12 @@ private struct SidebarView: View {
       SidebarHeader(showsCommandShortcuts: showsCommandShortcuts)
 
       List {
+        let sidebarSurfaces = WorkspaceSurface.sidebarCases(
+          experimentalFeaturesEnabled: store.experimentalFeaturesEnabled
+        )
         Section {
-          ForEach(WorkspaceSurface.sidebarCases(experimentalFeaturesEnabled: store.experimentalFeaturesEnabled)) { surface in
-            Button {
-              activateSidebarSurface(surface)
-            } label: {
-              SidebarSurfaceRow(
-                surface: surface,
-                showsCommandShortcut: showsCommandShortcuts,
-                notificationCount: 0
-              )
-              .modifier(
-                ReadableListSelectionModifier(
-                  isSelected: isSidebarSurfaceSelected(surface),
-                  verticalPadding: 4
-                )
-              )
-              .contentShape(Rectangle())
-              .background {
-                WorkspaceSurfaceNavigationAccessibilityTarget(
-                  surface: surface,
-                  isSelected: isSidebarSurfaceSelected(surface),
-                  activate: {
-                    activateSidebarSurface(surface)
-                  }
-                )
-              }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(surface.title)
-            .accessibilityIdentifier(
-              WorkspaceSurfaceNavigationIdentity.accessibilityIdentifier(for: surface)
-            )
-            .listRowBackground(Color.clear)
-            .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
+          ForEach(sidebarSurfaces.filter { !WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
+            sidebarSurfaceButton(surface)
           }
 
           Button {
@@ -2487,6 +2459,10 @@ private struct SidebarView: View {
           }
           .buttonStyle(.plain)
           .help("Automations (⌥⌘A)")
+
+          ForEach(sidebarSurfaces.filter { WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
+            sidebarSurfaceButton(surface)
+          }
         } header: {
           SidebarSectionLabel("Workspace")
         }
@@ -2941,6 +2917,41 @@ private struct SidebarView: View {
     guard store.selectedSurface == surface else { return false }
     guard surface == .approvals else { return true }
     return store.runsAndReviewPage != .review && store.runsAndReviewPage != .workflows
+  }
+
+  private func sidebarSurfaceButton(_ surface: WorkspaceSurface) -> some View {
+    Button {
+      activateSidebarSurface(surface)
+    } label: {
+      SidebarSurfaceRow(
+        surface: surface,
+        showsCommandShortcut: showsCommandShortcuts,
+        notificationCount: 0
+      )
+      .modifier(
+        ReadableListSelectionModifier(
+          isSelected: isSidebarSurfaceSelected(surface),
+          verticalPadding: 4
+        )
+      )
+      .contentShape(Rectangle())
+      .background {
+        WorkspaceSurfaceNavigationAccessibilityTarget(
+          surface: surface,
+          isSelected: isSidebarSurfaceSelected(surface),
+          activate: {
+            activateSidebarSurface(surface)
+          }
+        )
+      }
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(surface.title)
+    .accessibilityIdentifier(
+      WorkspaceSurfaceNavigationIdentity.accessibilityIdentifier(for: surface)
+    )
+    .listRowBackground(Color.clear)
+    .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
   }
 
   private func activateSidebarSurface(_ surface: WorkspaceSurface) {
@@ -4765,7 +4776,12 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "AI Chat"),
             ShortcutHelpItem(keys: "⌘⇧K", action: "Skills"),
-            ShortcutHelpItem(keys: "⌘0", action: "Sources")
+            ShortcutHelpItem(keys: "⌘0", action: "Sources"),
+            ShortcutHelpItem(keys: "⌘⇧R", action: "Review Queue"),
+            ShortcutHelpItem(keys: "⌥⌘A", action: "Automations"),
+            ShortcutHelpItem(keys: "⌥⌘E", action: "External Threads"),
+            ShortcutHelpItem(keys: "⌥⌘V", action: "Saved Views"),
+            ShortcutHelpItem(keys: "⌥⌘C", action: "Canvases (experimental)")
           ])
 
           ShortcutSection(title: "Tabs", shortcuts: [
