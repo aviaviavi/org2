@@ -50,7 +50,7 @@ struct AIChatThreadOutputsChip: View {
 
   private var countText: String {
     let count = outputs.groupsInFolder.count
-    return "\(count) output\(count == 1 ? "" : "s")"
+    return "\(count)\(outputs.isTruncated ? "+" : "") output\(count == 1 && !outputs.isTruncated ? "" : "s")"
   }
 
   private var helpText: String {
@@ -73,9 +73,18 @@ struct AIChatThreadOutputsPanel: View {
       HStack {
         Text("Outputs").font(.headline)
         Spacer()
-        Text("Edited or linked in this thread")
+        Text(
+          outputs.isTruncated
+            ? "\(AIChatThreadOutputs.maxGroups) most recent in this thread"
+            : "Edited or linked in this thread"
+        )
           .font(.caption)
           .foregroundStyle(.secondary)
+          .help(
+            outputs.isTruncated
+              ? "Long threads show only the most recently edited or linked files"
+              : ""
+          )
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 10)

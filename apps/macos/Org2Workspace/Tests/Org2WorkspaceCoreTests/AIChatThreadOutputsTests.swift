@@ -49,6 +49,32 @@ final class AIChatThreadOutputsTests: XCTestCase {
     XCTAssertFalse(outputs.touchedPaths.contains("/corpus/notes/ignored.org"), "user messages do not count")
   }
 
+  func testLongThreadsKeepOnlyTheMostRecentOutputs() {
+    // Threads that reference thousands of files froze the app; only the newest
+    // outputs are derived.
+    var messages = (0..<3000).map { index in
+      reply("See [[file:/corpus/views/bulk/file-\(index).org][file \(index)]]")
+    }
+    let deleted = reply("", edits: [("views/bulk/file-2999.org", .deleted)])
+    messages.append(deleted)
+
+    let outputs = AIChatThreadOutputs.derive(messages: messages, corpusRoot: root, homeDirectory: home, maxGroups: 100)
+
+    XCTAssertEqual(outputs.groups.count, 100)
+    XCTAssertTrue(outputs.isTruncated)
+    XCTAssertEqual(outputs.groups.first?.stem, "file-2999", "newest first")
+    XCTAssertEqual(outputs.groups.last?.stem, "file-2900")
+    let newest = try! XCTUnwrap(outputs.groups.first).primary
+    XCTAssertTrue(newest.wasDeleted, "the newest change wins")
+    XCTAssertEqual(newest.lastMessageID, deleted.id)
+    XCTAssertEqual(newest.editCount, 1)
+    XCTAssertEqual(newest.linkCount, 1)
+
+    let small = AIChatThreadOutputs.derive(messages: Array(messages.suffix(3)), corpusRoot: root, homeDirectory: home)
+    XCTAssertFalse(small.isTruncated)
+    XCTAssertEqual(small.groups.count, 2)
+  }
+
   func testIgnoresNonFileLinksAndChatState() {
     let message = reply(
       "[[id:abc][node]] [[https://example.com/a.pdf][web]] [[*Heading]] [[file:.org2/runs/x.org2][run]] [[file:~/notes/.hidden.org][h]]"

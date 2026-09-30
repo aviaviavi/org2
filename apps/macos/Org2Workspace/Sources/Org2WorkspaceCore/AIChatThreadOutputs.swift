@@ -60,11 +60,18 @@ struct AIChatThreadOutputs: Equatable, Sendable {
     "files", "attachments", "images", "drafts", "data", "runs", "artifacts",
   ]
 
+  /// Upper bound on outputs derived per thread. Long threads can reference
+  /// thousands of files; scanning, stat-ing and rendering all of them froze the
+  /// app. Only the most recently touched outputs are kept.
+  static let maxGroups = 100
+
   /// Most recently touched first.
   var groups: [AIChatThreadOutputGroup]
   /// Absolute path of the folder most of the outputs live in, when one stands out.
   var folder: String?
   let corpusRoot: String?
+  /// True when older replies were not scanned because `maxGroups` was reached.
+  var isTruncated = false
 
   static let empty = AIChatThreadOutputs(groups: [], folder: nil, corpusRoot: nil)
 
@@ -106,33 +113,55 @@ struct AIChatThreadOutputs: Equatable, Sendable {
     messages: [AIChatMessage],
     corpusRoot rawCorpusRoot: String?,
     remoteCorpusRoot rawRemoteRoot: String? = nil,
-    homeDirectory rawHome: String = NSHomeDirectory()
+    homeDirectory rawHome: String = NSHomeDirectory(),
+    maxGroups: Int = AIChatThreadOutputs.maxGroups
   ) -> AIChatThreadOutputs {
     let corpusRoot = rawCorpusRoot.map { trimmed(standardized($0)) }
     let remoteRoot = rawRemoteRoot.map(trimmed).flatMap { $0.isEmpty ? nil : $0 }
     let home = trimmed(rawHome)
     var files: [String: AIChatThreadOutputFile] = [:]
+    var groupKeys = Set<String>()
+    var isTruncated = false
 
-    func record(_ path: String, message: AIChatMessage, index: Int, update: (inout AIChatThreadOutputFile) -> Void) {
+    /// Replies are scanned newest first, so the first sighting of a file is its
+    /// latest state.
+    func record(_ path: String, message: AIChatMessage, index: Int, update: (inout AIChatThreadOutputFile, Bool) -> Void) {
       guard isOutputCandidate(path) else { return }
+      let isNew = files[path] == nil
+      if isNew {
+        let key = (path as NSString).deletingLastPathComponent + "/"
+          + ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        if !groupKeys.contains(key) {
+          guard groupKeys.count < maxGroups else {
+            isTruncated = true
+            return
+          }
+          groupKeys.insert(key)
+        }
+      }
       var file = files[path] ?? AIChatThreadOutputFile(
         path: path, editCount: 0, linkCount: 0, wasCreated: false, wasDeleted: false,
         lastMessageID: message.id, lastMessageIndex: index
       )
-      update(&file)
-      file.lastMessageID = message.id
-      file.lastMessageIndex = index
+      update(&file, isNew)
       files[path] = file
     }
 
-    for (index, message) in messages.enumerated() where message.role == .assistant && !message.isRoomDispatchCopy {
+    for (index, message) in messages.enumerated().reversed()
+    where message.role == .assistant && !message.isRoomDispatchCopy {
+      // Stop at a reply boundary once the budget is spent so counts stay
+      // consistent for everything scanned.
+      if isTruncated || groupKeys.count >= maxGroups {
+        isTruncated = true
+        break
+      }
       if let corpusRoot, let summary = message.changeSummary {
         for change in summary.files {
           let path = standardized(corpusRoot + "/" + change.relativePath)
-          record(path, message: message, index: index) { file in
+          record(path, message: message, index: index) { file, isNewest in
             file.editCount += 1
             if change.status == .created { file.wasCreated = true }
-            file.wasDeleted = change.status == .deleted
+            if isNewest { file.wasDeleted = change.status == .deleted }
           }
         }
       }
@@ -141,7 +170,7 @@ struct AIChatThreadOutputs: Equatable, Sendable {
         guard let path = resolve(raw, corpusRoot: corpusRoot, remoteRoot: remoteRoot, home: home),
               linkedInMessage.insert(path).inserted
         else { continue }
-        record(path, message: message, index: index) { $0.linkCount += 1 }
+        record(path, message: message, index: index) { file, _ in file.linkCount += 1 }
       }
     }
 
@@ -163,7 +192,7 @@ struct AIChatThreadOutputs: Equatable, Sendable {
         > ($1.lastMessageIndex, $1.linkCount > 0 ? 1 : 0, $1.editCount + $1.linkCount, $0.id)
     }
     let folder = workingFolder(for: groups, corpusRoot: corpusRoot, homeDirectory: home)
-    return AIChatThreadOutputs(groups: groups, folder: folder, corpusRoot: corpusRoot)
+    return AIChatThreadOutputs(groups: groups, folder: folder, corpusRoot: corpusRoot, isTruncated: isTruncated)
   }
 
   /// Adds file existence, published siblings (the PDF next to an edited .org),
