@@ -33159,6 +33159,16 @@ public final class WorkspaceStore {
           }
           try await execution.commit(replacement.replacementText, over: snapshot) {
             text, url, previous in
+            _ = try Self.openClawLocalEditURL(
+              for: replacement.relativePath,
+              corpusRoot: corpusRoot
+            )
+            if replacement.createsFile {
+              try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+              )
+            }
             try Self.commitDocumentText(
               text,
               url: url,
@@ -33287,8 +33297,26 @@ public final class WorkspaceStore {
     guard resolvedParent.path == root.path || resolvedParent.path.hasPrefix(root.path + "/") else {
       throw OpenClawLocalEditError.invalidRequest("path escapes the active corpus")
     }
-    guard FileManager.default.fileExists(atPath: resolvedParent.path) else {
-      throw OpenClawLocalEditError.invalidRequest("parent directory does not exist")
+    // Missing parents are valid for read/preview; only apply creates them.
+    // Check the nearest existing ancestor without following a dangling link.
+    var ancestor = candidate.deletingLastPathComponent()
+    var isDirectory: ObjCBool = false
+    while !FileManager.default.fileExists(atPath: ancestor.path, isDirectory: &isDirectory) {
+      if (try? FileManager.default.destinationOfSymbolicLink(atPath: ancestor.path)) != nil {
+        throw OpenClawLocalEditError.invalidRequest("parent directory is a dangling symlink")
+      }
+      let parent = ancestor.deletingLastPathComponent()
+      guard parent.path != ancestor.path else {
+        throw OpenClawLocalEditError.invalidRequest("no existing parent directory")
+      }
+      ancestor = parent
+    }
+    guard isDirectory.boolValue else {
+      throw OpenClawLocalEditError.invalidRequest("parent path is not a directory")
+    }
+    let resolvedAncestor = ancestor.resolvingSymlinksInPath()
+    guard resolvedAncestor.path == root.path || resolvedAncestor.path.hasPrefix(root.path + "/") else {
+      throw OpenClawLocalEditError.invalidRequest("path escapes the active corpus")
     }
     if FileManager.default.fileExists(atPath: candidate.path) {
       let resolved = candidate.resolvingSymlinksInPath()

@@ -390,13 +390,13 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
       .appendingPathComponent("org2-local-edit-create-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let created = root.appendingPathComponent("created.org2")
+    let created = root.appendingPathComponent("new/nested/created.org2")
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
 
     _ = try await store.applyOpenClawLocalEditReplacements([
       OpenClawLocalEditReplacement(
-        relativePath: "created.org2",
+        relativePath: "new/nested/created.org2",
         expectedSHA256: nil,
         replacementText: "* Created\n",
         createsFile: true
@@ -413,6 +413,90 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     try await waitForCondition {
       (try? String(contentsOf: created, encoding: .utf8)) == "* Created\n"
     }
+  }
+
+  func testNestedLocalEditPreviewIsReadOnlyAndApplyCreatesParents() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-nested-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    let path = ".agents/skills/recall/SKILL.md"
+    let broker = OpenClawLocalEditBroker(
+      documentReader: { _, path, _ in try store.openClawLocalEditDocument(at: path) },
+      replacementApplier: { _, edits in try await store.applyOpenClawLocalEditReplacements(edits) }
+    )
+    await broker.beginTurn("nested")
+    XCTAssertEqual(try store.openClawLocalEditDocument(at: path).origin, .missing)
+    let preview = await broker.handle(
+      command: OpenClawLocalEditBroker.previewCommand,
+      paramsJSON: #"{"turnId":"nested","edits":[{"path":".agents/skills/recall/SKILL.md","createsFile":true,"replacementText":"Skill body\n"}]}"#
+    )
+    XCTAssertTrue(preview.ok, preview.errorMessage ?? "Preview failed")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".agents").path))
+    let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
+    let apply = await broker.handle(
+      command: OpenClawLocalEditBroker.applyCommand,
+      paramsJSON: #"{"turnId":"nested","previewId":"\#(previewID)"}"#
+    )
+    XCTAssertTrue(apply.ok, apply.errorMessage ?? "Apply failed")
+    XCTAssertEqual(try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8), "Skill body\n")
+  }
+
+  func testNestedLocalEditRejectsOutsideSymlinkAncestor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-symlink-edit-\(UUID().uuidString)", isDirectory: true)
+    let outside = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-outside-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: outside)
+    }
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("escape"), withDestinationURL: outside)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "escape/new/deep/note.org"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("new").path))
+
+    let broker = OpenClawLocalEditBroker(
+      documentReader: { _, path, _ in try store.openClawLocalEditDocument(at: path) },
+      replacementApplier: { _, edits in try await store.applyOpenClawLocalEditReplacements(edits) }
+    )
+    await broker.beginTurn("swap")
+    let preview = await broker.handle(
+      command: OpenClawLocalEditBroker.previewCommand,
+      paramsJSON: #"{"turnId":"swap","edits":[{"path":"later/new/note.org","createsFile":true,"replacementText":"* Note\n"}]}"#
+    )
+    XCTAssertTrue(preview.ok, preview.errorMessage ?? "Preview failed")
+    let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("later"), withDestinationURL: outside)
+    let apply = await broker.handle(
+      command: OpenClawLocalEditBroker.applyCommand,
+      paramsJSON: #"{"turnId":"swap","previewId":"\#(previewID)"}"#
+    )
+    XCTAssertFalse(apply.ok)
+    XCTAssertEqual(apply.errorCode, "INVALID_REQUEST")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("new").path))
+  }
+
+  func testNestedLocalEditRejectsNonDirectoryAndDanglingParents() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-invalid-parent-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try "file".write(to: root.appendingPathComponent("plain"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: root.appendingPathComponent("dangling"),
+      withDestinationURL: root.appendingPathComponent("absent")
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "plain/new/note.org"))
+    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "dangling/new/note.org"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("absent").path))
   }
 
   private func makeBroker(_ store: DocumentStore) -> OpenClawLocalEditBroker {
