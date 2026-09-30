@@ -37,7 +37,7 @@ public enum PiAgentTransport: Equatable, Sendable {
 public enum PiAgentEvent: Sendable {
   case sessionStarted(sessionID: String)
   case textDelta(String)
-  case activity(id: String, title: String, status: OpenClawRunActivity.Status)
+  case activity(id: String, title: String, status: AIChatRunActivity.Status)
   case warning(String)
 }
 
@@ -114,7 +114,7 @@ struct PiAgentStreamDecoder: Sendable {
     case "tool_execution_end":
       let id = object["toolCallId"] as? String ?? UUID().uuidString.lowercased()
       let tool = object["toolName"] as? String ?? "tool"
-      let status: OpenClawRunActivity.Status = object["isError"] as? Bool == true
+      let status: AIChatRunActivity.Status = object["isError"] as? Bool == true
         ? .failed : .succeeded
       await eventHandler(.activity(id: id, title: Self.activityTitle(for: tool), status: status))
     case "auto_retry_start":
@@ -317,7 +317,7 @@ finally:
     existingSessionID: String?,
     message: String,
     systemPrompt: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     cwd: URL,
     model: String?,
     reasoningEffort: String?,
@@ -494,7 +494,7 @@ finally:
   }
 
   private nonisolated static func materializeAttachments(
-    _ attachments: [OpenClawChatAttachment],
+    _ attachments: [AIChatAttachment],
     under temporaryRoot: URL
   ) throws -> [URL] {
     var usedNames = Set<String>()

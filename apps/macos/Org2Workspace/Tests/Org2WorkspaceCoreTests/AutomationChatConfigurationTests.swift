@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class AutomationChatConfigurationTests: XCTestCase {
-  func testScheduledOpenClawAutomationDoesNotInheritInteractiveOverrides() async throws {
+  func testScheduledAIChatAutomationDoesNotInheritInteractiveOverrides() async throws {
     try await checkAutomationConfiguration(destinationModel: nil)
   }
 
@@ -58,8 +58,8 @@ final class AutomationChatConfigurationTests: XCTestCase {
     let store = WorkspaceStore(
       cli: cli,
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chats.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("chats.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         XCTAssertTrue(messages.last(where: { $0.role == .user })?.content
           .contains("ORG2_WORKFLOW_ID: configuration-regression") == true)
         return "Local summary ready."
@@ -86,7 +86,7 @@ final class AutomationChatConfigurationTests: XCTestCase {
     let run = try XCTUnwrap(store.agentRuns.first(where: { $0.workflowId == "configuration-regression" }))
     XCTAssertEqual(run.status, "completed")
     XCTAssertEqual(run.attempt?.triggerId, "schedule")
-    let automation = try XCTUnwrap(store.openClawChatThreads.first(where: {
+    let automation = try XCTUnwrap(store.aiChatThreads.first(where: {
       $0.title == "Automation: Configuration regression"
     }))
     XCTAssertEqual(automation.model, automationModel ?? destinationModel)
@@ -94,7 +94,7 @@ final class AutomationChatConfigurationTests: XCTestCase {
     XCTAssertEqual(automation.messages.last(where: { $0.role == .assistant })?.content, "Local summary ready.")
 
     // Automation dispatch must not clear the user's preferences for ordinary chats.
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
     XCTAssertEqual(store.selectedAIChatModel, "interactive-model")
     XCTAssertEqual(store.selectedAIChatReasoningEffort, "high")
   }

@@ -149,7 +149,7 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   }
 }
 
-enum OpenClawAction: String {
+enum AIChatApprovalAction: String {
   case discuss
   case decide
 

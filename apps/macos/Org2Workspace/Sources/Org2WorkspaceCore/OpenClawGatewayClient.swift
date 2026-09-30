@@ -20,7 +20,7 @@ public enum OpenClawGatewayConnectionState: String, Sendable {
   }
 }
 
-public struct OpenClawRunActivity: Identifiable, Hashable, Codable, Sendable {
+public struct AIChatRunActivity: Identifiable, Hashable, Codable, Sendable {
   public enum Kind: String, Codable, Sendable {
     case lifecycle
     case tool
@@ -60,23 +60,23 @@ public struct OpenClawRunActivity: Identifiable, Hashable, Codable, Sendable {
   }
 }
 
-struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
+struct AIChatActivityFeedItem: Identifiable, Equatable, Sendable {
   let id: String
-  let kind: OpenClawRunActivity.Kind
+  let kind: AIChatRunActivity.Kind
   let title: String
   let detail: String?
   let latestDetail: String?
-  let status: OpenClawRunActivity.Status
+  let status: AIChatRunActivity.Status
   let count: Int
   let updatedAt: Date
 
   init(
     id: String,
-    kind: OpenClawRunActivity.Kind = .tool,
+    kind: AIChatRunActivity.Kind = .tool,
     title: String,
     detail: String?,
     latestDetail: String?,
-    status: OpenClawRunActivity.Status,
+    status: AIChatRunActivity.Status,
     count: Int,
     updatedAt: Date
   ) {
@@ -91,11 +91,11 @@ struct OpenClawActivityFeedItem: Identifiable, Equatable, Sendable {
   }
 }
 
-enum OpenClawActivityFeed {
+enum AIChatActivityFeed {
   private static let maximumDetailLength = 180
 
-  static func items(from activities: [OpenClawRunActivity]) -> [OpenClawActivityFeedItem] {
-    var grouped: [(key: String, activities: [OpenClawRunActivity])] = []
+  static func items(from activities: [AIChatRunActivity]) -> [AIChatActivityFeedItem] {
+    var grouped: [(key: String, activities: [AIChatRunActivity])] = []
 
     for activity in activities {
       if activity.kind == .lifecycle {
@@ -130,7 +130,7 @@ enum OpenClawActivityFeed {
       // A recoverable tool error should not make an otherwise healthy group
       // look like the whole turn failed. Keep active work active, and only
       // summarize a completed group as failed when failures are the majority.
-      let status: OpenClawRunActivity.Status = running > 0
+      let status: AIChatRunActivity.Status = running > 0
         ? .running
         : (failures > succeeded ? .failed : .succeeded)
       let detail: String?
@@ -149,7 +149,7 @@ enum OpenClawActivityFeed {
       let latestDetail = group.count > 1
         ? latestActivity.flatMap { meaningfulDetail($0.detail, status: $0.status) }
         : nil
-      return OpenClawActivityFeedItem(
+      return AIChatActivityFeedItem(
         id: "\(entry.key):\(index)",
         kind: first.kind,
         title: displayTitle(for: first.title, count: group.count),
@@ -162,10 +162,10 @@ enum OpenClawActivityFeed {
     }
   }
 
-  static func merging(_ previous: OpenClawRunActivity, with update: OpenClawRunActivity) -> OpenClawRunActivity {
+  static func merging(_ previous: AIChatRunActivity, with update: AIChatRunActivity) -> AIChatRunActivity {
     let updateDetail = meaningfulDetail(update.detail, status: update.status)
     let previousDetail = meaningfulDetail(previous.detail, status: previous.status)
-    return OpenClawRunActivity(
+    return AIChatRunActivity(
       id: update.id,
       runID: update.runID,
       kind: update.kind,
@@ -178,7 +178,7 @@ enum OpenClawActivityFeed {
 
   static func meaningfulDetail(
     _ detail: String?,
-    status: OpenClawRunActivity.Status
+    status: AIChatRunActivity.Status
   ) -> String? {
     guard let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty else {
       return nil
@@ -193,7 +193,7 @@ enum OpenClawActivityFeed {
 
   private static func meaningfulStructuredDetail(
     _ object: Any,
-    status: OpenClawRunActivity.Status
+    status: AIChatRunActivity.Status
   ) -> String? {
     if let encoded = object as? String {
       return readablePlainDetail(encoded, status: status)
@@ -250,7 +250,7 @@ enum OpenClawActivityFeed {
 
   private static func readablePlainDetail(
     _ raw: String,
-    status: OpenClawRunActivity.Status
+    status: AIChatRunActivity.Status
   ) -> String? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
@@ -317,7 +317,7 @@ public enum OpenClawGatewayRunEvent: Sendable {
   case reconciliationHeartbeat
   case text(String, replace: Bool)
   case reasoning(String, replace: Bool)
-  case activity(OpenClawRunActivity)
+  case activity(AIChatRunActivity)
   case usage(AIChatTokenUsage)
   case contextCompacted
 }
@@ -728,7 +728,7 @@ public actor OpenClawGatewayClient {
     }
   }
 
-  public func listCommands(agentID: String) async throws -> [OpenClawSlashCommand] {
+  public func listCommands(agentID: String) async throws -> [AIChatSlashCommand] {
     let socket = try makeSocket()
     self.socket = socket
     socket.resume()
@@ -993,7 +993,7 @@ public actor OpenClawGatewayClient {
 
   public func send(
     message: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     agentID: String,
     sessionKey: String,
     model: String? = nil,
@@ -1273,7 +1273,7 @@ public actor OpenClawGatewayClient {
   /// events, so this method intentionally only writes the steer request.
   public func steer(
     message: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     idempotencyKey: String = UUID().uuidString.lowercased()
   ) async throws {
     guard let socket, let sessionKey, let agentID, runID != nil, !stopRequested else {
@@ -1375,7 +1375,7 @@ public actor OpenClawGatewayClient {
 
   nonisolated static func steerRequestParams(
     message: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     sessionKey: String,
     agentID: String,
     idempotencyKey: String
@@ -1404,7 +1404,7 @@ public actor OpenClawGatewayClient {
 
   nonisolated static func commandSteerRequestParams(
     message: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     sessionKey: String,
     agentID: String,
     idempotencyKey: String
@@ -2035,7 +2035,7 @@ public actor OpenClawGatewayClient {
     return String(text[range])
   }
 
-  static func activity(from payload: [String: Any]) -> OpenClawRunActivity? {
+  static func activity(from payload: [String: Any]) -> AIChatRunActivity? {
     let runID = string(payload["runId"]) ?? ""
     let stream = string(payload["stream"]) ?? ""
     let data = dictionary(payload["data"]) ?? [:]
@@ -2043,20 +2043,20 @@ public actor OpenClawGatewayClient {
       let callID = string(data["toolCallId"]) ?? UUID().uuidString
       let name = string(data["name"]) ?? "Tool"
       let phase = string(data["phase"]) ?? "start"
-      let status: OpenClawRunActivity.Status = phase == "result"
+      let status: AIChatRunActivity.Status = phase == "result"
         ? ((bool(data["isError"]) ?? false) ? .failed : .succeeded)
         : .running
       let detailValue = phase == "start" ? data["args"] : (data["partialResult"] ?? data["result"])
-      return OpenClawRunActivity(
+      return AIChatRunActivity(
         id: "tool:\(callID)", runID: runID, kind: .tool, title: name,
         detail: compactDescription(detailValue), status: status
       )
     }
     if stream == "lifecycle" {
       let phase = string(data["phase"]) ?? "running"
-      let status: OpenClawRunActivity.Status = phase == "error" ? .failed : (phase == "end" ? .succeeded : .running)
+      let status: AIChatRunActivity.Status = phase == "error" ? .failed : (phase == "end" ? .succeeded : .running)
       let title = phase == "finishing" ? "Finishing context" : (phase == "start" ? "Agent started" : "Agent \(phase)")
-      return OpenClawRunActivity(
+      return AIChatRunActivity(
         id: "lifecycle:\(runID)", runID: runID, kind: .lifecycle, title: title,
         detail: string(data["error"]) ?? string(data["errorMessage"]), status: status
       )
@@ -2067,7 +2067,7 @@ public actor OpenClawGatewayClient {
       let progressText = (string(data["progressText"]) ?? "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
       guard !progressText.isEmpty else { return nil }
-      return OpenClawRunActivity(
+      return AIChatRunActivity(
         id: "preamble:\(itemID.isEmpty ? "latest" : itemID)",
         runID: runID, kind: .reasoning, title: "Progress update",
         detail: progressText, status: .succeeded
@@ -2112,7 +2112,7 @@ public actor OpenClawGatewayClient {
   static func commentaryActivity(
     from payload: [String: Any],
     accumulatedTextByItemID: inout [String: String]
-  ) -> OpenClawRunActivity? {
+  ) -> AIChatRunActivity? {
     let stream = string(payload["stream"]) ?? ""
     let data = dictionary(payload["data"]) ?? [:]
     guard stream == "assistant", string(data["phase"]) == "commentary" else { return nil }
@@ -2139,7 +2139,7 @@ public actor OpenClawGatewayClient {
 
     let progressText = next.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !progressText.isEmpty else { return nil }
-    return OpenClawRunActivity(
+    return AIChatRunActivity(
       id: "preamble:\(normalizedItemID)",
       runID: runID,
       kind: .reasoning,

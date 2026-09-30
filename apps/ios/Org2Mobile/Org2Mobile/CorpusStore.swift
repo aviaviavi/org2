@@ -189,12 +189,12 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  func sendToOpenClaw(_ action: OpenClawAction, approval: ApprovalEntry, message: String? = nil) async {
+  func sendToAIChat(_ action: AIChatApprovalAction, approval: ApprovalEntry, message: String? = nil) async {
     guard rootURL != nil else { return }
     do {
       let text = message?.trimmingCharacters(in: .whitespacesAndNewlines)
       let prompt = text?.isEmpty == false ? text! : defaultMessage(for: action, approval: approval)
-      try appendOpenClawRequest(action: action, title: approval.title, sourceFile: approval.file, sourceLine: approval.line, body: prompt)
+      try appendAIChatRequest(action: action, title: approval.title, sourceFile: approval.file, sourceLine: approval.line, body: prompt)
       statusMessage = "Added \(action.title.lowercased()) request to the corpus mobile inbox"
     } catch {
       errorMessage = "Could not write to the corpus mobile inbox. Re-select the synced corpus folder and try again."
@@ -768,8 +768,8 @@ final class CorpusStore: ObservableObject {
       .joined(separator: "/")
   }
 
-  private func appendOpenClawRequest(
-    action: OpenClawAction,
+  private func appendAIChatRequest(
+    action: AIChatApprovalAction,
     title: String,
     sourceFile: String,
     sourceLine: Int?,
@@ -847,7 +847,7 @@ final class CorpusStore: ObservableObject {
     Command:
     org2 run approval-decide \(runID) \(approvalID) --decision \(decision) --actor mobile\(fingerprintArgument)\(noteArgument)
     """
-    try appendOpenClawRequest(
+    try appendAIChatRequest(
       action: .decide,
       title: approval.title,
       sourceFile: approval.file,
@@ -1088,7 +1088,7 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  private func defaultMessage(for action: OpenClawAction, approval: ApprovalEntry) -> String {
+  private func defaultMessage(for action: AIChatApprovalAction, approval: ApprovalEntry) -> String {
     switch action {
     case .discuss:
       """

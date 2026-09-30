@@ -18,7 +18,7 @@ final class AIChatRichClipboardTests: XCTestCase {
     """
     let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
     defer { pasteboard.releaseGlobally() }
-    XCTAssertTrue(OpenClawMessageClipboard.copy(.init(role: .assistant, content: raw), to: pasteboard))
+    XCTAssertTrue(AIChatMessageClipboard.copy(.init(role: .assistant, content: raw), to: pasteboard))
     let plain = try XCTUnwrap(pasteboard.string(forType: .string))
     XCTAssertTrue(plain.contains("| Cost item | Monthly | Annual   |"))
     XCTAssertTrue(plain.contains("|-----------+---------+----------|"))

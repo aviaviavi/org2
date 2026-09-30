@@ -59,7 +59,7 @@ enum AIChatMessageTimestampPresentation {
   }
 }
 
-struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
+struct AIChatPresentedContext: Identifiable, Hashable, Sendable {
   let kind: String
   let title: String
   let reference: String
@@ -102,11 +102,11 @@ struct OpenClawPresentedContext: Identifiable, Hashable, Sendable {
   }
 }
 
-struct OpenClawContextPresentation: Equatable, Sendable {
+struct AIChatContextPresentation: Equatable, Sendable {
   static let automaticContextBegin = "#+begin_org2_ai_context"
   static let automaticContextEnd = "#+end_org2_ai_context"
 
-  let contexts: [OpenClawPresentedContext]
+  let contexts: [AIChatPresentedContext]
   let userText: String
 
   init(_ rawText: String, extractsContexts: Bool = true) {
@@ -116,7 +116,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
       return
     }
     var remaining = rawText.replacingOccurrences(of: "\r\n", with: "\n")
-    var parsed: [OpenClawPresentedContext] = []
+    var parsed: [AIChatPresentedContext] = []
 
     while !remaining.isEmpty {
       guard let (context, rest) = Self.consumeContext(from: remaining) else { break }
@@ -132,7 +132,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
     Self.serialize(contexts: contexts, userText: nextUserText)
   }
 
-  func removing(_ context: OpenClawPresentedContext) -> String {
+  func removing(_ context: AIChatPresentedContext) -> String {
     Self.serialize(contexts: contexts.filter { $0.id != context.id }, userText: userText)
   }
 
@@ -141,7 +141,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
     return (contextLines + (userText.isEmpty ? [] : [userText])).joined(separator: "\n")
   }
 
-  private static func serialize(contexts: [OpenClawPresentedContext], userText: String) -> String {
+  private static func serialize(contexts: [AIChatPresentedContext], userText: String) -> String {
     guard !contexts.isEmpty else { return userText }
     return contexts.map(\.sourceLine).joined(separator: "\n\n") + "\n\n" + userText
   }
@@ -170,7 +170,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
 
   private static func consumeContext(
     from remaining: String
-  ) -> (context: OpenClawPresentedContext, rest: String)? {
+  ) -> (context: AIChatPresentedContext, rest: String)? {
     let firstNewline = remaining.firstIndex(of: "\n")
     let header = firstNewline.map { String(remaining[..<$0]) } ?? remaining
     guard var context = parseContextLine(header) else { return nil }
@@ -187,7 +187,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
         ) else { return nil }
         let prompt = String(remaining[promptStart..<endRange.lowerBound])
         let sourceEnd = endRange.upperBound
-        context = OpenClawPresentedContext(
+        context = AIChatPresentedContext(
           kind: context.kind,
           title: context.title,
           reference: context.reference,
@@ -200,7 +200,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
 
     let separator = remaining.range(of: "\n\n")
     let sourceEnd = separator?.lowerBound ?? remaining.endIndex
-    context = OpenClawPresentedContext(
+    context = AIChatPresentedContext(
       kind: context.kind,
       title: context.title,
       reference: context.reference,
@@ -225,7 +225,7 @@ struct OpenClawContextPresentation: Equatable, Sendable {
     return String(source[next...])
   }
 
-  private static func parseContextLine(_ line: String) -> OpenClawPresentedContext? {
+  private static func parseContextLine(_ line: String) -> AIChatPresentedContext? {
     guard line.hasPrefix("Use "), line.hasSuffix(" as context.") else { return nil }
     let body = String(line.dropFirst(4).dropLast(" as context.".count))
     let kind: String
@@ -247,17 +247,17 @@ struct OpenClawContextPresentation: Equatable, Sendable {
     }
 
     guard !kind.isEmpty, !title.isEmpty else { return nil }
-    return OpenClawPresentedContext(kind: kind, title: title, reference: reference, sourceLine: line)
+    return AIChatPresentedContext(kind: kind, title: title, reference: reference, sourceLine: line)
   }
 }
 
-struct OpenClawMessageOrgPresentation: Equatable, Sendable {
+struct AIChatMessageOrgPresentation: Equatable, Sendable {
   let normalizedText: String
   let blocks: [OrgEditableBlock]
   let usesStructuredRendering: Bool
 
   nonisolated init(_ rawText: String) {
-    normalizedText = OpenClawMessageOrgNormalizer.normalized(rawText)
+    normalizedText = AIChatMessageOrgNormalizer.normalized(rawText)
     blocks = OrgEntryRenderer.parseEditable(normalizedText)
     usesStructuredRendering = blocks.contains { block in
       switch block.rendered {
@@ -276,7 +276,7 @@ struct OpenClawMessageOrgPresentation: Equatable, Sendable {
   }
 }
 
-struct OpenClawMessageBodyExcerpt: Equatable, Sendable {
+struct AIChatMessageBodyExcerpt: Equatable, Sendable {
   static let collapsedUTF8ByteLimit = 32 * 1_024
 
   let text: String
@@ -311,21 +311,21 @@ struct OpenClawMessageBodyExcerpt: Equatable, Sendable {
   }
 }
 
-struct OpenClawPreparedMessageBody: Equatable, Sendable {
+struct AIChatPreparedMessageBody: Equatable, Sendable {
   let sourceText: String
   let displayedText: String
   let isTruncated: Bool
-  let org: OpenClawMessageOrgPresentation?
+  let org: AIChatMessageOrgPresentation?
   let containsInlineSyntax: Bool
 }
 
-struct OpenClawMessagePresentationInput: Equatable, Sendable {
+struct AIChatMessagePresentationInput: Equatable, Sendable {
   let messageID: UUID
-  let role: OpenClawChatMessage.Role
+  let role: AIChatMessage.Role
   let rawText: String
-  let responseTrace: OpenClawResponseTrace?
+  let responseTrace: AIChatResponseTrace?
 
-  nonisolated init(_ message: OpenClawChatMessage) {
+  nonisolated init(_ message: AIChatMessage) {
     messageID = message.id
     role = message.role
     rawText = message.content
@@ -333,16 +333,16 @@ struct OpenClawMessagePresentationInput: Equatable, Sendable {
   }
 }
 
-struct OpenClawMessagePresentationRevision: Equatable, Hashable, Sendable {
+struct AIChatMessagePresentationRevision: Equatable, Hashable, Sendable {
   private struct Payload: Encodable {
-    let role: OpenClawChatMessage.Role
+    let role: AIChatMessage.Role
     let rawText: String
-    let responseTrace: OpenClawResponseTrace?
+    let responseTrace: AIChatResponseTrace?
   }
 
   let bytes: [UInt8]
 
-  nonisolated init(_ input: OpenClawMessagePresentationInput) {
+  nonisolated init(_ input: AIChatMessagePresentationInput) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let payload = Payload(
@@ -355,23 +355,23 @@ struct OpenClawMessagePresentationRevision: Equatable, Hashable, Sendable {
   }
 }
 
-final class OpenClawCachedMessagePresentation: Sendable {
-  let revision: OpenClawMessagePresentationRevision?
-  let role: OpenClawChatMessage.Role
+final class AIChatCachedMessagePresentation: Sendable {
+  let revision: AIChatMessagePresentationRevision?
+  let role: AIChatMessage.Role
   let rawText: String
-  let responseTrace: OpenClawResponseTrace?
-  let context: OpenClawContextPresentation
-  let body: OpenClawPreparedMessageBody
-  let activityFeedItems: [OpenClawActivityFeedItem]
+  let responseTrace: AIChatResponseTrace?
+  let context: AIChatContextPresentation
+  let body: AIChatPreparedMessageBody
+  let activityFeedItems: [AIChatActivityFeedItem]
 
   init(
-    revision: OpenClawMessagePresentationRevision? = nil,
-    role: OpenClawChatMessage.Role,
+    revision: AIChatMessagePresentationRevision? = nil,
+    role: AIChatMessage.Role,
     rawText: String,
-    responseTrace: OpenClawResponseTrace?,
-    context: OpenClawContextPresentation,
-    body: OpenClawPreparedMessageBody,
-    activityFeedItems: [OpenClawActivityFeedItem]
+    responseTrace: AIChatResponseTrace?,
+    context: AIChatContextPresentation,
+    body: AIChatPreparedMessageBody,
+    activityFeedItems: [AIChatActivityFeedItem]
   ) {
     self.revision = revision
     self.role = role
@@ -382,41 +382,41 @@ final class OpenClawCachedMessagePresentation: Sendable {
     self.activityFeedItems = activityFeedItems
   }
 
-  var org: OpenClawMessageOrgPresentation? { body.org }
+  var org: AIChatMessageOrgPresentation? { body.org }
 
-  nonisolated func matches(_ input: OpenClawMessagePresentationInput) -> Bool {
+  nonisolated func matches(_ input: AIChatMessagePresentationInput) -> Bool {
     guard let revision else { return false }
-    return revision == OpenClawMessagePresentationRevision(input)
+    return revision == AIChatMessagePresentationRevision(input)
   }
 
-  func matches(_ message: OpenClawChatMessage) -> Bool {
-    matches(OpenClawMessagePresentationInput(message))
+  func matches(_ message: AIChatMessage) -> Bool {
+    matches(AIChatMessagePresentationInput(message))
   }
 }
 
-struct OpenClawPreparedMessagePresentation: Sendable {
+struct AIChatPreparedMessagePresentation: Sendable {
   let messageID: UUID
-  let value: OpenClawCachedMessagePresentation
+  let value: AIChatCachedMessagePresentation
   let estimatedCost: Int
 }
 
-struct OpenClawResolvedMessagePresentation: Sendable {
-  let revision: OpenClawMessagePresentationRevision
-  let value: OpenClawCachedMessagePresentation
-  let preparedForCacheInstall: OpenClawPreparedMessagePresentation?
+struct AIChatResolvedMessagePresentation: Sendable {
+  let revision: AIChatMessagePresentationRevision
+  let value: AIChatCachedMessagePresentation
+  let preparedForCacheInstall: AIChatPreparedMessagePresentation?
 }
 
-struct OpenClawExpandedMessageBodyInput: Equatable, Sendable {
+struct AIChatExpandedMessageBodyInput: Equatable, Sendable {
   static let pageCharacterLimit = 64 * 1_024
 
   let messageID: UUID
-  let role: OpenClawChatMessage.Role
+  let role: AIChatMessage.Role
   let sourceText: String
   let pageIndex: Int
 
   init(
     messageID: UUID,
-    role: OpenClawChatMessage.Role,
+    role: AIChatMessage.Role,
     sourceText: String,
     pageIndex: Int = 0
   ) {
@@ -427,27 +427,27 @@ struct OpenClawExpandedMessageBodyInput: Equatable, Sendable {
   }
 }
 
-enum OpenClawMessagePresentationBuilder {
+enum AIChatMessagePresentationBuilder {
   private static let placeholderUTF8ByteLimit = 2 * 1_024
 
   nonisolated static func prepare(
-    _ input: OpenClawMessagePresentationInput,
-    revision suppliedRevision: OpenClawMessagePresentationRevision? = nil
-  ) -> OpenClawPreparedMessagePresentation {
-    let revision = suppliedRevision ?? OpenClawMessagePresentationRevision(input)
-    let context = OpenClawContextPresentation(
+    _ input: AIChatMessagePresentationInput,
+    revision suppliedRevision: AIChatMessagePresentationRevision? = nil
+  ) -> AIChatPreparedMessagePresentation {
+    let revision = suppliedRevision ?? AIChatMessagePresentationRevision(input)
+    let context = AIChatContextPresentation(
       input.rawText,
       extractsContexts: input.role == .user
     )
     let body = prepareBody(
       sourceText: context.userText,
       role: input.role,
-      utf8ByteLimit: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+      utf8ByteLimit: AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
     )
     let activityFeedItems = input.responseTrace.map {
-      OpenClawActivityFeed.items(from: $0.activities)
+      AIChatActivityFeed.items(from: $0.activities)
     } ?? []
-    let value = OpenClawCachedMessagePresentation(
+    let value = AIChatCachedMessagePresentation(
       revision: revision,
       role: input.role,
       rawText: input.rawText,
@@ -456,7 +456,7 @@ enum OpenClawMessagePresentationBuilder {
       body: body,
       activityFeedItems: activityFeedItems
     )
-    return OpenClawPreparedMessagePresentation(
+    return AIChatPreparedMessagePresentation(
       messageID: input.messageID,
       value: value,
       estimatedCost: estimatedCost(
@@ -470,13 +470,13 @@ enum OpenClawMessagePresentationBuilder {
 
   nonisolated static func prepareExpandedBody(
     sourceText: String,
-    role: OpenClawChatMessage.Role,
+    role: AIChatMessage.Role,
     pageIndex: Int? = nil
-  ) -> OpenClawPreparedMessageBody? {
+  ) -> AIChatPreparedMessageBody? {
     guard !Task.isCancelled else { return nil }
-    let body: OpenClawPreparedMessageBody
+    let body: AIChatPreparedMessageBody
     if let pageIndex {
-      let startOffset = max(0, pageIndex) * OpenClawExpandedMessageBodyInput.pageCharacterLimit
+      let startOffset = max(0, pageIndex) * AIChatExpandedMessageBodyInput.pageCharacterLimit
       let start = sourceText.index(
         sourceText.startIndex,
         offsetBy: startOffset,
@@ -484,7 +484,7 @@ enum OpenClawMessagePresentationBuilder {
       ) ?? sourceText.endIndex
       let end = sourceText.index(
         start,
-        offsetBy: OpenClawExpandedMessageBodyInput.pageCharacterLimit,
+        offsetBy: AIChatExpandedMessageBodyInput.pageCharacterLimit,
         limitedBy: sourceText.endIndex
       ) ?? sourceText.endIndex
       let preparedPage = prepareBody(
@@ -492,7 +492,7 @@ enum OpenClawMessagePresentationBuilder {
         role: role,
         utf8ByteLimit: nil
       )
-      body = OpenClawPreparedMessageBody(
+      body = AIChatPreparedMessageBody(
         sourceText: sourceText,
         displayedText: preparedPage.displayedText,
         isTruncated: end < sourceText.endIndex,
@@ -507,15 +507,15 @@ enum OpenClawMessagePresentationBuilder {
   }
 
   nonisolated static func placeholder(
-    _ input: OpenClawMessagePresentationInput
-  ) -> OpenClawCachedMessagePresentation {
+    _ input: AIChatMessagePresentationInput
+  ) -> AIChatCachedMessagePresentation {
     if input.role == .user {
-      return OpenClawCachedMessagePresentation(
+      return AIChatCachedMessagePresentation(
         role: input.role,
         rawText: input.rawText,
         responseTrace: input.responseTrace,
-        context: OpenClawContextPresentation("", extractsContexts: false),
-        body: OpenClawPreparedMessageBody(
+        context: AIChatContextPresentation("", extractsContexts: false),
+        body: AIChatPreparedMessageBody(
           sourceText: "",
           displayedText: "Preparing message…",
           isTruncated: false,
@@ -525,19 +525,19 @@ enum OpenClawMessagePresentationBuilder {
         activityFeedItems: []
       )
     }
-    let excerpt = OpenClawMessageBodyExcerpt(
+    let excerpt = AIChatMessageBodyExcerpt(
       input.rawText,
       utf8ByteLimit: placeholderUTF8ByteLimit
     )
     let exceedsCollapsedLimit = input.rawText.utf8
-      .prefix(OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit + 1)
-      .count > OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
-    return OpenClawCachedMessagePresentation(
+      .prefix(AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit + 1)
+      .count > AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
+    return AIChatCachedMessagePresentation(
       role: input.role,
       rawText: input.rawText,
       responseTrace: input.responseTrace,
-      context: OpenClawContextPresentation(input.rawText, extractsContexts: false),
-      body: OpenClawPreparedMessageBody(
+      context: AIChatContextPresentation(input.rawText, extractsContexts: false),
+      body: AIChatPreparedMessageBody(
         sourceText: input.rawText,
         displayedText: excerpt.text,
         isTruncated: exceedsCollapsedLimit,
@@ -550,18 +550,18 @@ enum OpenClawMessagePresentationBuilder {
 
   private nonisolated static func prepareBody(
     sourceText: String,
-    role: OpenClawChatMessage.Role,
+    role: AIChatMessage.Role,
     utf8ByteLimit: Int?
-  ) -> OpenClawPreparedMessageBody {
-    let excerpt = OpenClawMessageBodyExcerpt(sourceText, utf8ByteLimit: utf8ByteLimit)
+  ) -> AIChatPreparedMessageBody {
+    let excerpt = AIChatMessageBodyExcerpt(sourceText, utf8ByteLimit: utf8ByteLimit)
     let org = role == .assistant
-      ? OpenClawMessageOrgPresentation(excerpt.text)
+      ? AIChatMessageOrgPresentation(excerpt.text)
       : nil
     let inlineText = org?.normalizedText ?? excerpt.text
     let containsInlineSyntax = org?.usesStructuredRendering == true
       ? false
       : OrgInlineParser.hasInlineSyntaxCandidate(inlineText)
-    return OpenClawPreparedMessageBody(
+    return AIChatPreparedMessageBody(
       sourceText: sourceText,
       displayedText: excerpt.text,
       isTruncated: excerpt.isTruncated,
@@ -571,10 +571,10 @@ enum OpenClawMessagePresentationBuilder {
   }
 
   private nonisolated static func estimatedCost(
-    input: OpenClawMessagePresentationInput,
-    context: OpenClawContextPresentation,
-    body: OpenClawPreparedMessageBody,
-    activityFeedItems: [OpenClawActivityFeedItem]
+    input: AIChatMessagePresentationInput,
+    context: AIChatContextPresentation,
+    body: AIChatPreparedMessageBody,
+    activityFeedItems: [AIChatActivityFeedItem]
   ) -> Int {
     var cost = input.rawText.utf8.count
       + context.userText.utf8.count
@@ -602,14 +602,14 @@ enum OpenClawMessagePresentationBuilder {
   }
 }
 
-actor OpenClawMessagePresentationPreparationCoordinator {
-  static let shared = OpenClawMessagePresentationPreparationCoordinator()
+actor AIChatMessagePresentationPreparationCoordinator {
+  static let shared = AIChatMessagePresentationPreparationCoordinator()
   private static let maximumConcurrentWorkerCount = 2
 
   private struct Entry {
     let token: UUID
-    let input: OpenClawMessagePresentationInput
-    let task: Task<OpenClawPreparedMessagePresentation, Never>
+    let input: AIChatMessagePresentationInput
+    let task: Task<AIChatPreparedMessagePresentation, Never>
   }
 
   private var entries: [UUID: [Entry]] = [:]
@@ -623,26 +623,26 @@ actor OpenClawMessagePresentationPreparationCoordinator {
   private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
 
   func prepare(
-    _ input: OpenClawMessagePresentationInput
-  ) async -> OpenClawPreparedMessagePresentation {
+    _ input: AIChatMessagePresentationInput
+  ) async -> AIChatPreparedMessagePresentation {
     await prepare(input, revision: nil)
   }
 
   func resolve(
-    _ input: OpenClawMessagePresentationInput,
-    cachedCandidate: OpenClawCachedMessagePresentation?
-  ) async -> OpenClawResolvedMessagePresentation {
-    let revision = OpenClawMessagePresentationRevision(input)
+    _ input: AIChatMessagePresentationInput,
+    cachedCandidate: AIChatCachedMessagePresentation?
+  ) async -> AIChatResolvedMessagePresentation {
+    let revision = AIChatMessagePresentationRevision(input)
     if cachedCandidate?.revision == revision,
        let cachedCandidate {
-      return OpenClawResolvedMessagePresentation(
+      return AIChatResolvedMessagePresentation(
         revision: revision,
         value: cachedCandidate,
         preparedForCacheInstall: nil
       )
     }
     let prepared = await prepare(input, revision: revision)
-    return OpenClawResolvedMessagePresentation(
+    return AIChatResolvedMessagePresentation(
       revision: revision,
       value: prepared.value,
       preparedForCacheInstall: prepared
@@ -650,11 +650,11 @@ actor OpenClawMessagePresentationPreparationCoordinator {
   }
 
   private func prepare(
-    _ input: OpenClawMessagePresentationInput,
-    revision: OpenClawMessagePresentationRevision?
-  ) async -> OpenClawPreparedMessagePresentation {
+    _ input: AIChatMessagePresentationInput,
+    revision: AIChatMessagePresentationRevision?
+  ) async -> AIChatPreparedMessagePresentation {
     let token: UUID
-    let task: Task<OpenClawPreparedMessagePresentation, Never>
+    let task: Task<AIChatPreparedMessagePresentation, Never>
     if let existing = entries[input.messageID]?.first(where: { $0.input == input }) {
       token = existing.token
       task = existing.task
@@ -666,7 +666,7 @@ actor OpenClawMessagePresentationPreparationCoordinator {
           _ = await previousTask.value
         }
         await self.acquireWorkerPermit(messageID: input.messageID)
-        let prepared = OpenClawMessagePresentationBuilder.prepare(
+        let prepared = AIChatMessagePresentationBuilder.prepare(
           input,
           revision: revision
         )
@@ -769,13 +769,13 @@ actor OpenClawMessagePresentationPreparationCoordinator {
   }
 }
 
-actor OpenClawExpandedMessageBodyPreparationCoordinator {
-  static let shared = OpenClawExpandedMessageBodyPreparationCoordinator()
+actor AIChatExpandedMessageBodyPreparationCoordinator {
+  static let shared = AIChatExpandedMessageBodyPreparationCoordinator()
 
   private struct Entry {
     let token: UUID
-    let input: OpenClawExpandedMessageBodyInput
-    let task: Task<OpenClawPreparedMessageBody?, Never>
+    let input: AIChatExpandedMessageBodyInput
+    let task: Task<AIChatPreparedMessageBody?, Never>
   }
 
   private var entries: [UUID: [Entry]] = [:]
@@ -786,10 +786,10 @@ actor OpenClawExpandedMessageBodyPreparationCoordinator {
   private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
 
   func prepare(
-    _ input: OpenClawExpandedMessageBodyInput
-  ) async -> OpenClawPreparedMessageBody? {
+    _ input: AIChatExpandedMessageBodyInput
+  ) async -> AIChatPreparedMessageBody? {
     let token: UUID
-    let task: Task<OpenClawPreparedMessageBody?, Never>
+    let task: Task<AIChatPreparedMessageBody?, Never>
     if let existing = entries[input.messageID]?.first(where: { $0.input == input }) {
       token = existing.token
       task = existing.task
@@ -801,7 +801,7 @@ actor OpenClawExpandedMessageBodyPreparationCoordinator {
           _ = await previousTask.value
         }
         await self.workerDidStart()
-        let prepared = OpenClawMessagePresentationBuilder.prepareExpandedBody(
+        let prepared = AIChatMessagePresentationBuilder.prepareExpandedBody(
           sourceText: input.sourceText,
           role: input.role,
           pageIndex: input.pageIndex
@@ -874,7 +874,7 @@ actor OpenClawExpandedMessageBodyPreparationCoordinator {
 }
 
 @MainActor
-enum OpenClawMessagePresentationCache {
+enum AIChatMessagePresentationCache {
   private final class CacheKey: NSObject {
     let messageID: UUID
 
@@ -890,28 +890,28 @@ enum OpenClawMessagePresentationCache {
     }
   }
 
-  private static let cache: NSCache<CacheKey, OpenClawCachedMessagePresentation> = {
-    let cache = NSCache<CacheKey, OpenClawCachedMessagePresentation>()
+  private static let cache: NSCache<CacheKey, AIChatCachedMessagePresentation> = {
+    let cache = NSCache<CacheKey, AIChatCachedMessagePresentation>()
     cache.countLimit = 1_024
     cache.totalCostLimit = 32 * 1_024 * 1_024
     return cache
   }()
 
-  static func presentation(for message: OpenClawChatMessage) -> OpenClawCachedMessagePresentation {
-    let input = OpenClawMessagePresentationInput(message)
+  static func presentation(for message: AIChatMessage) -> AIChatCachedMessagePresentation {
+    let input = AIChatMessagePresentationInput(message)
     let key = CacheKey(messageID: input.messageID)
     if let cached = cache.object(forKey: key), cached.matches(input) {
       return cached
     }
 
-    let prepared = OpenClawMessagePresentationBuilder.prepare(input)
+    let prepared = AIChatMessagePresentationBuilder.prepare(input)
     install(prepared)
     return prepared.value
   }
 
   static func cachedPresentation(
-    for input: OpenClawMessagePresentationInput
-  ) -> OpenClawCachedMessagePresentation? {
+    for input: AIChatMessagePresentationInput
+  ) -> AIChatCachedMessagePresentation? {
     guard let cached = cache.object(forKey: CacheKey(messageID: input.messageID)),
           cached.matches(input)
     else { return nil }
@@ -920,11 +920,11 @@ enum OpenClawMessagePresentationCache {
 
   static func cachedPresentation(
     messageID: UUID
-  ) -> OpenClawCachedMessagePresentation? {
+  ) -> AIChatCachedMessagePresentation? {
     cache.object(forKey: CacheKey(messageID: messageID))
   }
 
-  static func install(_ prepared: OpenClawPreparedMessagePresentation) {
+  static func install(_ prepared: AIChatPreparedMessagePresentation) {
     cache.setObject(
       prepared.value,
       forKey: CacheKey(messageID: prepared.messageID),
@@ -932,7 +932,7 @@ enum OpenClawMessagePresentationCache {
     )
   }
 
-  static func install(_ prepared: [OpenClawPreparedMessagePresentation]) {
+  static func install(_ prepared: [AIChatPreparedMessagePresentation]) {
     for presentation in prepared {
       install(presentation)
     }
@@ -944,12 +944,12 @@ enum OpenClawMessagePresentationCache {
 
   static func cachedPresentationForTesting(
     messageID: UUID
-  ) -> OpenClawCachedMessagePresentation? {
+  ) -> AIChatCachedMessagePresentation? {
     cache.object(forKey: CacheKey(messageID: messageID))
   }
 }
 
-enum OpenClawMessageOrgNormalizer {
+enum AIChatMessageOrgNormalizer {
   private nonisolated static let blockDirectiveNames = [
     "begin_src",
     "end_src",
@@ -1172,32 +1172,32 @@ extension EnvironmentValues {
   }
 }
 
-struct OpenClawMessageBodyView: View {
+struct AIChatMessageBodyView: View {
   let rawText: String
   let rendersStructuredOrg2: Bool
-  let structuredPresentation: OpenClawMessageOrgPresentation?
+  let structuredPresentation: AIChatMessageOrgPresentation?
 
   var body: some View {
     AIChatDocumentBody(
       text: rendersStructuredOrg2
-        ? (structuredPresentation?.normalizedText ?? OpenClawMessageOrgNormalizer.normalized(rawText))
+        ? (structuredPresentation?.normalizedText ?? AIChatMessageOrgNormalizer.normalized(rawText))
         : rawText,
       formatted: rendersStructuredOrg2
     )
   }
 }
 
-private struct OpenClawMessageExpansionTaskKey: Equatable {
+private struct AIChatMessageExpansionTaskKey: Equatable {
   let messageID: UUID
-  let role: OpenClawChatMessage.Role
+  let role: AIChatMessage.Role
   let createdAt: Date
   let pageIndex: Int
   let wantsFullBody: Bool
-  let presentationRevision: OpenClawMessagePresentationRevision?
+  let presentationRevision: AIChatMessagePresentationRevision?
 }
 
 @MainActor
-private final class OpenClawMessageAccessibilityPressView: NSView {
+private final class AIChatMessageAccessibilityPressView: NSView {
   var activate: (() -> Void)?
 
   override init(frame frameRect: NSRect) {
@@ -1223,17 +1223,17 @@ private final class OpenClawMessageAccessibilityPressView: NSView {
   }
 }
 
-private struct OpenClawMessageAccessibilityPressTarget: NSViewRepresentable {
+private struct AIChatMessageAccessibilityPressTarget: NSViewRepresentable {
   let identifier: String
   let label: String
   let activate: () -> Void
 
-  func makeNSView(context: Context) -> OpenClawMessageAccessibilityPressView {
-    OpenClawMessageAccessibilityPressView(frame: .zero)
+  func makeNSView(context: Context) -> AIChatMessageAccessibilityPressView {
+    AIChatMessageAccessibilityPressView(frame: .zero)
   }
 
   func updateNSView(
-    _ view: OpenClawMessageAccessibilityPressView,
+    _ view: AIChatMessageAccessibilityPressView,
     context: Context
   ) {
     view.activate = activate
@@ -1242,7 +1242,7 @@ private struct OpenClawMessageAccessibilityPressTarget: NSViewRepresentable {
   }
 }
 
-private struct OpenClawMessageAccessibilityMarker: NSViewRepresentable {
+private struct AIChatMessageAccessibilityMarker: NSViewRepresentable {
   let identifier: String
   let label: String
 
@@ -1259,28 +1259,28 @@ private struct OpenClawMessageAccessibilityMarker: NSViewRepresentable {
   }
 }
 
-private struct OpenClawMessagePresentationResolver: NSViewRepresentable {
-  let input: OpenClawMessagePresentationInput
-  let onResolve: @MainActor (OpenClawResolvedMessagePresentation) -> Void
+private struct AIChatMessagePresentationResolver: NSViewRepresentable {
+  let input: AIChatMessagePresentationInput
+  let onResolve: @MainActor (AIChatResolvedMessagePresentation) -> Void
 
   @MainActor
   final class Coordinator {
     private var requestGeneration = 0
     private var task: Task<Void, Never>?
-    private var lastAppliedRevision: OpenClawMessagePresentationRevision?
+    private var lastAppliedRevision: AIChatMessagePresentationRevision?
 
     func resolve(
-      input: OpenClawMessagePresentationInput,
-      onResolve: @escaping @MainActor (OpenClawResolvedMessagePresentation) -> Void
+      input: AIChatMessagePresentationInput,
+      onResolve: @escaping @MainActor (AIChatResolvedMessagePresentation) -> Void
     ) {
       requestGeneration &+= 1
       let generation = requestGeneration
-      let cachedCandidate = OpenClawMessagePresentationCache.cachedPresentation(
+      let cachedCandidate = AIChatMessagePresentationCache.cachedPresentation(
         messageID: input.messageID
       )
       task?.cancel()
       task = Task { @MainActor in
-        let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+        let resolved = await AIChatMessagePresentationPreparationCoordinator.shared.resolve(
           input,
           cachedCandidate: cachedCandidate
         )
@@ -1288,7 +1288,7 @@ private struct OpenClawMessagePresentationResolver: NSViewRepresentable {
               generation == requestGeneration
         else { return }
         if let prepared = resolved.preparedForCacheInstall {
-          OpenClawMessagePresentationCache.install(prepared)
+          AIChatMessagePresentationCache.install(prepared)
         }
         guard lastAppliedRevision != resolved.revision else { return }
         lastAppliedRevision = resolved.revision
@@ -1354,7 +1354,7 @@ enum AIChatNestedScrollWheelRouting {
 
 struct ChatBubbleView: View {
 
-  let message: OpenClawChatMessage
+  let message: AIChatMessage
   let runtime: AIChatRuntime
   let destinationTitlesByID: [String: String]
   let compact: Bool
@@ -1370,16 +1370,16 @@ struct ChatBubbleView: View {
   @State private var isHovering = false
   @State private var didCopy = false
   @State private var copyFeedbackTask: Task<Void, Never>?
-  @State private var previewedAttachment: OpenClawChatAttachment?
+  @State private var previewedAttachment: AIChatAttachment?
   @State private var explicitlyShowsFullBody = false
   @State private var expandedBodyPageIndex = 0
-  @State private var expandedBody: OpenClawPreparedMessageBody?
-  @State private var expandedBodyInput: OpenClawExpandedMessageBodyInput?
-  @State private var asynchronouslyPreparedPresentation: OpenClawCachedMessagePresentation?
-  @State private var presentationRevision: OpenClawMessagePresentationRevision?
+  @State private var expandedBody: AIChatPreparedMessageBody?
+  @State private var expandedBodyInput: AIChatExpandedMessageBodyInput?
+  @State private var asynchronouslyPreparedPresentation: AIChatCachedMessagePresentation?
+  @State private var presentationRevision: AIChatMessagePresentationRevision?
 
   init(
-    message: OpenClawChatMessage,
+    message: AIChatMessage,
     runtime: AIChatRuntime = .openClaw,
     destinationTitlesByID: [String: String] = [:],
     compact: Bool = false,
@@ -1410,13 +1410,13 @@ struct ChatBubbleView: View {
   }
 
   var body: some View {
-    let presentationInput = OpenClawMessagePresentationInput(message)
+    let presentationInput = AIChatMessagePresentationInput(message)
     let cachedPresentation = asynchronouslyPreparedPresentation
-      ?? OpenClawMessagePresentationBuilder.placeholder(presentationInput)
+      ?? AIChatMessagePresentationBuilder.placeholder(presentationInput)
     let presentation = cachedPresentation.context
     let wantsFullBody = explicitlyShowsFullBody
       || (isSelectedSearchMatch && cachedPresentation.body.isTruncated)
-    let expectedExpandedInput = OpenClawExpandedMessageBodyInput(
+    let expectedExpandedInput = AIChatExpandedMessageBodyInput(
       messageID: presentationInput.messageID,
       role: presentationInput.role,
       sourceText: cachedPresentation.body.sourceText,
@@ -1429,7 +1429,7 @@ struct ChatBubbleView: View {
       && expandedBodyMatchesCurrentPage
       ? expandedBody ?? cachedPresentation.body
       : cachedPresentation.body
-    let expansionTaskKey = OpenClawMessageExpansionTaskKey(
+    let expansionTaskKey = AIChatMessageExpansionTaskKey(
       messageID: message.id,
       role: message.role,
       createdAt: message.createdAt,
@@ -1481,10 +1481,10 @@ struct ChatBubbleView: View {
           copyButton
         }
         if !presentation.contexts.isEmpty {
-          OpenClawContextPillsView(contexts: presentation.contexts)
+          AIChatContextPillsView(contexts: presentation.contexts)
         }
-        if OpenClawProgressPresentation.containsNonWhitespace(resolvedBody.displayedText) {
-          OpenClawMessageBodyView(
+        if AIChatProgressPresentation.containsNonWhitespace(resolvedBody.displayedText) {
+          AIChatMessageBodyView(
             rawText: resolvedBody.displayedText,
             rendersStructuredOrg2: message.role == .assistant,
             structuredPresentation: resolvedBody.org
@@ -1498,14 +1498,14 @@ struct ChatBubbleView: View {
           )
         }
         if !message.attachments.isEmpty {
-          OpenClawMessageAttachmentsView(
+          AIChatMessageAttachmentsView(
             attachments: message.attachments,
             compact: compact,
             onPreview: { previewedAttachment = $0 }
           )
         }
         if isQueued {
-          OpenClawQueuedMessageActions(
+          AIChatQueuedMessageActions(
             compact: compact,
             canSteer: canSteerQueuedMessage,
             steer: steerQueuedMessage,
@@ -1514,7 +1514,7 @@ struct ChatBubbleView: View {
           )
         }
         if message.role == .user, let sendFailure = message.sendFailure {
-          OpenClawSendFailureView(
+          AIChatSendFailureView(
             messageID: message.id,
             deliveryStatus: message.deliveryStatus,
             failureText: sendFailure,
@@ -1527,7 +1527,7 @@ struct ChatBubbleView: View {
           Divider()
             .padding(.top, 10)
             .padding(.bottom, 2)
-          OpenClawProgressFeedView(
+          AIChatProgressFeedView(
             reasoning: responseTrace.reasoning,
             activities: responseTrace.activities,
             compact: compact,
@@ -1539,7 +1539,7 @@ struct ChatBubbleView: View {
           Divider()
             .padding(.top, 10)
             .padding(.bottom, 2)
-          OpenClawChangeSummaryView(summary: changeSummary, compact: compact)
+          AIChatChangeSummaryView(summary: changeSummary, compact: compact)
         }
       }
       .padding(.horizontal, 11)
@@ -1572,16 +1572,16 @@ struct ChatBubbleView: View {
       "openclaw-chat-message-\(message.id.uuidString.lowercased())"
     )
     .background {
-      OpenClawMessageAccessibilityMarker(
+      AIChatMessageAccessibilityMarker(
         identifier: "openclaw-chat-message-\(message.id.uuidString.lowercased())",
         label: "\(roleTitle) message"
       )
     }
     .sheet(item: $previewedAttachment) { attachment in
-      OpenClawAttachmentPreviewView(attachment: attachment)
+      AIChatAttachmentPreviewView(attachment: attachment)
     }
     .background {
-      OpenClawMessagePresentationResolver(input: presentationInput) { resolved in
+      AIChatMessagePresentationResolver(input: presentationInput) { resolved in
         asynchronouslyPreparedPresentation = resolved.value
         presentationRevision = resolved.revision
       }
@@ -1602,7 +1602,7 @@ struct ChatBubbleView: View {
 
   @ViewBuilder
   private func largeMessageExpansionControl(
-    resolvedBody: OpenClawPreparedMessageBody,
+    resolvedBody: AIChatPreparedMessageBody,
     wantsFullBody: Bool,
     pageIsPrepared: Bool
   ) -> some View {
@@ -1638,7 +1638,7 @@ struct ChatBubbleView: View {
         }
         .accessibilityIdentifier("openclaw-message-show-less-\(messageIdentifier)")
         .background {
-          OpenClawMessageAccessibilityPressTarget(
+          AIChatMessageAccessibilityPressTarget(
             identifier: "openclaw-message-show-less-\(messageIdentifier)",
             label: "Show collapsed message preview"
           ) {
@@ -1656,7 +1656,7 @@ struct ChatBubbleView: View {
         .foregroundStyle(.secondary)
         .accessibilityIdentifier("openclaw-message-full-revealed-\(messageIdentifier)")
         .background {
-          OpenClawMessageAccessibilityMarker(
+          AIChatMessageAccessibilityMarker(
             identifier: "openclaw-message-full-revealed-\(messageIdentifier)",
             label: "Full message shown for selected match"
           )
@@ -1674,7 +1674,7 @@ struct ChatBubbleView: View {
       .accessibilityLabel("Show collapsed message preview")
       .accessibilityIdentifier("openclaw-message-show-less-\(messageIdentifier)")
       .background {
-        OpenClawMessageAccessibilityPressTarget(
+        AIChatMessageAccessibilityPressTarget(
           identifier: "openclaw-message-show-less-\(messageIdentifier)",
           label: "Show collapsed message preview"
         ) {
@@ -1696,7 +1696,7 @@ struct ChatBubbleView: View {
       .accessibilityLabel("Show full message")
       .accessibilityIdentifier("openclaw-message-show-full-\(messageIdentifier)")
       .background {
-        OpenClawMessageAccessibilityPressTarget(
+        AIChatMessageAccessibilityPressTarget(
           identifier: "openclaw-message-show-full-\(messageIdentifier)",
           label: "Show full message"
         ) {
@@ -1709,7 +1709,7 @@ struct ChatBubbleView: View {
 
   @MainActor
   private func synchronizeExpandedBody(
-    input: OpenClawMessagePresentationInput,
+    input: AIChatMessagePresentationInput,
     wantsFullBody: Bool
   ) async {
     guard wantsFullBody else {
@@ -1718,10 +1718,10 @@ struct ChatBubbleView: View {
       return
     }
 
-    let cachedCandidate = OpenClawMessagePresentationCache.cachedPresentation(
+    let cachedCandidate = AIChatMessagePresentationCache.cachedPresentation(
       messageID: input.messageID
     )
-    let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+    let resolved = await AIChatMessagePresentationPreparationCoordinator.shared.resolve(
       input,
       cachedCandidate: cachedCandidate
     )
@@ -1730,7 +1730,7 @@ struct ChatBubbleView: View {
           message.role == input.role
     else { return }
     if let prepared = resolved.preparedForCacheInstall {
-      OpenClawMessagePresentationCache.install(prepared)
+      AIChatMessagePresentationCache.install(prepared)
     }
     presentationRevision = resolved.revision
     asynchronouslyPreparedPresentation = resolved.value
@@ -1741,7 +1741,7 @@ struct ChatBubbleView: View {
       return
     }
 
-    let expandedInput = OpenClawExpandedMessageBodyInput(
+    let expandedInput = AIChatExpandedMessageBodyInput(
       messageID: input.messageID,
       role: input.role,
       sourceText: preparedPresentation.body.sourceText,
@@ -1752,7 +1752,7 @@ struct ChatBubbleView: View {
       && expandedBodyInput?.pageIndex == expandedInput.pageIndex
       && expandedBody != nil
     guard !alreadyPreparedCurrentPage else { return }
-    let prepared = await OpenClawExpandedMessageBodyPreparationCoordinator.shared.prepare(
+    let prepared = await AIChatExpandedMessageBodyPreparationCoordinator.shared.prepare(
       expandedInput
     )
     guard !Task.isCancelled,
@@ -1767,10 +1767,10 @@ struct ChatBubbleView: View {
 
   private var copyButton: some View {
     Button {
-      let input = OpenClawMessageClipboard.Input(message)
+      let input = AIChatMessageClipboard.Input(message)
       copyFeedbackTask?.cancel()
       copyFeedbackTask = Task { @MainActor in
-        let copied = await OpenClawMessageClipboard.copy(input)
+        let copied = await AIChatMessageClipboard.copy(input)
         guard !Task.isCancelled else { return }
         didCopy = copied
         guard copied else { return }
@@ -1869,10 +1869,10 @@ struct ChatBubbleView: View {
 
 struct AIChatRoomRound: Identifiable, Equatable, Sendable {
   let id: UUID
-  let trigger: OpenClawChatMessage
+  let trigger: AIChatMessage
   let expectedDestinationIDs: [String]
-  let dispatchesByDestinationID: [String: OpenClawChatMessage]
-  let responsesByDestinationID: [String: OpenClawChatMessage]
+  let dispatchesByDestinationID: [String: AIChatMessage]
+  let responsesByDestinationID: [String: AIChatMessage]
 
   var expectedRuntimes: [AIChatRuntime] {
     expectedDestinationIDs.compactMap { dispatchesByDestinationID[$0]?.targetRuntime }
@@ -1886,20 +1886,20 @@ struct AIChatRoomRound: Identifiable, Equatable, Sendable {
     !expectedDestinationIDs.isEmpty && completedCount == expectedDestinationIDs.count
   }
 
-  func dispatch(forDestinationID destinationID: String) -> OpenClawChatMessage? {
+  func dispatch(forDestinationID destinationID: String) -> AIChatMessage? {
     dispatchesByDestinationID[destinationID]
   }
 
-  func response(forDestinationID destinationID: String) -> OpenClawChatMessage? {
+  func response(forDestinationID destinationID: String) -> AIChatMessage? {
     responsesByDestinationID[destinationID]
   }
 
-  func dispatch(for runtime: AIChatRuntime) -> OpenClawChatMessage? {
+  func dispatch(for runtime: AIChatRuntime) -> AIChatMessage? {
     expectedDestinationIDs.compactMap { dispatchesByDestinationID[$0] }
       .first(where: { $0.targetRuntime == runtime })
   }
 
-  func response(for runtime: AIChatRuntime) -> OpenClawChatMessage? {
+  func response(for runtime: AIChatRuntime) -> AIChatMessage? {
     expectedDestinationIDs.compactMap { responsesByDestinationID[$0] }
       .first(where: { $0.authorRuntime == runtime })
   }
@@ -1912,7 +1912,7 @@ struct AIChatRoomRound: Identifiable, Equatable, Sendable {
 }
 
 enum AIChatRoomTranscriptItem: Identifiable, Equatable, Sendable {
-  case message(OpenClawChatMessage)
+  case message(AIChatMessage)
   case round(AIChatRoomRound)
 
   var id: UUID {
@@ -1922,7 +1922,7 @@ enum AIChatRoomTranscriptItem: Identifiable, Equatable, Sendable {
     }
   }
 
-  var visibleChatBubbleMessages: [OpenClawChatMessage] {
+  var visibleChatBubbleMessages: [AIChatMessage] {
     switch self {
     case .message(let message):
       return [message]
@@ -1941,14 +1941,14 @@ enum AIChatRoomTranscriptItem: Identifiable, Equatable, Sendable {
 
   var displayedContentUTF8ByteCount: Int {
     visibleChatBubbleMessages.reduce(into: 0) { total, message in
-      total += OpenClawMessageBodyExcerpt.displayedUTF8ByteCount(for: message.content)
+      total += AIChatMessageBodyExcerpt.displayedUTF8ByteCount(for: message.content)
     }
   }
 }
 
 enum AIChatRoomTranscriptPresentation {
   static func items(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     isSharedRoom: Bool
   ) -> [AIChatRoomTranscriptItem] {
     guard isSharedRoom else {
@@ -1959,7 +1959,7 @@ enum AIChatRoomTranscriptPresentation {
 
     var items: [AIChatRoomTranscriptItem] = []
     var consumed = Set<UUID>()
-    var messagesByRoundID: [UUID: [OpenClawChatMessage]] = [:]
+    var messagesByRoundID: [UUID: [AIChatMessage]] = [:]
     messagesByRoundID.reserveCapacity(messages.count / 3)
     for message in messages {
       if let roomRoundID = message.roomRoundID {
@@ -1991,7 +1991,7 @@ enum AIChatRoomTranscriptPresentation {
         continue
       }
 
-      let groupedMessages: [OpenClawChatMessage]
+      let groupedMessages: [AIChatMessage]
       if let roomRoundID = message.roomRoundID {
         groupedMessages = messagesByRoundID[roomRoundID] ?? [message]
       } else {
@@ -2001,7 +2001,7 @@ enum AIChatRoomTranscriptPresentation {
 
       let dispatches = groupedMessages.filter { $0.role == .user }
       let responses = groupedMessages.filter { $0.role != .user }
-      var dispatchesByDestinationID: [String: OpenClawChatMessage] = [:]
+      var dispatchesByDestinationID: [String: AIChatMessage] = [:]
       dispatches.forEach { dispatch in
         if let destinationID = dispatch.targetDestinationID
           ?? dispatch.targetRuntime.map(AIChatDestinationConfiguration.defaultID(for:)) {
@@ -2009,8 +2009,8 @@ enum AIChatRoomTranscriptPresentation {
         }
       }
 
-      var responsesByDestinationID: [String: OpenClawChatMessage] = [:]
-      var unattributedResponses: [OpenClawChatMessage] = []
+      var responsesByDestinationID: [String: AIChatMessage] = [:]
+      var unattributedResponses: [AIChatMessage] = []
       for response in responses {
         if let destinationID = response.authorDestinationID
           ?? response.authorRuntime.map(AIChatDestinationConfiguration.defaultID(for:)) {
@@ -2085,14 +2085,14 @@ struct AIChatThreadSearchCandidate: Equatable {
 
 struct AIChatThreadSearchMessageInput: Sendable {
   let messageID: UUID
-  let role: OpenClawChatMessage.Role
+  let role: AIChatMessage.Role
   let rawText: String
   let attachmentFileNames: [String]
   let isRoomDispatchCopy: Bool
   let roomRoundID: UUID?
   let beginsLegacySharedRound: Bool
 
-  nonisolated init(_ message: OpenClawChatMessage) {
+  nonisolated init(_ message: AIChatMessage) {
     messageID = message.id
     role = message.role
     rawText = message.content
@@ -2106,7 +2106,7 @@ struct AIChatThreadSearchMessageInput: Sendable {
 
 enum AIChatThreadSearch {
   nonisolated static func candidates(
-    in messages: [OpenClawChatMessage],
+    in messages: [AIChatMessage],
     isSharedRoom: Bool
   ) -> [AIChatThreadSearchCandidate] {
     candidates(
@@ -2218,18 +2218,18 @@ enum AIChatThreadSearch {
         rawMessageIndex: candidate.rawMessageIndex,
         anchorRawMessageIndex: candidate.anchorRawMessageIndex,
         expandedBodyPageIndex: matchCharacterOffset
-          / OpenClawExpandedMessageBodyInput.pageCharacterLimit
+          / AIChatExpandedMessageBodyInput.pageCharacterLimit
       ))
     }
     return result
   }
 
   private static func candidate(
-    for message: OpenClawChatMessage,
+    for message: AIChatMessage,
     scrollTargetID: UUID,
     rawMessageIndex: Int
   ) -> AIChatThreadSearchCandidate {
-    let searchableText = ([OpenClawMessageClipboard.text(for: message)]
+    let searchableText = ([AIChatMessageClipboard.text(for: message)]
       + message.attachments.map(\.fileName))
       .joined(separator: "\n")
     return AIChatThreadSearchCandidate(
@@ -2249,9 +2249,9 @@ enum AIChatThreadSearch {
   ) -> AIChatThreadSearchCandidate {
     let content: String
     if message.role == .user {
-      content = OpenClawContextPresentation(message.rawText).clipboardText
+      content = AIChatContextPresentation(message.rawText).clipboardText
     } else if message.role == .assistant {
-      content = OpenClawMessageOrgNormalizer.normalized(message.rawText)
+      content = AIChatMessageOrgNormalizer.normalized(message.rawText)
     } else {
       content = message.rawText
     }
@@ -2412,7 +2412,7 @@ struct AIChatRoomRoundView: View {
             .foregroundStyle(.tertiary)
             .accessibilityIdentifier("openclaw-room-round-omitted-destinations")
             .background {
-              OpenClawMessageAccessibilityMarker(
+              AIChatMessageAccessibilityMarker(
                 identifier: "openclaw-room-round-omitted-destinations",
                 label: "Additional shared-room destinations not mounted"
               )
@@ -2498,14 +2498,14 @@ private struct AIChatRoomAgentSlot: View {
           Label(destinationTitle, systemImage: destinationSystemImage)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-          OpenClawLiveTypingIndicatorView(
-            liveState: store.openClawLiveState,
-            threadID: store.selectedOpenClawChatThreadID,
-            startedAt: store.openClawRequestStartedAt,
+          AIChatLiveTypingIndicatorView(
+            liveState: store.aiChatLiveState,
+            threadID: store.selectedAIChatThreadID,
+            startedAt: store.aiChatRequestStartedAt,
             runtime: runtime,
             destinationTitle: destinationTitle,
             compact: true,
-            onStop: { Task { await store.stopOpenClawRun() } }
+            onStop: { Task { await store.stopAIChatRun() } }
           )
         }
         .padding(9)
@@ -2538,7 +2538,7 @@ private struct AIChatRoomAgentSlot: View {
     }
   }
 
-  private var deliveryStatus: OpenClawChatMessage.DeliveryStatus? {
+  private var deliveryStatus: AIChatMessage.DeliveryStatus? {
     round.dispatch(forDestinationID: destinationID)?.deliveryStatus
   }
 
@@ -2565,7 +2565,7 @@ private struct AIChatRoomAgentSlot: View {
   }
 }
 
-private struct OpenClawQueuedMessageActions: View {
+private struct AIChatQueuedMessageActions: View {
   let compact: Bool
   let canSteer: Bool
   let steer: () -> Void
@@ -2627,31 +2627,31 @@ private struct OpenClawQueuedMessageActions: View {
   }
 }
 
-enum OpenClawMessageClipboard {
+enum AIChatMessageClipboard {
   struct Input: Sendable {
-    let role: OpenClawChatMessage.Role
+    let role: AIChatMessage.Role
     let content: String
     let attachmentFileNames: [String]
 
-    nonisolated init(_ message: OpenClawChatMessage) {
+    nonisolated init(_ message: AIChatMessage) {
       role = message.role
       content = message.content
       attachmentFileNames = message.attachments.map(\.fileName)
     }
   }
 
-  nonisolated static func text(for message: OpenClawChatMessage) -> String {
+  nonisolated static func text(for message: AIChatMessage) -> String {
     text(for: Input(message))
   }
 
   nonisolated static func text(for input: Input) -> String {
     if !input.content.isEmpty {
-      let content = OpenClawContextPresentation(
+      let content = AIChatContextPresentation(
         input.content,
         extractsContexts: input.role == .user
       ).clipboardText
       return AIChatRichClipboard.alignedMessage(input.role == .assistant
-        ? OpenClawMessageOrgNormalizer.normalized(content)
+        ? AIChatMessageOrgNormalizer.normalized(content)
         : content)
     }
     return input.attachmentFileNames.map { "[Attachment: \($0)]" }.joined(separator: "\n")
@@ -2673,7 +2673,7 @@ enum OpenClawMessageClipboard {
   @MainActor
   @discardableResult
   static func copy(
-    _ message: OpenClawChatMessage,
+    _ message: AIChatMessage,
     to pasteboard: NSPasteboard = .general
   ) -> Bool {
     let text = text(for: message)
@@ -2704,14 +2704,14 @@ enum OpenClawMessageClipboard {
   }
 }
 
-private struct OpenClawContextPillsView: View {
+private struct AIChatContextPillsView: View {
   @Environment(WorkspaceStore.self) private var store
-  let contexts: [OpenClawPresentedContext]
-  var remove: ((OpenClawPresentedContext) -> Void)?
+  let contexts: [AIChatPresentedContext]
+  var remove: ((AIChatPresentedContext) -> Void)?
 
   init(
-    contexts: [OpenClawPresentedContext],
-    remove: ((OpenClawPresentedContext) -> Void)? = nil
+    contexts: [AIChatPresentedContext],
+    remove: ((AIChatPresentedContext) -> Void)? = nil
   ) {
     self.contexts = contexts
     self.remove = remove
@@ -2721,8 +2721,8 @@ private struct OpenClawContextPillsView: View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 6) {
         ForEach(contexts) { context in
-          OpenClawContextPill(
-            context: store.resolvedOpenClawContext(context),
+          AIChatContextPill(
+            context: store.resolvedAIChatContext(context),
             remove: remove
           )
         }
@@ -2733,16 +2733,16 @@ private struct OpenClawContextPillsView: View {
   }
 }
 
-private struct OpenClawContextPill: View {
+private struct AIChatContextPill: View {
   @Environment(WorkspaceStore.self) private var store
-  let context: OpenClawPresentedContext
-  let remove: ((OpenClawPresentedContext) -> Void)?
+  let context: AIChatPresentedContext
+  let remove: ((AIChatPresentedContext) -> Void)?
   @State private var isHovering = false
 
   var body: some View {
     HStack(spacing: 3) {
       Button {
-        store.openOpenClawContext(context)
+        store.openAIChatContext(context)
       } label: {
         HStack(spacing: 5) {
           Image(systemName: context.systemImage)
@@ -2799,10 +2799,10 @@ private struct OpenClawContextPill: View {
   }
 }
 
-private struct OpenClawSendFailureView: View {
+private struct AIChatSendFailureView: View {
   @Environment(WorkspaceStore.self) private var store
   let messageID: UUID
-  let deliveryStatus: OpenClawChatMessage.DeliveryStatus
+  let deliveryStatus: AIChatMessage.DeliveryStatus
   let failureText: String
   let compact: Bool
 
@@ -2823,7 +2823,7 @@ private struct OpenClawSendFailureView: View {
       }
       Spacer(minLength: 8)
       Button {
-        Task { await store.retryOpenClawMessage(messageID) }
+        Task { await store.retryAIChatMessage(messageID) }
       } label: {
         if compact {
           Image(systemName: "arrow.clockwise")
@@ -2832,7 +2832,7 @@ private struct OpenClawSendFailureView: View {
         }
       }
       .buttonStyle(WorkspaceActionButtonStyle())
-      .disabled(store.isSendingOpenClawMessage)
+      .disabled(store.isSendingAIChatMessage)
       .help(retryHelpText)
     }
     .padding(.horizontal, 8)
@@ -2872,10 +2872,10 @@ private struct OpenClawSendFailureView: View {
   }
 }
 
-private struct OpenClawMessageAttachmentsView: View {
-  let attachments: [OpenClawChatAttachment]
+private struct AIChatMessageAttachmentsView: View {
+  let attachments: [AIChatAttachment]
   let compact: Bool
-  let onPreview: (OpenClawChatAttachment) -> Void
+  let onPreview: (AIChatAttachment) -> Void
 
   private var imageSize: CGFloat {
     compact ? 76 : 104
@@ -2888,7 +2888,7 @@ private struct OpenClawMessageAttachmentsView: View {
       spacing: 8
     ) {
       ForEach(attachments) { attachment in
-        OpenClawAttachmentThumbnail(
+        AIChatAttachmentThumbnail(
           attachment: attachment,
           size: imageSize,
           onPreview: { onPreview(attachment) }
@@ -2900,15 +2900,15 @@ private struct OpenClawMessageAttachmentsView: View {
   }
 }
 
-private struct OpenClawAttachmentThumbnail: View {
-  let attachment: OpenClawChatAttachment
+private struct AIChatAttachmentThumbnail: View {
+  let attachment: AIChatAttachment
   let size: CGFloat
   let onPreview: () -> Void
 
   var body: some View {
     Button(action: onPreview) {
       VStack(alignment: .leading, spacing: 4) {
-        OpenClawAsyncAttachmentImage(attachment: attachment) { error in
+        AIChatAsyncAttachmentImage(attachment: attachment) { error in
           Group {
             if error != nil {
               Image(systemName: "exclamationmark.triangle")
@@ -2916,7 +2916,7 @@ private struct OpenClawAttachmentThumbnail: View {
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-            Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
+            Image(systemName: AIChatAttachmentPresentation.systemImage(for: attachment.mimeType))
               .font(.title3)
               .foregroundStyle(.secondary)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2949,8 +2949,8 @@ private struct OpenClawAttachmentThumbnail: View {
   }
 }
 
-private struct OpenClawChangeSummaryView: View {
-  let summary: OpenClawCorpusChangeSummary
+private struct AIChatChangeSummaryView: View {
+  let summary: AIChatCorpusChangeSummary
   let compact: Bool
 
   private var visibleLimit: Int {
@@ -2964,7 +2964,7 @@ private struct OpenClawChangeSummaryView: View {
           .font(.caption.weight(.semibold))
           .foregroundStyle(.primary)
         Spacer(minLength: 8)
-        OpenClawChangeDeltaView(insertions: summary.totalInsertions, deletions: summary.totalDeletions)
+        AIChatChangeDeltaView(insertions: summary.totalInsertions, deletions: summary.totalDeletions)
       }
 
       ForEach(summary.files.prefix(visibleLimit)) { change in
@@ -2978,7 +2978,7 @@ private struct OpenClawChangeSummaryView: View {
             .lineLimit(1)
             .truncationMode(.middle)
           Spacer(minLength: 8)
-          OpenClawChangeDeltaView(insertions: change.insertions, deletions: change.deletions)
+          AIChatChangeDeltaView(insertions: change.insertions, deletions: change.deletions)
         }
       }
 
@@ -2991,7 +2991,7 @@ private struct OpenClawChangeSummaryView: View {
     .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
   }
 
-  private func iconName(for status: OpenClawCorpusFileChange.Status) -> String {
+  private func iconName(for status: AIChatCorpusFileChange.Status) -> String {
     switch status {
     case .created:
       return "plus.circle"
@@ -3002,7 +3002,7 @@ private struct OpenClawChangeSummaryView: View {
     }
   }
 
-  private func iconColor(for status: OpenClawCorpusFileChange.Status) -> Color {
+  private func iconColor(for status: AIChatCorpusFileChange.Status) -> Color {
     switch status {
     case .created:
       return .green
@@ -3014,7 +3014,7 @@ private struct OpenClawChangeSummaryView: View {
   }
 }
 
-private struct OpenClawChangeDeltaView: View {
+private struct AIChatChangeDeltaView: View {
   let insertions: Int
   let deletions: Int
 
@@ -3038,7 +3038,7 @@ private struct OpenClawChangeDeltaView: View {
   }
 }
 
-struct OpenClawComposerView: View {
+struct AIChatComposerView: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var showsModelConfiguration = false
   @State private var localDraft = ""
@@ -3051,16 +3051,16 @@ struct OpenClawComposerView: View {
   let compact: Bool
 
   var body: some View {
-    let presentation = OpenClawContextPresentation(localDraft)
-    VStack(alignment: .trailing, spacing: OpenClawComposerLayout.externalSpacing) {
-      let composerHeight = OpenClawComposerSizing.height(for: presentation.userText, compact: compact)
+    let presentation = AIChatContextPresentation(localDraft)
+    VStack(alignment: .trailing, spacing: AIChatComposerLayout.externalSpacing) {
+      let composerHeight = AIChatComposerSizing.height(for: presentation.userText, compact: compact)
       VStack(alignment: .leading, spacing: 0) {
         if !presentation.contexts.isEmpty {
-          OpenClawContextPillsView(contexts: presentation.contexts) { context in
+          AIChatContextPillsView(contexts: presentation.contexts) { context in
             localDraft = presentation.removing(context)
           }
-          .padding(.horizontal, OpenClawComposerLayout.contentInset)
-          .padding(.top, OpenClawComposerLayout.contentInset)
+          .padding(.horizontal, AIChatComposerLayout.contentInset)
+          .padding(.top, AIChatComposerLayout.contentInset)
           .padding(.bottom, 4)
         }
 
@@ -3076,11 +3076,11 @@ struct OpenClawComposerView: View {
               .lineLimit(1)
               .truncationMode(.tail)
               .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.horizontal, OpenClawComposerLayout.contentInset + 1)
+              .padding(.horizontal, AIChatComposerLayout.contentInset + 1)
               .padding(.vertical, 10)
           }
 
-          OpenClawComposerTextView(
+          AIChatComposerTextView(
             text: visibleDraftBinding,
             focusOnAppear: focusOnAppear,
             moveCursorToEndRequest: moveComposerCursorToEndRequest,
@@ -3088,7 +3088,7 @@ struct OpenClawComposerView: View {
             onSuggestionCommand: handleSuggestionCommand,
             onDropAttachment: handleDropAttachment,
             onPasteLargeText: { text in
-              store.attachOpenClawAttachment(
+              store.attachAIChatAttachment(
                 data: Data(text.utf8), fileName: "Pasted Text.txt", mimeType: "text/plain"
               )
             }
@@ -3097,30 +3097,30 @@ struct OpenClawComposerView: View {
         }
         .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
 
-        if !store.openClawPendingAttachments.isEmpty {
-          OpenClawPendingAttachmentsView(compact: compact)
-            .padding(.horizontal, OpenClawComposerLayout.contentInset)
+        if !store.aiChatPendingAttachments.isEmpty {
+          AIChatPendingAttachmentsView(compact: compact)
+            .padding(.horizontal, AIChatComposerLayout.contentInset)
             .padding(.top, 2)
             .padding(.bottom, 6)
         }
 
         footer
-          .padding(.horizontal, OpenClawComposerLayout.toolbarHorizontalInset)
+          .padding(.horizontal, AIChatComposerLayout.toolbarHorizontalInset)
           .padding(.top, 4)
-          .padding(.bottom, OpenClawComposerLayout.toolbarBottomInset)
+          .padding(.bottom, AIChatComposerLayout.toolbarBottomInset)
       }
       .background(
         WorkspaceDesign.surfaceBackground,
-        in: RoundedRectangle(cornerRadius: OpenClawComposerLayout.cornerRadius, style: .continuous)
+        in: RoundedRectangle(cornerRadius: AIChatComposerLayout.cornerRadius, style: .continuous)
       )
       .overlay(
-        RoundedRectangle(cornerRadius: OpenClawComposerLayout.cornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: AIChatComposerLayout.cornerRadius, style: .continuous)
           .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
       )
       .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
-      let slashSuggestions = OpenClawSlashCommands.suggestions(
+      let slashSuggestions = AIChatSlashCommands.suggestions(
         for: presentation.userText,
         gatewayCommands: store.activeAIChatGatewayCommands,
         corpusSkills: store.corpusAgentSkillCommands
@@ -3133,7 +3133,7 @@ struct OpenClawComposerView: View {
           select: completeMention
         )
       } else if !slashSuggestions.isEmpty {
-        OpenClawSlashCommandSuggestions(
+        AIChatSlashCommandSuggestions(
           commands: slashSuggestions,
           selectedCommandID: selectedSlashSuggestion(in: slashSuggestions)?.id,
           select: completeSlashCommand
@@ -3165,8 +3165,8 @@ struct OpenClawComposerView: View {
       }
     }
     .onAppear {
-      localDraft = store.openClawDraft
-      lastStoreDraft = store.openClawDraft
+      localDraft = store.aiChatDraft
+      lastStoreDraft = store.aiChatDraft
       cacheDraftLocally()
     }
     .onDisappear {
@@ -3177,15 +3177,15 @@ struct OpenClawComposerView: View {
       selectedSlashSuggestionIndex = 0
       selectedMentionSuggestionIndex = 0
       cacheDraftLocally()
-      if OpenClawContextPresentation(localDraft).userText == "/" {
+      if AIChatContextPresentation(localDraft).userText == "/" {
         refreshCorpusAgentSkills()
         if store.selectedAIChatDestination.adapter == .openClaw {
-          Task { await store.refreshOpenClawCommands() }
+          Task { await store.refreshAIChatCommands() }
         }
       }
     }
-    .onChange(of: store.openClawDraft) { _, newValue in
-      let mergedDraft = OpenClawComposerDraftSync.localDraftAfterStoreChange(
+    .onChange(of: store.aiChatDraft) { _, newValue in
+      let mergedDraft = AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: localDraft,
         previousStoreDraft: lastStoreDraft,
         nextStoreDraft: newValue
@@ -3194,7 +3194,7 @@ struct OpenClawComposerView: View {
       guard mergedDraft != localDraft else { return }
       localDraft = mergedDraft
     }
-    .task(id: store.openClawChatSelectionGeneration) {
+    .task(id: store.aiChatSelectionGeneration) {
       await store.refreshAIChatConfiguration()
     }
   }
@@ -3295,41 +3295,41 @@ struct OpenClawComposerView: View {
 
   @ViewBuilder
   private func composerStatus(compact compactStatus: Bool) -> some View {
-    if store.isSendingOpenClawMessage && !compactStatus {
-      Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
+    if store.isSendingAIChatMessage && !compactStatus {
+      Text(store.aiChatQueuedMessageCount > 1 ? "\(store.aiChatQueuedMessageCount - 1) queued" : "Sending")
         .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
         .layoutPriority(2)
     }
-    if store.isRecordingOpenClawVoiceNote {
+    if store.isRecordingAIChatVoiceNote {
       HStack(spacing: 6) {
         Image(systemName: "waveform")
           .foregroundStyle(.red)
-        OpenClawVoiceInputMeterView(meterState: store.openClawVoiceMeterState)
+        AIChatVoiceInputMeterView(meterState: store.aiChatVoiceMeterState)
           .frame(width: compactStatus ? 42 : (compact ? 72 : 110), height: 7)
       }
       .help("Recording \(store.selectedAIChatDisplayTitle) dictation")
-    } else if store.isTranscribingOpenClawVoiceNote {
+    } else if store.isTranscribingAIChatVoiceNote {
       if compactStatus {
-        ProgressView(value: store.openClawVoiceTranscriptionProgress)
+        ProgressView(value: store.aiChatVoiceTranscriptionProgress)
           .progressViewStyle(.circular)
           .controlSize(.small)
-          .help("Transcribing \(store.openClawVoiceTranscriptionElapsedText)")
+          .help("Transcribing \(store.aiChatVoiceTranscriptionElapsedText)")
       } else {
         VStack(alignment: .leading, spacing: 3) {
           HStack(spacing: 5) {
             Text("Transcribing")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
-            if !store.openClawVoiceTranscriptionElapsedText.isEmpty {
-              Text(store.openClawVoiceTranscriptionElapsedText)
+            if !store.aiChatVoiceTranscriptionElapsedText.isEmpty {
+              Text(store.aiChatVoiceTranscriptionElapsedText)
                 .font(.caption2.monospacedDigit().weight(.medium))
                 .foregroundStyle(.tertiary)
             }
           }
-          ProgressView(value: store.openClawVoiceTranscriptionProgress)
+          ProgressView(value: store.aiChatVoiceTranscriptionProgress)
             .progressViewStyle(.linear)
             .frame(width: compact ? 92 : 140)
         }
@@ -3350,7 +3350,7 @@ struct OpenClawComposerView: View {
   @ViewBuilder
   private var attachmentButton: some View {
     Button {
-      store.chooseOpenClawAttachments()
+      store.chooseAIChatAttachments()
     } label: {
       Label("Add attachment", systemImage: "plus")
     }
@@ -3364,29 +3364,29 @@ struct OpenClawComposerView: View {
   private func dictationButton(showsTitle: Bool) -> some View {
     Button {
       flushDraftToStore()
-      if store.isRecordingOpenClawVoiceNote {
+      if store.isRecordingAIChatVoiceNote {
         Task {
-          await store.stopOpenClawVoiceNoteRecording(action: .insertIntoComposer)
+          await store.stopAIChatVoiceNoteRecording(action: .insertIntoComposer)
         }
       } else {
-        Task { await store.startOpenClawVoiceNoteRecording() }
+        Task { await store.startAIChatVoiceNoteRecording() }
       }
     } label: {
       HStack(spacing: 6) {
-        Image(systemName: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill")
+        Image(systemName: store.isRecordingAIChatVoiceNote ? "stop.fill" : "mic.fill")
         if showsTitle {
-          Text(store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate")
+          Text(store.isRecordingAIChatVoiceNote ? "Stop Dictation" : "Dictate")
         }
       }
     }
     .buttonStyle(WorkspaceActionButtonStyle())
-    .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
+    .disabled(!store.isRecordingAIChatVoiceNote && !store.canStartAIChatVoiceNoteRecording)
     .help(
-      store.isRecordingOpenClawVoiceNote
+      store.isRecordingAIChatVoiceNote
         ? "Stop dictating and place the transcript in the composer without sending"
         : "Start local voice dictation"
     )
-    .accessibilityLabel(store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate")
+    .accessibilityLabel(store.isRecordingAIChatVoiceNote ? "Stop Dictation" : "Dictate")
     .accessibilityIdentifier("ai-chat-dictation-button")
   }
 
@@ -3398,8 +3398,8 @@ struct OpenClawComposerView: View {
         .font(.system(size: 13, weight: .bold))
         .foregroundStyle(primaryActionIsEnabled ? Color.white : WorkspaceDesign.tertiaryText)
         .frame(
-          width: OpenClawComposerLayout.primaryActionDiameter,
-          height: OpenClawComposerLayout.primaryActionDiameter
+          width: AIChatComposerLayout.primaryActionDiameter,
+          height: AIChatComposerLayout.primaryActionDiameter
         )
         .background(
           primaryActionIsEnabled ? Color.accentColor : WorkspaceDesign.controlFill,
@@ -3418,7 +3418,7 @@ struct OpenClawComposerView: View {
   private var deliveryOptionsMenu: some View {
     if isRunning
       && !store.selectedAIChatIsSharedRoom
-      && !store.isRecordingOpenClawVoiceNote
+      && !store.isRecordingAIChatVoiceNote
     {
       Menu {
         Button {
@@ -3439,7 +3439,7 @@ struct OpenClawComposerView: View {
   }
 
   private var primaryActionIsEnabled: Bool {
-    store.isRecordingOpenClawVoiceNote || canSend
+    store.isRecordingAIChatVoiceNote || canSend
   }
 
   private func assistantPicker(iconOnly: Bool = false) -> some View {
@@ -3757,20 +3757,20 @@ struct OpenClawComposerView: View {
 
   private var canSend: Bool {
     !localDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || !store.openClawPendingAttachments.isEmpty
+      || !store.aiChatPendingAttachments.isEmpty
   }
 
   private var isRunning: Bool {
-    guard let threadID = store.selectedOpenClawChatThreadID else { return false }
+    guard let threadID = store.selectedAIChatThreadID else { return false }
     return store.isAIChatThreadRunning(threadID)
   }
 
   private var primaryActionTitle: String {
-    if store.isRecordingOpenClawVoiceNote {
+    if store.isRecordingAIChatVoiceNote {
       return "Finish & Send"
     }
     if store.selectedAIChatIsSharedRoom,
-       destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
+       destinationRouting(for: AIChatContextPresentation(localDraft).userText)
          .destinationIDs.isEmpty {
       return "Post"
     }
@@ -3781,11 +3781,11 @@ struct OpenClawComposerView: View {
   }
 
   private var primaryActionSystemImage: String {
-    if store.isRecordingOpenClawVoiceNote {
+    if store.isRecordingAIChatVoiceNote {
       return "arrow.up.circle.fill"
     }
     if store.selectedAIChatIsSharedRoom,
-       destinationRouting(for: OpenClawContextPresentation(localDraft).userText)
+       destinationRouting(for: AIChatContextPresentation(localDraft).userText)
          .destinationIDs.isEmpty {
       return "text.bubble.fill"
     }
@@ -3796,7 +3796,7 @@ struct OpenClawComposerView: View {
   }
 
   private var primaryActionHelp: String {
-    if store.isRecordingOpenClawVoiceNote {
+    if store.isRecordingAIChatVoiceNote {
       return "Finish dictating and send the transcript"
     }
     if isRunning {
@@ -3807,9 +3807,9 @@ struct OpenClawComposerView: View {
 
   private var visibleDraftBinding: Binding<String> {
     Binding(
-      get: { OpenClawContextPresentation(localDraft).userText },
+      get: { AIChatContextPresentation(localDraft).userText },
       set: { nextText in
-        localDraft = OpenClawContextPresentation(localDraft).replacingUserText(nextText)
+        localDraft = AIChatContextPresentation(localDraft).replacingUserText(nextText)
       }
     )
   }
@@ -3822,18 +3822,18 @@ struct OpenClawComposerView: View {
     localDraft = ""
     moveComposerCursorToEndRequest &+= 1
     lastStoreDraft = ""
-    store.cacheOpenClawComposerDraft("")
+    store.cacheAIChatComposerDraft("")
     if delivery == .automatic {
-      store.submitOpenClawComposerInput(text: text)
+      store.submitAIChatComposerInput(text: text)
     } else {
-      store.sendComposedOpenClawMessage(text: text, delivery: delivery)
+      store.sendComposedAIChatMessage(text: text, delivery: delivery)
     }
     return true
   }
 
   private func handleReturn(_ delivery: AIChatMessageDeliveryPreference) -> Bool {
     performPrimaryAction(
-      delivery: OpenClawComposerKeyCommand.resolvedDelivery(
+      delivery: AIChatComposerKeyCommand.resolvedDelivery(
         requested: delivery,
         isRunning: isRunning
       )
@@ -3844,18 +3844,18 @@ struct OpenClawComposerView: View {
   private func performPrimaryAction(
     delivery: AIChatMessageDeliveryPreference = .automatic
   ) {
-    if store.isRecordingOpenClawVoiceNote {
+    if store.isRecordingAIChatVoiceNote {
       flushDraftToStore()
       Task {
-        await store.stopOpenClawVoiceNoteRecording(action: .send)
+        await store.stopAIChatVoiceNoteRecording(action: .send)
       }
       return
     }
     _ = sendIfPossible(delivery: delivery)
   }
 
-  private func handleSuggestionCommand(_ command: OpenClawComposerSuggestionKeyCommand) -> Bool {
-    let visibleText = OpenClawContextPresentation(localDraft).userText
+  private func handleSuggestionCommand(_ command: AIChatComposerSuggestionKeyCommand) -> Bool {
+    let visibleText = AIChatContextPresentation(localDraft).userText
     let mentionSuggestions = mentionSuggestions(for: visibleText)
     if !mentionSuggestions.isEmpty {
       switch command {
@@ -3863,7 +3863,7 @@ struct OpenClawComposerView: View {
         guard let selected = selectedMentionSuggestion(in: mentionSuggestions) else { return false }
         completeMention(selected)
       case .move(let offset):
-        selectedMentionSuggestionIndex = OpenClawSlashCommandSelection.movedIndex(
+        selectedMentionSuggestionIndex = AIChatSlashCommandSelection.movedIndex(
           selectedMentionSuggestionIndex,
           by: offset,
           count: mentionSuggestions.count
@@ -3872,7 +3872,7 @@ struct OpenClawComposerView: View {
       return true
     }
 
-    let suggestions = OpenClawSlashCommands.suggestions(
+    let suggestions = AIChatSlashCommands.suggestions(
       for: visibleText,
       gatewayCommands: store.activeAIChatGatewayCommands,
       corpusSkills: store.corpusAgentSkillCommands
@@ -3884,7 +3884,7 @@ struct OpenClawComposerView: View {
       guard let selected = selectedSlashSuggestion(in: suggestions) else { return false }
       completeSlashCommand(selected)
     case .move(let offset):
-      selectedSlashSuggestionIndex = OpenClawSlashCommandSelection.movedIndex(
+      selectedSlashSuggestionIndex = AIChatSlashCommandSelection.movedIndex(
         selectedSlashSuggestionIndex,
         by: offset,
         count: suggestions.count
@@ -3893,16 +3893,16 @@ struct OpenClawComposerView: View {
     return true
   }
 
-  private func selectedSlashSuggestion(in suggestions: [OpenClawSlashCommand]) -> OpenClawSlashCommand? {
-    OpenClawSlashCommandSelection.selectedCommand(
+  private func selectedSlashSuggestion(in suggestions: [AIChatSlashCommand]) -> AIChatSlashCommand? {
+    AIChatSlashCommandSelection.selectedCommand(
       in: suggestions,
       index: selectedSlashSuggestionIndex
     )
   }
 
-  private func completeSlashCommand(_ command: OpenClawSlashCommand) {
+  private func completeSlashCommand(_ command: AIChatSlashCommand) {
     let commandText = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
-    localDraft = OpenClawContextPresentation(localDraft).replacingUserText(commandText)
+    localDraft = AIChatContextPresentation(localDraft).replacingUserText(commandText)
     moveComposerCursorToEndRequest &+= 1
   }
 
@@ -3914,7 +3914,7 @@ struct OpenClawComposerView: View {
   }
 
   private func completeMention(_ suggestion: AIChatComposerMentionSuggestion) {
-    let presentation = OpenClawContextPresentation(localDraft)
+    let presentation = AIChatContextPresentation(localDraft)
     switch suggestion {
     case .destination(let destination):
       localDraft = presentation.replacingUserText(
@@ -3924,12 +3924,12 @@ struct OpenClawComposerView: View {
       let draftWithoutMention = presentation.replacingUserText(
         AIChatMentionSuggestion.removingActiveMention(in: presentation.userText)
       )
-      localDraft = store.openClawDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
+      localDraft = store.aiChatDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
     case .dailyNote(_, let file):
       let draftWithoutMention = presentation.replacingUserText(
         AIChatComposerMentionSuggestion.removingActiveDateMention(in: presentation.userText)
       )
-      localDraft = store.openClawDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
+      localDraft = store.aiChatDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
     }
     moveComposerCursorToEndRequest &+= 1
   }
@@ -3957,30 +3957,30 @@ struct OpenClawComposerView: View {
   }
 
   private func cacheDraftLocally() {
-    store.cacheOpenClawComposerDraft(localDraft)
+    store.cacheAIChatComposerDraft(localDraft)
   }
 
   private func flushDraftToStore() {
-    if store.openClawDraft != localDraft {
+    if store.aiChatDraft != localDraft {
       lastStoreDraft = localDraft
-      store.publishOpenClawComposerDraft(localDraft)
+      store.publishAIChatComposerDraft(localDraft)
     } else {
-      lastStoreDraft = store.openClawDraft
+      lastStoreDraft = store.aiChatDraft
     }
   }
 
-  private func handleDropAttachment(_ payload: OpenClawComposerDropPayload) -> Bool {
+  private func handleDropAttachment(_ payload: AIChatComposerDropPayload) -> Bool {
     switch payload {
     case .fileURLs(let urls):
-      store.attachOpenClawFiles(urls: urls)
+      store.attachAIChatFiles(urls: urls)
     case .image(let data, let fileName, let mimeType):
-      store.attachOpenClawAttachment(data: data, fileName: fileName, mimeType: mimeType)
+      store.attachAIChatAttachment(data: data, fileName: fileName, mimeType: mimeType)
     }
     return true
   }
 }
 
-private struct OpenClawVoiceInputMeterView: View {
+private struct AIChatVoiceInputMeterView: View {
   @ObservedObject var meterState: WorkspaceInputMeterState
 
   var body: some View {
@@ -3991,10 +3991,10 @@ private struct OpenClawVoiceInputMeterView: View {
   }
 }
 
-private struct OpenClawSlashCommandSuggestions: View {
-  let commands: [OpenClawSlashCommand]
-  let selectedCommandID: OpenClawSlashCommand.ID?
-  let select: (OpenClawSlashCommand) -> Void
+private struct AIChatSlashCommandSuggestions: View {
+  let commands: [AIChatSlashCommand]
+  let selectedCommandID: AIChatSlashCommand.ID?
+  let select: (AIChatSlashCommand) -> Void
 
   var body: some View {
     VStack(spacing: 2) {
@@ -4048,7 +4048,7 @@ private struct OpenClawSlashCommandSuggestions: View {
     )
   }
 
-  private func badge(for command: OpenClawSlashCommand) -> String? {
+  private func badge(for command: AIChatSlashCommand) -> String? {
     switch command.origin {
     case .openClaw: "OpenClaw"
     case .builtInSkill, .corpusSkill: "Skill"
@@ -4283,7 +4283,7 @@ private struct AIChatMentionSuggestionsView: View {
   }
 }
 
-enum OpenClawComposerDraftSync {
+enum AIChatComposerDraftSync {
   static func localDraftAfterStoreChange(
     localDraft: String,
     previousStoreDraft: String,
@@ -4309,15 +4309,15 @@ enum OpenClawComposerDraftSync {
   }
 }
 
-private struct OpenClawPendingAttachmentsView: View {
+private struct AIChatPendingAttachmentsView: View {
   @Environment(WorkspaceStore.self) private var store
   let compact: Bool
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 8) {
-        ForEach(store.openClawPendingAttachments) { attachment in
-          OpenClawPendingAttachmentChip(attachment: attachment)
+        ForEach(store.aiChatPendingAttachments) { attachment in
+          AIChatPendingAttachmentChip(attachment: attachment)
         }
       }
       .padding(.vertical, 1)
@@ -4326,9 +4326,9 @@ private struct OpenClawPendingAttachmentsView: View {
   }
 }
 
-private struct OpenClawPendingAttachmentChip: View {
+private struct AIChatPendingAttachmentChip: View {
   @Environment(WorkspaceStore.self) private var store
-  let attachment: OpenClawChatAttachment
+  let attachment: AIChatAttachment
   @State private var isPreviewing = false
 
   var body: some View {
@@ -4337,9 +4337,9 @@ private struct OpenClawPendingAttachmentChip: View {
         isPreviewing = true
       } label: {
         HStack(spacing: 7) {
-          OpenClawAsyncAttachmentImage(attachment: attachment) { error in
+          AIChatAsyncAttachmentImage(attachment: attachment) { error in
             Image(systemName: error == nil
-              ? OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType)
+              ? AIChatAttachmentPresentation.systemImage(for: attachment.mimeType)
               : "exclamationmark.triangle")
             .font(.caption.weight(.semibold))
             .foregroundStyle(error == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
@@ -4366,7 +4366,7 @@ private struct OpenClawPendingAttachmentChip: View {
       .help("Preview attachment")
 
       Button {
-        store.removeOpenClawPendingAttachment(attachment)
+        store.removeAIChatPendingAttachment(attachment)
       } label: {
         Image(systemName: "xmark.circle.fill")
       }
@@ -4383,12 +4383,12 @@ private struct OpenClawPendingAttachmentChip: View {
     )
     .help("\(attachment.fileName) · \(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))")
     .sheet(isPresented: $isPreviewing) {
-      OpenClawAttachmentPreviewView(attachment: attachment)
+      AIChatAttachmentPreviewView(attachment: attachment)
     }
   }
 }
 
-enum OpenClawComposerLayout {
+enum AIChatComposerLayout {
   static let cornerRadius: CGFloat = 20
   static let contentInset: CGFloat = 10
   static let toolbarHorizontalInset: CGFloat = 9
@@ -4397,7 +4397,7 @@ enum OpenClawComposerLayout {
   static let primaryActionDiameter: CGFloat = 32
 }
 
-enum OpenClawComposerSizing {
+enum AIChatComposerSizing {
   static func height(for text: String, compact: Bool) -> CGFloat {
     // Both layouts reach their height cap within this prefix. Do not scan a
     // restored large draft on every keystroke after it has reached that cap.
@@ -4421,7 +4421,7 @@ enum OpenClawComposerSizing {
   }
 }
 
-enum OpenClawComposerKeyCommand {
+enum AIChatComposerKeyCommand {
   static func isSendCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
     return isReturnKey(keyCode) && relevantModifiers.isEmpty
@@ -4451,7 +4451,7 @@ enum OpenClawComposerKeyCommand {
   static func suggestionCommand(
     keyCode: UInt16,
     modifiers: NSEvent.ModifierFlags
-  ) -> OpenClawComposerSuggestionKeyCommand? {
+  ) -> AIChatComposerSuggestionKeyCommand? {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
     guard relevantModifiers.isEmpty else { return nil }
     switch keyCode {
@@ -4471,18 +4471,18 @@ enum OpenClawComposerKeyCommand {
   }
 }
 
-enum OpenClawComposerSuggestionKeyCommand: Equatable {
+enum AIChatComposerSuggestionKeyCommand: Equatable {
   case complete
   case move(Int)
 }
 
-enum OpenClawComposerDropPayload: Equatable {
+enum AIChatComposerDropPayload: Equatable {
   case fileURLs([URL])
   case image(data: Data, fileName: String, mimeType: String)
 }
 
-enum OpenClawComposerDrop {
-  static func payload(from pasteboard: NSPasteboard) -> OpenClawComposerDropPayload? {
+enum AIChatComposerDrop {
+  static func payload(from pasteboard: NSPasteboard) -> AIChatComposerDropPayload? {
     let urls = (pasteboard.readObjects(
       forClasses: [NSURL.self],
       options: [.urlReadingFileURLsOnly: true]
@@ -4504,7 +4504,7 @@ enum OpenClawComposerDrop {
   }
 }
 
-enum OpenClawAttachmentPresentation {
+enum AIChatAttachmentPresentation {
   static func systemImage(for mimeType: String) -> String {
     if mimeType.hasPrefix("image/") { return "photo" }
     if mimeType.hasPrefix("audio/") { return "waveform" }
@@ -4514,11 +4514,11 @@ enum OpenClawAttachmentPresentation {
   }
 }
 
-enum OpenClawSlashCommandSelection {
+enum AIChatSlashCommandSelection {
   static func selectedCommand(
-    in commands: [OpenClawSlashCommand],
+    in commands: [AIChatSlashCommand],
     index: Int
-  ) -> OpenClawSlashCommand? {
+  ) -> AIChatSlashCommand? {
     guard !commands.isEmpty else { return nil }
     return commands[min(max(0, index), commands.count - 1)]
   }
@@ -4530,13 +4530,13 @@ enum OpenClawSlashCommandSelection {
   }
 }
 
-struct OpenClawComposerTextView: NSViewRepresentable {
+struct AIChatComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
   let moveCursorToEndRequest: Int
   let onReturn: (AIChatMessageDeliveryPreference) -> Bool
-  let onSuggestionCommand: (OpenClawComposerSuggestionKeyCommand) -> Bool
-  let onDropAttachment: (OpenClawComposerDropPayload) -> Bool
+  let onSuggestionCommand: (AIChatComposerSuggestionKeyCommand) -> Bool
+  let onDropAttachment: (AIChatComposerDropPayload) -> Bool
   let onPasteLargeText: (String) -> Bool
 
   func makeCoordinator() -> Coordinator {
@@ -4579,7 +4579,7 @@ struct OpenClawComposerTextView: NSViewRepresentable {
     textView.autoresizingMask = [.width]
     scrollView.documentView = textView
     context.coordinator.lastMoveCursorToEndRequest = moveCursorToEndRequest
-    context.coordinator.textSynchronization = OpenClawComposerTextSynchronization(
+    context.coordinator.textSynchronization = AIChatComposerTextSynchronization(
       initialModelText: text
     )
 
@@ -4621,7 +4621,7 @@ struct OpenClawComposerTextView: NSViewRepresentable {
       context.coordinator.isApplyingModelText = false
     }
     if textChanged || movesCursorToEnd {
-      let nextRange = OpenClawComposerSelection.updatedRange(
+      let nextRange = AIChatComposerSelection.updatedRange(
         previous: selectedRange,
         textLength: (text as NSString).length,
         movesToEnd: movesCursorToEnd
@@ -4635,12 +4635,12 @@ struct OpenClawComposerTextView: NSViewRepresentable {
   }
 
   final class Coordinator: NSObject, NSTextViewDelegate {
-    var parent: OpenClawComposerTextView
+    var parent: AIChatComposerTextView
     var lastMoveCursorToEndRequest = 0
-    var textSynchronization = OpenClawComposerTextSynchronization()
+    var textSynchronization = AIChatComposerTextSynchronization()
     var isApplyingModelText = false
 
-    init(parent: OpenClawComposerTextView) {
+    init(parent: AIChatComposerTextView) {
       self.parent = parent
     }
 
@@ -4656,8 +4656,8 @@ struct OpenClawComposerTextView: NSViewRepresentable {
 
   final class CommandSubmitTextView: NSTextView {
     var onReturn: ((AIChatMessageDeliveryPreference) -> Bool)?
-    var onSuggestionCommand: ((OpenClawComposerSuggestionKeyCommand) -> Bool)?
-    var onDropAttachment: ((OpenClawComposerDropPayload) -> Bool)?
+    var onSuggestionCommand: ((AIChatComposerSuggestionKeyCommand) -> Bool)?
+    var onDropAttachment: ((AIChatComposerDropPayload) -> Bool)?
     var onPasteLargeText: ((String) -> Bool)?
     private var pendingLatencyTokens: [WorkspaceInteractionLatency.Token] = []
 
@@ -4687,14 +4687,14 @@ struct OpenClawComposerTextView: NSViewRepresentable {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-      if OpenClawComposerDrop.payload(from: sender.draggingPasteboard) != nil {
+      if AIChatComposerDrop.payload(from: sender.draggingPasteboard) != nil {
         return .copy
       }
       return super.draggingEntered(sender)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-      if let payload = OpenClawComposerDrop.payload(from: sender.draggingPasteboard),
+      if let payload = AIChatComposerDrop.payload(from: sender.draggingPasteboard),
          onDropAttachment?(payload) == true {
         return true
       }
@@ -4707,21 +4707,21 @@ struct OpenClawComposerTextView: NSViewRepresentable {
         pendingLatencyTokens.append(latencyToken)
         needsDisplay = true
       }
-      if let command = OpenClawComposerKeyCommand.suggestionCommand(
+      if let command = AIChatComposerKeyCommand.suggestionCommand(
         keyCode: event.keyCode,
         modifiers: event.modifierFlags
       ), onSuggestionCommand?(command) == true {
         return
       }
-      if OpenClawComposerKeyCommand.isSteerCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
+      if AIChatComposerKeyCommand.isSteerCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
          onReturn?(.steer) == true {
         return
       }
-      if OpenClawComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
+      if AIChatComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
          onReturn?(.automatic) == true {
         return
       }
-      if OpenClawComposerKeyCommand.isNewlineCommand(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+      if AIChatComposerKeyCommand.isNewlineCommand(keyCode: event.keyCode, modifiers: event.modifierFlags) {
         insertText("\n", replacementRange: selectedRange())
         return
       }
@@ -4730,12 +4730,12 @@ struct OpenClawComposerTextView: NSViewRepresentable {
   }
 }
 
-enum OpenClawComposerModelTextUpdate: Equatable {
+enum AIChatComposerModelTextUpdate: Equatable {
   case applyModelText
   case preserveNativeText
 }
 
-struct OpenClawComposerTextSynchronization {
+struct AIChatComposerTextSynchronization {
   private var pendingNativeTexts: [String] = []
   private var lastModelText: String?
 
@@ -4754,7 +4754,7 @@ struct OpenClawComposerTextSynchronization {
   mutating func modelTextUpdate(
     _ text: String,
     forced: Bool = false
-  ) -> OpenClawComposerModelTextUpdate {
+  ) -> AIChatComposerModelTextUpdate {
     lastModelText = text
     if forced {
       pendingNativeTexts.removeAll(keepingCapacity: true)
@@ -4771,7 +4771,7 @@ struct OpenClawComposerTextSynchronization {
   }
 }
 
-enum OpenClawComposerSelection {
+enum AIChatComposerSelection {
   static func updatedRange(
     previous: NSRange,
     textLength: Int,
@@ -4790,8 +4790,8 @@ enum OpenClawComposerSelection {
 
 /// Observes only the high-frequency live-turn model, so token streaming does
 /// not rebuild the transcript, composer, sidebar, or unrelated workspace UI.
-struct OpenClawLiveTypingIndicatorView: View {
-  @ObservedObject var liveState: OpenClawChatLiveState
+struct AIChatLiveTypingIndicatorView: View {
+  @ObservedObject var liveState: AIChatLiveState
   let threadID: UUID?
   let startedAt: Date?
   let runtime: AIChatRuntime
@@ -4801,7 +4801,7 @@ struct OpenClawLiveTypingIndicatorView: View {
 
   var body: some View {
     let presentationSnapshot = threadID.map(liveState.presentationSnapshot(for:)) ?? .empty
-    OpenClawTypingIndicatorView(
+    AIChatTypingIndicatorView(
       startedAt: startedAt,
       lastEventAt: threadID.flatMap(liveState.lastEventAt(for:)),
       runtime: runtime,
@@ -4820,7 +4820,7 @@ struct OpenClawLiveTypingIndicatorView: View {
   }
 }
 
-struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
+struct AIChatLiveTextPreparationInput: Equatable, Sendable {
   static let maximumActivityCount = 80
   static let maximumActivityDetailUTF8ByteCount = 8 * 1_024
 
@@ -4829,7 +4829,7 @@ struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
   let hasOmittedPrefix: Bool
   let reasoning: String
   let reasoningHasOmittedPrefix: Bool
-  let activities: [OpenClawRunActivity]
+  let activities: [AIChatRunActivity]
 
   init(
     rawText: String,
@@ -4837,7 +4837,7 @@ struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
     hasOmittedPrefix: Bool = false,
     reasoning: String = "",
     reasoningHasOmittedPrefix: Bool = false,
-    activities: [OpenClawRunActivity] = []
+    activities: [AIChatRunActivity] = []
   ) {
     self.rawText = rawText
     self.showsAll = showsAll
@@ -4845,13 +4845,13 @@ struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
     self.reasoning = reasoning
     self.reasoningHasOmittedPrefix = reasoningHasOmittedPrefix
     self.activities = activities.suffix(Self.maximumActivityCount).map { activity in
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: String(activity.id.prefix(256)),
         runID: String(activity.runID.prefix(256)),
         kind: activity.kind,
         title: String(activity.title.prefix(512)),
         detail: activity.detail.map {
-          OpenClawMessageBodyExcerpt(
+          AIChatMessageBodyExcerpt(
             $0,
             utf8ByteLimit: Self.maximumActivityDetailUTF8ByteCount
           ).text
@@ -4863,14 +4863,14 @@ struct OpenClawLiveTextPreparationInput: Equatable, Sendable {
   }
 }
 
-struct OpenClawPreparedLiveTextPresentation: Equatable, Sendable {
-  let text: OpenClawProgressPresentation.LiveTextPresentation?
-  let body: OpenClawPreparedMessageBody?
+struct AIChatPreparedLiveTextPresentation: Equatable, Sendable {
+  let text: AIChatProgressPresentation.LiveTextPresentation?
+  let body: AIChatPreparedMessageBody?
   let reasoning: String?
-  let activityFeedItems: [OpenClawActivityFeedItem]
+  let activityFeedItems: [AIChatActivityFeedItem]
 }
 
-private struct OpenClawLiveTextPreparationTaskKey: Equatable {
+private struct AIChatLiveTextPreparationTaskKey: Equatable {
   let lastEventAt: Date?
   let showsAll: Bool
   let streamingCharacterCount: Int
@@ -4879,32 +4879,32 @@ private struct OpenClawLiveTextPreparationTaskKey: Equatable {
   let latestActivityUpdate: Date?
 }
 
-actor OpenClawLiveTextPreparationCoordinator {
-  static let shared = OpenClawLiveTextPreparationCoordinator()
+actor AIChatLiveTextPreparationCoordinator {
+  static let shared = AIChatLiveTextPreparationCoordinator()
 
   private struct Entry {
     let token: UUID
-    let input: OpenClawLiveTextPreparationInput
-    let task: Task<OpenClawPreparedLiveTextPresentation?, Never>
+    let input: AIChatLiveTextPreparationInput
+    let task: Task<AIChatPreparedLiveTextPresentation?, Never>
   }
 
   private var entries: [UUID: [Entry]] = [:]
-  private var tailTask: Task<OpenClawPreparedLiveTextPresentation?, Never>?
+  private var tailTask: Task<AIChatPreparedLiveTextPresentation?, Never>?
   private var tailToken: UUID?
   private var preparationCountForTesting = 0
   private var activeWorkerCountValueForTesting = 0
   private var peakConcurrentWorkerCountValueForTesting = 0
   private var activeTokensByStream: [UUID: UUID] = [:]
-  private var parserInputsForTesting: [OpenClawLiveTextPreparationInput] = []
+  private var parserInputsForTesting: [AIChatLiveTextPreparationInput] = []
   private var pausesWorkersForTesting = false
   private var pausedWorkerContinuationsForTesting: [CheckedContinuation<Void, Never>] = []
 
   func prepare(
     streamID: UUID,
-    input: OpenClawLiveTextPreparationInput
-  ) async -> OpenClawPreparedLiveTextPresentation? {
+    input: AIChatLiveTextPreparationInput
+  ) async -> AIChatPreparedLiveTextPresentation? {
     let token: UUID
-    let task: Task<OpenClawPreparedLiveTextPresentation?, Never>
+    let task: Task<AIChatPreparedLiveTextPresentation?, Never>
     if let existing = entries[streamID]?.first(where: {
       $0.input == input && !$0.task.isCancelled
     }) {
@@ -4935,25 +4935,25 @@ actor OpenClawLiveTextPreparationCoordinator {
           return nil
         }
         await self.parserWillStart(input: input)
-        let text = OpenClawProgressPresentation.liveTextPresentation(
+        let text = AIChatProgressPresentation.liveTextPresentation(
           from: input.rawText,
           showsAll: input.showsAll,
           hasOmittedPrefix: input.hasOmittedPrefix
         )
         let body = text.flatMap {
-          OpenClawMessagePresentationBuilder.prepareExpandedBody(
+          AIChatMessagePresentationBuilder.prepareExpandedBody(
             sourceText: $0.text,
             role: .assistant
           )
         }
-        let reasoning = OpenClawProgressPresentation.reasoningText(
+        let reasoning = AIChatProgressPresentation.reasoningText(
           from: input.reasoning,
           hasOmittedPrefix: input.reasoningHasOmittedPrefix
         )
-        let activityFeedItems = OpenClawActivityFeed.items(from: input.activities)
+        let activityFeedItems = AIChatActivityFeed.items(from: input.activities)
         let prepared = body == nil && reasoning == nil && activityFeedItems.isEmpty
           ? nil
-          : OpenClawPreparedLiveTextPresentation(
+          : AIChatPreparedLiveTextPresentation(
             text: text,
             body: body,
             reasoning: reasoning,
@@ -5003,7 +5003,7 @@ actor OpenClawLiveTextPreparationCoordinator {
     }
   }
 
-  private func parserWillStart(input: OpenClawLiveTextPreparationInput) {
+  private func parserWillStart(input: AIChatLiveTextPreparationInput) {
     parserInputsForTesting.append(input)
   }
 
@@ -5033,7 +5033,7 @@ actor OpenClawLiveTextPreparationCoordinator {
   func countForTesting() -> Int { preparationCountForTesting }
   func activeWorkerCountForTesting() -> Int { activeWorkerCountValueForTesting }
   func peakConcurrentWorkerCountForTesting() -> Int { peakConcurrentWorkerCountValueForTesting }
-  func parserInputsForTestingSnapshot() -> [OpenClawLiveTextPreparationInput] {
+  func parserInputsForTestingSnapshot() -> [AIChatLiveTextPreparationInput] {
     parserInputsForTesting
   }
 
@@ -5046,7 +5046,7 @@ actor OpenClawLiveTextPreparationCoordinator {
   }
 }
 
-struct OpenClawTypingIndicatorView: View {
+struct AIChatTypingIndicatorView: View {
   static let quietRunInterval: TimeInterval = 2 * 60
   static let stalledRunInterval: TimeInterval = 10 * 60
 
@@ -5061,13 +5061,13 @@ struct OpenClawTypingIndicatorView: View {
   let streamingReplyHasOmittedPrefix: Bool
   let reasoning: String
   let reasoningHasOmittedPrefix: Bool
-  let activities: [OpenClawRunActivity]
+  let activities: [AIChatRunActivity]
   let compact: Bool
   let onStop: () -> Void
 
   @State private var showsAllStreamingProgress = false
   @State private var statusEvaluationDate = Date()
-  @State private var livePresentation: OpenClawPreparedLiveTextPresentation?
+  @State private var livePresentation: AIChatPreparedLiveTextPresentation?
   @State private var livePresentationStreamID = UUID()
 
   init(
@@ -5082,7 +5082,7 @@ struct OpenClawTypingIndicatorView: View {
     streamingReplyHasOmittedPrefix: Bool = false,
     reasoning: String,
     reasoningHasOmittedPrefix: Bool = false,
-    activities: [OpenClawRunActivity],
+    activities: [AIChatRunActivity],
     compact: Bool,
     onStop: @escaping () -> Void
   ) {
@@ -5103,7 +5103,7 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   var body: some View {
-    let livePresentationInput = OpenClawLiveTextPreparationInput(
+    let livePresentationInput = AIChatLiveTextPreparationInput(
       rawText: streamingReply,
       showsAll: showsAllStreamingProgress,
       hasOmittedPrefix: streamingReplyHasOmittedPrefix,
@@ -5111,7 +5111,7 @@ struct OpenClawTypingIndicatorView: View {
       reasoningHasOmittedPrefix: reasoningHasOmittedPrefix,
       activities: activities
     )
-    let livePresentationTaskKey = OpenClawLiveTextPreparationTaskKey(
+    let livePresentationTaskKey = AIChatLiveTextPreparationTaskKey(
       lastEventAt: lastEventAt,
       showsAll: showsAllStreamingProgress,
       streamingCharacterCount: streamingReply.count,
@@ -5125,7 +5125,7 @@ struct OpenClawTypingIndicatorView: View {
       VStack(alignment: .leading, spacing: 9) {
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 8) {
-            OpenClawShimmeringStatusText(
+            AIChatShimmeringStatusText(
               titleProvider: {
                 statusTitle(
                   now: $0,
@@ -5169,14 +5169,14 @@ struct OpenClawTypingIndicatorView: View {
         if let livePresentation,
            let text = livePresentation.text,
            let body = livePresentation.body {
-          OpenClawMessageBodyView(
+          AIChatMessageBodyView(
             rawText: body.displayedText,
             rendersStructuredOrg2: true,
             structuredPresentation: body.org
           )
           .accessibilityIdentifier("openclaw-live-presentation-ready")
           .background {
-            OpenClawMessageAccessibilityMarker(
+            AIChatMessageAccessibilityMarker(
               identifier: "openclaw-live-presentation-ready",
               label: "Live response presentation ready"
             )
@@ -5200,7 +5200,7 @@ struct OpenClawTypingIndicatorView: View {
         }
 
         if !presentedActivityItems.isEmpty || presentedReasoning != nil {
-          OpenClawProgressFeedView(
+          AIChatProgressFeedView(
             reasoning: "",
             activities: [],
             compact: compact,
@@ -5221,7 +5221,7 @@ struct OpenClawTypingIndicatorView: View {
       } catch {
         return
       }
-      let prepared = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+      let prepared = await AIChatLiveTextPreparationCoordinator.shared.prepare(
         streamID: livePresentationStreamID,
         input: livePresentationInput
       )
@@ -5258,14 +5258,14 @@ struct OpenClawTypingIndicatorView: View {
   func statusTitle(now: Date) -> String {
     statusTitle(
       now: now,
-      activityFeedItems: OpenClawActivityFeed.items(from: activities),
+      activityFeedItems: AIChatActivityFeed.items(from: activities),
       hasReasoning: hasReasoning
     )
   }
 
   private func statusTitle(
     now: Date,
-    activityFeedItems: [OpenClawActivityFeedItem],
+    activityFeedItems: [AIChatActivityFeedItem],
     hasReasoning: Bool
   ) -> String {
     if connectionState == .connected, runID != nil {
@@ -5359,11 +5359,11 @@ struct OpenClawTypingIndicatorView: View {
   }
 
   private var hasReasoning: Bool {
-    OpenClawProgressPresentation.containsNonWhitespace(reasoning)
+    AIChatProgressPresentation.containsNonWhitespace(reasoning)
   }
 
   private var hasProgress: Bool {
-    !OpenClawActivityFeed.items(from: activities).isEmpty || hasReasoning
+    !AIChatActivityFeed.items(from: activities).isEmpty || hasReasoning
   }
 
   func statusDetail(now: Date) -> String? {
@@ -5436,7 +5436,7 @@ struct OpenClawTypingIndicatorView: View {
   }
 }
 
-private struct OpenClawShimmeringStatusText: View {
+private struct AIChatShimmeringStatusText: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   let titleProvider: (Date) -> String
@@ -5470,12 +5470,12 @@ private struct OpenClawShimmeringStatusText: View {
   }
 }
 
-private struct OpenClawProgressFeedView: View {
+private struct AIChatProgressFeedView: View {
   let reasoning: String
-  let activities: [OpenClawRunActivity]
+  let activities: [AIChatRunActivity]
   let compact: Bool
   let isLive: Bool
-  let presentedItems: [OpenClawActivityFeedItem]?
+  let presentedItems: [AIChatActivityFeedItem]?
   let reasoningHasOmittedPrefix: Bool
   let preparedReasoning: String?
 
@@ -5483,10 +5483,10 @@ private struct OpenClawProgressFeedView: View {
 
   init(
     reasoning: String,
-    activities: [OpenClawRunActivity],
+    activities: [AIChatRunActivity],
     compact: Bool,
     isLive: Bool,
-    presentedItems: [OpenClawActivityFeedItem]? = nil,
+    presentedItems: [AIChatActivityFeedItem]? = nil,
     reasoningHasOmittedPrefix: Bool = false,
     presentedReasoning: String? = nil
   ) {
@@ -5499,12 +5499,12 @@ private struct OpenClawProgressFeedView: View {
     preparedReasoning = presentedReasoning
   }
 
-  private var items: [OpenClawActivityFeedItem] {
-    presentedItems ?? OpenClawActivityFeed.items(from: activities)
+  private var items: [AIChatActivityFeedItem] {
+    presentedItems ?? AIChatActivityFeed.items(from: activities)
   }
 
   private var presentedReasoning: String? {
-    preparedReasoning ?? OpenClawProgressPresentation.reasoningText(
+    preparedReasoning ?? AIChatProgressPresentation.reasoningText(
       from: reasoning,
       hasOmittedPrefix: reasoningHasOmittedPrefix
     )
@@ -5512,8 +5512,8 @@ private struct OpenClawProgressFeedView: View {
 
   private var collapsedItemLimit: Int { compact ? 2 : 3 }
 
-  private var visibleItems: [OpenClawActivityFeedItem] {
-    OpenClawProgressFeedPresentation.visibleItems(
+  private var visibleItems: [AIChatActivityFeedItem] {
+    AIChatProgressFeedPresentation.visibleItems(
       items,
       isLive: isLive,
       isExpanded: showsFullFeed,
@@ -5522,14 +5522,14 @@ private struct OpenClawProgressFeedView: View {
   }
 
   private var showsReasoning: Bool {
-    OpenClawProgressFeedPresentation.showsReasoning(
+    AIChatProgressFeedPresentation.showsReasoning(
       isLive: isLive,
       isExpanded: showsFullFeed
     )
   }
 
   private var canExpand: Bool {
-    OpenClawProgressFeedPresentation.canExpand(
+    AIChatProgressFeedPresentation.canExpand(
       itemCount: items.count,
       reasoningLength: presentedReasoning?.count ?? 0,
       isLive: isLive,
@@ -5578,7 +5578,7 @@ private struct OpenClawProgressFeedView: View {
       if !visibleItems.isEmpty {
         VStack(alignment: .leading, spacing: 6) {
           ForEach(visibleItems) { item in
-            OpenClawActivityFeedRow(
+            AIChatActivityFeedRow(
               item: item,
               isExpanded: showsFullFeed,
               isLive: isLive
@@ -5587,12 +5587,12 @@ private struct OpenClawProgressFeedView: View {
         }
       }
 
-      let omittedExpandedItemCount = OpenClawProgressFeedPresentation.omittedExpandedItemCount(
+      let omittedExpandedItemCount = AIChatProgressFeedPresentation.omittedExpandedItemCount(
         itemCount: items.count,
         isExpanded: showsFullFeed
       )
       if omittedExpandedItemCount > 0 {
-        Text("Showing the latest \(OpenClawProgressFeedPresentation.maximumExpandedItemCount) of \(items.count) updates. Earlier updates remain in the durable run record.")
+        Text("Showing the latest \(AIChatProgressFeedPresentation.maximumExpandedItemCount) of \(items.count) updates. Earlier updates remain in the durable run record.")
           .font(.caption2)
           .foregroundStyle(.tertiary)
       }
@@ -5627,7 +5627,7 @@ private struct OpenClawProgressFeedView: View {
       }
     } label: {
       Label(
-        OpenClawProgressFeedPresentation.disclosureTitle(
+        AIChatProgressFeedPresentation.disclosureTitle(
           isLive: isLive,
           isExpanded: showsFullFeed
         ),
@@ -5641,15 +5641,15 @@ private struct OpenClawProgressFeedView: View {
   }
 }
 
-enum OpenClawProgressFeedPresentation {
+enum AIChatProgressFeedPresentation {
   static let maximumExpandedItemCount = 96
 
   static func visibleItems(
-    _ items: [OpenClawActivityFeedItem],
+    _ items: [AIChatActivityFeedItem],
     isLive: Bool,
     isExpanded: Bool,
     collapsedItemLimit: Int
-  ) -> [OpenClawActivityFeedItem] {
+  ) -> [AIChatActivityFeedItem] {
     if isLive {
       guard !isExpanded else { return Array(items.suffix(maximumExpandedItemCount)) }
       return items.last(where: { $0.status == .running }).map { [$0] }
@@ -5690,8 +5690,8 @@ enum OpenClawProgressFeedPresentation {
   }
 }
 
-private struct OpenClawActivityFeedRow: View {
-  let item: OpenClawActivityFeedItem
+private struct AIChatActivityFeedRow: View {
+  let item: AIChatActivityFeedItem
   let isExpanded: Bool
   let isLive: Bool
 
@@ -5772,7 +5772,7 @@ private struct OpenClawActivityFeedRow: View {
   }
 }
 
-enum OpenClawProgressPresentation {
+enum AIChatProgressPresentation {
   struct LiveTextPresentation: Equatable, Sendable {
     let text: String
     let hasEarlierText: Bool
@@ -5825,7 +5825,7 @@ enum OpenClawProgressPresentation {
     hasOmittedPrefix: Bool = false
   ) -> String? {
     guard containsNonWhitespace(raw) else { return nil }
-    let excerpt = OpenClawMessageBodyExcerpt(
+    let excerpt = AIChatMessageBodyExcerpt(
       raw,
       utf8ByteLimit: maximumReasoningInputUTF8ByteCount
     )

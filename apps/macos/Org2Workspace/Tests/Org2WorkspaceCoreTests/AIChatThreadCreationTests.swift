@@ -4,7 +4,7 @@ import XCTest
 
 final class AIChatThreadCreationTests: XCTestCase {
   @MainActor
-  private func makeStore(threads: [OpenClawChatThread]) throws -> (WorkspaceStore, UserDefaults, URL) {
+  private func makeStore(threads: [AIChatThread]) throws -> (WorkspaceStore, UserDefaults, URL) {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-ai-chat-create-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -13,7 +13,7 @@ final class AIChatThreadCreationTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: threads,
         selectedThreadID: threads.first?.id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: transcriptURL
     )
@@ -21,7 +21,7 @@ final class AIChatThreadCreationTests: XCTestCase {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
     return (store, defaults, root)
@@ -30,22 +30,22 @@ final class AIChatThreadCreationTests: XCTestCase {
   @MainActor
   func testCreatingThreadInsertsIncrementallyWithoutFullSidebarRebuild() async throws {
     let base = Date(timeIntervalSince1970: 1_700_000_000)
-    var threads: [OpenClawChatThread] = (0..<400).map { index in
-      OpenClawChatThread(
+    var threads: [AIChatThread] = (0..<400).map { index in
+      AIChatThread(
         title: "Thread \(index)",
         updatedAt: base.addingTimeInterval(TimeInterval(-index)),
         sessionKey: "session-\(index)",
-        messages: (0..<40).map { OpenClawChatMessage(role: .user, content: "m\($0)") }
+        messages: (0..<40).map { AIChatMessage(role: .user, content: "m\($0)") }
       )
     }
-    threads[5] = threads[5].replacingOpenClawChatMetadata(isPinned: true)
+    threads[5] = threads[5].replacingAIChatMetadata(isPinned: true)
     let (store, defaults, root) = try makeStore(threads: threads)
     defer {
       try? FileManager.default.removeItem(at: root)
       defaults.removePersistentDomain(forName: defaults.description)
     }
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.openClawChatThreads.count, 400)
+    XCTAssertEqual(store.aiChatThreads.count, 400)
     let rebuildCount = store.aiChatFullDisplayRebuildCountForTesting
     let clock = ContinuousClock()
     let started = clock.now
@@ -56,14 +56,14 @@ final class AIChatThreadCreationTests: XCTestCase {
     let duration = started.duration(to: clock.now)
 
     XCTAssertEqual(store.aiChatFullDisplayRebuildCountForTesting, rebuildCount)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, created.last)
-    XCTAssertEqual(store.openClawChatThreads.count, 420)
+    XCTAssertEqual(store.selectedAIChatThreadID, created.last)
+    XCTAssertEqual(store.aiChatThreads.count, 420)
     // Pinned threads stay first; the newest new chat follows them.
-    XCTAssertTrue(store.visibleOpenClawChatThreads.first?.isPinned == true)
-    XCTAssertEqual(store.visibleOpenClawChatThreads[1].id, created.last)
+    XCTAssertTrue(store.visibleAIChatThreads.first?.isPinned == true)
+    XCTAssertEqual(store.visibleAIChatThreads[1].id, created.last)
     XCTAssertEqual(
-      store.visibleOpenClawChatThreads.map(\.id),
-      store.visibleOpenClawChatThreads.sorted {
+      store.visibleAIChatThreads.map(\.id),
+      store.visibleAIChatThreads.sorted {
         if $0.isPinned != $1.isPinned { return $0.isPinned }
         return $0.updatedAt > $1.updatedAt
       }.map(\.id)
@@ -81,7 +81,7 @@ final class AIChatThreadCreationTests: XCTestCase {
     let id = UUID()
     XCTAssertEqual(store.createAIChatRemoteThread(destinationID: AIChatDestinationConfiguration.localCodexID, id: id), id)
     XCTAssertEqual(store.createAIChatRemoteThread(destinationID: AIChatDestinationConfiguration.localCodexID, id: id), id)
-    XCTAssertEqual(store.openClawChatThreads.filter { $0.id == id }.count, 1)
+    XCTAssertEqual(store.aiChatThreads.filter { $0.id == id }.count, 1)
   }
 
   func testCreateThreadRequestDecodesWithAndWithoutClientThreadID() throws {
@@ -107,7 +107,7 @@ final class AIChatThreadCreationTests: XCTestCase {
       try? FileManager.default.removeItem(at: root)
       defaults.removePersistentDomain(forName: defaults.description)
     }
-    store.openClawBriefsStartNewThread = false
+    store.aiChatBriefsStartNewThread = false
     XCTAssertFalse(store.nodeBriefStartsNewThread)
 
     store.nodeBriefConfiguration = NodeBriefAIConfiguration(
@@ -121,7 +121,7 @@ final class AIChatThreadCreationTests: XCTestCase {
 
     let reloaded = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
     XCTAssertEqual(reloaded.nodeBriefConfiguration, store.nodeBriefConfiguration)

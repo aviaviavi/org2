@@ -24,13 +24,13 @@ public enum OpenClawLocalEditNodeState: String, Sendable {
 ///
 /// It intentionally does not expose `system.run` or a generic filesystem
 /// command. The Gateway remains the agent runtime, while reads and writes are
-/// executed by `OpenClawLocalEditBroker` against the corpus selected in the app.
+/// executed by `AIChatLocalEditBroker` against the corpus selected in the app.
 public actor OpenClawLocalEditNode {
   public typealias StateHandler =
     @MainActor @Sendable (OpenClawLocalEditNodeState, String?) -> Void
 
   private let settings: OpenClawGatewaySettings
-  private let broker: OpenClawLocalEditBroker
+  private let broker: AIChatLocalEditBroker
   private let displayName: String
   private let stateHandler: StateHandler
   private let session: URLSession
@@ -39,7 +39,7 @@ public actor OpenClawLocalEditNode {
 
   public init(
     settings: OpenClawGatewaySettings,
-    broker: OpenClawLocalEditBroker,
+    broker: AIChatLocalEditBroker,
     displayName: String,
     stateHandler: @escaping StateHandler
   ) {
@@ -91,7 +91,7 @@ public actor OpenClawLocalEditNode {
       "role": "node",
       "mode": "node",
       "caps": ["org2"],
-      "commands": OpenClawLocalEditBroker.commands
+      "commands": AIChatLocalEditBroker.commands
     ]
   }
 
@@ -178,11 +178,11 @@ public actor OpenClawLocalEditNode {
       "role": "node",
       "scopes": [],
       "caps": ["org2"],
-      "commands": OpenClawLocalEditBroker.commands,
+      "commands": AIChatLocalEditBroker.commands,
       "permissions": [
-        OpenClawLocalEditBroker.readCommand: true,
-        OpenClawLocalEditBroker.previewCommand: true,
-        OpenClawLocalEditBroker.applyCommand: true
+        AIChatLocalEditBroker.readCommand: true,
+        AIChatLocalEditBroker.previewCommand: true,
+        AIChatLocalEditBroker.applyCommand: true
       ],
       "locale": Locale.current.identifier,
       "device": [

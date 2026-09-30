@@ -2,9 +2,9 @@ import CryptoKit
 import Foundation
 
 struct AIChatTranscriptSnapshot: Sendable {
-  let threads: [OpenClawChatThread]
+  let threads: [AIChatThread]
   let selectedThreadID: UUID?
-  let settlementSettings: OpenClawThreadSettlementSettings
+  let settlementSettings: AIChatThreadSettlementSettings
   var knownThreadIDs: Set<UUID>? = nil
 }
 
@@ -201,7 +201,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   /// mirrors. Only call this for threads the caller actually installed; a
   /// read that is discarded (for example because a local turn protects the
   /// thread) must not become the merge base.
-  func recordAdoptedThreads(_ threads: [OpenClawChatThread], legacyURL: URL) {
+  func recordAdoptedThreads(_ threads: [AIChatThread], legacyURL: URL) {
     guard !threads.isEmpty else { return }
     let key = legacyURL.standardizedFileURL.path
     condition.lock()
@@ -410,9 +410,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
   func loadThread(
     id: UUID,
-    metadata: OpenClawChatThread,
+    metadata: AIChatThread,
     legacyURL: URL
-  ) -> OpenClawChatThread? {
+  ) -> AIChatThread? {
     let url = legacyURL.standardizedFileURL
     let key = url.path
     condition.lock()
@@ -434,9 +434,9 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   }
 
   func loadAllThreads(
-    replacingMetadata metadata: [OpenClawChatThread],
+    replacingMetadata metadata: [AIChatThread],
     legacyURL: URL
-  ) -> [OpenClawChatThread] {
+  ) -> [AIChatThread] {
     let url = legacyURL.standardizedFileURL
     let key = url.path
     condition.lock()
@@ -582,7 +582,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       selectedThreadID: snapshot.selectedThreadID
     )
     let state = loadStoreState(legacyURL: legacyURL)
-    let threads = snapshot.threads.map { metadata -> OpenClawChatThread in
+    let threads = snapshot.threads.map { metadata -> AIChatThread in
       guard metadata.storedMessageCount != nil, eagerIDs.contains(metadata.id),
             let manifest = state?.current,
             let loaded = loadThread(
@@ -616,7 +616,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
         snapshot: AIChatTranscriptSnapshot(
           threads: [],
           selectedThreadID: nil,
-          settlementSettings: OpenClawThreadSettlementSettings()
+          settlementSettings: AIChatThreadSettlementSettings()
         ),
         unloadedThreadIDs: [],
         recoveryStatus: state.recoveryStatus
@@ -628,7 +628,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       selectedThreadID: manifest.selectedThreadID
     )
     var unloaded = Set<UUID>()
-    let threads = metadata.map { thread -> OpenClawChatThread in
+    let threads = metadata.map { thread -> AIChatThread in
       guard eagerIDs.contains(thread.id),
             let loaded = loadThread(
               id: thread.id,
@@ -654,7 +654,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   }
 
   private static func eagerThreadIDs(
-    threads: [OpenClawChatThread],
+    threads: [AIChatThread],
     selectedThreadID: UUID?
   ) -> Set<UUID> {
     var ids = Set(threads.compactMap { thread in
@@ -668,10 +668,10 @@ final class AIChatTranscriptStore: @unchecked Sendable {
 
   private static func loadThread(
     id: UUID,
-    metadata: OpenClawChatThread,
+    metadata: AIChatThread,
     manifest: Manifest,
     legacyURL: URL
-  ) -> OpenClawChatThread? {
+  ) -> AIChatThread? {
     guard let entry = manifest.threads.first(where: { $0.metadata.id == id }) else { return nil }
     let storeURL = storeDirectory(for: legacyURL)
     guard let shard = loadThreadShard(entry, storeURL: storeURL) else { return nil }
@@ -679,7 +679,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     let messages = shard.messages.map { stored in
       stored.message.replacingAttachments(
         stored.attachments.map { reference in
-          OpenClawChatAttachment(
+          AIChatAttachment(
             id: reference.id,
             fileName: reference.fileName,
             mimeType: reference.mimeType,
@@ -976,14 +976,14 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private static func threeWayMerge(
     local: [StoredMessage],
     remote: [StoredMessage],
-    base: [OpenClawChatMessage]?,
+    base: [AIChatMessage]?,
     tombstones: Set<UUID>
   ) -> [StoredMessage] {
     var remoteByID: [UUID: StoredMessage] = [:]
     for message in remote { remoteByID[message.message.id] = message }
-    var baseByID: [UUID: OpenClawChatMessage] = [:]
+    var baseByID: [UUID: AIChatMessage] = [:]
     for message in base ?? [] { baseByID[message.id] = message }
-    func matches(_ stored: StoredMessage, _ message: OpenClawChatMessage) -> Bool {
+    func matches(_ stored: StoredMessage, _ message: AIChatMessage) -> Bool {
       stored.message == message.replacingAttachments([])
         && stored.attachments.map(\.id) == message.attachments.map(\.id)
     }
@@ -1040,7 +1040,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
   }
 
-  private static func deliveryRank(_ message: OpenClawChatMessage) -> Int {
+  private static func deliveryRank(_ message: AIChatMessage) -> Int {
     guard message.role == .user else { return 0 }
     switch message.deliveryStatus {
     case .sending: return 1
@@ -2019,11 +2019,11 @@ private struct Manifest: Codable {
   let mergedCommitIDs: [String]?
   let threads: [ManifestThread]
   let selectedThreadID: UUID?
-  let settlementSettings: OpenClawThreadSettlementSettings
+  let settlementSettings: AIChatThreadSettlementSettings
 }
 
 private struct ManifestThread: Codable, Hashable {
-  let metadata: OpenClawChatThread
+  let metadata: AIChatThread
   let shard: String
   let shardDigest: String
   let blobs: [String]?
@@ -2047,7 +2047,7 @@ private struct StoreHead: Codable {
 }
 
 struct AdoptedThreadBase: Sendable {
-  let messages: [OpenClawChatMessage]
+  let messages: [AIChatMessage]
   /// Digest of the shard this process last committed for the thread. When
   /// the persisted revision still has this digest no replica changed it.
   let writtenShardDigest: String?
@@ -2058,9 +2058,9 @@ private struct LegacyManifest: Codable {
   static let schemaValue = "org2:ai-chat-transcript-manifest:v1"
   let schema: String
   let version: Int
-  let threads: [OpenClawChatThread]
+  let threads: [AIChatThread]
   let selectedThreadID: UUID?
-  let settlementSettings: OpenClawThreadSettlementSettings
+  let settlementSettings: AIChatThreadSettlementSettings
 }
 
 private struct ThreadShard: Codable {
@@ -2071,7 +2071,7 @@ private struct ThreadShard: Codable {
 }
 
 private struct StoredMessage: Codable, Hashable {
-  let message: OpenClawChatMessage
+  let message: AIChatMessage
   let attachments: [StoredAttachment]
 }
 

@@ -218,7 +218,7 @@ public enum CodexAppServerEvent: Sendable {
     itemID: String,
     title: String,
     detail: String?,
-    status: OpenClawRunActivity.Status
+    status: AIChatRunActivity.Status
   )
   case contextCompacted(threadID: String, turnID: String)
   case warning(threadID: String?, message: String)
@@ -993,7 +993,7 @@ while True:
     turnID localTurnID: String,
     message: String,
     workspaceContext: String? = nil,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     cwd: URL,
     clientUserMessageID: UUID,
     model: String? = nil,
@@ -1020,7 +1020,7 @@ while True:
     turnID localTurnID: String,
     message: String,
     workspaceContext: String? = nil,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     workspacePath: String,
     corpusAccess: CodexCorpusAccess,
     clientUserMessageID: UUID,
@@ -1090,7 +1090,7 @@ while True:
     threadID: String,
     expectedTurnID: String,
     message: String,
-    attachments: [OpenClawChatAttachment] = []
+    attachments: [AIChatAttachment] = []
   ) async throws {
     try await connect()
     var input: [JSONValue] = [
@@ -2148,7 +2148,7 @@ while True:
 
   Use org2_thread_post only for an explicitly asynchronous worker reporting into a named Org2 AI chat. Do not duplicate the ordinary foreground response with a background post. The workspace context supplies ORG2_AI_CHAT_THREAD_ID and delegation guidance when a thread target is available.
 
-  \(OpenClawWorkspaceContext.responseFormattingContract)
+  \(AIChatWorkspaceContext.responseFormattingContract)
   """
 
   nonisolated private static let runtimeFilesystemDeveloperInstructions = """
@@ -2160,7 +2160,7 @@ while True:
 
   Use existing Org2 tooling when it is installed, but do not require the OpenOrg app itself. Read existing files before editing them, keep changes small, preserve Org2 syntax and stable IDs, and validate changes proportionally. Ordinary conversation does not require a tool call.
 
-  \(OpenClawWorkspaceContext.responseFormattingContract)
+  \(AIChatWorkspaceContext.responseFormattingContract)
   """
 
   nonisolated static func developerInstructions(
@@ -2299,7 +2299,7 @@ while True:
   nonisolated private static func activityDescription(
     item: JSONValue,
     type: String
-  ) -> (title: String, detail: String?, completedStatus: OpenClawRunActivity.Status)? {
+  ) -> (title: String, detail: String?, completedStatus: AIChatRunActivity.Status)? {
     switch type {
     case "commandExecution":
       return (

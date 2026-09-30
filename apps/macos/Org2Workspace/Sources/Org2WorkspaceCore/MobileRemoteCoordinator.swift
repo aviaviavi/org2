@@ -102,7 +102,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
 
   public func attach(to store: WorkspaceStore) {
     self.store = store
-    store.openClawIncomingMessageHandler = { [weak self] thread, messages in
+    store.aiChatIncomingMessageHandler = { [weak self] thread, messages in
       self?.enqueuePushNotifications(for: thread, messages: messages)
     }
   }
@@ -310,7 +310,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
     }
 
     if request.method == "GET", path == "/v1/status" {
-      let threads = store.openClawChatThreads
+      let threads = store.aiChatThreads
       return .json(MobileRemoteServerStatus(
         serverName: serverName,
         hostRef: hostRef ?? store.aiChatHostIdentity.ref,
@@ -357,7 +357,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
       guard let registration = credentialVault.pushRegistration(forAccessToken: token) else {
         return .error("This iPhone has not registered for push notifications.", statusCode: 409)
       }
-      let threadID = store.openClawChatThreads.first?.id ?? UUID()
+      let threadID = store.aiChatThreads.first?.id ?? UUID()
       do {
         try await deliverPush(
           MobileRemotePushEnvelope(
@@ -380,7 +380,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
       // Mac between filesystem callbacks. Reconcile at the request boundary so
       // iOS never receives an avoidably stale thread list.
       _ = await store.refreshSyncedAIChatTranscript()
-      let threads = store.openClawChatThreads
+      let threads = store.aiChatThreads
       return await backgroundWork.threadListResponse(
         threads: threads,
         context: threadProjectionContext(for: threads, store: store),
@@ -408,7 +408,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
       // Client-chosen IDs make creation idempotent: a retried request for a
       // thread that already exists returns it instead of creating another.
       if let requestedID = payload.threadID,
-         store.openClawChatThreads.contains(where: { $0.id == requestedID }) {
+         store.aiChatThreads.contains(where: { $0.id == requestedID }) {
         return .json(MobileRemoteMutationResponse(accepted: true, threadID: requestedID), statusCode: 201)
       }
       let id: UUID
@@ -568,7 +568,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
           components[0] == "v1",
           components[1] == "threads",
           let threadID = UUID(uuidString: components[2]),
-          let thread = store.openClawChatThreads.first(where: { $0.id == threadID })
+          let thread = store.aiChatThreads.first(where: { $0.id == threadID })
     else {
       return .error("Thread not found.", statusCode: 404)
     }
@@ -585,7 +585,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
     if request.method == "GET", components.count == 4, components[3] == "configuration" {
       do {
         let configuration = try await store.aiChatRemoteConfiguration(for: threadID)
-        let current = store.openClawChatThreads.first(where: { $0.id == threadID }) ?? thread
+        let current = store.aiChatThreads.first(where: { $0.id == threadID }) ?? thread
         return .json(threadConfiguration(configuration, thread: current))
       } catch {
         return .error(error.localizedDescription, statusCode: 503)
@@ -605,7 +605,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
           return .error("Choose either model or reasoning to update.", statusCode: 400)
         }
         let configuration = try await store.aiChatRemoteConfiguration(for: threadID)
-        let current = store.openClawChatThreads.first(where: { $0.id == threadID }) ?? thread
+        let current = store.aiChatThreads.first(where: { $0.id == threadID }) ?? thread
         return .json(threadConfiguration(configuration, thread: current))
       } catch {
         return .error(error.localizedDescription, statusCode: 409)
@@ -621,7 +621,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
         threadID: threadID,
         isPinned: payload.isPinned,
         isSettled: payload.isSettled
-      ), let updated = store.openClawChatThreads.first(where: { $0.id == threadID }) else {
+      ), let updated = store.aiChatThreads.first(where: { $0.id == threadID }) else {
         return .error("Thread not found.", statusCode: 404)
       }
       let context = threadProjectionContext(for: [updated], store: store)
@@ -745,8 +745,8 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func enqueuePushNotifications(
-    for thread: OpenClawChatThread,
-    messages: [OpenClawChatMessage]
+    for thread: AIChatThread,
+    messages: [AIChatMessage]
   ) {
     guard pushProviderConfigured, !messages.isEmpty else { return }
     let registrations = credentialVault.pushRegistrations
@@ -797,7 +797,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func threadProjectionContext(
-    for threads: [OpenClawChatThread],
+    for threads: [AIChatThread],
     store: WorkspaceStore
   ) -> MobileRemoteThreadProjectionContext {
     var runningThreadIDs = Set<UUID>()
@@ -838,7 +838,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   private func threadDetailProjectionContext(
-    for thread: OpenClawChatThread,
+    for thread: AIChatThread,
     store: WorkspaceStore
   ) -> MobileRemoteThreadDetailProjectionContext {
     let activeDestinationName = store.aiChatActiveDestinationID(for: thread.id)
@@ -873,7 +873,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
 
   private func threadConfiguration(
     _ configuration: AIChatRemoteConfiguration,
-    thread: OpenClawChatThread
+    thread: AIChatThread
   ) -> MobileRemoteThreadConfiguration {
     MobileRemoteThreadConfiguration(
       threadID: thread.id,

@@ -106,9 +106,9 @@ private func chatAccessibilityNodes(in root: NSView) -> [ChatAccessibilityNode] 
 }
 
 @MainActor
-final class OpenClawChatLayoutTests: XCTestCase {
+final class AIChatLayoutTests: XCTestCase {
   func testChatThreadSubtreeUsesCompactLeadingPadding() {
-    XCTAssertEqual(OpenClawSidebarThreadLayout.leadingPadding, 12)
+    XCTAssertEqual(AIChatSidebarThreadLayout.leadingPadding, 12)
   }
 
   func testSidebarSettlementButtonKeepsItsSpaceAtNarrowWidths() async throws {
@@ -126,12 +126,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
                     .font(.caption2.monospaced()).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+                .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
                 .padding(.vertical, 6)
               }
               .buttonStyle(.plain)
               .background(SidebarControlBoundsProbe(identifier: "sidebar-title"))
-              OpenClawSidebarThreadSettlementButton(isSettled: settled, isVisible: visible) {}
+              AIChatSidebarThreadSettlementButton(isSettled: settled, isVisible: visible) {}
                 .background(SidebarControlBoundsProbe(identifier: "sidebar-settlement"))
             }
             .padding(.trailing, 6)
@@ -203,15 +203,15 @@ final class OpenClawChatLayoutTests: XCTestCase {
     }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
-    store.createOpenClawChatThread(runtime: .codex)
+    store.createAIChatThread(runtime: .codex)
     store.setSelectedAIChatModel("a-model-with-a-long-display-name")
 
     for compact in [false, true] {
       for width: CGFloat in [280, 360, 460, 900] {
-        let footer = OpenClawComposerView(focusOnAppear: false, compact: compact)
+        let footer = AIChatComposerView(focusOnAppear: false, compact: compact)
           .environment(store)
           .frame(width: width)
         let host = NSHostingView(rootView: footer)
@@ -248,7 +248,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testComposerPreservesNewerNativeTextAcrossDelayedModelUpdates() {
-    var synchronization = OpenClawComposerTextSynchronization(initialModelText: "")
+    var synchronization = AIChatComposerTextSynchronization(initialModelText: "")
 
     synchronization.nativeTextDidChange("ok")
     synchronization.nativeTextDidChange("ok ")
@@ -277,7 +277,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testComposerForcedModelUpdateSupersedesPendingNativeText() {
-    var synchronization = OpenClawComposerTextSynchronization()
+    var synchronization = AIChatComposerTextSynchronization()
     synchronization.nativeTextDidChange("Send this")
 
     XCTAssertEqual(
@@ -291,7 +291,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testLiveProgressFeedShowsOnlyCurrentActivityUntilExpanded() {
-    let completed = OpenClawActivityFeedItem(
+    let completed = AIChatActivityFeedItem(
       id: "completed",
       title: "17 shell commands",
       detail: "17 completed",
@@ -300,7 +300,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       count: 17,
       updatedAt: Date()
     )
-    let failed = OpenClawActivityFeedItem(
+    let failed = AIChatActivityFeedItem(
       id: "failed",
       title: "Memory search",
       detail: "Tool call failed",
@@ -312,7 +312,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let items = [completed, failed]
 
     XCTAssertEqual(
-      OpenClawProgressFeedPresentation.visibleItems(
+      AIChatProgressFeedPresentation.visibleItems(
         items,
         isLive: true,
         isExpanded: false,
@@ -320,19 +320,19 @@ final class OpenClawChatLayoutTests: XCTestCase {
       ),
       [failed]
     )
-    XCTAssertFalse(OpenClawProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: false))
-    XCTAssertTrue(OpenClawProgressFeedPresentation.canExpand(
+    XCTAssertFalse(AIChatProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: false))
+    XCTAssertTrue(AIChatProgressFeedPresentation.canExpand(
       itemCount: items.count,
       reasoningLength: 0,
       isLive: true,
       collapsedItemLimit: 3
     ))
     XCTAssertEqual(
-      OpenClawProgressFeedPresentation.disclosureTitle(isLive: true, isExpanded: false),
+      AIChatProgressFeedPresentation.disclosureTitle(isLive: true, isExpanded: false),
       "Show activity"
     )
     XCTAssertEqual(
-      OpenClawProgressFeedPresentation.visibleItems(
+      AIChatProgressFeedPresentation.visibleItems(
         items,
         isLive: true,
         isExpanded: true,
@@ -340,9 +340,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
       ),
       items
     )
-    XCTAssertTrue(OpenClawProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: true))
+    XCTAssertTrue(AIChatProgressFeedPresentation.showsReasoning(isLive: true, isExpanded: true))
 
-    let running = OpenClawActivityFeedItem(
+    let running = AIChatActivityFeedItem(
       id: "running",
       title: "Editing file",
       detail: "Updating the selected document",
@@ -352,7 +352,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       updatedAt: Date()
     )
     XCTAssertEqual(
-      OpenClawProgressFeedPresentation.visibleItems(
+      AIChatProgressFeedPresentation.visibleItems(
         [running, completed, failed],
         isLive: true,
         isExpanded: false,
@@ -364,7 +364,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testExpandedProgressFeedKeepsMountedRowsStrictlyBounded() {
     let items = (0..<10_000).map { index in
-      OpenClawActivityFeedItem(
+      AIChatActivityFeedItem(
         id: "activity-\(index)",
         title: "Activity \(index)",
         detail: nil,
@@ -375,34 +375,34 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     }
 
-    let visible = OpenClawProgressFeedPresentation.visibleItems(
+    let visible = AIChatProgressFeedPresentation.visibleItems(
       items,
       isLive: false,
       isExpanded: true,
       collapsedItemLimit: 3
     )
 
-    XCTAssertEqual(visible.count, OpenClawProgressFeedPresentation.maximumExpandedItemCount)
+    XCTAssertEqual(visible.count, AIChatProgressFeedPresentation.maximumExpandedItemCount)
     XCTAssertEqual(visible.first?.id, "activity-9904")
     XCTAssertEqual(visible.last?.id, "activity-9999")
     XCTAssertEqual(
-      OpenClawProgressFeedPresentation.omittedExpandedItemCount(
+      AIChatProgressFeedPresentation.omittedExpandedItemCount(
         itemCount: items.count,
         isExpanded: true
       ),
-      10_000 - OpenClawProgressFeedPresentation.maximumExpandedItemCount
+      10_000 - AIChatProgressFeedPresentation.maximumExpandedItemCount
     )
   }
 
   func testMessagePresentationCacheReusesParsedContentAndInvalidatesEdits() {
-    OpenClawMessagePresentationCache.removeAllForTesting()
+    AIChatMessagePresentationCache.removeAllForTesting()
     let messageID = UUID()
-    let original = OpenClawChatMessage(
+    let original = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "* Result\n| Name | Value |\n|------+-------|\n| Alpha | 1 |",
-      responseTrace: OpenClawResponseTrace(activities: [
-        OpenClawRunActivity(
+      responseTrace: AIChatResponseTrace(activities: [
+        AIChatRunActivity(
           id: "tool-1",
           runID: "run-1",
           kind: .tool,
@@ -412,31 +412,31 @@ final class OpenClawChatLayoutTests: XCTestCase {
       ])
     )
 
-    let first = OpenClawMessagePresentationCache.presentation(for: original)
-    let second = OpenClawMessagePresentationCache.presentation(for: original)
+    let first = AIChatMessagePresentationCache.presentation(for: original)
+    let second = AIChatMessagePresentationCache.presentation(for: original)
     XCTAssertTrue(first === second)
     XCTAssertTrue(first.org?.usesStructuredRendering == true)
     XCTAssertEqual(first.activityFeedItems.count, 1)
 
-    let edited = OpenClawChatMessage(
+    let edited = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "* Changed result"
     )
-    let editedPresentation = OpenClawMessagePresentationCache.presentation(for: edited)
+    let editedPresentation = AIChatMessagePresentationCache.presentation(for: edited)
     XCTAssertFalse(first === editedPresentation)
     XCTAssertEqual(editedPresentation.context.userText, "* Changed result")
   }
 
   func testDetachedMessagePresentationMatchesMainActorFallback() async {
-    OpenClawMessagePresentationCache.removeAllForTesting()
-    let message = OpenClawChatMessage(
+    AIChatMessagePresentationCache.removeAllForTesting()
+    let message = AIChatMessage(
       role: .assistant,
       content: "* Result\n| Name | Value |\n|------+-------|\n| Alpha | *one* |",
-      responseTrace: OpenClawResponseTrace(
+      responseTrace: AIChatResponseTrace(
         reasoning: "Checked the source",
         activities: [
-          OpenClawRunActivity(
+          AIChatRunActivity(
             id: "tool-1",
             runID: "run-1",
             kind: .tool,
@@ -447,9 +447,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
         ]
       )
     )
-    let input = OpenClawMessagePresentationInput(message)
+    let input = AIChatMessagePresentationInput(message)
     let prepared = await Task.detached {
-      OpenClawMessagePresentationBuilder.prepare(input)
+      AIChatMessagePresentationBuilder.prepare(input)
     }.value
 
     XCTAssertEqual(prepared.messageID, message.id)
@@ -459,31 +459,31 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(prepared.value.activityFeedItems.count, 1)
     XCTAssertGreaterThan(prepared.estimatedCost, message.content.utf8.count)
 
-    OpenClawMessagePresentationCache.install(prepared)
-    XCTAssertTrue(OpenClawMessagePresentationCache.presentation(for: message) === prepared.value)
+    AIChatMessagePresentationCache.install(prepared)
+    XCTAssertTrue(AIChatMessagePresentationCache.presentation(for: message) === prepared.value)
   }
 
   func testMessagePresentationInputAndCostDoNotDependOnAttachments() {
     let messageID = UUID()
     let content = "A response with [[notes/example.org2][a link]]."
-    let smallAttachmentMessage = OpenClawChatMessage(
+    let smallAttachmentMessage = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: content,
       attachments: [
-        OpenClawChatAttachment(
+        AIChatAttachment(
           fileName: "small.bin",
           mimeType: "application/octet-stream",
           data: Data([0x01])
         ),
       ]
     )
-    let largeAttachmentMessage = OpenClawChatMessage(
+    let largeAttachmentMessage = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: content,
       attachments: [
-        OpenClawChatAttachment(
+        AIChatAttachment(
           fileName: "large.bin",
           mimeType: "application/octet-stream",
           data: Data(repeating: 0x42, count: 512 * 1_024)
@@ -491,35 +491,35 @@ final class OpenClawChatLayoutTests: XCTestCase {
       ]
     )
 
-    let smallInput = OpenClawMessagePresentationInput(smallAttachmentMessage)
-    let largeInput = OpenClawMessagePresentationInput(largeAttachmentMessage)
+    let smallInput = AIChatMessagePresentationInput(smallAttachmentMessage)
+    let largeInput = AIChatMessagePresentationInput(largeAttachmentMessage)
     XCTAssertEqual(smallInput, largeInput)
 
-    let smallPrepared = OpenClawMessagePresentationBuilder.prepare(smallInput)
-    let largePrepared = OpenClawMessagePresentationBuilder.prepare(largeInput)
+    let smallPrepared = AIChatMessagePresentationBuilder.prepare(smallInput)
+    let largePrepared = AIChatMessagePresentationBuilder.prepare(largeInput)
     XCTAssertEqual(smallPrepared.estimatedCost, largePrepared.estimatedCost)
     XCTAssertEqual(smallPrepared.value.body, largePrepared.value.body)
   }
 
   func testLargeMessagePresentationUsesUnicodeSafeBoundedPreviewAndFullClipboardText() throws {
-    let boundary = OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    let boundary = AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
     let suffix = "🧪 FULL-CONTENT-SENTINEL"
     let content = String(repeating: "a", count: boundary - 1) + suffix
-    let message = OpenClawChatMessage(role: .assistant, content: content)
-    let prepared = OpenClawMessagePresentationBuilder.prepare(
-      OpenClawMessagePresentationInput(message)
+    let message = AIChatMessage(role: .assistant, content: content)
+    let prepared = AIChatMessagePresentationBuilder.prepare(
+      AIChatMessagePresentationInput(message)
     )
 
     XCTAssertTrue(prepared.value.body.isTruncated)
     XCTAssertLessThanOrEqual(
       prepared.value.body.displayedText.utf8.count,
-      OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+      AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
     )
     XCTAssertFalse(prepared.value.body.displayedText.contains("🧪"))
     XCTAssertTrue(String(data: Data(prepared.value.body.displayedText.utf8), encoding: .utf8) != nil)
-    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), content)
+    XCTAssertEqual(AIChatMessageClipboard.text(for: message), content)
 
-    let expanded = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+    let expanded = try XCTUnwrap(AIChatMessagePresentationBuilder.prepareExpandedBody(
       sourceText: prepared.value.body.sourceText,
       role: .assistant
     ))
@@ -529,22 +529,22 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testMultiMegabyteExpandedMessageUsesBoundedNavigablePages() throws {
-    let pageLimit = OpenClawExpandedMessageBodyInput.pageCharacterLimit
+    let pageLimit = AIChatExpandedMessageBodyInput.pageCharacterLimit
     let source = String(repeating: "a", count: pageLimit)
       + String(repeating: "b", count: pageLimit)
       + "FINAL-PAGE-SENTINEL"
 
-    let first = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+    let first = try XCTUnwrap(AIChatMessagePresentationBuilder.prepareExpandedBody(
       sourceText: source,
       role: .assistant,
       pageIndex: 0
     ))
-    let second = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+    let second = try XCTUnwrap(AIChatMessagePresentationBuilder.prepareExpandedBody(
       sourceText: source,
       role: .assistant,
       pageIndex: 1
     ))
-    let final = try XCTUnwrap(OpenClawMessagePresentationBuilder.prepareExpandedBody(
+    let final = try XCTUnwrap(AIChatMessagePresentationBuilder.prepareExpandedBody(
       sourceText: source,
       role: .assistant,
       pageIndex: 2
@@ -562,12 +562,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testOffMainPresentationRevisionInvalidatesSameLengthMiddleEdit() async throws {
     let messageID = UUID()
-    let originalInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let originalInput = AIChatMessagePresentationInput(AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "prefix-ORIGINAL-suffix"
     ))
-    let editedInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let editedInput = AIChatMessagePresentationInput(AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "prefix-CHANGED!-suffix"
@@ -576,17 +576,17 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
     let (originalRevision, editedRevision) = await Task.detached {
       (
-        OpenClawMessagePresentationRevision(originalInput),
-        OpenClawMessagePresentationRevision(editedInput)
+        AIChatMessagePresentationRevision(originalInput),
+        AIChatMessagePresentationRevision(editedInput)
       )
     }.value
     XCTAssertNotEqual(originalRevision, editedRevision)
 
-    let original = OpenClawMessagePresentationBuilder.prepare(
+    let original = AIChatMessagePresentationBuilder.prepare(
       originalInput,
       revision: originalRevision
     )
-    let resolved = await OpenClawMessagePresentationPreparationCoordinator.shared.resolve(
+    let resolved = await AIChatMessagePresentationPreparationCoordinator.shared.resolve(
       editedInput,
       cachedCandidate: original.value
     )
@@ -596,12 +596,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testLargeMessagePreviewExposesNativeShowFullActionAndFindReveal() async throws {
-    OpenClawMessagePresentationCache.removeAllForTesting()
-    let message = OpenClawChatMessage(
+    AIChatMessagePresentationCache.removeAllForTesting()
+    let message = AIChatMessage(
       role: .assistant,
       content: String(
         repeating: "large response ",
-        count: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit / 8
+        count: AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit / 8
       )
     )
     let messageIdentifier = message.id.uuidString.lowercased()
@@ -683,39 +683,39 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testInstalledPreparedPresentationStillInvalidatesAnEditedSameIDMessage() {
-    OpenClawMessagePresentationCache.removeAllForTesting()
+    AIChatMessagePresentationCache.removeAllForTesting()
     let messageID = UUID()
-    let original = OpenClawChatMessage(
+    let original = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "Original"
     )
-    let prepared = OpenClawMessagePresentationBuilder.prepare(
-      OpenClawMessagePresentationInput(original)
+    let prepared = AIChatMessagePresentationBuilder.prepare(
+      AIChatMessagePresentationInput(original)
     )
-    OpenClawMessagePresentationCache.install(prepared)
+    AIChatMessagePresentationCache.install(prepared)
 
-    let edited = OpenClawChatMessage(
+    let edited = AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "Edited"
     )
-    let editedPresentation = OpenClawMessagePresentationCache.presentation(for: edited)
+    let editedPresentation = AIChatMessagePresentationCache.presentation(for: edited)
 
     XCTAssertFalse(editedPresentation === prepared.value)
     XCTAssertEqual(editedPresentation.body.displayedText, "Edited")
   }
 
   func testConcurrentColdAndExpandedPreparationDeduplicatesWork() async throws {
-    let presentationCoordinator = OpenClawMessagePresentationPreparationCoordinator.shared
-    let expansionCoordinator = OpenClawExpandedMessageBodyPreparationCoordinator.shared
+    let presentationCoordinator = AIChatMessagePresentationPreparationCoordinator.shared
+    let expansionCoordinator = AIChatExpandedMessageBodyPreparationCoordinator.shared
     await presentationCoordinator.resetForTesting()
     await expansionCoordinator.resetForTesting()
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .assistant,
       content: String(repeating: "long response ", count: 4_000)
     )
-    let input = OpenClawMessagePresentationInput(message)
+    let input = AIChatMessagePresentationInput(message)
 
     async let first = presentationCoordinator.prepare(input)
     async let second = presentationCoordinator.prepare(input)
@@ -725,7 +725,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let presentationPreparationCount = await presentationCoordinator.countForTesting()
     XCTAssertEqual(presentationPreparationCount, 1)
 
-    let expandedInput = OpenClawExpandedMessageBodyInput(
+    let expandedInput = AIChatExpandedMessageBodyInput(
       messageID: input.messageID,
       role: input.role,
       sourceText: firstPrepared.value.body.sourceText
@@ -738,7 +738,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let expansionPreparationCount = await expansionCoordinator.countForTesting()
     XCTAssertEqual(expansionPreparationCount, 1)
 
-    let userExpandedInput = OpenClawExpandedMessageBodyInput(
+    let userExpandedInput = AIChatExpandedMessageBodyInput(
       messageID: expandedInput.messageID,
       role: .user,
       sourceText: expandedInput.sourceText
@@ -763,25 +763,25 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testStandardPreparationGloballyBoundsWorkersAndSerializesSameMessageEdits() async throws {
-    let coordinator = OpenClawMessagePresentationPreparationCoordinator.shared
+    let coordinator = AIChatMessagePresentationPreparationCoordinator.shared
     await coordinator.resetForTesting()
     await coordinator.setWorkersPausedForTesting(true)
     let messageID = UUID()
-    let originalInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let originalInput = AIChatMessagePresentationInput(AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "* Original\nOriginal body"
     ))
-    let changedInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let changedInput = AIChatMessagePresentationInput(AIChatMessage(
       id: messageID,
       role: .assistant,
       content: "* Changed\nChanged body"
     ))
-    let secondInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let secondInput = AIChatMessagePresentationInput(AIChatMessage(
       role: .assistant,
       content: "Second message"
     ))
-    let thirdInput = OpenClawMessagePresentationInput(OpenClawChatMessage(
+    let thirdInput = AIChatMessagePresentationInput(AIChatMessage(
       role: .assistant,
       content: "Third message"
     ))
@@ -833,16 +833,16 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testExpandedPreparationSerializesRapidCancelRerequestAndChangedInput() async throws {
-    let coordinator = OpenClawExpandedMessageBodyPreparationCoordinator.shared
+    let coordinator = AIChatExpandedMessageBodyPreparationCoordinator.shared
     await coordinator.resetForTesting()
     await coordinator.setWorkersPausedForTesting(true)
     let messageID = UUID()
-    let originalInput = OpenClawExpandedMessageBodyInput(
+    let originalInput = AIChatExpandedMessageBodyInput(
       messageID: messageID,
       role: .assistant,
       sourceText: "* Original\nOriginal body"
     )
-    let changedInput = OpenClawExpandedMessageBodyInput(
+    let changedInput = AIChatExpandedMessageBodyInput(
       messageID: messageID,
       role: .user,
       sourceText: "Changed body"
@@ -893,12 +893,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testChatBubbleColdPathUsesBoundedAsyncPlaceholderInsteadOfSynchronousCacheMiss() throws {
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .assistant,
       content: String(repeating: "L", count: 1_694_760)
     )
-    let input = OpenClawMessagePresentationInput(message)
-    let placeholder = OpenClawMessagePresentationBuilder.placeholder(input)
+    let input = AIChatMessagePresentationInput(message)
+    let placeholder = AIChatMessagePresentationBuilder.placeholder(input)
 
     XCTAssertLessThanOrEqual(placeholder.body.displayedText.utf8.count, 2 * 1_024)
     XCTAssertTrue(placeholder.body.isTruncated)
@@ -909,22 +909,22 @@ final class OpenClawChatLayoutTests: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+      .appendingPathComponent("Sources/Org2WorkspaceCore/AIChatViews.swift")
     let source = try String(contentsOf: sourceURL, encoding: .utf8)
     let bubbleStart = try XCTUnwrap(source.range(of: "struct ChatBubbleView: View"))
     let bubbleEnd = try XCTUnwrap(
       source.range(of: "private var copyButton: some View", range: bubbleStart.upperBound..<source.endIndex)
     )
     let bubbleBody = source[bubbleStart.lowerBound..<bubbleEnd.lowerBound]
-    XCTAssertFalse(bubbleBody.contains("OpenClawMessagePresentationCache.presentation(for: message)"))
-    XCTAssertTrue(bubbleBody.contains("OpenClawMessagePresentationResolver(input: presentationInput)"))
+    XCTAssertFalse(bubbleBody.contains("AIChatMessagePresentationCache.presentation(for: message)"))
+    XCTAssertTrue(bubbleBody.contains("AIChatMessagePresentationResolver(input: presentationInput)"))
     XCTAssertFalse(bubbleBody.contains("Org2DocumentPresentation.parse("))
   }
 
   func testColdUserPlaceholderNeverExposesAutomaticContextPromptOrUserExcerpt() {
     let secretPrompt = "PRIVATE-AUTOMATIC-CONTEXT-SENTINEL"
     let userText = "PRIVATE-USER-TEXT-SENTINEL"
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .user,
       content: """
       Use selected file “Private” at notes/private.org as context.
@@ -935,8 +935,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
       \(userText)
       """
     )
-    let placeholder = OpenClawMessagePresentationBuilder.placeholder(
-      OpenClawMessagePresentationInput(message)
+    let placeholder = AIChatMessagePresentationBuilder.placeholder(
+      AIChatMessagePresentationInput(message)
     )
 
     XCTAssertTrue(placeholder.context.contexts.isEmpty)
@@ -948,19 +948,19 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testLiveStreamingPresentationIsSerialOffMainAndNeverFallsBackToSynchronousParsing() async throws {
-    let coordinator = OpenClawLiveTextPreparationCoordinator.shared
+    let coordinator = AIChatLiveTextPreparationCoordinator.shared
     await coordinator.resetForTesting()
     await coordinator.setWorkersPausedForTesting(true)
     let streamID = UUID()
-    let firstInput = OpenClawLiveTextPreparationInput(
+    let firstInput = AIChatLiveTextPreparationInput(
       rawText: "First update",
       showsAll: false
     )
-    let obsoleteInput = OpenClawLiveTextPreparationInput(
+    let obsoleteInput = AIChatLiveTextPreparationInput(
       rawText: "Obsolete queued update",
       showsAll: false
     )
-    let latestInput = OpenClawLiveTextPreparationInput(
+    let latestInput = AIChatLiveTextPreparationInput(
       rawText: "Latest update",
       showsAll: false
     )
@@ -1016,23 +1016,23 @@ final class OpenClawChatLayoutTests: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+      .appendingPathComponent("Sources/Org2WorkspaceCore/AIChatViews.swift")
     let source = try String(contentsOf: sourceURL, encoding: .utf8)
-    let viewStart = try XCTUnwrap(source.range(of: "struct OpenClawTypingIndicatorView: View"))
+    let viewStart = try XCTUnwrap(source.range(of: "struct AIChatTypingIndicatorView: View"))
     let viewEnd = try XCTUnwrap(
       source.range(of: "  func statusTitle(now: Date)", range: viewStart.upperBound..<source.endIndex)
     )
     let viewSource = source[viewStart.lowerBound..<viewEnd.lowerBound]
-    XCTAssertFalse(viewSource.contains("OpenClawProgressPresentation.liveTextPresentation("))
+    XCTAssertFalse(viewSource.contains("AIChatProgressPresentation.liveTextPresentation("))
     XCTAssertTrue(viewSource.contains("Task.sleep(for: .milliseconds(24))"))
-    XCTAssertTrue(viewSource.contains("OpenClawLiveTextPreparationCoordinator.shared.prepare"))
+    XCTAssertTrue(viewSource.contains("AIChatLiveTextPreparationCoordinator.shared.prepare"))
     XCTAssertFalse(viewSource.contains("Org2DocumentPresentation.parse("))
   }
 
   func testLivePreparationBoundsReasoningActivitiesAndRawDetailsBeforeGrouping() async throws {
     let oversizedDetail = String(repeating: "detail ", count: 200_000)
     let activities = (0..<200).map { index in
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "activity-\(index)",
         runID: "run",
         kind: .tool,
@@ -1041,7 +1041,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
         status: index == 199 ? .running : .succeeded
       )
     }
-    let input = OpenClawLiveTextPreparationInput(
+    let input = AIChatLiveTextPreparationInput(
       rawText: String(repeating: "stream ", count: 100_000),
       showsAll: false,
       hasOmittedPrefix: true,
@@ -1050,19 +1050,19 @@ final class OpenClawChatLayoutTests: XCTestCase {
       activities: activities
     )
 
-    XCTAssertEqual(input.activities.count, OpenClawLiveTextPreparationInput.maximumActivityCount)
+    XCTAssertEqual(input.activities.count, AIChatLiveTextPreparationInput.maximumActivityCount)
     XCTAssertTrue(input.activities.allSatisfy {
       ($0.detail?.utf8.count ?? 0)
-        <= OpenClawLiveTextPreparationInput.maximumActivityDetailUTF8ByteCount
+        <= AIChatLiveTextPreparationInput.maximumActivityDetailUTF8ByteCount
     })
-    let preparedResult = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+    let preparedResult = await AIChatLiveTextPreparationCoordinator.shared.prepare(
       streamID: UUID(),
       input: input
     )
     let prepared = try XCTUnwrap(preparedResult)
     XCTAssertLessThanOrEqual(
       try XCTUnwrap(prepared.body).displayedText.count,
-      OpenClawProgressPresentation.maximumLiveNormalizationInputCharacterCount
+      AIChatProgressPresentation.maximumLiveNormalizationInputCharacterCount
     )
     XCTAssertLessThanOrEqual(prepared.reasoning?.count ?? .max, 1_200)
     XCTAssertLessThanOrEqual(prepared.activityFeedItems.count, input.activities.count)
@@ -1073,11 +1073,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-      .appendingPathComponent("Sources/Org2WorkspaceCore/OpenClawChatViews.swift")
+      .appendingPathComponent("Sources/Org2WorkspaceCore/AIChatViews.swift")
     let source = try String(contentsOf: sourceURL, encoding: .utf8)
-    let start = try XCTUnwrap(source.range(of: "struct OpenClawLiveTypingIndicatorView: View"))
+    let start = try XCTUnwrap(source.range(of: "struct AIChatLiveTypingIndicatorView: View"))
     let end = try XCTUnwrap(source.range(
-      of: "struct OpenClawLiveTextPreparationInput",
+      of: "struct AIChatLiveTextPreparationInput",
       range: start.upperBound..<source.endIndex
     ))
     let viewSource = source[start.lowerBound..<end.lowerBound]
@@ -1146,7 +1146,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testSidebarThreadActivityIndicatorIsExplicitWithoutDominatingTheRow() {
-    let view = OpenClawSidebarThreadActivityView()
+    let view = AIChatSidebarThreadActivityView()
     XCTAssertEqual(view.statusTitle, "Working")
 
     let hostingView = NSHostingView(rootView: view)
@@ -1159,8 +1159,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testSidebarThreadActivityAnimationFollowsSelection() {
-    XCTAssertTrue(OpenClawSidebarThreadActivityView(isSelected: true).shouldAnimate)
-    XCTAssertFalse(OpenClawSidebarThreadActivityView(isSelected: false).shouldAnimate)
+    XCTAssertTrue(AIChatSidebarThreadActivityView(isSelected: true).shouldAnimate)
+    XCTAssertFalse(AIChatSidebarThreadActivityView(isSelected: false).shouldAnimate)
   }
 
   func testActivityPulseRunsOnCoreAnimationInsteadOfSwiftUIFrameClock() {
@@ -1176,7 +1176,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   func testWorkingStatusKeepsElapsedTimeSeparateFromLongDestinationNames() async throws {
     for compact in [false, true] {
       for width: CGFloat in [280, 360, 560] {
-        let view = OpenClawTypingIndicatorView(
+        let view = AIChatTypingIndicatorView(
           startedAt: Date().addingTimeInterval(-75),
           lastEventAt: Date(),
           runtime: .codex,
@@ -1264,12 +1264,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testChatThreadSwitchDoesNotRequestAutomaticScrolling() {
-    let previous = OpenClawChatScrollUpdate(
+    let previous = AIChatScrollUpdate(
       threadID: UUID(),
       messageCount: 3,
       isSending: false
     )
-    let next = OpenClawChatScrollUpdate(
+    let next = AIChatScrollUpdate(
       threadID: UUID(),
       messageCount: 12,
       isSending: true
@@ -1280,17 +1280,17 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testChatActivityWithinAThreadStillRequestsAutomaticScrolling() {
     let threadID = UUID()
-    let idle = OpenClawChatScrollUpdate(
+    let idle = AIChatScrollUpdate(
       threadID: threadID,
       messageCount: 3,
       isSending: false
     )
-    let appended = OpenClawChatScrollUpdate(
+    let appended = AIChatScrollUpdate(
       threadID: threadID,
       messageCount: 4,
       isSending: false
     )
-    let sending = OpenClawChatScrollUpdate(
+    let sending = AIChatScrollUpdate(
       threadID: threadID,
       messageCount: 4,
       isSending: true
@@ -1301,9 +1301,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testThreadFindMatchesVisibleMessageTextCaseInsensitively() {
-    let first = OpenClawChatMessage(role: .user, content: "Review the launch checklist")
-    let second = OpenClawChatMessage(role: .assistant, content: "The LAUNCH is ready.")
-    let unrelated = OpenClawChatMessage(role: .assistant, content: "No blockers remain.")
+    let first = AIChatMessage(role: .user, content: "Review the launch checklist")
+    let second = AIChatMessage(role: .assistant, content: "The LAUNCH is ready.")
+    let unrelated = AIChatMessage(role: .assistant, content: "No blockers remain.")
     let items = AIChatRoomTranscriptPresentation.items(
       messages: [first, second, unrelated],
       isSharedRoom: false
@@ -1331,19 +1331,19 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testThreadFindTargetsTheContainingSharedRoomRound() {
     let roundID = UUID()
-    let trigger = OpenClawChatMessage(
+    let trigger = AIChatMessage(
       role: .user,
       content: "Ask both agents",
       audienceDestinationIDs: ["codex", "openclaw"],
       roomRoundID: roundID
     )
-    let codex = OpenClawChatMessage(
+    let codex = AIChatMessage(
       role: .assistant,
       content: "Codex found the migration detail.",
       authorDestinationID: "codex",
       roomRoundID: roundID
     )
-    let openClaw = OpenClawChatMessage(
+    let openClaw = AIChatMessage(
       role: .assistant,
       content: "OpenClaw found another detail.",
       authorDestinationID: "openclaw",
@@ -1361,8 +1361,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testThreadFindComputesBoundedExpandedPageForLateLargeMessageMatch() async throws {
-    let pageLimit = OpenClawExpandedMessageBodyInput.pageCharacterLimit
-    let message = OpenClawChatMessage(
+    let pageLimit = AIChatExpandedMessageBodyInput.pageCharacterLimit
+    let message = AIChatMessage(
       role: .assistant,
       content: String(repeating: "x", count: pageLimit + 100)
         + " LATE-FIND-SENTINEL"
@@ -1383,10 +1383,10 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testThreadFindProjectsLargeTranscriptInsideDetachedWorker() async throws {
     let messages = (0..<8_000).map { index in
-      OpenClawChatMessage(
+      AIChatMessage(
         role: index.isMultiple(of: 2) ? .user : .assistant,
         content: index == 7_999 ? "LATE-PROJECTION-SENTINEL" : "Message \(index)",
-        attachments: [OpenClawChatAttachment(
+        attachments: [AIChatAttachment(
           fileName: "attachment-\(index).txt",
           mimeType: "text/plain",
           data: Data()
@@ -1404,23 +1404,23 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testLargeSharedRoomTranscriptGroupingRemainsResponsive() {
-    var messages: [OpenClawChatMessage] = []
+    var messages: [AIChatMessage] = []
     messages.reserveCapacity(6_000)
     for index in 0..<2_000 {
       let roundID = UUID()
-      messages.append(OpenClawChatMessage(
+      messages.append(AIChatMessage(
         role: .user,
         content: "Question \(index)",
         audienceDestinationIDs: ["codex", "openclaw"],
         roomRoundID: roundID
       ))
-      messages.append(OpenClawChatMessage(
+      messages.append(AIChatMessage(
         role: .assistant,
         content: "Codex response \(index)",
         authorDestinationID: "codex",
         roomRoundID: roundID
       ))
-      messages.append(OpenClawChatMessage(
+      messages.append(AIChatMessage(
         role: .assistant,
         content: "OpenClaw response \(index)",
         authorDestinationID: "openclaw",
@@ -1441,12 +1441,12 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testChatScrollRestorationDefaultsUnsavedThreadsToMostRecentMessage() {
     let threadID = UUID()
-    let unsaved = OpenClawChatScrollRestoration(
+    let unsaved = AIChatScrollRestoration(
       threadID: threadID,
       selectionGeneration: 1,
       savedPosition: nil
     )
-    let saved = OpenClawChatScrollRestoration(
+    let saved = AIChatScrollRestoration(
       threadID: threadID,
       selectionGeneration: 1,
       savedPosition: 0.42
@@ -1459,22 +1459,22 @@ final class OpenClawChatLayoutTests: XCTestCase {
   func testChatScrollRestorationRestartsWhenThreadOrSelectionChanges() {
     let firstThreadID = UUID()
     let secondThreadID = UUID()
-    let initial = OpenClawChatScrollRestoration(
+    let initial = AIChatScrollRestoration(
       threadID: firstThreadID,
       selectionGeneration: 1,
       savedPosition: nil
     )
-    let sameSelection = OpenClawChatScrollRestoration(
+    let sameSelection = AIChatScrollRestoration(
       threadID: firstThreadID,
       selectionGeneration: 1,
       savedPosition: 0.42
     )
-    let reselectedThread = OpenClawChatScrollRestoration(
+    let reselectedThread = AIChatScrollRestoration(
       threadID: firstThreadID,
       selectionGeneration: 2,
       savedPosition: nil
     )
-    let nextThread = OpenClawChatScrollRestoration(
+    let nextThread = AIChatScrollRestoration(
       threadID: secondThreadID,
       selectionGeneration: 3,
       savedPosition: nil
@@ -1496,23 +1496,23 @@ final class OpenClawChatLayoutTests: XCTestCase {
     scrollView.contentView.scroll(to: NSPoint(x: 0, y: 700))
 
     let constrained = try XCTUnwrap(
-      OpenClawChatScrollGeometry.constrainedBounds(in: scrollView)
+      AIChatScrollGeometry.constrainedBounds(in: scrollView)
     )
 
     XCTAssertEqual(constrained.origin.y, 50, accuracy: 0.5)
   }
 
   func testJumpToBottomAppearsOnlyAboveLatestContent() {
-    XCTAssertFalse(OpenClawChatScrollVisibility(position: 0.4, hasContent: false).showsJumpToBottom)
-    XCTAssertTrue(OpenClawChatScrollVisibility(position: 0.4, hasContent: true).showsJumpToBottom)
-    XCTAssertFalse(OpenClawChatScrollVisibility(position: 0.99, hasContent: true).showsJumpToBottom)
-    XCTAssertFalse(OpenClawChatScrollVisibility(position: 1, hasContent: true).showsJumpToBottom)
+    XCTAssertFalse(AIChatScrollVisibility(position: 0.4, hasContent: false).showsJumpToBottom)
+    XCTAssertTrue(AIChatScrollVisibility(position: 0.4, hasContent: true).showsJumpToBottom)
+    XCTAssertFalse(AIChatScrollVisibility(position: 0.99, hasContent: true).showsJumpToBottom)
+    XCTAssertFalse(AIChatScrollVisibility(position: 1, hasContent: true).showsJumpToBottom)
   }
 
   func testScrollPositionOnlyUpdatesPresentationAcrossNearBottomBoundary() {
-    let aboveLatest = OpenClawChatScrollVisibility(position: 0.4, hasContent: true)
-    let stillAboveLatest = OpenClawChatScrollVisibility(position: 0.8, hasContent: true)
-    let nearLatest = OpenClawChatScrollVisibility(position: 0.99, hasContent: true)
+    let aboveLatest = AIChatScrollVisibility(position: 0.4, hasContent: true)
+    let stillAboveLatest = AIChatScrollVisibility(position: 0.8, hasContent: true)
+    let nearLatest = AIChatScrollVisibility(position: 0.99, hasContent: true)
 
     XCTAssertNil(aboveLatest.updatedNearBottomState(after: false))
     XCTAssertNil(stillAboveLatest.updatedNearBottomState(after: false))
@@ -1522,13 +1522,13 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testLargeTranscriptWindowOnlyMaterializesNewestPage() {
     let messages = (0..<1_000).map { index in
-      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+      AIChatMessage(role: .assistant, content: "Message \(index)")
     }
 
-    let firstWindow = OpenClawChatTranscriptWindow(
+    let firstWindow = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
-      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+      displayLimit: AIChatTranscriptWindow.initialLimit
     )
 
     XCTAssertEqual(firstWindow.visibleItems.count, 24)
@@ -1540,7 +1540,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertFalse(firstWindow.contains(messages[0].id))
     XCTAssertTrue(firstWindow.contains(messages[999].id))
 
-    let expandedWindow = OpenClawChatTranscriptWindow(
+    let expandedWindow = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
       displayLimit: firstWindow.nextDisplayLimit
@@ -1552,14 +1552,14 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testOffWindowFindRevealUsesCenteredBoundedTranscriptWindow() {
     let messages = (0..<10_000).map { index in
-      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+      AIChatMessage(role: .assistant, content: "Message \(index)")
     }
     let targetIndex = 1_234
-    let window = OpenClawChatTranscriptWindow(
+    let window = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
-      displayLimit: OpenClawChatTranscriptWindow.maximumDisplayLimit,
-      anchor: OpenClawChatTranscriptAnchor(
+      displayLimit: AIChatTranscriptWindow.maximumDisplayLimit,
+      anchor: AIChatTranscriptAnchor(
         itemID: messages[targetIndex].id,
         rawMessageIndex: targetIndex
       )
@@ -1568,28 +1568,28 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(window.contains(messages[targetIndex].id))
     XCTAssertLessThanOrEqual(
       window.visibleChatBubbleCount,
-      OpenClawChatTranscriptWindow.maximumDisplayLimit
+      AIChatTranscriptWindow.maximumDisplayLimit
     )
     XCTAssertEqual(
       window.nextDisplayLimit,
-      OpenClawChatTranscriptWindow.maximumDisplayLimit
+      AIChatTranscriptWindow.maximumDisplayLimit
     )
     XCTAssertNotNil(window.earlierPageAnchor)
   }
 
   func testSharedRoomWindowBoundsRawGroupingAndDestinationsBeforeMount() {
-    var messages: [OpenClawChatMessage] = []
+    var messages: [AIChatMessage] = []
     let destinationIDs = (0..<100).map { "agent-\($0)" }
     for roundIndex in 0..<60 {
       let roundID = UUID()
-      messages.append(OpenClawChatMessage(
+      messages.append(AIChatMessage(
         role: .user,
         content: "Question \(roundIndex)",
         audienceDestinationIDs: destinationIDs,
         roomRoundID: roundID
       ))
       for destinationID in destinationIDs {
-        messages.append(OpenClawChatMessage(
+        messages.append(AIChatMessage(
           role: .assistant,
           content: "Response",
           authorDestinationID: destinationID,
@@ -1598,47 +1598,47 @@ final class OpenClawChatLayoutTests: XCTestCase {
       }
     }
 
-    let window = OpenClawChatTranscriptWindow(
+    let window = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: true,
-      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+      displayLimit: AIChatTranscriptWindow.initialLimit
     )
 
     XCTAssertLessThanOrEqual(
       window.visibleChatBubbleCount,
-      OpenClawChatTranscriptWindow.initialLimit
+      AIChatTranscriptWindow.initialLimit
     )
     XCTAssertTrue(window.hasEarlierMessages)
     XCTAssertTrue(window.visibleItems.allSatisfy {
       $0.visibleChatBubbleCount <= AIChatRoomRoundView.maximumVisibleDestinationCount + 1
     })
-    XCTAssertEqual(OpenClawChatTranscriptWindow.maximumRawMessageScanCount, 416)
+    XCTAssertEqual(AIChatTranscriptWindow.maximumRawMessageScanCount, 416)
   }
 
   func testLargeTranscriptWindowAlsoBoundsDisplayedContentBytes() {
     let largeBody = String(
       repeating: "x",
-      count: OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit * 2
+      count: AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit * 2
     )
     let messages = (0..<80).map { _ in
-      OpenClawChatMessage(role: .assistant, content: largeBody)
+      AIChatMessage(role: .assistant, content: largeBody)
     }
 
-    let firstWindow = OpenClawChatTranscriptWindow(
+    let firstWindow = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
-      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+      displayLimit: AIChatTranscriptWindow.initialLimit
     )
 
     XCTAssertEqual(firstWindow.visibleChatBubbleCount, 8)
     XCTAssertEqual(
       firstWindow.displayedContentUTF8ByteCount,
-      OpenClawChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
+      AIChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
     )
     XCTAssertEqual(firstWindow.visibleItems.first?.id, messages[72].id)
     XCTAssertEqual(firstWindow.earlierBatchCount, 40)
 
-    let expandedWindow = OpenClawChatTranscriptWindow(
+    let expandedWindow = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
       displayLimit: firstWindow.nextDisplayLimit
@@ -1646,27 +1646,27 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(expandedWindow.visibleChatBubbleCount, 48)
     XCTAssertEqual(expandedWindow.visibleItems.first?.id, messages[32].id)
     XCTAssertEqual(
-      OpenClawChatTranscriptWindow.displayedContentUTF8ByteLimit(
+      AIChatTranscriptWindow.displayedContentUTF8ByteLimit(
         forDisplayLimit: firstWindow.nextDisplayLimit
       ),
-      OpenClawChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
-        + OpenClawChatTranscriptWindow.pageSize
-          * OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+      AIChatTranscriptWindow.initialDisplayedContentUTF8ByteLimit
+        + AIChatTranscriptWindow.pageSize
+          * AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
     )
   }
 
   func testLargeTranscriptWindowBoundsExactRowRealization() {
     let messages = (0..<1_000).map { index in
-      OpenClawChatMessage(role: .assistant, content: "Message \(index)")
+      AIChatMessage(role: .assistant, content: "Message \(index)")
     }
-    let window = OpenClawChatTranscriptWindow(
+    let window = AIChatTranscriptWindow(
       messages: messages,
       isSharedRoom: false,
-      displayLimit: OpenClawChatTranscriptWindow.initialLimit
+      displayLimit: AIChatTranscriptWindow.initialLimit
     )
     let counter = TranscriptLayoutProbeCounter()
     let view = ScrollView {
-      OpenClawChatTranscriptStack(spacing: 0) {
+      AIChatTranscriptStack(spacing: 0) {
         ForEach(window.visibleItems) { _ in
           TranscriptLayoutProbe(counter: counter)
             .frame(height: 24)
@@ -1685,7 +1685,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   func testTranscriptUsesExactGeometryForRowsBeyondTheViewport() {
     let counter = TranscriptLayoutProbeCounter()
     let view = ScrollView {
-      OpenClawChatTranscriptStack(spacing: 0) {
+      AIChatTranscriptStack(spacing: 0) {
         ForEach(0..<120, id: \.self) { _ in
           TranscriptLayoutProbe(counter: counter)
             .frame(height: 24)
@@ -1702,14 +1702,14 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testMessageClipboardCopiesContentWithoutRoleChrome() {
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .assistant,
       content: "First paragraph.\n\nSecond paragraph."
     )
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-chat-copy-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
 
-    XCTAssertTrue(OpenClawMessageClipboard.copy(message, to: pasteboard))
+    XCTAssertTrue(AIChatMessageClipboard.copy(message, to: pasteboard))
 
     XCTAssertEqual(pasteboard.string(forType: .string), "First paragraph.\n\nSecond paragraph.")
   }
@@ -1718,7 +1718,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-chat-code-copy-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
 
-    XCTAssertTrue(OpenClawMessageClipboard.copyCodeSnippet(
+    XCTAssertTrue(AIChatMessageClipboard.copyCodeSnippet(
       lines: ["let answer = 42", "print(answer)"],
       to: pasteboard
     ))
@@ -1738,7 +1738,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     codex app-server --listen ws://127.0.0.1:4500
     ##+end_src
     """
-    let presentation = OpenClawMessageOrgPresentation(raw)
+    let presentation = AIChatMessageOrgPresentation(raw)
 
     XCTAssertTrue(presentation.usesStructuredRendering)
     XCTAssertTrue(presentation.normalizedText.contains("#+begin_src sh"))
@@ -1762,8 +1762,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
       return false
     })
 
-    let message = OpenClawChatMessage(role: .assistant, content: raw)
-    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), AIChatRichClipboard.alignedMessage(presentation.normalizedText))
+    let message = AIChatMessage(role: .assistant, content: raw)
+    XCTAssertEqual(AIChatMessageClipboard.text(for: message), AIChatRichClipboard.alignedMessage(presentation.normalizedText))
   }
 
   func testVerticalWheelGesturesInsideRenderedTableRouteToTranscript() {
@@ -1922,29 +1922,29 @@ final class OpenClawChatLayoutTests: XCTestCase {
       "![QR code](/tmp/qr.png)",
       "[[https://example.com/chart.png?version=2][Chart]]",
     ] {
-      let prepared = OpenClawMessagePresentationBuilder.prepare(
-        OpenClawMessagePresentationInput(.init(role: .assistant, content: raw))
+      let prepared = AIChatMessagePresentationBuilder.prepare(
+        AIChatMessagePresentationInput(.init(role: .assistant, content: raw))
       )
       XCTAssertTrue(prepared.value.org?.usesStructuredRendering == true, raw)
     }
-    let code = OpenClawMessageOrgPresentation("#+begin_src text\n[[file:/tmp/qr.png][QR code]]\n#+end_src")
+    let code = AIChatMessageOrgPresentation("#+begin_src text\n[[file:/tmp/qr.png][QR code]]\n#+end_src")
     XCTAssertEqual(code.blocks.count, 1)
     guard case .source = code.blocks[0].rendered else { return XCTFail("Image examples in code must remain code") }
   }
 
   func testPlainAssistantMessagesKeepLightweightInlineRendering() {
-    let presentation = OpenClawMessageOrgPresentation("A short answer with *emphasis* and [[recipes.org2][a link]].")
+    let presentation = AIChatMessageOrgPresentation("A short answer with *emphasis* and [[recipes.org2][a link]].")
 
     XCTAssertFalse(presentation.usesStructuredRendering)
     XCTAssertEqual(presentation.blocks.count, 1)
   }
 
   func testAttachmentOnlyMessageHasCopyableFallbackText() {
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .user,
       content: "",
       attachments: [
-        OpenClawChatAttachment(
+        AIChatAttachment(
           fileName: "diagram.png",
           mimeType: "image/png",
           data: Data([0x01])
@@ -1952,43 +1952,43 @@ final class OpenClawChatLayoutTests: XCTestCase {
       ]
     )
 
-    XCTAssertEqual(OpenClawMessageClipboard.text(for: message), "[Attachment: diagram.png]")
+    XCTAssertEqual(AIChatMessageClipboard.text(for: message), "[Attachment: diagram.png]")
   }
 
   func testChatAttachmentPreviewClassifiesImagesPDFsAndTextDocuments() throws {
-    let image = OpenClawChatAttachment(
+    let image = AIChatAttachment(
       fileName: "diagram.png",
       mimeType: "image/png",
       data: Data([0x01])
     )
-    let pdf = OpenClawChatAttachment(
+    let pdf = AIChatAttachment(
       fileName: "report.bin",
       mimeType: "application/pdf",
       data: Data("%PDF-1.4".utf8)
     )
-    let text = OpenClawChatAttachment(
+    let text = AIChatAttachment(
       fileName: "results.csv",
       mimeType: "application/octet-stream",
       data: Data("name,value\nalpha,1".utf8)
     )
-    let binary = OpenClawChatAttachment(
+    let binary = AIChatAttachment(
       fileName: "archive.zip",
       mimeType: "application/zip",
       data: Data([0x50, 0x4b, 0x03, 0x04, 0xff])
     )
 
-    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: image), .image)
-    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: pdf), .pdf)
-    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: text), .text)
+    XCTAssertEqual(AIChatAttachmentPresentation.previewKind(for: image), .image)
+    XCTAssertEqual(AIChatAttachmentPresentation.previewKind(for: pdf), .pdf)
+    XCTAssertEqual(AIChatAttachmentPresentation.previewKind(for: text), .text)
     XCTAssertEqual(
-      OpenClawAttachmentPresentation.decodedText(data: try text.loadData()),
+      AIChatAttachmentPresentation.decodedText(data: try text.loadData()),
       "name,value\nalpha,1"
     )
-    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: binary), .unsupported)
+    XCTAssertEqual(AIChatAttachmentPresentation.previewKind(for: binary), .unsupported)
   }
 
-  func testOpenClawStatusCardUsesOneDynamicStatusLine() {
-    let activeRun = OpenClawTypingIndicatorView(
+  func testAIChatStatusCardUsesOneDynamicStatusLine() {
+    let activeRun = AIChatTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connected,
       connectionDetail: nil,
@@ -1999,7 +1999,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       compact: false,
       onStop: {}
     )
-    let startingRun = OpenClawTypingIndicatorView(
+    let startingRun = AIChatTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connected,
       connectionDetail: nil,
@@ -2014,7 +2014,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(activeRun.statusTitle, "OpenClaw is working")
     XCTAssertEqual(startingRun.statusTitle, "Starting OpenClaw")
 
-    let runningTool = OpenClawTypingIndicatorView(
+    let runningTool = AIChatTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connected,
       connectionDetail: nil,
@@ -2022,7 +2022,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       streamingReply: "",
       reasoning: "",
       activities: [
-        OpenClawRunActivity(
+        AIChatRunActivity(
           id: "tool-1",
           runID: "run-123",
           kind: .tool,
@@ -2037,7 +2037,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testStatusCardUsesConfiguredDirectProviderName() {
-    let view = OpenClawTypingIndicatorView(
+    let view = AIChatTypingIndicatorView(
       startedAt: Date(),
       runtime: .openClaw,
       destinationTitle: "Anthropic",
@@ -2054,9 +2054,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(view.statusTitle, "Starting Anthropic")
   }
 
-  func testOpenClawStatusCardSurfacesQuietAndStalledRuns() {
+  func testAIChatStatusCardSurfacesQuietAndStalledRuns() {
     let now = Date(timeIntervalSince1970: 1_000_000)
-    let recentlyActive = OpenClawTypingIndicatorView(
+    let recentlyActive = AIChatTypingIndicatorView(
       startedAt: now.addingTimeInterval(-30 * 60),
       lastEventAt: now.addingTimeInterval(-30),
       connectionState: .connected,
@@ -2068,7 +2068,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       compact: false,
       onStop: {}
     )
-    let quiet = OpenClawTypingIndicatorView(
+    let quiet = AIChatTypingIndicatorView(
       startedAt: now.addingTimeInterval(-30 * 60),
       lastEventAt: now.addingTimeInterval(-3 * 60),
       connectionState: .connected,
@@ -2080,7 +2080,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       compact: false,
       onStop: {}
     )
-    let stalled = OpenClawTypingIndicatorView(
+    let stalled = AIChatTypingIndicatorView(
       startedAt: now.addingTimeInterval(-30 * 60),
       lastEventAt: now.addingTimeInterval(-12 * 60),
       connectionState: .connected,
@@ -2106,7 +2106,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testOpenCodeStatusCardDoesNotCallALiveQuietProcessStalled() {
     let now = Date(timeIntervalSince1970: 1_000_000)
-    let view = OpenClawTypingIndicatorView(
+    let view = AIChatTypingIndicatorView(
       startedAt: now.addingTimeInterval(-30 * 60),
       lastEventAt: now.addingTimeInterval(-12 * 60),
       runtime: .openCode,
@@ -2128,9 +2128,9 @@ final class OpenClawChatLayoutTests: XCTestCase {
     )
   }
 
-  func testOpenClawStatusCardExplainsSavedRunWhileReconnecting() {
+  func testAIChatStatusCardExplainsSavedRunWhileReconnecting() {
     let now = Date(timeIntervalSince1970: 1_000_000)
-    let reconnecting = OpenClawTypingIndicatorView(
+    let reconnecting = AIChatTypingIndicatorView(
       startedAt: now.addingTimeInterval(-30 * 60),
       lastEventAt: now,
       connectionState: .reconnecting,
@@ -2151,8 +2151,8 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(reconnecting.canStop)
   }
 
-  func testOpenClawStatusCardAllowsStoppingBeforeAConnectionOrRunIDExists() {
-    let connecting = OpenClawTypingIndicatorView(
+  func testAIChatStatusCardAllowsStoppingBeforeAConnectionOrRunIDExists() {
+    let connecting = AIChatTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connecting,
       connectionDetail: nil,
@@ -2167,11 +2167,11 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertTrue(connecting.canStop)
   }
 
-  func testOpenClawStatusCardStaysBoundedWithStructuredToolOutput() {
+  func testAIChatStatusCardStaysBoundedWithStructuredToolOutput() {
     let result = #"{"content":[{"text":"{\"results\":[{\"path\":\"memory/2026-04-01.md\",\"text\":\""#
       + String(repeating: "unformatted result ", count: 100)
       + #"\"}]}"}]}"#
-    let view = OpenClawTypingIndicatorView(
+    let view = AIChatTypingIndicatorView(
       startedAt: Date(),
       connectionState: .connected,
       connectionDetail: nil,
@@ -2179,7 +2179,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       streamingReply: "",
       reasoning: "Checking recent notes before answering.",
       activities: [
-        OpenClawRunActivity(
+        AIChatRunActivity(
           id: "tool-1",
           runID: "run-123",
           kind: .tool,
@@ -2203,7 +2203,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testActivityFeedGroupsRepeatedShellEventsAndHidesRawCompletionMetadata() throws {
     let activities = (0..<10).map { index in
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-\(index)",
         runID: "run-1",
         kind: .tool,
@@ -2215,7 +2215,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     }
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.title, "10 shell commands")
     XCTAssertEqual(item.detail, "9 completed · 1 failed")
     XCTAssertNil(item.latestDetail)
@@ -2226,7 +2226,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   func testActivityFeedPreservesTheLatestRunningCommandInsideAGroup() throws {
     let now = Date(timeIntervalSince1970: 1_000)
     let activities = [
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-1",
         runID: "run-1",
         kind: .tool,
@@ -2235,7 +2235,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
         status: .succeeded,
         updatedAt: now.addingTimeInterval(-5)
       ),
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-2",
         runID: "run-1",
         kind: .tool,
@@ -2246,7 +2246,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     ]
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.title, "2 shell commands")
     XCTAssertEqual(item.detail, "1 completed · 1 running")
     XCTAssertEqual(item.latestDetail, "swift test --filter OpenClawChatLayoutTests")
@@ -2257,7 +2257,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
   func testActivityFeedPrefersRunningDetailOverANewerCompletedCommand() throws {
     let now = Date(timeIntervalSince1970: 2_000)
     let activities = [
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-1",
         runID: "run-1",
         kind: .tool,
@@ -2266,7 +2266,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
         status: .running,
         updatedAt: now.addingTimeInterval(-10)
       ),
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-2",
         runID: "run-1",
         kind: .tool,
@@ -2277,7 +2277,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     ]
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.latestDetail, "long-running verification")
     XCTAssertEqual(item.status, .running)
     XCTAssertEqual(item.updatedAt, now.addingTimeInterval(-10))
@@ -2285,7 +2285,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
 
   func testActivityFeedOnlyMarksAGroupFailedWhenFailuresAreTheMajority() throws {
     let activities = (0..<10).map { index in
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-\(index)",
         runID: "run-1",
         kind: .tool,
@@ -2294,13 +2294,13 @@ final class OpenClawChatLayoutTests: XCTestCase {
       )
     }
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: activities).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: activities).first)
     XCTAssertEqual(item.detail, "4 completed · 6 failed")
     XCTAssertEqual(item.status, .failed)
   }
 
   func testActivityUpdateKeepsUsefulArgumentsWhenResultOnlyContainsMetadata() {
-    let started = OpenClawRunActivity(
+    let started = AIChatRunActivity(
       id: "tool-1",
       runID: "run-1",
       kind: .tool,
@@ -2308,7 +2308,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       detail: #"{"cmd":"rg -n TODO notes"}"#,
       status: .running
     )
-    let finished = OpenClawRunActivity(
+    let finished = AIChatRunActivity(
       id: "tool-1",
       runID: "run-1",
       kind: .tool,
@@ -2317,7 +2317,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
       status: .succeeded
     )
 
-    let merged = OpenClawActivityFeed.merging(started, with: finished)
+    let merged = AIChatActivityFeed.merging(started, with: finished)
     XCTAssertEqual(merged.detail, "rg -n TODO notes")
     XCTAssertEqual(merged.status, .succeeded)
   }
@@ -2349,10 +2349,10 @@ final class OpenClawChatLayoutTests: XCTestCase {
     XCTAssertEqual(initial.status, .succeeded)
     XCTAssertEqual(update.id, initial.id)
 
-    let merged = OpenClawActivityFeed.merging(initial, with: update)
+    let merged = AIChatActivityFeed.merging(initial, with: update)
     XCTAssertEqual(merged.detail, "Checking the relevant files and tests.")
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [merged]).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: [merged]).first)
     XCTAssertEqual(item.kind, .reasoning)
     XCTAssertEqual(item.title, "Progress update")
     XCTAssertEqual(item.detail, "Checking the relevant files and tests.")
@@ -2469,7 +2469,7 @@ final class OpenClawChatLayoutTests: XCTestCase {
     let payload = """
       {"content":[{"text":"\(String(repeating: "Fetched page content. ", count: 30))"}],"status":200,"contentType":"text/html"}
       """
-    let activity = OpenClawRunActivity(
+    let activity = AIChatRunActivity(
       id: "tool-1",
       runID: "run-1",
       kind: .tool,
@@ -2478,13 +2478,13 @@ final class OpenClawChatLayoutTests: XCTestCase {
       status: .succeeded
     )
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: [activity]).first)
     XCTAssertEqual(item.title, "Web fetch")
     XCTAssertNil(item.detail)
   }
 
   func testActivityFeedNeverShowsSmallStructuredToolResultsAsRawJSON() throws {
-    let activity = OpenClawRunActivity(
+    let activity = AIChatRunActivity(
       id: "tool-1",
       runID: "run-1",
       kind: .tool,
@@ -2493,13 +2493,13 @@ final class OpenClawChatLayoutTests: XCTestCase {
       status: .succeeded
     )
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: [activity]).first)
     XCTAssertEqual(item.title, "Memory search")
     XCTAssertNil(item.detail)
   }
 
   func testActivityFeedFormatsSearchArgumentsForPeople() throws {
-    let activity = OpenClawRunActivity(
+    let activity = AIChatRunActivity(
       id: "tool-1",
       runID: "run-1",
       kind: .tool,
@@ -2508,30 +2508,30 @@ final class OpenClawChatLayoutTests: XCTestCase {
       status: .running
     )
 
-    let item = try XCTUnwrap(OpenClawActivityFeed.items(from: [activity]).first)
+    let item = try XCTUnwrap(AIChatActivityFeed.items(from: [activity]).first)
     XCTAssertEqual(item.detail, "Searching for \u{201c}monthly revenue\u{201d}")
   }
 
   func testProgressPresentationHidesStructuredReasoningAndBoundsProse() {
-    XCTAssertNil(OpenClawProgressPresentation.reasoningText(from: #"{"results":[1,2,3]}"#))
+    XCTAssertNil(AIChatProgressPresentation.reasoningText(from: #"{"results":[1,2,3]}"#))
 
     let prose = String(repeating: "Checking relevant context. ", count: 100)
-    let presented = OpenClawProgressPresentation.reasoningText(from: prose)
+    let presented = AIChatProgressPresentation.reasoningText(from: prose)
     XCTAssertNotNil(presented)
     XCTAssertLessThanOrEqual(presented?.count ?? .max, 1_200)
 
     let omittedSentinel = "OMITTED-LARGE-REASONING-SENTINEL"
     let largeReasoning = String(repeating: "Working through bounded context. ", count: 100_000)
       + omittedSentinel
-    let bounded = OpenClawProgressPresentation.reasoningText(from: largeReasoning)
-    XCTAssertEqual(OpenClawProgressPresentation.maximumReasoningInputUTF8ByteCount, 8 * 1_024)
+    let bounded = AIChatProgressPresentation.reasoningText(from: largeReasoning)
+    XCTAssertEqual(AIChatProgressPresentation.maximumReasoningInputUTF8ByteCount, 8 * 1_024)
     XCTAssertLessThanOrEqual(bounded?.count ?? .max, 1_200)
     XCTAssertTrue(bounded?.hasSuffix("…") == true)
     XCTAssertFalse(bounded?.contains(omittedSentinel) == true)
-    XCTAssertNil(OpenClawProgressPresentation.reasoningText(
+    XCTAssertNil(AIChatProgressPresentation.reasoningText(
       from: "{\"results\":[" + String(repeating: "0,", count: 100_000) + "0]}"
     ))
-    XCTAssertFalse(OpenClawProgressPresentation.containsNonWhitespace(
+    XCTAssertFalse(AIChatProgressPresentation.containsNonWhitespace(
       String(repeating: " \n\t", count: 100_000)
     ))
   }
@@ -2546,31 +2546,31 @@ final class OpenClawChatLayoutTests: XCTestCase {
       """
 
     XCTAssertEqual(
-      OpenClawProgressPresentation.liveText(from: progress, showsAll: false),
+      AIChatProgressPresentation.liveText(from: progress, showsAll: false),
       "The implementation is taking shape as an append-only inbox."
     )
     XCTAssertEqual(
-      OpenClawProgressPresentation.liveText(from: progress, showsAll: true),
+      AIChatProgressPresentation.liveText(from: progress, showsAll: true),
       progress
     )
-    XCTAssertTrue(OpenClawProgressPresentation.hasEarlierLiveText(progress))
+    XCTAssertTrue(AIChatProgressPresentation.hasEarlierLiveText(progress))
   }
 
   func testLiveProgressBoundsOneOversizedUpdate() throws {
     let progress = String(repeating: "Validating the implementation. ", count: 40)
     let collapsed = try XCTUnwrap(
-      OpenClawProgressPresentation.liveText(from: progress, showsAll: false)
+      AIChatProgressPresentation.liveText(from: progress, showsAll: false)
     )
 
     XCTAssertLessThanOrEqual(collapsed.count, 320)
     XCTAssertTrue(collapsed.hasSuffix("\u{2026}"))
-    XCTAssertTrue(OpenClawProgressPresentation.hasEarlierLiveText(progress))
+    XCTAssertTrue(AIChatProgressPresentation.hasEarlierLiveText(progress))
   }
 
   func testLiveProgressPresentationComputesTextAndDisclosureTogether() throws {
     let progress = "First update.\n\nSecond update."
     let presentation = try XCTUnwrap(
-      OpenClawProgressPresentation.liveTextPresentation(from: progress, showsAll: false)
+      AIChatProgressPresentation.liveTextPresentation(from: progress, showsAll: false)
     )
 
     XCTAssertEqual(presentation.text, "Second update.")
@@ -2578,10 +2578,10 @@ final class OpenClawChatLayoutTests: XCTestCase {
   }
 
   func testAssistantResponseTraceRoundTripsWithTranscriptMessage() throws {
-    let trace = OpenClawResponseTrace(
+    let trace = AIChatResponseTrace(
       reasoning: "Checking the relevant files.",
       activities: [
-        OpenClawRunActivity(
+        AIChatRunActivity(
           id: "tool-1",
           runID: "run-1",
           kind: .tool,
@@ -2591,14 +2591,14 @@ final class OpenClawChatLayoutTests: XCTestCase {
         )
       ]
     )
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .assistant,
       content: "The plan is ready.",
       responseTrace: trace
     )
 
     let decoded = try JSONDecoder().decode(
-      OpenClawChatMessage.self,
+      AIChatMessage.self,
       from: JSONEncoder().encode(message)
     )
     XCTAssertEqual(decoded.responseTrace, trace)

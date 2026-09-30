@@ -3,51 +3,51 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 @MainActor
-final class OpenClawLocalEditBrokerTests: XCTestCase {
+final class AIChatLocalEditBrokerTests: XCTestCase {
   private final class DocumentStore {
-    var documents: [String: OpenClawLocalEditDocument]
+    var documents: [String: AIChatLocalEditDocument]
 
-    init(documents: [String: OpenClawLocalEditDocument]) {
+    init(documents: [String: AIChatLocalEditDocument]) {
       self.documents = documents
     }
 
-    func read(_ path: String) throws -> OpenClawLocalEditDocument {
+    func read(_ path: String) throws -> AIChatLocalEditDocument {
       documents[path]
-        ?? OpenClawLocalEditDocument(relativePath: path, text: "", origin: .missing)
+        ?? AIChatLocalEditDocument(relativePath: path, text: "", origin: .missing)
     }
 
     func apply(
-      _ replacements: [OpenClawLocalEditReplacement]
-    ) async throws -> OpenClawLocalEditApplyResult {
+      _ replacements: [AIChatLocalEditReplacement]
+    ) async throws -> AIChatLocalEditApplyResult {
       let changes = try replacements.compactMap { replacement in
         let before = try read(replacement.relativePath)
         guard replacement.createsFile
           ? before.origin == .missing
           : before.sha256 == replacement.expectedSHA256
         else {
-          throw OpenClawLocalEditError.staleDocument(replacement.relativePath)
+          throw AIChatLocalEditError.staleDocument(replacement.relativePath)
         }
-        let change = OpenClawLocalEditBroker.fileChange(
+        let change = AIChatLocalEditBroker.fileChange(
           path: replacement.relativePath,
           before: replacement.createsFile ? nil : before.text,
           after: replacement.replacementText
         )
-        documents[replacement.relativePath] = OpenClawLocalEditDocument(
+        documents[replacement.relativePath] = AIChatLocalEditDocument(
           relativePath: replacement.relativePath,
           text: replacement.replacementText,
           origin: .disk
         )
         return change
       }
-      return OpenClawLocalEditApplyResult(
-        summary: OpenClawCorpusChangeSummary(files: changes)
+      return AIChatLocalEditApplyResult(
+        summary: AIChatCorpusChangeSummary(files: changes)
       )
     }
   }
 
   func testReadReturnsEffectiveEditorTextOnlyForActiveTurn() async throws {
     let store = DocumentStore(documents: [
-      "notes/today.org2": OpenClawLocalEditDocument(
+      "notes/today.org2": AIChatLocalEditDocument(
         relativePath: "notes/today.org2",
         text: "* Draft in editor\n",
         origin: .editor
@@ -57,7 +57,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let params = #"{"turnId":"turn-1","path":"notes/today.org2"}"#
 
     let inactive = await broker.handle(
-      command: OpenClawLocalEditBroker.readCommand,
+      command: AIChatLocalEditBroker.readCommand,
       paramsJSON: params
     )
     XCTAssertFalse(inactive.ok)
@@ -65,7 +65,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
 
     await broker.beginTurn("turn-1")
     let result = await broker.handle(
-      command: OpenClawLocalEditBroker.readCommand,
+      command: AIChatLocalEditBroker.readCommand,
       paramsJSON: params
     )
     XCTAssertTrue(result.ok)
@@ -74,29 +74,29 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     XCTAssertEqual(payload["origin"] as? String, "editor")
     XCTAssertEqual(
       payload["sha256"] as? String,
-      OpenClawLocalEditBroker.sha256("* Draft in editor\n")
+      AIChatLocalEditBroker.sha256("* Draft in editor\n")
     )
   }
 
   func testReadPassesAnExplicitAuthorizedCorpusRootToTheClient() async throws {
     var receivedRoot: String?
-    let broker = OpenClawLocalEditBroker(
+    let broker = AIChatLocalEditBroker(
       documentReader: { _, path, corpusRoot in
         receivedRoot = corpusRoot
-        return OpenClawLocalEditDocument(
+        return AIChatLocalEditDocument(
           relativePath: path,
           text: "* Shared context\n",
           origin: .disk
         )
       },
       replacementApplier: { _, _ in
-        OpenClawLocalEditApplyResult(summary: OpenClawCorpusChangeSummary(files: []))
+        AIChatLocalEditApplyResult(summary: AIChatCorpusChangeSummary(files: []))
       }
     )
     await broker.beginTurn("turn-shared-read")
 
     let result = await broker.handle(
-      command: OpenClawLocalEditBroker.readCommand,
+      command: AIChatLocalEditBroker.readCommand,
       paramsJSON: #"{"turnId":"turn-shared-read","path":"notes/shared.org2","corpusRoot":"/tmp/team"}"#
     )
 
@@ -108,7 +108,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
   func testPreviewRequiresHashAndApplyRejectsAChangedDocument() async throws {
     let initialText = "* Original\n"
     let store = DocumentStore(documents: [
-      "notes/topic.org2": OpenClawLocalEditDocument(
+      "notes/topic.org2": AIChatLocalEditDocument(
         relativePath: "notes/topic.org2",
         text: initialText,
         origin: .disk
@@ -118,31 +118,31 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     await broker.beginTurn("turn-2")
 
     let missingHash = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: #"{"turnId":"turn-2","edits":[{"path":"notes/topic.org2","replacementText":"* Next\n"}]}"#
     )
     XCTAssertFalse(missingHash.ok)
     XCTAssertEqual(missingHash.errorCode, "INVALID_REQUEST")
 
     let preview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: previewParams(
         turnID: "turn-2",
         path: "notes/topic.org2",
-        expectedSHA256: OpenClawLocalEditBroker.sha256(initialText),
+        expectedSHA256: AIChatLocalEditBroker.sha256(initialText),
         replacementText: "* Next\n"
       )
     )
     XCTAssertTrue(preview.ok)
     let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
 
-    store.documents["notes/topic.org2"] = OpenClawLocalEditDocument(
+    store.documents["notes/topic.org2"] = AIChatLocalEditDocument(
       relativePath: "notes/topic.org2",
       text: "* Background change\n",
       origin: .disk
     )
     let apply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"turn-2","previewId":"\#(previewID)"}"#
     )
     XCTAssertFalse(apply.ok)
@@ -154,12 +154,12 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let initialText = "* Original\n"
     let replacementText = "* Original\nNew local line\n"
     let store = DocumentStore(documents: [
-      "notes/topic.org2": OpenClawLocalEditDocument(
+      "notes/topic.org2": AIChatLocalEditDocument(
         relativePath: "notes/topic.org2",
         text: initialText,
         origin: .editor
       ),
-      "notes/background.org2": OpenClawLocalEditDocument(
+      "notes/background.org2": AIChatLocalEditDocument(
         relativePath: "notes/background.org2",
         text: "Before\n",
         origin: .disk
@@ -170,24 +170,24 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     await broker.beginTurn("turn-background")
 
     let preview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: previewParams(
         turnID: "turn-local",
         path: "notes/topic.org2",
-        expectedSHA256: OpenClawLocalEditBroker.sha256(initialText),
+        expectedSHA256: AIChatLocalEditBroker.sha256(initialText),
         replacementText: replacementText
       )
     )
     let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
 
     // This represents unrelated work occurring while the chat turn is active.
-    store.documents["notes/background.org2"] = OpenClawLocalEditDocument(
+    store.documents["notes/background.org2"] = AIChatLocalEditDocument(
       relativePath: "notes/background.org2",
       text: "After\n",
       origin: .disk
     )
     let apply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"turn-local","previewId":"\#(previewID)"}"#
     )
     XCTAssertTrue(apply.ok)
@@ -204,7 +204,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let originalText = "* Original\n"
     let intermediateText = "* Intermediate\n"
     let store = DocumentStore(documents: [
-      "notes/topic.org2": OpenClawLocalEditDocument(
+      "notes/topic.org2": AIChatLocalEditDocument(
         relativePath: "notes/topic.org2",
         text: originalText,
         origin: .disk
@@ -214,11 +214,11 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     await broker.beginTurn("turn-multiple")
 
     let firstPreview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: previewParams(
         turnID: "turn-multiple",
         path: "notes/topic.org2",
-        expectedSHA256: OpenClawLocalEditBroker.sha256(originalText),
+        expectedSHA256: AIChatLocalEditBroker.sha256(originalText),
         replacementText: intermediateText
       )
     )
@@ -226,17 +226,17 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
       try jsonObject(firstPreview.payloadJSON)["previewId"] as? String
     )
     let firstApply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"turn-multiple","previewId":"\#(firstPreviewID)"}"#
     )
     XCTAssertTrue(firstApply.ok)
 
     let secondPreview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: previewParams(
         turnID: "turn-multiple",
         path: "notes/topic.org2",
-        expectedSHA256: OpenClawLocalEditBroker.sha256(intermediateText),
+        expectedSHA256: AIChatLocalEditBroker.sha256(intermediateText),
         replacementText: originalText
       )
     )
@@ -244,7 +244,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
       try jsonObject(secondPreview.payloadJSON)["previewId"] as? String
     )
     let secondApply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"turn-multiple","previewId":"\#(secondPreviewID)"}"#
     )
     XCTAssertTrue(secondApply.ok)
@@ -254,14 +254,14 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
   }
 
   func testWorkspacePromptDocumentsTheTypedNodeContract() {
-    let context = OpenClawLocalEditWorkspaceContext(
+    let context = AIChatLocalEditWorkspaceContext(
       nodeDisplayName: "OpenOrg Local Edits (Codex)",
       turnID: "turn-3"
     )
     let prompt = context.systemPrompt()
-    XCTAssertTrue(prompt.contains(OpenClawLocalEditBroker.readCommand))
-    XCTAssertTrue(prompt.contains(OpenClawLocalEditBroker.previewCommand))
-    XCTAssertTrue(prompt.contains(OpenClawLocalEditBroker.applyCommand))
+    XCTAssertTrue(prompt.contains(AIChatLocalEditBroker.readCommand))
+    XCTAssertTrue(prompt.contains(AIChatLocalEditBroker.previewCommand))
+    XCTAssertTrue(prompt.contains(AIChatLocalEditBroker.applyCommand))
     XCTAssertTrue(prompt.contains(#""turnId":"turn-3""#))
     XCTAssertTrue(prompt.contains("Do not edit corpus files with Gateway filesystem or shell tools"))
   }
@@ -273,9 +273,9 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     XCTAssertEqual(
       claims["commands"] as? [String],
       [
-        OpenClawLocalEditBroker.readCommand,
-        OpenClawLocalEditBroker.previewCommand,
-        OpenClawLocalEditBroker.applyCommand
+        AIChatLocalEditBroker.readCommand,
+        AIChatLocalEditBroker.previewCommand,
+        AIChatLocalEditBroker.applyCommand
       ]
     )
   }
@@ -308,14 +308,14 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     store.editableEntryText = "* Original\nUnsaved user line\n"
     store.noteSourceEditorLocalTextChanged(store.editableEntryText)
 
-    let effective = try store.openClawLocalEditDocument(at: "draft.org2")
+    let effective = try store.aiChatLocalEditDocument(at: "draft.org2")
     XCTAssertEqual(effective.origin, .editor)
     XCTAssertEqual(effective.text, "* Original\nUnsaved user line\n")
     XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), "* Original\n")
 
     let replacement = effective.text + "Agent line\n"
-    let applied = try await store.applyOpenClawLocalEditReplacements([
-      OpenClawLocalEditReplacement(
+    let applied = try await store.applyAIChatLocalEditReplacements([
+      AIChatLocalEditReplacement(
         relativePath: "draft.org2",
         expectedSHA256: effective.sha256,
         replacementText: replacement,
@@ -337,7 +337,7 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
 
-    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "../outside.org2")) { error in
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "../outside.org2")) { error in
       XCTAssertTrue(error.localizedDescription.contains("relative to the active corpus"))
     }
   }
@@ -359,13 +359,13 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     try "* Second corpus\n".write(to: secondNote, atomically: true, encoding: .utf8)
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    let original = try store.openClawLocalEditDocument(
+    let original = try store.aiChatLocalEditDocument(
       at: "shared-name.org2",
       corpusRoot: firstRoot
     )
-    _ = try await store.applyOpenClawLocalEditReplacements(
+    _ = try await store.applyAIChatLocalEditReplacements(
       [
-        OpenClawLocalEditReplacement(
+        AIChatLocalEditReplacement(
           relativePath: "shared-name.org2",
           expectedSHA256: original.sha256,
           replacementText: "* First corpus updated\n",
@@ -394,8 +394,8 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
 
-    _ = try await store.applyOpenClawLocalEditReplacements([
-      OpenClawLocalEditReplacement(
+    _ = try await store.applyAIChatLocalEditReplacements([
+      AIChatLocalEditReplacement(
         relativePath: "new/nested/created.org2",
         expectedSHA256: nil,
         replacementText: "* Created\n",
@@ -423,21 +423,21 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     let path = ".agents/skills/recall/SKILL.md"
-    let broker = OpenClawLocalEditBroker(
-      documentReader: { _, path, _ in try store.openClawLocalEditDocument(at: path) },
-      replacementApplier: { _, edits in try await store.applyOpenClawLocalEditReplacements(edits) }
+    let broker = AIChatLocalEditBroker(
+      documentReader: { _, path, _ in try store.aiChatLocalEditDocument(at: path) },
+      replacementApplier: { _, edits in try await store.applyAIChatLocalEditReplacements(edits) }
     )
     await broker.beginTurn("nested")
-    XCTAssertEqual(try store.openClawLocalEditDocument(at: path).origin, .missing)
+    XCTAssertEqual(try store.aiChatLocalEditDocument(at: path).origin, .missing)
     let preview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: #"{"turnId":"nested","edits":[{"path":".agents/skills/recall/SKILL.md","createsFile":true,"replacementText":"Skill body\n"}]}"#
     )
     XCTAssertTrue(preview.ok, preview.errorMessage ?? "Preview failed")
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".agents").path))
     let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
     let apply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"nested","previewId":"\#(previewID)"}"#
     )
     XCTAssertTrue(apply.ok, apply.errorMessage ?? "Apply failed")
@@ -458,23 +458,23 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("escape"), withDestinationURL: outside)
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "escape/new/deep/note.org"))
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "escape/new/deep/note.org"))
     XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("new").path))
 
-    let broker = OpenClawLocalEditBroker(
-      documentReader: { _, path, _ in try store.openClawLocalEditDocument(at: path) },
-      replacementApplier: { _, edits in try await store.applyOpenClawLocalEditReplacements(edits) }
+    let broker = AIChatLocalEditBroker(
+      documentReader: { _, path, _ in try store.aiChatLocalEditDocument(at: path) },
+      replacementApplier: { _, edits in try await store.applyAIChatLocalEditReplacements(edits) }
     )
     await broker.beginTurn("swap")
     let preview = await broker.handle(
-      command: OpenClawLocalEditBroker.previewCommand,
+      command: AIChatLocalEditBroker.previewCommand,
       paramsJSON: #"{"turnId":"swap","edits":[{"path":"later/new/note.org","createsFile":true,"replacementText":"* Note\n"}]}"#
     )
     XCTAssertTrue(preview.ok, preview.errorMessage ?? "Preview failed")
     let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
     try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("later"), withDestinationURL: outside)
     let apply = await broker.handle(
-      command: OpenClawLocalEditBroker.applyCommand,
+      command: AIChatLocalEditBroker.applyCommand,
       paramsJSON: #"{"turnId":"swap","previewId":"\#(previewID)"}"#
     )
     XCTAssertFalse(apply.ok)
@@ -494,13 +494,13 @@ final class OpenClawLocalEditBrokerTests: XCTestCase {
     )
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "plain/new/note.org"))
-    XCTAssertThrowsError(try store.openClawLocalEditDocument(at: "dangling/new/note.org"))
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "plain/new/note.org"))
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "dangling/new/note.org"))
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("absent").path))
   }
 
-  private func makeBroker(_ store: DocumentStore) -> OpenClawLocalEditBroker {
-    OpenClawLocalEditBroker(
+  private func makeBroker(_ store: DocumentStore) -> AIChatLocalEditBroker {
+    AIChatLocalEditBroker(
       documentReader: { _, path, _ in try store.read(path) },
       replacementApplier: { _, replacements in try await store.apply(replacements) }
     )

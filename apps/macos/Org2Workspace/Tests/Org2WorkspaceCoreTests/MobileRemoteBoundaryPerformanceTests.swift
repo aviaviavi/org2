@@ -66,7 +66,7 @@ private final class MobileRemoteWorkerThreadRecorder: @unchecked Sendable {
 final class MobileRemoteBoundaryPerformanceTests: XCTestCase {
   func testMessagePreviewInspectsABoundedUnicodeSafePrefixAndHidesLargeAutomaticContext() throws {
     let reply = "✅ Ready. " + String(repeating: "界", count: 1_000_000)
-    let assistant = OpenClawChatMessage(role: .assistant, content: reply)
+    let assistant = AIChatMessage(role: .assistant, content: reply)
 
     let assistantPreview = try XCTUnwrap(
       MobileRemoteMessagePreview.make(from: assistant, characterLimit: 220)
@@ -82,7 +82,7 @@ final class MobileRemoteBoundaryPerformanceTests: XCTestCase {
     XCTAssertFalse(assistantPreview.text.contains("�"))
 
     let secret = String(repeating: "hidden-provider-prompt ", count: 120_000)
-    let contextualUserMessage = OpenClawChatMessage(
+    let contextualUserMessage = AIChatMessage(
       role: .user,
       content: """
       Use selected page “Roadmap” at notes/roadmap.org2 as context.
@@ -110,10 +110,10 @@ final class MobileRemoteBoundaryPerformanceTests: XCTestCase {
   func testLargeThreadListProjectionAndEncodingLeaveMainActorResponsive() async throws {
     let hugeReply = "List preview " + String(repeating: "x", count: 2_000_000)
     let threads = (0..<96).map { index in
-      OpenClawChatThread(
+      AIChatThread(
         title: "Thread \(index)",
         sessionKey: "mobile-list-\(index)",
-        messages: [OpenClawChatMessage(role: .assistant, content: hugeReply)]
+        messages: [AIChatMessage(role: .assistant, content: hugeReply)]
       )
     }
     let context = MobileRemoteThreadProjectionContext(
@@ -155,12 +155,12 @@ final class MobileRemoteBoundaryPerformanceTests: XCTestCase {
   @MainActor
   func testLargeThreadDetailProjectionAndEncodingLeaveMainActorResponsiveAndPreserveFullText() async throws {
     let hugeReply = "Full detail " + String(repeating: "reply-body-", count: 240_000)
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .assistant,
       content: hugeReply,
       authorDestinationID: AIChatDestinationConfiguration.openClawID
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Large detail",
       sessionKey: "mobile-detail",
       messages: [message]

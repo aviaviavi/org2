@@ -244,32 +244,32 @@ private final class FluidVoiceTestURLProtocol: URLProtocol, @unchecked Sendable 
   override func stopLoading() {}
 }
 
-private struct OpenClawTranscriptFixture: Encodable {
+private struct AIChatTranscriptFixture: Encodable {
   let version: Int
-  let messages: [OpenClawChatMessage]?
-  let threads: [OpenClawChatThread]
+  let messages: [AIChatMessage]?
+  let threads: [AIChatThread]
   let selectedThreadID: UUID?
 }
 
-private actor OpenClawRecoveryRecorder {
-  private var turns: [OpenClawPendingTurn] = []
+private actor AIChatRecoveryRecorder {
+  private var turns: [AIChatPendingTurn] = []
 
-  func recover(_ turn: OpenClawPendingTurn) -> String {
+  func recover(_ turn: AIChatPendingTurn) -> String {
     turns.append(turn)
     return "Recovered after relaunch"
   }
 
-  func recordedTurns() -> [OpenClawPendingTurn] {
+  func recordedTurns() -> [AIChatPendingTurn] {
     turns
   }
 }
 
-private actor OpenClawRelaunchRecoveryRecorder {
+private actor AIChatRelaunchRecoveryRecorder {
   private var slowRecoveryStarted = false
   private var slowRecoveryContinuation: CheckedContinuation<String, Never>?
   private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
-  func recover(_ turn: OpenClawPendingTurn) async -> String {
+  func recover(_ turn: AIChatPendingTurn) async -> String {
     guard turn.runID == "slow-recovery" else {
       return "Recovered fast turn"
     }
@@ -296,10 +296,10 @@ private actor OpenClawRelaunchRecoveryRecorder {
   }
 }
 
-private actor OpenClawStoppedRecoveryRecorder {
+private actor AIChatStoppedRecoveryRecorder {
   private var attempts = 0
 
-  func recover(_: OpenClawPendingTurn) throws -> String {
+  func recover(_: AIChatPendingTurn) throws -> String {
     attempts += 1
     throw OpenClawGatewayError.aborted(nil)
   }
@@ -309,10 +309,10 @@ private actor OpenClawStoppedRecoveryRecorder {
   }
 }
 
-private actor OpenClawTerminalRecoveryRecorder {
+private actor AIChatTerminalRecoveryRecorder {
   private var attempts = 0
 
-  func recover(_: OpenClawPendingTurn) throws -> String {
+  func recover(_: AIChatPendingTurn) throws -> String {
     attempts += 1
     throw OpenClawGatewayError.acceptedRunTerminated("OpenClaw session ended with status failed.")
   }
@@ -322,10 +322,10 @@ private actor OpenClawTerminalRecoveryRecorder {
   }
 }
 
-private actor OpenClawQueuedSendRecorder {
+private actor AIChatQueuedSendRecorder {
   private var calls: [[String]] = []
 
-  func send(messages: [OpenClawChatMessage]) async throws -> String {
+  func send(messages: [AIChatMessage]) async throws -> String {
     calls.append(messages.map { "\($0.role.rawValue):\($0.content)" })
     try await Task.sleep(nanoseconds: 200_000_000)
     return "reply \(calls.count)"
@@ -336,31 +336,31 @@ private actor OpenClawQueuedSendRecorder {
   }
 }
 
-private actor OpenClawMessageSendRecorder {
-  private var calls: [[OpenClawChatMessage]] = []
+private actor AIChatMessageSendRecorder {
+  private var calls: [[AIChatMessage]] = []
 
-  func send(messages: [OpenClawChatMessage]) async throws -> String {
+  func send(messages: [AIChatMessage]) async throws -> String {
     calls.append(messages)
     return "reply \(calls.count)"
   }
 
-  func recordedCalls() -> [[OpenClawChatMessage]] {
+  func recordedCalls() -> [[AIChatMessage]] {
     calls
   }
 }
 
-private struct RecordedOpenClawWorkspaceContext: Sendable {
+private struct RecordedAIChatWorkspaceContext: Sendable {
   let prompt: String
   let selectedLocationTitle: String?
   let continuationTitle: String?
   let continuationReferences: [String]
 }
 
-private actor OpenClawWorkspaceContextRecorder {
-  private var contexts: [RecordedOpenClawWorkspaceContext] = []
+private actor AIChatWorkspaceContextRecorder {
+  private var contexts: [RecordedAIChatWorkspaceContext] = []
 
-  func send(context: OpenClawWorkspaceContext?) -> String {
-    contexts.append(RecordedOpenClawWorkspaceContext(
+  func send(context: AIChatWorkspaceContext?) -> String {
+    contexts.append(RecordedAIChatWorkspaceContext(
       prompt: context?.systemPrompt() ?? "",
       selectedLocationTitle: context?.selectedLocation?.title,
       continuationTitle: context?.threadContinuation?.title,
@@ -369,12 +369,12 @@ private actor OpenClawWorkspaceContextRecorder {
     return "Scoped reply"
   }
 
-  func recordedContexts() -> [RecordedOpenClawWorkspaceContext] {
+  func recordedContexts() -> [RecordedAIChatWorkspaceContext] {
     contexts
   }
 }
 
-private struct OpenClawTestSendError: LocalizedError, Sendable {
+private struct AIChatTestSendError: LocalizedError, Sendable {
   let message: String
 
   var errorDescription: String? {
@@ -382,13 +382,13 @@ private struct OpenClawTestSendError: LocalizedError, Sendable {
   }
 }
 
-private actor OpenClawRetrySendRecorder {
+private actor AIChatRetrySendRecorder {
   private var attempts = 0
 
-  func send(messages: [OpenClawChatMessage]) async throws -> String {
+  func send(messages: [AIChatMessage]) async throws -> String {
     attempts += 1
     if attempts == 1 {
-      throw OpenClawTestSendError(message: "VPN disconnected")
+      throw AIChatTestSendError(message: "VPN disconnected")
     }
     return "reply after reconnect"
   }
@@ -398,12 +398,12 @@ private actor OpenClawRetrySendRecorder {
   }
 }
 
-private actor OpenClawSuspendedSendRecorder {
+private actor AIChatSuspendedSendRecorder {
   private var started = false
   private var continuation: CheckedContinuation<String, Never>?
   private var startedContinuations: [CheckedContinuation<Void, Never>] = []
 
-  func send(messages: [OpenClawChatMessage]) async throws -> String {
+  func send(messages: [AIChatMessage]) async throws -> String {
     started = true
     for startedContinuation in startedContinuations {
       startedContinuation.resume()
@@ -832,7 +832,7 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertEqual(
-      store.selectedOpenClawChatThread?.destinationID,
+      store.selectedAIChatThread?.destinationID,
       AIChatDestinationConfiguration.localClaudeID
     )
     XCTAssertTrue(store.aiChatDestination(id: AIChatDestinationConfiguration.localClaudeID)?.isEnabled == true)
@@ -1538,7 +1538,7 @@ final class Org2ModelsTests: XCTestCase {
     coordinator.fileLinkResolver = { target, _, _ in
       await resolver.resolve(target)
     }
-    var opened: [OpenClawFileReference] = []
+    var opened: [AIChatFileReference] = []
     coordinator.openOrgFileReference = { opened.append($0) }
     let firstTarget = "file:first.org2::*First"
     let secondTarget = "file:second.org2::*Second"
@@ -1563,7 +1563,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     try await Task.sleep(for: .milliseconds(20))
 
-    XCTAssertEqual(opened, [OpenClawFileReference(path: "/tmp/second.org2", line: 9)])
+    XCTAssertEqual(opened, [AIChatFileReference(path: "/tmp/second.org2", line: 9)])
   }
 
   func testApprovalItemsUseCanonicalParserSignals() async throws {
@@ -2316,7 +2316,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawChatTranscriptPersistsLocally() throws {
+  func testAIChatTranscriptPersistsLocally() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2328,32 +2328,32 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Hello OpenClaw"),
-      OpenClawChatMessage(role: .assistant, content: "Hello from the workspace")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Hello OpenClaw"),
+      AIChatMessage(role: .assistant, content: "Hello from the workspace")
     ]
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from the workspace"])
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["Hello OpenClaw", "Hello from the workspace"])
 
-    restored.resetOpenClawChat()
+    restored.resetAIChat()
     let cleared = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertTrue(cleared.openClawMessages.isEmpty)
+    XCTAssertTrue(cleared.aiChatMessages.isEmpty)
   }
 
   @MainActor
-  func testOpenClawChatTranscriptPersistsImageAttachments() throws {
+  func testAIChatTranscriptPersistsImageAttachments() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-image-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2362,7 +2362,7 @@ final class Org2ModelsTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    let attachment = OpenClawChatAttachment(
+    let attachment = AIChatAttachment(
       fileName: "diagram.png",
       mimeType: "image/png",
       data: Data([0x89, 0x50, 0x4e, 0x47])
@@ -2370,24 +2370,24 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "What is in this?", attachments: [attachment])
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "What is in this?", attachments: [attachment])
     ]
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
-    XCTAssertEqual(restored.openClawMessages.first?.attachments, [attachment])
+    XCTAssertEqual(restored.aiChatMessages.first?.attachments, [attachment])
     XCTAssertTrue(try attachment.loadedDataURLString().hasPrefix("data:image/png;base64,"))
   }
 
   @MainActor
-  func testOpenClawChatThreadsPersistAndSwitchLocally() throws {
+  func testAIChatThreadsPersistAndSwitchLocally() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-threads-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2399,37 +2399,37 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "First thread question"),
-      OpenClawChatMessage(role: .assistant, content: "First thread reply")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "First thread question"),
+      AIChatMessage(role: .assistant, content: "First thread reply")
     ]
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.createOpenClawChatThread()
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
     XCTAssertNotEqual(firstThreadID, secondThreadID)
-    XCTAssertTrue(store.openClawMessages.isEmpty)
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
 
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Second thread question")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Second thread question")
     ]
 
-    store.selectOpenClawChatThread(firstThreadID)
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["First thread question", "First thread reply"])
+    store.selectAIChatThread(firstThreadID)
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["First thread question", "First thread reply"])
 
-    store.selectOpenClawChatThread(secondThreadID)
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["Second thread question"])
+    store.selectAIChatThread(secondThreadID)
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["Second thread question"])
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.openClawChatThreads.count, 2)
-    XCTAssertEqual(restored.selectedOpenClawChatThreadID, secondThreadID)
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Second thread question"])
+    XCTAssertEqual(restored.aiChatThreads.count, 2)
+    XCTAssertEqual(restored.selectedAIChatThreadID, secondThreadID)
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["Second thread question"])
   }
 
   @MainActor
@@ -2445,13 +2445,13 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("first-chat.json")
     )
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
     store.setSelectedAIChatModel("openai/gpt-5.6-sol")
     store.setSelectedAIChatReasoningEffort("xhigh")
 
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
 
     XCTAssertEqual(store.selectedAIChatModel, "openai/gpt-5.6-sol")
     XCTAssertEqual(store.selectedAIChatReasoningEffort, "xhigh")
@@ -2461,15 +2461,15 @@ final class Org2ModelsTests: XCTestCase {
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("second-chat.json")
     )
-    restored.createOpenClawChatThread()
+    restored.createAIChatThread(runtime: .openClaw)
 
     XCTAssertEqual(restored.selectedAIChatModel, "openai/gpt-5.6-sol")
     XCTAssertEqual(restored.selectedAIChatReasoningEffort, "xhigh")
 
     restored.setSelectedAIChatModel(nil)
-    restored.createOpenClawChatThread()
+    restored.createAIChatThread(runtime: .openClaw)
     XCTAssertNil(restored.selectedAIChatModel)
     XCTAssertNil(restored.selectedAIChatReasoningEffort)
   }
@@ -2509,7 +2509,7 @@ final class Org2ModelsTests: XCTestCase {
     let first = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("first-chat.json")
     )
     first.cacheAIChatConfigurationForTesting(
       destinationID: AIChatDestinationConfiguration.openClawID,
@@ -2532,9 +2532,9 @@ final class Org2ModelsTests: XCTestCase {
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("second-chat.json")
     )
-    restored.createOpenClawChatThread()
+    restored.createAIChatThread(runtime: .openClaw)
 
     XCTAssertEqual(restored.aiChatModelOptions.map(\.id), ["openai/gpt-5.6-sol"])
     XCTAssertEqual(restored.aiChatReasoningOptions.map(\.id), ["low", "high"])
@@ -2557,7 +2557,7 @@ final class Org2ModelsTests: XCTestCase {
     let first = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("first-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("first-chat.json")
     )
     first.cacheAIChatConfigurationForTesting(
       destinationID: "managed-remote-codex",
@@ -2573,7 +2573,7 @@ final class Org2ModelsTests: XCTestCase {
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("second-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("second-chat.json")
     )
 
     XCTAssertEqual(
@@ -2595,29 +2595,29 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "First thread")]
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.createOpenClawChatThread()
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Second thread")]
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "First thread")]
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "Second thread")]
 
     var fullTranscriptSaveCount = 0
-    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
-    store.openClawTranscriptSaverForTesting = {
+    store.aiChatTranscriptPersistenceDelayNanoseconds = 20_000_000
+    store.aiChatTranscriptSaverForTesting = {
       fullTranscriptSaveCount += 1
     }
-    store.selectOpenClawChatThread(firstThreadID)
+    store.selectAIChatThread(firstThreadID)
 
     XCTAssertEqual(fullTranscriptSaveCount, 0)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, firstThreadID)
+    XCTAssertEqual(store.selectedAIChatThreadID, firstThreadID)
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.selectedOpenClawChatThreadID, firstThreadID)
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["First thread"])
+    XCTAssertEqual(restored.selectedAIChatThreadID, firstThreadID)
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["First thread"])
     try await Task.sleep(nanoseconds: 80_000_000)
     XCTAssertEqual(fullTranscriptSaveCount, 0)
   }
@@ -2630,23 +2630,23 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
-    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
+    store.aiChatTranscriptPersistenceDelayNanoseconds = 20_000_000
     var fullTranscriptSaveCount = 0
-    store.openClawTranscriptSaverForTesting = {
+    store.aiChatTranscriptSaverForTesting = {
       fullTranscriptSaveCount += 1
     }
 
-    store.createOpenClawChatThread()
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
+    store.createAIChatThread(runtime: .openClaw)
 
     XCTAssertEqual(fullTranscriptSaveCount, 0)
     try await waitForCondition(timeout: 1) {
       fullTranscriptSaveCount == 1
     }
     XCTAssertEqual(fullTranscriptSaveCount, 1)
-    XCTAssertEqual(store.openClawChatThreads.count, 2)
+    XCTAssertEqual(store.aiChatThreads.count, 2)
   }
 
   @MainActor
@@ -2678,31 +2678,31 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
     store.select(.agenda(item))
-    XCTAssertTrue(store.canOpenCanonicalOpenClawResourceThread)
-    XCTAssertFalse(store.hasCanonicalOpenClawResourceThread)
+    XCTAssertTrue(store.canOpenCanonicalAIChatResourceThread)
+    XCTAssertFalse(store.hasCanonicalAIChatResourceThread)
 
-    store.openCanonicalOpenClawResourceThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.selectedOpenClawChatThread?.resource?.key, "id:launch-plan")
-    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Resource: Prepare launch")
+    store.openCanonicalAIChatResourceThread()
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.selectedAIChatThread?.resource?.key, "id:launch-plan")
+    XCTAssertEqual(store.selectedAIChatThread?.title, "Resource: Prepare launch")
 
-    store.openCanonicalOpenClawResourceThread()
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    store.openCanonicalAIChatResourceThread()
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
     restored.select(.agenda(item))
-    XCTAssertTrue(restored.hasCanonicalOpenClawResourceThread)
-    restored.openCanonicalOpenClawResourceThread()
-    XCTAssertEqual(restored.selectedOpenClawChatThreadID, threadID)
-    XCTAssertEqual(restored.openClawChatThreads.count, 1)
+    XCTAssertTrue(restored.hasCanonicalAIChatResourceThread)
+    restored.openCanonicalAIChatResourceThread()
+    XCTAssertEqual(restored.selectedAIChatThreadID, threadID)
+    XCTAssertEqual(restored.aiChatThreads.count, 1)
   }
 
   @MainActor
@@ -2723,9 +2723,9 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.select(.agenda(item))
 
-    XCTAssertFalse(store.canOpenCanonicalOpenClawResourceThread)
-    store.openCanonicalOpenClawResourceThread()
-    XCTAssertTrue(store.openClawChatThreads.isEmpty)
+    XCTAssertFalse(store.canOpenCanonicalAIChatResourceThread)
+    store.openCanonicalAIChatResourceThread()
+    XCTAssertTrue(store.aiChatThreads.isEmpty)
     XCTAssertTrue(store.statusText.contains("Add an ID"))
   }
 
@@ -2740,9 +2740,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(script.contains("join('\\t')"))
   }
 
-  func testOpenClawThreadTitleUsesMeaningfulFirstMessageWords() {
-    let title = WorkspaceStore.openClawThreadTitle(from: [
-      OpenClawChatMessage(
+  func testAIChatThreadTitleUsesMeaningfulFirstMessageWords() {
+    let title = WorkspaceStore.aiChatThreadTitle(from: [
+      AIChatMessage(
         role: .user,
         content: "can you fix the alignment of the cursor with the tag above it"
       )
@@ -2751,9 +2751,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(title, "Fix alignment cursor tag above")
   }
 
-  func testOpenClawThreadTitleSkipsFillerOpenings() {
-    let title = WorkspaceStore.openClawThreadTitle(from: [
-      OpenClawChatMessage(
+  func testAIChatThreadTitleSkipsFillerOpenings() {
+    let title = WorkspaceStore.aiChatThreadTitle(from: [
+      AIChatMessage(
         role: .user,
         content: "sure let's do that to start. also while you're doing that. our thread nav is still a bit clunky."
       )
@@ -2763,36 +2763,36 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testRenamingOpenClawThreadDoesNotLeakStatusIntoAnotherEmptyThread() throws {
+  func testRenamingAIChatThreadDoesNotLeakStatusIntoAnotherEmptyThread() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-rename-status-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
-    let expectedEmptyThreadStatus = store.openClawStatusText
-    store.createOpenClawChatThread()
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.createOpenClawChatThread()
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.openClawStatusText = "Ready for a message"
+    let expectedEmptyThreadStatus = store.aiChatStatusText
+    store.createAIChatThread(runtime: .openClaw)
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.aiChatStatusText = "Ready for a message"
 
-    store.selectOpenClawChatThread(firstThreadID)
-    store.renameOpenClawChatThread(firstThreadID, title: "Renamed thread")
-    store.selectOpenClawChatThread(secondThreadID)
+    store.selectAIChatThread(firstThreadID)
+    store.renameAIChatThread(firstThreadID, title: "Renamed thread")
+    store.selectAIChatThread(secondThreadID)
 
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.title,
+      store.aiChatThreads.first(where: { $0.id == firstThreadID })?.title,
       "Renamed thread"
     )
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == secondThreadID })?.title,
+      store.aiChatThreads.first(where: { $0.id == secondThreadID })?.title,
       "New Chat"
     )
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondThreadID)
-    XCTAssertTrue(store.openClawMessages.isEmpty)
-    XCTAssertEqual(store.openClawStatusText, expectedEmptyThreadStatus)
+    XCTAssertEqual(store.selectedAIChatThreadID, secondThreadID)
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
+    XCTAssertEqual(store.aiChatStatusText, expectedEmptyThreadStatus)
   }
 
   @MainActor
@@ -2803,53 +2803,53 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
-    store.createOpenClawChatThread()
-    let pinnedThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(pinnedThreadID, title: "Pinned thread")
-    store.toggleOpenClawChatThreadPin(pinnedThreadID)
-    store.renameOpenClawChatThread(pinnedThreadID, title: "Pinned thread renamed first")
+    store.createAIChatThread(runtime: .openClaw)
+    let pinnedThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(pinnedThreadID, title: "Pinned thread")
+    store.toggleAIChatThreadPin(pinnedThreadID)
+    store.renameAIChatThread(pinnedThreadID, title: "Pinned thread renamed first")
 
-    store.createOpenClawChatThread()
-    let lowerThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(lowerThreadID, title: "Lower thread")
-    XCTAssertEqual(store.visibleOpenClawChatThreads.map(\.id), [pinnedThreadID, lowerThreadID])
+    store.createAIChatThread(runtime: .openClaw)
+    let lowerThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(lowerThreadID, title: "Lower thread")
+    XCTAssertEqual(store.visibleAIChatThreads.map(\.id), [pinnedThreadID, lowerThreadID])
 
-    store.renameOpenClawChatThread(lowerThreadID, title: "Renamed lower thread")
+    store.renameAIChatThread(lowerThreadID, title: "Renamed lower thread")
 
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == pinnedThreadID })?.title,
+      store.aiChatThreads.first(where: { $0.id == pinnedThreadID })?.title,
       "Pinned thread renamed first"
     )
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == lowerThreadID })?.title,
+      store.aiChatThreads.first(where: { $0.id == lowerThreadID })?.title,
       "Renamed lower thread"
     )
   }
 
   @MainActor
-  func testNamedOpenClawThreadKeepsTitleWhenPromptStartsWithPreamble() async throws {
+  func testNamedAIChatThreadKeepsTitleWhenPromptStartsWithPreamble() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-title-preamble-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, _ in "ok" }
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, _ in "ok" }
     )
-    store.createOpenClawChatThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(threadID, title: "Brief: Target Node")
+    store.createAIChatThread(runtime: .openClaw)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(threadID, title: "Brief: Target Node")
 
-    await store.sendOpenClawMessage(text: "Generate a concise, source-cited briefing for the selected org2 node \"Target Node\".")
+    await store.sendAIChatMessage(text: "Generate a concise, source-cited briefing for the selected org2 node \"Target Node\".")
 
-    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    let thread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == threadID }))
     XCTAssertEqual(thread.title, "Brief: Target Node")
   }
 
   @MainActor
-  func testOpenClawChatThreadsPinAndArchivePersistLocally() throws {
+  func testAIChatThreadsPinAndArchivePersistLocally() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-metadata-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2861,78 +2861,78 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "First pinned thread")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "First pinned thread")
     ]
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.createOpenClawChatThread()
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Second regular thread")
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Second regular thread")
     ]
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.toggleOpenClawChatThreadPin(firstThreadID)
-    XCTAssertEqual(Array(store.visibleOpenClawChatThreads.map(\.id).prefix(2)), [firstThreadID, secondThreadID])
+    store.toggleAIChatThreadPin(firstThreadID)
+    XCTAssertEqual(Array(store.visibleAIChatThreads.map(\.id).prefix(2)), [firstThreadID, secondThreadID])
 
-    store.archiveOpenClawChatThread(firstThreadID)
-    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == firstThreadID }))
-    XCTAssertEqual(store.archivedOpenClawChatThreads.first?.id, firstThreadID)
+    store.archiveAIChatThread(firstThreadID)
+    XCTAssertFalse(store.visibleAIChatThreads.contains(where: { $0.id == firstThreadID }))
+    XCTAssertEqual(store.archivedAIChatThreads.first?.id, firstThreadID)
 
-    store.restoreOpenClawChatThread(firstThreadID)
-    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.id, firstThreadID)
-    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.isPinned, true)
+    store.restoreAIChatThread(firstThreadID)
+    XCTAssertEqual(store.visibleAIChatThreads.first?.id, firstThreadID)
+    XCTAssertEqual(store.visibleAIChatThreads.first?.isPinned, true)
 
-    store.renameOpenClawChatThread(firstThreadID, title: "Renamed pinned thread")
-    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.title, "Renamed pinned thread")
+    store.renameAIChatThread(firstThreadID, title: "Renamed pinned thread")
+    XCTAssertEqual(store.visibleAIChatThreads.first?.title, "Renamed pinned thread")
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.id, firstThreadID)
-    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.title, "Renamed pinned thread")
-    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.isPinned, true)
-    XCTAssertTrue(restored.archivedOpenClawChatThreads.isEmpty)
+    XCTAssertEqual(restored.visibleAIChatThreads.first?.id, firstThreadID)
+    XCTAssertEqual(restored.visibleAIChatThreads.first?.title, "Renamed pinned thread")
+    XCTAssertEqual(restored.visibleAIChatThreads.first?.isPinned, true)
+    XCTAssertTrue(restored.archivedAIChatThreads.isEmpty)
   }
 
   @MainActor
-  func testArchivingSelectedOpenClawThreadTargetsExactRowAndKeepsNearbySelection() throws {
+  func testArchivingSelectedAIChatThreadTargetsExactRowAndKeepsNearbySelection() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-archive-row-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
 
     for title in ["First thread", "Second thread", "Third thread"] {
-      store.createOpenClawChatThread()
-      store.openClawMessages = [OpenClawChatMessage(role: .user, content: title)]
+      store.createAIChatThread(runtime: .openClaw)
+      store.aiChatMessages = [AIChatMessage(role: .user, content: title)]
     }
 
-    let threadsBeforeArchive = store.visibleOpenClawChatThreads
+    let threadsBeforeArchive = store.visibleAIChatThreads
     XCTAssertGreaterThanOrEqual(threadsBeforeArchive.count, 3)
     let target = threadsBeforeArchive[1]
     let expectedReplacement = threadsBeforeArchive[2]
-    store.selectOpenClawChatThread(target.id)
+    store.selectAIChatThread(target.id)
 
-    store.archiveOpenClawChatThread(target.id)
+    store.archiveAIChatThread(target.id)
 
-    XCTAssertEqual(store.archivedOpenClawChatThreads.map(\.id), [target.id])
-    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == target.id }))
-    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == threadsBeforeArchive[0].id }))
-    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == expectedReplacement.id }))
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, expectedReplacement.id)
-    XCTAssertTrue(store.canUndoOpenClawChatThreadArchive)
+    XCTAssertEqual(store.archivedAIChatThreads.map(\.id), [target.id])
+    XCTAssertFalse(store.visibleAIChatThreads.contains(where: { $0.id == target.id }))
+    XCTAssertTrue(store.visibleAIChatThreads.contains(where: { $0.id == threadsBeforeArchive[0].id }))
+    XCTAssertTrue(store.visibleAIChatThreads.contains(where: { $0.id == expectedReplacement.id }))
+    XCTAssertEqual(store.selectedAIChatThreadID, expectedReplacement.id)
+    XCTAssertTrue(store.canUndoAIChatThreadArchive)
 
-    store.undoLastOpenClawChatThreadArchive()
+    store.undoLastAIChatThreadArchive()
 
-    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == target.id }))
-    XCTAssertFalse(store.canUndoOpenClawChatThreadArchive)
+    XCTAssertTrue(store.visibleAIChatThreads.contains(where: { $0.id == target.id }))
+    XCTAssertFalse(store.canUndoAIChatThreadArchive)
   }
 
   @MainActor
@@ -2942,31 +2942,31 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
 
     for title in ["First thread", "Second thread", "Third thread"] {
-      store.createOpenClawChatThread()
-      store.openClawMessages = [OpenClawChatMessage(role: .user, content: title)]
+      store.createAIChatThread(runtime: .openClaw)
+      store.aiChatMessages = [AIChatMessage(role: .user, content: title)]
     }
 
-    let previouslySettled = try XCTUnwrap(store.visibleOpenClawChatThreads.last)
-    store.settleOpenClawChatThread(previouslySettled.id)
-    store.selectOpenClawChatThread(previouslySettled.id)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, previouslySettled.id)
+    let previouslySettled = try XCTUnwrap(store.visibleAIChatThreads.last)
+    store.settleAIChatThread(previouslySettled.id)
+    store.selectAIChatThread(previouslySettled.id)
+    XCTAssertEqual(store.selectedAIChatThreadID, previouslySettled.id)
 
-    let newlySettled = try XCTUnwrap(store.visibleOpenClawChatThreads.first)
-    store.settleOpenClawChatThread(newlySettled.id)
+    let newlySettled = try XCTUnwrap(store.visibleAIChatThreads.first)
+    store.settleAIChatThread(newlySettled.id)
 
-    let selectedID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let selectedID = try XCTUnwrap(store.selectedAIChatThreadID)
     XCTAssertNotEqual(selectedID, previouslySettled.id)
     XCTAssertFalse(
-      try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == selectedID })).isSettled
+      try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == selectedID })).isSettled
     )
   }
 
   @MainActor
-  func testSettlingAndReopeningOpenClawThreadPersistsDurableState() async throws {
+  func testSettlingAndReopeningAIChatThreadPersistsDurableState() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-settle-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2974,17 +2974,17 @@ final class Org2ModelsTests: XCTestCase {
     let transcript = root.appendingPathComponent("openclaw-chat.json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Retain this history")]
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "Retain this history")]
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.settleOpenClawChatThread(threadID, at: Date(timeIntervalSince1970: 1_700_000_000))
+    store.settleAIChatThread(threadID, at: Date(timeIntervalSince1970: 1_700_000_000))
 
-    XCTAssertTrue(store.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
-    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertTrue(store.settledAIChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertFalse(store.visibleAIChatThreads.contains(where: { $0.id == threadID }))
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.first?.content,
       "Retain this history"
     )
     store.flushDeferredAIChatTranscriptPersistence()
@@ -2992,21 +2992,21 @@ final class Org2ModelsTests: XCTestCase {
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertTrue(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertTrue(restored.settledAIChatThreads.contains(where: { $0.id == threadID }))
     let restoredMetadata = try XCTUnwrap(
-      restored.openClawChatThreads.first(where: { $0.id == threadID })
+      restored.aiChatThreads.first(where: { $0.id == threadID })
     )
     XCTAssertEqual(restoredMetadata.messageCount, 1)
     XCTAssertTrue(restoredMetadata.messages.isEmpty)
 
-    restored.reopenOpenClawChatThread(threadID)
-    XCTAssertTrue(restored.visibleOpenClawChatThreads.contains(where: { $0.id == threadID }))
-    XCTAssertFalse(restored.settledOpenClawChatThreads.contains(where: { $0.id == threadID }))
-    restored.selectOpenClawChatThread(threadID)
+    restored.reopenAIChatThread(threadID)
+    XCTAssertTrue(restored.visibleAIChatThreads.contains(where: { $0.id == threadID }))
+    XCTAssertFalse(restored.settledAIChatThreads.contains(where: { $0.id == threadID }))
+    restored.selectAIChatThread(threadID)
     await restored.waitForAIChatThreadHydrationForTesting(threadID)
-    XCTAssertEqual(restored.openClawMessages.first?.content, "Retain this history")
+    XCTAssertEqual(restored.aiChatMessages.first?.content, "Retain this history")
   }
 
   @MainActor
@@ -3017,60 +3017,60 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
-    store.createOpenClawChatThread()
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "First")]
-    let targetID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.createOpenClawChatThread()
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "Second")]
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "First")]
+    let targetID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "Second")]
 
-    store.openClawTranscriptPersistenceDelayNanoseconds = 20_000_000
+    store.aiChatTranscriptPersistenceDelayNanoseconds = 20_000_000
     var saveCount = 0
-    store.openClawTranscriptSaverForTesting = { saveCount += 1 }
+    store.aiChatTranscriptSaverForTesting = { saveCount += 1 }
 
-    store.settleOpenClawChatThread(targetID)
+    store.settleAIChatThread(targetID)
 
-    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == targetID }))
-    XCTAssertTrue(store.settledOpenClawChatThreads.contains(where: { $0.id == targetID }))
+    XCTAssertFalse(store.visibleAIChatThreads.contains(where: { $0.id == targetID }))
+    XCTAssertTrue(store.settledAIChatThreads.contains(where: { $0.id == targetID }))
     XCTAssertEqual(saveCount, 0)
     try await waitForCondition(timeout: 1) { saveCount == 1 }
   }
 
   @MainActor
-  func testOpenClawAutoSettleConfigurationTimingSafetyAndPersistence() throws {
+  func testAIChatAutoSettleConfigurationTimingSafetyAndPersistence() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-auto-settle-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let transcript = root.appendingPathComponent("openclaw-chat.json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let old = now.addingTimeInterval(-172_800)
-    let eligible = OpenClawChatThread(
+    let eligible = AIChatThread(
       title: "Eligible",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:eligible",
-      messages: [OpenClawChatMessage(role: .user, content: "done", createdAt: old)]
+      messages: [AIChatMessage(role: .user, content: "done", createdAt: old)]
     )
-    let pinned = OpenClawChatThread(
+    let pinned = AIChatThread(
       title: "Pinned",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:pinned",
-      messages: [OpenClawChatMessage(role: .user, content: "keep active", createdAt: old)],
+      messages: [AIChatMessage(role: .user, content: "keep active", createdAt: old)],
       isPinned: true
     )
-    let failed = OpenClawChatThread(
+    let failed = AIChatThread(
       title: "Failed",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:failed",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "retry me",
           createdAt: old,
@@ -3079,100 +3079,100 @@ final class Org2ModelsTests: XCTestCase {
         )
       ]
     )
-    let recovered = OpenClawChatThread(
+    let recovered = AIChatThread(
       title: "Recovered",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:recovered",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "retry me",
           createdAt: old,
           sendFailure: "offline",
           deliveryStatus: .failed
         ),
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .assistant,
           content: "recovered",
           createdAt: old.addingTimeInterval(60)
         )
       ]
     )
-    let empty = OpenClawChatThread(
+    let empty = AIChatThread(
       title: "Empty",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:empty"
     )
-    let selected = OpenClawChatThread(
+    let selected = AIChatThread(
       title: "Selected",
       createdAt: old,
       updatedAt: old,
       sessionKey: "agent:main:selected",
-      messages: [OpenClawChatMessage(role: .user, content: "currently open", createdAt: old)]
+      messages: [AIChatMessage(role: .user, content: "currently open", createdAt: old)]
     )
-    let settings = OpenClawThreadSettlementSettings(autoSettleAfterSeconds: 86_400)
+    let settings = AIChatThreadSettlementSettings(autoSettleAfterSeconds: 86_400)
 
-    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertTrue(WorkspaceStore.canAutoSettleAIChatThread(
       eligible,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
-    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertFalse(WorkspaceStore.canAutoSettleAIChatThread(
       pinned,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
-    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertFalse(WorkspaceStore.canAutoSettleAIChatThread(
       failed,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
-    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertTrue(WorkspaceStore.canAutoSettleAIChatThread(
       recovered,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
-    XCTAssertTrue(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertTrue(WorkspaceStore.canAutoSettleAIChatThread(
       empty,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
-    XCTAssertFalse(WorkspaceStore.canAutoSettleOpenClawChatThread(
+    XCTAssertFalse(WorkspaceStore.canAutoSettleAIChatThread(
       selected,
       settings: settings,
       selectedThreadID: selected.id,
       now: now
     ))
 
-    store.createOpenClawChatThread()
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "old", createdAt: old)]
-    let oldThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.createOpenClawChatThread()
-    store.openClawMessages = [OpenClawChatMessage(role: .user, content: "selected", createdAt: old)]
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "old", createdAt: old)]
+    let oldThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [AIChatMessage(role: .user, content: "selected", createdAt: old)]
 
-    store.setOpenClawAutoSettleInterval(.oneDay)
-    let autoSettled = store.autoSettleOpenClawChatThreads(now: now)
+    store.setAIChatAutoSettleInterval(.oneDay)
+    let autoSettled = store.autoSettleAIChatThreads(now: now)
 
     XCTAssertTrue(autoSettled.contains(oldThreadID))
-    XCTAssertEqual(store.openClawThreadSettlementSettings.interval, .oneDay)
+    XCTAssertEqual(store.aiChatThreadSettlementSettings.interval, .oneDay)
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.openClawThreadSettlementSettings.interval, .oneDay)
+    XCTAssertEqual(restored.aiChatThreadSettlementSettings.interval, .oneDay)
 
-    restored.setOpenClawAutoSettleInterval(.never)
-    XCTAssertEqual(restored.openClawThreadSettlementSettings.interval, .never)
+    restored.setAIChatAutoSettleInterval(.never)
+    XCTAssertEqual(restored.aiChatThreadSettlementSettings.interval, .never)
   }
 
-  func testLegacyArchivedOpenClawThreadDecodesAsSettled() throws {
+  func testLegacyArchivedAIChatThreadDecodesAsSettled() throws {
     let id = UUID()
     let decoder = JSONDecoder()
     let raw = """
@@ -3189,14 +3189,14 @@ final class Org2ModelsTests: XCTestCase {
     }
     """
 
-    let thread = try decoder.decode(OpenClawChatThread.self, from: Data(raw.utf8))
+    let thread = try decoder.decode(AIChatThread.self, from: Data(raw.utf8))
 
     XCTAssertTrue(thread.isSettled)
     XCTAssertEqual(thread.settledAt, thread.updatedAt)
   }
 
   @MainActor
-  func testAwaitedOpenClawSendReturnsAfterItsReplyIsInserted() async throws {
+  func testAwaitedAIChatSendReturnsAfterItsReplyIsInserted() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-awaited-chat-send-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3207,23 +3207,23 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, _ in "terminal reply" }
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, _ in "terminal reply" }
     )
 
-    store.openClawDraft = "foreground request"
-    await store.sendOpenClawMessage()
+    store.aiChatDraft = "foreground request"
+    await store.sendAIChatMessage()
 
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:foreground request",
       "assistant:terminal reply"
     ])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
   }
 
   @MainActor
-  func testOpenClawChatThreadsTrackUnreadBackgroundRepliesAndSound() async throws {
+  func testAIChatThreadsTrackUnreadBackgroundRepliesAndSound() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-unread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3235,46 +3235,46 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         "Background reply"
       }
     )
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
     store.selectedSurface = .agenda
 
-    store.openClawDraft = "Question while away"
-    await store.sendOpenClawMessage()
+    store.aiChatDraft = "Question while away"
+    await store.sendAIChatMessage()
 
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
-    XCTAssertEqual(store.openClawUnreadMessageCount, 1)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+    XCTAssertEqual(store.aiChatUnreadMessageCount, 1)
     XCTAssertEqual(soundCount, 1)
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+    XCTAssertEqual(restored.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
 
-    restored.makeSurfacePrimary(.openClaw)
-    XCTAssertEqual(restored.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
-    XCTAssertEqual(restored.openClawUnreadMessageCount, 0)
+    restored.makeSurfacePrimary(.aiChat)
+    XCTAssertEqual(restored.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+    XCTAssertEqual(restored.aiChatUnreadMessageCount, 0)
 
     let reopened = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(reopened.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+    XCTAssertEqual(reopened.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
   }
 
   @MainActor
-  func testOpenClawChatThreadsCanMuteIncomingSound() async throws {
+  func testAIChatThreadsCanMuteIncomingSound() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-muted-sound-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3286,28 +3286,28 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         "Quiet background reply"
       }
     )
     store.aiChatMessageSound = .off
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
     store.selectedSurface = .agenda
 
-    store.openClawDraft = "Question while muted"
-    await store.sendOpenClawMessage()
+    store.aiChatDraft = "Question while muted"
+    await store.sendAIChatMessage()
 
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
     XCTAssertEqual(soundCount, 0)
   }
 
   @MainActor
-  func testOpenClawGenericMessageSyncDoesNotPlayIncomingSound() throws {
+  func testAIChatGenericMessageSyncDoesNotPlayIncomingSound() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-sync-sound-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3319,28 +3319,28 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
     store.selectedSurface = .agenda
 
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Known question")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Known question")
     ]
-    store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "Known reply"))
+    store.aiChatMessages.append(AIChatMessage(role: .assistant, content: "Known reply"))
 
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.messageCount, 2)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
-    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.messageCount, 2)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+    XCTAssertEqual(store.aiChatUnreadMessageCount, 0)
     XCTAssertEqual(soundCount, 0)
   }
 
   @MainActor
-  func testOpenClawChatThreadsSoundButDoNotMarkActiveRepliesUnread() async throws {
+  func testAIChatThreadsSoundButDoNotMarkActiveRepliesUnread() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-active-unread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3352,26 +3352,26 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         "Visible reply"
       }
     )
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
-    store.makeSurfacePrimary(.openClaw)
-    store.openClawDraft = "Question in active chat"
+    store.makeSurfacePrimary(.aiChat)
+    store.aiChatDraft = "Question in active chat"
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    XCTAssertEqual(store.aiChatUnreadMessageCount, 0)
     XCTAssertEqual(soundCount, 1)
   }
 
   @MainActor
-  func testOpenClawChatThreadsDoNotPlaySoundForExistingAssistantMessagesAfterLocalRewrite() throws {
+  func testAIChatThreadsDoNotPlaySoundForExistingAssistantMessagesAfterLocalRewrite() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-existing-reply-sound-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3383,28 +3383,28 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
-    store.makeSurfacePrimary(.openClaw)
-    let user = OpenClawChatMessage(role: .user, content: "Original question")
-    let assistant = OpenClawChatMessage(role: .assistant, content: "Existing reply")
-    store.openClawMessages = [user, assistant]
+    store.makeSurfacePrimary(.aiChat)
+    let user = AIChatMessage(role: .user, content: "Original question")
+    let assistant = AIChatMessage(role: .assistant, content: "Existing reply")
+    store.aiChatMessages = [user, assistant]
     XCTAssertEqual(soundCount, 0)
 
     store.selectedSurface = .agenda
-    let insertedUser = OpenClawChatMessage(role: .user, content: "Local inserted note")
-    store.openClawMessages = [user, insertedUser, assistant]
+    let insertedUser = AIChatMessage(role: .user, content: "Local inserted note")
+    store.aiChatMessages = [user, insertedUser, assistant]
 
-    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    XCTAssertEqual(store.aiChatUnreadMessageCount, 0)
     XCTAssertEqual(soundCount, 0)
   }
 
   @MainActor
-  func testOpenClawChatThreadsMigrateLegacySingleTranscriptPayload() throws {
+  func testAIChatThreadsMigrateLegacySingleTranscriptPayload() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-legacy-threads-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3430,16 +3430,16 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Legacy single chat")
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["Legacy single chat"])
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatThreads.first?.title, "Legacy single chat")
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["Legacy single chat"])
   }
 
   @MainActor
-  func testOpenClawChatTranscriptPersistsRealSendsLocally() async throws {
+  func testAIChatTranscriptPersistsRealSendsLocally() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-send-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3451,104 +3451,104 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in "Hello from restart-safe storage" }
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in "Hello from restart-safe storage" }
     )
-    store.openClawDraft = "Hello OpenClaw"
-    await store.sendOpenClawMessage()
+    store.aiChatDraft = "Hello OpenClaw"
+    await store.sendAIChatMessage()
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
   }
 
   @MainActor
-  func testOpenClawSendClearsPreviousStreamingReplyBeforeShowingProgress() async throws {
+  func testAIChatSendClearsPreviousStreamingReplyBeforeShowingProgress() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-stream-reset-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
-    store.createOpenClawChatThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
     let eventStartedAt = Date()
     store.handleOpenClawGatewayEvent(.text("Previous assistant reply", replace: true), threadID: threadID)
-    XCTAssertEqual(store.openClawStreamingReply, "Previous assistant reply")
-    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.openClawLastEventAt), eventStartedAt)
+    XCTAssertEqual(store.selectedAIChatStreamingReply, "Previous assistant reply")
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.aiChatLastEventAt), eventStartedAt)
 
-    store.openClawDraft = "Follow-up question"
-    let sendTask = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "Follow-up question"
+    let sendTask = Task { await store.sendAIChatMessage() }
     let deadline = Date().addingTimeInterval(5)
     while !(await recorder.hasStarted()) && Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
 
-    XCTAssertTrue(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawStreamingReply, "")
+    XCTAssertTrue(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.selectedAIChatStreamingReply, "")
 
     store.handleOpenClawGatewayEvent(.text("Fresh assistant reply", replace: true), threadID: threadID)
-    XCTAssertEqual(store.openClawStreamingReply, "Fresh assistant reply")
+    XCTAssertEqual(store.selectedAIChatStreamingReply, "Fresh assistant reply")
     let heartbeatStartedAt = Date()
     store.handleOpenClawGatewayEvent(.reconciliationHeartbeat, threadID: threadID)
-    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.openClawLastEventAt), heartbeatStartedAt)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(store.aiChatLastEventAt), heartbeatStartedAt)
     await recorder.finish(reply: "Fresh assistant reply")
     await sendTask.value
-    XCTAssertEqual(store.openClawStreamingReply, "")
+    XCTAssertEqual(store.selectedAIChatStreamingReply, "")
   }
 
   @MainActor
-  func testComposedOpenClawMessageStaysInThreadSelectedAtSubmission() async throws {
+  func testComposedAIChatMessageStaysInThreadSelectedAtSubmission() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-submit-thread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, _ in "Reply for submitted thread" }
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, _ in "Reply for submitted thread" }
     )
-    store.createOpenClawChatThread()
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(firstThreadID, title: "First thread")
-    store.createOpenClawChatThread()
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(secondThreadID, title: "Second thread")
-    store.selectOpenClawChatThread(firstThreadID)
+    store.createAIChatThread(runtime: .openClaw)
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(firstThreadID, title: "First thread")
+    store.createAIChatThread(runtime: .openClaw)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(secondThreadID, title: "Second thread")
+    store.selectAIChatThread(firstThreadID)
 
-    store.sendComposedOpenClawMessage(text: "Message for first thread")
+    store.sendComposedAIChatMessage(text: "Message for first thread")
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
+      store.aiChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
       ["Message for first thread"]
     )
-    store.selectOpenClawChatThread(secondThreadID)
+    store.selectAIChatThread(secondThreadID)
 
     let deadline = Date().addingTimeInterval(5)
-    while store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.count != 2,
+    while store.aiChatThreads.first(where: { $0.id == firstThreadID })?.messages.count != 2,
           Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
 
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
+      store.aiChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
       ["Message for first thread", "Reply for submitted thread"]
     )
     XCTAssertTrue(
-      store.openClawChatThreads.first(where: { $0.id == secondThreadID })?.messages.isEmpty == true
+      store.aiChatThreads.first(where: { $0.id == secondThreadID })?.messages.isEmpty == true
     )
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondThreadID)
+    XCTAssertEqual(store.selectedAIChatThreadID, secondThreadID)
   }
 
   @MainActor
-  func testOpenClawSendFailureIsVisiblePersistedAndRetryable() async throws {
+  func testAIChatSendFailureIsVisiblePersistedAndRetryable() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-send-failure-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3557,65 +3557,65 @@ final class Org2ModelsTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    let recorder = OpenClawRetrySendRecorder()
+    let recorder = AIChatRetrySendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
-    store.openClawDraft = "Are you reachable?"
+    store.aiChatDraft = "Are you reachable?"
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["Are you reachable?"])
-    let failedMessage = try XCTUnwrap(store.openClawMessages.first)
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["Are you reachable?"])
+    let failedMessage = try XCTUnwrap(store.aiChatMessages.first)
     XCTAssertEqual(failedMessage.sendFailure, "VPN disconnected")
     XCTAssertEqual(failedMessage.deliveryStatus, .failed)
-    XCTAssertEqual(store.openClawStatusText, "VPN disconnected")
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertEqual(store.aiChatStatusText, "VPN disconnected")
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.openClawMessages.first?.sendFailure, "VPN disconnected")
-    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .failed)
+    XCTAssertEqual(restored.aiChatMessages.first?.sendFailure, "VPN disconnected")
+    XCTAssertEqual(restored.aiChatMessages.first?.deliveryStatus, .failed)
 
-    await store.retryOpenClawMessage(failedMessage.id)
+    await store.retryAIChatMessage(failedMessage.id)
 
     let attemptCount = await recorder.attemptCount()
     XCTAssertEqual(attemptCount, 2)
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:Are you reachable?",
       "assistant:reply after reconnect"
     ])
-    XCTAssertNil(store.openClawMessages.first?.sendFailure)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sent)
-    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+    XCTAssertNil(store.aiChatMessages.first?.sendFailure)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sent)
+    XCTAssertEqual(store.aiChatStatusText, "OpenClaw replied")
   }
 
-  func testOpenClawLatestDeliveryAttentionDistinguishesSendingFromFailure() {
-    let sending = OpenClawChatThread(
+  func testAIChatLatestDeliveryAttentionDistinguishesSendingFromFailure() {
+    let sending = AIChatThread(
       title: "Sending",
       sessionKey: "agent:main:sending",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "In flight",
           deliveryStatus: .sending
         )
       ]
     )
-    let failed = OpenClawChatThread(
+    let failed = AIChatThread(
       title: "Failed",
       sessionKey: "agent:main:failed",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "Retry me",
           sendFailure: "Offline",
@@ -3623,11 +3623,11 @@ final class Org2ModelsTests: XCTestCase {
         )
       ]
     )
-    let interrupted = OpenClawChatThread(
+    let interrupted = AIChatThread(
       title: "Interrupted",
       sessionKey: "agent:main:interrupted",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "Retry after restart",
           deliveryStatus: .interrupted
@@ -3642,7 +3642,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawInFlightSendRestoresAsInterruptedAndRetryable() async throws {
+  func testAIChatInFlightSendRestoresAsInterruptedAndRetryable() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-send-interrupted-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3651,45 +3651,45 @@ final class Org2ModelsTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
-    store.openClawDraft = "Please do this long running thing"
+    store.aiChatDraft = "Please do this long running thing"
 
-    let sendTask = Task { await store.sendOpenClawMessage() }
+    let sendTask = Task { await store.sendAIChatMessage() }
     let deadline = Date().addingTimeInterval(5)
     while !(await recorder.hasStarted()) && Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
     let didStart = await recorder.hasStarted()
     XCTAssertTrue(didStart)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sending)
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in "reply after retry" }
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in "reply after retry" }
     )
-    let interrupted = try XCTUnwrap(restored.openClawMessages.first)
+    let interrupted = try XCTUnwrap(restored.aiChatMessages.first)
     XCTAssertEqual(interrupted.content, "Please do this long running thing")
     XCTAssertEqual(interrupted.deliveryStatus, .interrupted)
     XCTAssertTrue(interrupted.sendFailure?.contains("restarted") == true)
-    XCTAssertEqual(restored.openClawStatusText, "OpenClaw response interrupted; retry the message")
+    XCTAssertEqual(restored.aiChatStatusText, "OpenClaw response interrupted; retry the message")
 
-    await restored.retryOpenClawMessage(interrupted.id)
-    XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    await restored.retryAIChatMessage(interrupted.id)
+    XCTAssertEqual(restored.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:Please do this long running thing",
       "assistant:reply after retry"
     ])
-    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sent)
-    XCTAssertNil(restored.openClawMessages.first?.sendFailure)
+    XCTAssertEqual(restored.aiChatMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(restored.aiChatMessages.first?.sendFailure)
 
     await recorder.finish(reply: "late original reply")
     await sendTask.value
@@ -3702,22 +3702,22 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let older = OpenClawChatMessage(
+    let older = AIChatMessage(
       role: .user,
       content: "Older request",
       sendFailure: "Interrupted",
       deliveryStatus: .interrupted
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Late reply",
       sessionKey: "agent:main:org2-workspace:late-reply",
       messages: [
         older,
-        OpenClawChatMessage(role: .user, content: "Newer request"),
-        OpenClawChatMessage(role: .assistant, content: "Newer answer")
+        AIChatMessage(role: .user, content: "Newer request"),
+        AIChatMessage(role: .assistant, content: "Newer answer")
       ]
     )
-    try JSONEncoder().encode(OpenClawTranscriptFixture(
+    try JSONEncoder().encode(AIChatTranscriptFixture(
       version: 4,
       messages: nil,
       threads: [thread],
@@ -3725,13 +3725,13 @@ final class Org2ModelsTests: XCTestCase {
     )).write(to: transcript, options: .atomic)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in "Late answer" }
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in "Late answer" }
     )
 
-    await store.retryOpenClawMessage(older.id)
+    await store.retryAIChatMessage(older.id)
 
-    XCTAssertEqual(store.openClawMessages.map(\.content), [
+    XCTAssertEqual(store.aiChatMessages.map(\.content), [
       "Older request", "Newer request", "Newer answer", "Late answer"
     ])
   }
@@ -3743,44 +3743,44 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let stopped = OpenClawChatMessage(
+    let stopped = AIChatMessage(
       role: .user,
       content: "Stopped request",
       deliveryStatus: .sending
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Orphaned pending turn",
       sessionKey: "agent:main:org2-workspace:orphaned-turn",
       messages: [stopped],
-      pendingTurn: OpenClawPendingTurn(
+      pendingTurn: AIChatPendingTurn(
         userMessageID: stopped.id,
         runID: "orphaned-run",
         agentID: "main",
         gatewayMessage: "Do not reconnect"
       )
     )
-    try JSONEncoder().encode(OpenClawTranscriptFixture(
+    try JSONEncoder().encode(AIChatTranscriptFixture(
       version: 4,
       messages: nil,
       threads: [thread],
       selectedThreadID: thread.id
     )).write(to: transcript, options: .atomic)
-    let recorder = OpenClawRecoveryRecorder()
+    let recorder = AIChatRecoveryRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript,
-      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatRecoveryHandler: { turn, _ in await recorder.recover(turn) }
     )
 
     XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
-    store.openClawMessages[0] = stopped.replacingDeliveryStatus(
+    store.aiChatMessages[0] = stopped.replacingDeliveryStatus(
       .interrupted,
       sendFailure: "Stopped by you"
     )
-    XCTAssertNotNil(store.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertNotNil(store.selectedAIChatThread?.pendingTurn)
     XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
-    await store.recoverPendingOpenClawTurns()
-    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
+    await store.recoverPendingAIChatTurns()
+    XCTAssertNil(store.selectedAIChatThread?.pendingTurn)
     let recoveredTurns = await recorder.recordedTurns()
     XCTAssertTrue(recoveredTurns.isEmpty)
   }
@@ -3794,18 +3794,18 @@ final class Org2ModelsTests: XCTestCase {
     let suiteName = "org2-workspace-chat-durable-turn-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let userMessage = OpenClawChatMessage(
+    let userMessage = AIChatMessage(
       role: .user,
       content: "Finish this even if I quit",
       deliveryStatus: .sending
     )
-    let queuedMessage = OpenClawChatMessage(
+    let queuedMessage = AIChatMessage(
       role: .user,
       content: "Then handle this queued follow-up",
       deliveryStatus: .sending,
       deliveryKind: .followUp
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: userMessage.id,
       runID: "durable-run-id",
       agentID: "main",
@@ -3813,13 +3813,13 @@ final class Org2ModelsTests: XCTestCase {
       contextSectionFingerprints: ["Org2 working rules#0": String(repeating: "a", count: 64)],
       startedAt: Date(timeIntervalSince1970: 1_700_000_000)
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Durable turn",
       sessionKey: "agent:main:org2-workspace:durable",
       messages: [userMessage, queuedMessage],
       pendingTurn: pendingTurn
     )
-    let fixture = OpenClawTranscriptFixture(
+    let fixture = AIChatTranscriptFixture(
       version: 4,
       messages: nil,
       threads: [thread],
@@ -3829,33 +3829,33 @@ final class Org2ModelsTests: XCTestCase {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(fixture).write(to: transcript, options: .atomic)
 
-    let recorder = OpenClawRecoveryRecorder()
+    let recorder = AIChatRecoveryRecorder()
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in "Queued follow-up reply" },
-      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in "Queued follow-up reply" },
+      aiChatRecoveryHandler: { turn, _ in await recorder.recover(turn) }
     )
 
-    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sending)
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.pendingTurn?.runID, "durable-run-id")
+    XCTAssertEqual(restored.aiChatMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(restored.selectedAIChatThread?.pendingTurn?.runID, "durable-run-id")
     XCTAssertFalse(restored.isAIChatMessageQueued(userMessage.id))
     XCTAssertTrue(restored.isAIChatMessageQueued(queuedMessage.id))
     await restored.bootstrap()
     try await waitForCondition {
-      restored.openClawMessages.count == 4
-        && restored.selectedOpenClawChatThread?.pendingTurn == nil
+      restored.aiChatMessages.count == 4
+        && restored.selectedAIChatThread?.pendingTurn == nil
     }
 
-    XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(restored.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:Finish this even if I quit",
       "assistant:Recovered after relaunch",
       "user:Then handle this queued follow-up",
       "assistant:Queued follow-up reply"
     ])
-    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sent)
-    XCTAssertNil(restored.selectedOpenClawChatThread?.pendingTurn)
+    XCTAssertEqual(restored.aiChatMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(restored.selectedAIChatThread?.pendingTurn)
     let recoveredTurns = await recorder.recordedTurns()
     XCTAssertEqual(recoveredTurns.map(\.runID), ["durable-run-id"])
     XCTAssertEqual(recoveredTurns.first?.gatewayMessage, "Exact persisted Gateway request")
@@ -3867,12 +3867,12 @@ final class Org2ModelsTests: XCTestCase {
     let relaunchedAgain = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatRecoveryHandler: { turn, _ in await recorder.recover(turn) }
     )
-    await relaunchedAgain.recoverPendingOpenClawTurns()
+    await relaunchedAgain.recoverPendingAIChatTurns()
 
-    XCTAssertEqual(relaunchedAgain.openClawMessages.map(\.content), [
+    XCTAssertEqual(relaunchedAgain.aiChatMessages.map(\.content), [
       "Finish this even if I quit",
       "Recovered after relaunch",
       "Then handle this queued follow-up",
@@ -3893,39 +3893,39 @@ final class Org2ModelsTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
-    let slowMessage = OpenClawChatMessage(
+    let slowMessage = AIChatMessage(
       role: .user,
       content: "Keep working on the slow turn",
       deliveryStatus: .sending
     )
-    let fastMessage = OpenClawChatMessage(
+    let fastMessage = AIChatMessage(
       role: .user,
       content: "Recover this completed turn too",
       deliveryStatus: .sending
     )
-    let slowThread = OpenClawChatThread(
+    let slowThread = AIChatThread(
       title: "Slow recovery",
       sessionKey: "agent:main:org2-workspace:slow-recovery",
       messages: [slowMessage],
-      pendingTurn: OpenClawPendingTurn(
+      pendingTurn: AIChatPendingTurn(
         userMessageID: slowMessage.id,
         runID: "slow-recovery",
         agentID: "main",
         gatewayMessage: "Persisted slow request"
       )
     )
-    let fastThread = OpenClawChatThread(
+    let fastThread = AIChatThread(
       title: "Fast recovery",
       sessionKey: "agent:main:org2-workspace:fast-recovery",
       messages: [fastMessage],
-      pendingTurn: OpenClawPendingTurn(
+      pendingTurn: AIChatPendingTurn(
         userMessageID: fastMessage.id,
         runID: "fast-recovery",
         agentID: "main",
         gatewayMessage: "Persisted fast request"
       )
     )
-    let fixture = OpenClawTranscriptFixture(
+    let fixture = AIChatTranscriptFixture(
       version: 6,
       messages: nil,
       threads: [slowThread, fastThread],
@@ -3933,12 +3933,12 @@ final class Org2ModelsTests: XCTestCase {
     )
     try JSONEncoder().encode(fixture).write(to: transcript, options: .atomic)
 
-    let recorder = OpenClawRelaunchRecoveryRecorder()
+    let recorder = AIChatRelaunchRecoveryRecorder()
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawRecoveryHandler: { turn, _ in await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatRecoveryHandler: { turn, _ in await recorder.recover(turn) }
     )
 
     let bootstrapFinished = expectation(description: "bootstrap is not blocked by a recovered turn")
@@ -3950,25 +3950,25 @@ final class Org2ModelsTests: XCTestCase {
     await recorder.waitUntilSlowRecoveryStarts()
 
     try await waitForCondition(timeout: 1) {
-      restored.openClawChatThreads
+      restored.aiChatThreads
         .first(where: { $0.id == fastThread.id })?
         .messages.contains(where: { $0.content == "Recovered fast turn" }) == true
     }
     XCTAssertNotNil(
-      restored.openClawChatThreads.first(where: { $0.id == slowThread.id })?.pendingTurn,
+      restored.aiChatThreads.first(where: { $0.id == slowThread.id })?.pendingTurn,
       "A still-running recovery remains durable while other threads finish"
     )
 
     await recorder.finishSlowRecovery()
     try await waitForCondition(timeout: 1) {
-      restored.openClawChatThreads
+      restored.aiChatThreads
         .first(where: { $0.id == slowThread.id })?
         .messages.contains(where: { $0.content == "Recovered slow turn" }) == true
     }
   }
 
   @MainActor
-  func testStoppedOpenClawRecoveryDoesNotReconnectAgain() async throws {
+  func testStoppedAIChatRecoveryDoesNotReconnectAgain() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-stopped-recovery-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3976,24 +3976,24 @@ final class Org2ModelsTests: XCTestCase {
     let suiteName = "org2-workspace-chat-stopped-recovery-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let userMessage = OpenClawChatMessage(
+    let userMessage = AIChatMessage(
       role: .user,
       content: "Stop this recovered turn",
       deliveryStatus: .sending
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: userMessage.id,
       runID: "stopped-recovery-run-id",
       agentID: "main",
       gatewayMessage: "Persisted request that must stay stopped"
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Stopped recovery",
       sessionKey: "agent:main:org2-workspace:stopped-recovery",
       messages: [userMessage],
       pendingTurn: pendingTurn
     )
-    let fixture = OpenClawTranscriptFixture(
+    let fixture = AIChatTranscriptFixture(
       version: 4,
       messages: nil,
       threads: [thread],
@@ -4003,92 +4003,92 @@ final class Org2ModelsTests: XCTestCase {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(fixture).write(to: transcript, options: .atomic)
 
-    let recorder = OpenClawStoppedRecoveryRecorder()
+    let recorder = AIChatStoppedRecoveryRecorder()
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
     )
 
     await restored.bootstrap()
     try await waitForCondition {
-      restored.selectedOpenClawChatThread?.pendingTurn == nil
+      restored.selectedAIChatThread?.pendingTurn == nil
     }
 
-    XCTAssertNil(restored.selectedOpenClawChatThread?.pendingTurn)
-    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertNil(restored.selectedAIChatThread?.pendingTurn)
+    XCTAssertEqual(restored.aiChatMessages.first?.deliveryStatus, .interrupted)
     XCTAssertEqual(
-      restored.openClawMessages.first?.sendFailure,
+      restored.aiChatMessages.first?.sendFailure,
       "OpenClaw was stopped by you. Retry to start this request again."
     )
     XCTAssertEqual(restored.openClawGatewayConnectionState, .disconnected)
     XCTAssertEqual(restored.openClawGatewayConnectionDetail, "Stopped by you. This turn will not reconnect.")
-    XCTAssertEqual(restored.openClawStatusText, "OpenClaw stopped")
+    XCTAssertEqual(restored.aiChatStatusText, "OpenClaw stopped")
     XCTAssertFalse(restored.isAIChatThreadRunning(thread.id))
     let initialAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(initialAttemptCount, 1)
 
-    await restored.recoverPendingOpenClawTurns()
+    await restored.recoverPendingAIChatTurns()
     let finalAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(finalAttemptCount, 1)
   }
 
   @MainActor
-  func testTerminalOpenClawRecoveryFailsOnlyAcceptedTurnAndDoesNotRetry() async throws {
+  func testTerminalAIChatRecoveryFailsOnlyAcceptedTurnAndDoesNotRetry() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-terminal-recovery-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let failedMessage = OpenClawChatMessage(
+    let failedMessage = AIChatMessage(
       role: .user,
       content: "This accepted run failed",
       deliveryStatus: .sending
     )
-    let queuedMessage = OpenClawChatMessage(
+    let queuedMessage = AIChatMessage(
       role: .user,
       content: "Keep this follow-up queued",
       deliveryStatus: .sending,
       deliveryKind: .followUp
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: failedMessage.id,
       runID: "accepted-terminal-run",
       idempotencyKey: "stable-request-key",
       agentID: "main",
       gatewayMessage: "Persisted request"
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Terminal recovery",
       sessionKey: "agent:main:org2-workspace:terminal-recovery",
       messages: [failedMessage, queuedMessage],
       pendingTurn: pendingTurn
     )
-    try JSONEncoder().encode(OpenClawTranscriptFixture(
+    try JSONEncoder().encode(AIChatTranscriptFixture(
       version: 6,
       messages: nil,
       threads: [thread],
       selectedThreadID: thread.id
     )).write(to: transcript, options: .atomic)
 
-    let recorder = OpenClawTerminalRecoveryRecorder()
+    let recorder = AIChatTerminalRecoveryRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in "Follow-up succeeded" },
-      openClawRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in "Follow-up succeeded" },
+      aiChatRecoveryHandler: { turn, _ in try await recorder.recover(turn) }
     )
 
-    await store.recoverPendingOpenClawTurns()
-    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
-    XCTAssertEqual(store.openClawMessages[0].deliveryStatus, .failed)
-    XCTAssertEqual(store.openClawMessages[1].deliveryStatus, .sent)
-    XCTAssertEqual(store.openClawMessages[2].content, "Follow-up succeeded")
+    await store.recoverPendingAIChatTurns()
+    XCTAssertNil(store.selectedAIChatThread?.pendingTurn)
+    XCTAssertEqual(store.aiChatMessages[0].deliveryStatus, .failed)
+    XCTAssertEqual(store.aiChatMessages[1].deliveryStatus, .sent)
+    XCTAssertEqual(store.aiChatMessages[2].content, "Follow-up succeeded")
     let initialAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(initialAttemptCount, 1)
 
-    await store.recoverPendingOpenClawTurns()
+    await store.recoverPendingAIChatTurns()
     let finalAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(finalAttemptCount, 1)
   }
@@ -4100,12 +4100,12 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let userMessage = OpenClawChatMessage(
+    let userMessage = AIChatMessage(
       role: .user,
       content: "Persist the accepted ID",
       deliveryStatus: .sending
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: userMessage.id,
       runID: "stable-request-key",
       idempotencyKey: "stable-request-key",
@@ -4113,13 +4113,13 @@ final class Org2ModelsTests: XCTestCase {
       destinationID: AIChatDestinationConfiguration.openClawID,
       gatewayMessage: "Persisted request"
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Accepted ID",
       sessionKey: "agent:main:org2-workspace:accepted-id",
       messages: [userMessage],
       pendingTurn: pendingTurn
     )
-    try JSONEncoder().encode(OpenClawTranscriptFixture(
+    try JSONEncoder().encode(AIChatTranscriptFixture(
       version: 6,
       messages: nil,
       threads: [thread],
@@ -4127,7 +4127,7 @@ final class Org2ModelsTests: XCTestCase {
     )).write(to: transcript, options: .atomic)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
     await store.handleOpenClawGatewayEventDurably(
@@ -4137,14 +4137,14 @@ final class Org2ModelsTests: XCTestCase {
       expectedUserMessageID: userMessage.id
     )
 
-    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn?.runID, "gateway-accepted-id")
-    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
+    XCTAssertEqual(store.selectedAIChatThread?.pendingTurn?.runID, "gateway-accepted-id")
+    XCTAssertEqual(store.selectedAIChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
     let reloaded = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(reloaded.selectedOpenClawChatThread?.pendingTurn?.runID, "gateway-accepted-id")
-    XCTAssertEqual(reloaded.selectedOpenClawChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
+    XCTAssertEqual(reloaded.selectedAIChatThread?.pendingTurn?.runID, "gateway-accepted-id")
+    XCTAssertEqual(reloaded.selectedAIChatThread?.pendingTurn?.historyCorrelationID, "stable-request-key")
   }
 
   @MainActor
@@ -4154,24 +4154,24 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let userMessage = OpenClawChatMessage(
+    let userMessage = AIChatMessage(
       role: .user,
       content: "Do not reconnect this stale request",
       deliveryStatus: .sending
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: userMessage.id,
       runID: "offline-recovery-run-id",
       agentID: "main",
       gatewayMessage: "Persisted request"
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Offline recovered turn",
       sessionKey: "agent:main:org2-workspace:offline-recovery",
       messages: [userMessage],
       pendingTurn: pendingTurn
     )
-    let fixture = OpenClawTranscriptFixture(
+    let fixture = AIChatTranscriptFixture(
       version: 4,
       messages: nil,
       threads: [thread],
@@ -4181,11 +4181,11 @@ final class Org2ModelsTests: XCTestCase {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(fixture).write(to: transcript, options: .atomic)
 
-    let recorder = OpenClawRetrySendRecorder()
+    let recorder = AIChatRetrySendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
@@ -4193,38 +4193,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
     let didStop = await store.stopAIChatRemoteRun(threadID: thread.id)
     XCTAssertTrue(didStop)
-    XCTAssertNil(store.selectedOpenClawChatThread?.pendingTurn)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertNil(store.selectedAIChatThread?.pendingTurn)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .interrupted)
     XCTAssertEqual(
-      store.openClawMessages.first?.sendFailure,
+      store.aiChatMessages.first?.sendFailure,
       "OpenClaw was stopped by you. Retry to start this request again."
     )
-    XCTAssertEqual(store.openClawStatusText, "OpenClaw stopped")
+    XCTAssertEqual(store.aiChatStatusText, "OpenClaw stopped")
     XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
 
     let relaunched = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertNil(relaunched.selectedOpenClawChatThread?.pendingTurn)
-    XCTAssertEqual(relaunched.openClawMessages.first?.deliveryStatus, .interrupted)
+    XCTAssertNil(relaunched.selectedAIChatThread?.pendingTurn)
+    XCTAssertEqual(relaunched.aiChatMessages.first?.deliveryStatus, .interrupted)
     XCTAssertFalse(relaunched.isAIChatThreadRunning(thread.id))
 
-    await store.retryOpenClawMessage(userMessage.id)
+    await store.retryAIChatMessage(userMessage.id)
     let firstRetryAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(firstRetryAttemptCount, 1)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .failed)
-    XCTAssertEqual(store.openClawMessages.first?.sendFailure, "VPN disconnected")
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .failed)
+    XCTAssertEqual(store.aiChatMessages.first?.sendFailure, "VPN disconnected")
 
-    await store.retryOpenClawMessage(userMessage.id)
+    await store.retryAIChatMessage(userMessage.id)
     let secondRetryAttemptCount = await recorder.attemptCount()
     XCTAssertEqual(secondRetryAttemptCount, 2)
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:Do not reconnect this stale request",
       "assistant:reply after reconnect"
     ])
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sent)
-    XCTAssertNil(store.openClawMessages.first?.sendFailure)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(store.aiChatMessages.first?.sendFailure)
   }
 
   @MainActor
@@ -4234,12 +4234,12 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let transcript = root.appendingPathComponent("openclaw-chat.json")
-    let userMessage = OpenClawChatMessage(
+    let userMessage = AIChatMessage(
       role: .user,
       content: "Still running elsewhere",
       deliveryStatus: .sending
     )
-    let pendingTurn = OpenClawPendingTurn(
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: userMessage.id,
       runID: "remote-owned-run",
       idempotencyKey: "remote-owned-key",
@@ -4247,13 +4247,13 @@ final class Org2ModelsTests: XCTestCase {
       agentID: "main",
       gatewayMessage: "Persisted request"
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Remote-owned run",
       sessionKey: "agent:main:org2-workspace:remote-owned",
       messages: [userMessage],
       pendingTurn: pendingTurn
     )
-    try JSONEncoder().encode(OpenClawTranscriptFixture(
+    try JSONEncoder().encode(AIChatTranscriptFixture(
       version: 6,
       messages: nil,
       threads: [thread],
@@ -4261,18 +4261,18 @@ final class Org2ModelsTests: XCTestCase {
     )).write(to: transcript, options: .atomic)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
 
     let didStop = await store.stopAIChatRemoteRun(threadID: thread.id)
     XCTAssertFalse(didStop)
-    XCTAssertEqual(store.selectedOpenClawChatThread?.pendingTurn, pendingTurn)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(store.selectedAIChatThread?.pendingTurn, pendingTurn)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sending)
   }
 
   @MainActor
   func testMacApprovalsRefreshDiscussAndApproveViaStore() async throws {
-    let recorder = OpenClawMessageSendRecorder()
+    let recorder = AIChatMessageSendRecorder()
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-approvals-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -4294,8 +4294,8 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
@@ -4308,16 +4308,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(approval.status, "review-required")
     XCTAssertEqual(store.statusText, "1 approval")
 
-    await store.discussApprovalInOpenClaw(approval)
+    await store.discussApprovalInAIChat(approval)
 
     let calls = await recorder.recordedCalls()
     let sentText = try XCTUnwrap(calls.first?.last?.content)
     XCTAssertTrue(sentText.contains("OpenClaw approval thread"))
     XCTAssertTrue(sentText.contains("Please review the launch email"))
-    let discussionThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    let discussionThread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == discussionThreadID }))
+    let discussionThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    let discussionThread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == discussionThreadID }))
     XCTAssertEqual(discussionThread.title, "Discuss: Review and approve launch email")
-    let visibleDiscussion = OpenClawContextPresentation(
+    let visibleDiscussion = AIChatContextPresentation(
       try XCTUnwrap(discussionThread.messages.last(where: { $0.role == .user })?.content)
     )
     XCTAssertEqual(visibleDiscussion.userText, "I need to discuss this approval item before deciding.")
@@ -4395,8 +4395,8 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testDiscussApprovalCanReuseCurrentOpenClawThreadWhenRequested() async throws {
-    let recorder = OpenClawMessageSendRecorder()
+  func testDiscussApprovalCanReuseCurrentAIChatThreadWhenRequested() async throws {
+    let recorder = AIChatMessageSendRecorder()
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-approval-current-thread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -4412,42 +4412,42 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    store.createOpenClawChatThread()
-    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Existing approval context")
+    store.createAIChatThread(runtime: .openClaw)
+    let originalThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Existing approval context")
     ]
 
     await store.refreshApprovals(updatesStatus: true)
     let approval = try XCTUnwrap(store.approvalItems.first)
-    await store.discussApprovalInOpenClaw(
+    await store.discussApprovalInAIChat(
       approval,
       message: "Check this before sending.",
       threadMode: .currentThread
     )
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, originalThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawMessages.first?.content, "Existing approval context")
-    XCTAssertTrue(store.openClawMessages.map(\.content).contains { $0.contains("Check this before sending.") })
+    XCTAssertEqual(store.selectedAIChatThreadID, originalThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatMessages.first?.content, "Existing approval context")
+    XCTAssertTrue(store.aiChatMessages.map(\.content).contains { $0.contains("Check this before sending.") })
   }
 
   func testApprovalDiscussionDestinationNamesOnlyOfferAnExistingSelectedThread() {
     XCTAssertEqual(
-      OpenClawThreadMode.newThread.discussionDestinationTitle(selectedThreadTitle: nil),
+      AIChatThreadMode.newThread.discussionDestinationTitle(selectedThreadTitle: nil),
       "New thread"
     )
     XCTAssertNil(
-      OpenClawThreadMode.currentThread.discussionDestinationTitle(selectedThreadTitle: nil)
+      AIChatThreadMode.currentThread.discussionDestinationTitle(selectedThreadTitle: nil)
     )
     XCTAssertEqual(
-      OpenClawThreadMode.currentThread.discussionDestinationTitle(
+      AIChatThreadMode.currentThread.discussionDestinationTitle(
         selectedThreadTitle: "Revenue Scout review"
       ),
       "Continue in \u{201c}Revenue Scout review\u{201d}"
@@ -4478,7 +4478,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
 
@@ -4506,7 +4506,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent(".org2/local-approval-smoke-openclaw.json")
+      aiChatTranscriptURL: root.appendingPathComponent(".org2/local-approval-smoke-openclaw.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
 
@@ -4521,8 +4521,8 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawComposerSendsPendingImageAttachments() async throws {
-    let recorder = OpenClawMessageSendRecorder()
+  func testAIChatComposerSendsPendingImageAttachments() async throws {
+    let recorder = AIChatMessageSendRecorder()
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-image-send-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -4531,25 +4531,25 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: temp.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
-    store.attachOpenClawImages(urls: [imageURL])
+    store.attachAIChatImages(urls: [imageURL])
 
-    XCTAssertEqual(store.openClawPendingAttachments.count, 1)
+    XCTAssertEqual(store.aiChatPendingAttachments.count, 1)
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    XCTAssertTrue(store.openClawPendingAttachments.isEmpty)
-    XCTAssertEqual(store.openClawMessages.first?.attachments.first?.fileName, "sketch.png")
+    XCTAssertTrue(store.aiChatPendingAttachments.isEmpty)
+    XCTAssertEqual(store.aiChatMessages.first?.attachments.first?.fileName, "sketch.png")
     let calls = await recorder.recordedCalls()
     XCTAssertEqual(calls.first?.last?.attachments.first?.mimeType, "image/png")
   }
 
   @MainActor
-  func testOpenClawComposerAcceptsDroppedFilesAndRejectsVideo() throws {
+  func testAIChatComposerAcceptsDroppedFilesAndRejectsVideo() throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-file-attachments-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -4560,17 +4560,17 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
     )
-    store.attachOpenClawFiles(urls: [textURL, videoURL])
+    store.attachAIChatFiles(urls: [textURL, videoURL])
 
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["notes.txt"])
-    XCTAssertEqual(store.openClawPendingAttachments.first?.mimeType, "text/plain")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["notes.txt"])
+    XCTAssertEqual(store.aiChatPendingAttachments.first?.mimeType, "text/plain")
     XCTAssertEqual(store.errorText, "clip.mp4 is a video, which OpenClaw chat attachments do not support.")
   }
 
   @MainActor
-  func testOpenClawPickerPreparesAttachmentsWithoutBlockingTheMainActor() async throws {
+  func testAIChatPickerPreparesAttachmentsWithoutBlockingTheMainActor() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-picker-attachments-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -4580,22 +4580,22 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: temp.appendingPathComponent("openclaw-chat.json")
     )
-    store.enqueueOpenClawAttachmentPreparationForTesting(urls: [imageURL], imagesOnly: true)
+    store.enqueueAIChatAttachmentPreparationForTesting(urls: [imageURL], imagesOnly: true)
 
-    XCTAssertTrue(store.openClawPendingAttachments.isEmpty)
-    XCTAssertTrue(store.openClawStatusText.hasPrefix("Attaching "))
-    store.advanceOpenClawTranscriptLoadGenerationForTesting()
+    XCTAssertTrue(store.aiChatPendingAttachments.isEmpty)
+    XCTAssertTrue(store.aiChatStatusText.hasPrefix("Attaching "))
+    store.advanceAIChatTranscriptLoadGenerationForTesting()
 
-    await store.waitForOpenClawAttachmentPreparationForTesting()
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["sketch.png"])
-    XCTAssertEqual(store.openClawPendingAttachments.first?.mimeType, "image/png")
-    XCTAssertEqual(store.openClawStatusText, "1 attachment ready")
+    await store.waitForAIChatAttachmentPreparationForTesting()
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["sketch.png"])
+    XCTAssertEqual(store.aiChatPendingAttachments.first?.mimeType, "image/png")
+    XCTAssertEqual(store.aiChatStatusText, "1 attachment ready")
   }
 
   @MainActor
-  func testOpenClawReplyRecordsCorpusChangeSummary() async throws {
+  func testAIChatReplyRecordsCorpusChangeSummary() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-changes-\(UUID().uuidString)", isDirectory: true)
     let root = temp.appendingPathComponent("corpus", isDirectory: true)
@@ -4614,19 +4614,19 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         try "Line one\nLine two\n".write(toFile: notePath, atomically: true, encoding: .utf8)
         try "Alpha\nBeta\n".write(toFile: createdPath, atomically: true, encoding: .utf8)
         return "Updated the corpus"
       }
     )
     store.setCorpusRoot(root)
-    store.openClawDraft = "Update these notes"
+    store.aiChatDraft = "Update these notes"
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    let assistantMessage = try XCTUnwrap(store.openClawMessages.last)
+    let assistantMessage = try XCTUnwrap(store.aiChatMessages.last)
     let summary = try XCTUnwrap(assistantMessage.changeSummary)
     XCTAssertEqual(summary.title, "Edited 2 files")
     XCTAssertEqual(summary.changedFileCount, 2)
@@ -4635,21 +4635,21 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(
       summary.files,
       [
-        OpenClawCorpusFileChange(relativePath: "created.org", status: .created, insertions: 2, deletions: 0),
-        OpenClawCorpusFileChange(relativePath: "note.org", status: .modified, insertions: 1, deletions: 0)
+        AIChatCorpusFileChange(relativePath: "created.org", status: .created, insertions: 2, deletions: 0),
+        AIChatCorpusFileChange(relativePath: "note.org", status: .modified, insertions: 1, deletions: 0)
       ]
     )
 
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      aiChatTranscriptURL: transcript
     )
-    XCTAssertEqual(restored.openClawMessages.last?.changeSummary, summary)
+    XCTAssertEqual(restored.aiChatMessages.last?.changeSummary, summary)
   }
 
   @MainActor
-  func testOpenClawReplyAttributesDiffToReferencedFilesWhenBackgroundJobsAlsoWrite() async throws {
+  func testAIChatReplyAttributesDiffToReferencedFilesWhenBackgroundJobsAlsoWrite() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-attributed-changes-\(UUID().uuidString)", isDirectory: true)
     let root = temp.appendingPathComponent("corpus", isDirectory: true)
@@ -4672,8 +4672,8 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         try "Target one\nTarget two\n".write(toFile: targetPath, atomically: true, encoding: .utf8)
         try "Background one\nBackground two\n".write(toFile: backgroundPath, atomically: true, encoding: .utf8)
         return "Done. Added the scheduled review TODO in /srv/org2/agents/account-outreach.org2."
@@ -4688,16 +4688,16 @@ final class Org2ModelsTests: XCTestCase {
       token: "",
       clearToken: false
     ))
-    store.openClawDraft = "Create the TODO"
+    store.aiChatDraft = "Create the TODO"
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    let summary = try XCTUnwrap(store.openClawMessages.last?.changeSummary)
+    let summary = try XCTUnwrap(store.aiChatMessages.last?.changeSummary)
     XCTAssertEqual(summary.changedFileCount, 1)
     XCTAssertEqual(
       summary.files,
       [
-        OpenClawCorpusFileChange(
+        AIChatCorpusFileChange(
           relativePath: "agents/account-outreach.org2",
           status: .modified,
           insertions: 1,
@@ -4708,7 +4708,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawReplyRetriesBrieflyForDelayedCorpusChanges() async throws {
+  func testAIChatReplyRetriesBrieflyForDelayedCorpusChanges() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-delayed-changes-\(UUID().uuidString)", isDirectory: true)
     let root = temp.appendingPathComponent("corpus", isDirectory: true)
@@ -4731,8 +4731,8 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         Task { @MainActor in
           try? await Task.sleep(nanoseconds: 200_000_000)
           try? "Original\nAdded\n".write(toFile: notePath, atomically: true, encoding: .utf8)
@@ -4745,11 +4745,11 @@ final class Org2ModelsTests: XCTestCase {
     )
     events.store = store
     store.setCorpusRoot(root)
-    store.openClawDraft = "Update this"
+    store.aiChatDraft = "Update this"
 
-    await store.sendOpenClawMessage()
+    await store.sendAIChatMessage()
 
-    let summary = try XCTUnwrap(store.openClawMessages.last?.changeSummary)
+    let summary = try XCTUnwrap(store.aiChatMessages.last?.changeSummary)
     XCTAssertEqual(summary.changedFileCount, 1)
     XCTAssertEqual(summary.totalInsertions, 1)
     XCTAssertEqual(summary.totalDeletions, 0)
@@ -4757,7 +4757,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawReplyLeavesLiveUIBeforeChangeSummaryFinishes() async throws {
+  func testAIChatReplyLeavesLiveUIBeforeChangeSummaryFinishes() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-fast-terminal-ui-\(UUID().uuidString)", isDirectory: true)
     let root = temp.appendingPathComponent("corpus", isDirectory: true)
@@ -4777,8 +4777,8 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, _, _, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, _, _, _ in
         Task { @MainActor in
           try? await Task.sleep(nanoseconds: 250_000_000)
           try? "Before\nAfter\n".write(toFile: notePath, atomically: true, encoding: .utf8)
@@ -4791,23 +4791,23 @@ final class Org2ModelsTests: XCTestCase {
     )
     events.store = store
     store.setCorpusRoot(root)
-    store.openClawDraft = "Update the note"
+    store.aiChatDraft = "Update the note"
 
-    let sendTask = Task { await store.sendOpenClawMessage() }
-    for _ in 0..<50 where store.openClawMessages.last?.role != .assistant {
+    let sendTask = Task { await store.sendAIChatMessage() }
+    for _ in 0..<50 where store.aiChatMessages.last?.role != .assistant {
       try await Task.sleep(nanoseconds: 10_000_000)
     }
 
-    XCTAssertEqual(store.openClawMessages.last?.content, "Updated note.org2")
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+    XCTAssertEqual(store.aiChatMessages.last?.content, "Updated note.org2")
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatStatusText, "OpenClaw replied")
 
     await sendTask.value
-    XCTAssertEqual(store.openClawMessages.last?.changeSummary?.totalInsertions, 1)
+    XCTAssertEqual(store.aiChatMessages.last?.changeSummary?.totalInsertions, 1)
   }
 
   @MainActor
-  func testOpenClawChatTranscriptPersistsInCorpusStorageAcrossBootstrap() async throws {
+  func testAIChatTranscriptPersistsInCorpusStorageAcrossBootstrap() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-corpus-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -4818,9 +4818,9 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
     store.setCorpusRoot(root)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Remember this corpus chat"),
-      OpenClawChatMessage(role: .assistant, content: "Stored with the corpus")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Remember this corpus chat"),
+      AIChatMessage(role: .assistant, content: "Stored with the corpus")
     ]
     try await store.waitForAIChatTranscriptPersistenceForTesting()
 
@@ -4832,11 +4832,11 @@ final class Org2ModelsTests: XCTestCase {
     let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
     await restored.bootstrap()
 
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Remember this corpus chat", "Stored with the corpus"])
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["Remember this corpus chat", "Stored with the corpus"])
   }
 
   @MainActor
-  func testOpenClawChatTranscriptMigratesLegacyAppSupportStorageOnBootstrap() async throws {
+  func testAIChatTranscriptMigratesLegacyAppSupportStorageOnBootstrap() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-migration-\(UUID().uuidString)", isDirectory: true)
     let appSupport = root.appendingPathComponent("app-support", isDirectory: true)
@@ -4867,18 +4867,18 @@ final class Org2ModelsTests: XCTestCase {
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawFallbackTranscriptURL: legacyTranscript
+      aiChatFallbackTranscriptURL: legacyTranscript
     )
     await restored.bootstrap()
 
     let corpusTranscript = root
       .appendingPathComponent(".org2", isDirectory: true)
       .appendingPathComponent("openclaw-chat.json")
-    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Legacy app-support chat"])
+    XCTAssertEqual(restored.aiChatMessages.map(\.content), ["Legacy app-support chat"])
     XCTAssertTrue(FileManager.default.fileExists(atPath: corpusTranscript.path))
-    let selectedThreadID = try XCTUnwrap(restored.selectedOpenClawChatThreadID)
+    let selectedThreadID = try XCTUnwrap(restored.selectedAIChatThreadID)
     let selectedThread = try XCTUnwrap(
-      restored.openClawChatThreads.first(where: { $0.id == selectedThreadID })
+      restored.aiChatThreads.first(where: { $0.id == selectedThreadID })
     )
     let persistedThread = try XCTUnwrap(AIChatTranscriptStore.shared.loadThread(
       id: selectedThreadID,
@@ -4941,7 +4941,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawAgentID, "main")
     XCTAssertEqual(store.agentHandoffAssignee, "OpenClaw")
     XCTAssertEqual(store.personalAssigneeNamesText, "")
-    XCTAssertTrue(store.openClawBriefsStartNewThread)
+    XCTAssertTrue(store.aiChatBriefsStartNewThread)
     XCTAssertTrue(store.saveOpenClawConfiguration(
       endpoint: store.openClawEndpointText,
       agent: "research-agent",
@@ -4958,7 +4958,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.openClawAgentID, "research-agent")
     XCTAssertEqual(restored.agentHandoffAssignee, "OpenClaw")
     XCTAssertEqual(restored.personalAssigneeNamesText, "Avi, avi@example.com")
-    XCTAssertFalse(restored.openClawBriefsStartNewThread)
+    XCTAssertFalse(restored.aiChatBriefsStartNewThread)
   }
 
   @MainActor
@@ -6031,15 +6031,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.pendingMeetingProcessingItems.map(\.title), ["Dev Standup"])
   }
 
-  func testOpenClawComposerSizingGrowsAndCaps() {
-    let emptyHeight = OpenClawComposerSizing.height(for: "", compact: false)
-    let shortHeight = OpenClawComposerSizing.height(for: "hello", compact: false)
-    let multilineHeight = OpenClawComposerSizing.height(for: "one\ntwo\nthree\nfour", compact: false)
-    let longHeight = OpenClawComposerSizing.height(
+  func testAIChatComposerSizingGrowsAndCaps() {
+    let emptyHeight = AIChatComposerSizing.height(for: "", compact: false)
+    let shortHeight = AIChatComposerSizing.height(for: "hello", compact: false)
+    let multilineHeight = AIChatComposerSizing.height(for: "one\ntwo\nthree\nfour", compact: false)
+    let longHeight = AIChatComposerSizing.height(
       for: String(repeating: "long message line\n", count: 80),
       compact: false
     )
-    let compactLongHeight = OpenClawComposerSizing.height(
+    let compactLongHeight = AIChatComposerSizing.height(
       for: String(repeating: "long message line\n", count: 80),
       compact: true
     )
@@ -6051,49 +6051,49 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOpenClawComposerReturnSendsCommandReturnSteersAndShiftReturnAddsNewline() {
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: []))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: []))
+    XCTAssertFalse(AIChatComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertFalse(AIChatComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
+    XCTAssertFalse(AIChatComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
 
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command, .shift]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command, .shift]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: []))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.shift]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.command, .shift]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isSteerCommand(keyCode: 76, modifiers: [.command, .shift]))
+    XCTAssertFalse(AIChatComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(AIChatComposerKeyCommand.isSteerCommand(keyCode: 36, modifiers: [.shift]))
 
-    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.shift]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.shift]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: []))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.shift]))
+    XCTAssertTrue(AIChatComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.shift]))
+    XCTAssertFalse(AIChatComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(AIChatComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertFalse(AIChatComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
 
     XCTAssertEqual(
-      OpenClawComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: true),
+      AIChatComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: true),
       .steer
     )
     XCTAssertEqual(
-      OpenClawComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: false),
+      AIChatComposerKeyCommand.resolvedDelivery(requested: .steer, isRunning: false),
       .automatic
     )
   }
 
-  func testOpenClawComposerSuggestionKeyboardCommands() {
-    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 36, modifiers: []), .complete)
-    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: []), .complete)
-    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 76, modifiers: []), .complete)
-    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: []), .move(1))
-    XCTAssertEqual(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 126, modifiers: []), .move(-1))
-    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: [.command]))
-    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: [.shift]))
-    XCTAssertNil(OpenClawComposerKeyCommand.suggestionCommand(keyCode: 49, modifiers: []))
+  func testAIChatComposerSuggestionKeyboardCommands() {
+    XCTAssertEqual(AIChatComposerKeyCommand.suggestionCommand(keyCode: 36, modifiers: []), .complete)
+    XCTAssertEqual(AIChatComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: []), .complete)
+    XCTAssertEqual(AIChatComposerKeyCommand.suggestionCommand(keyCode: 76, modifiers: []), .complete)
+    XCTAssertEqual(AIChatComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: []), .move(1))
+    XCTAssertEqual(AIChatComposerKeyCommand.suggestionCommand(keyCode: 126, modifiers: []), .move(-1))
+    XCTAssertNil(AIChatComposerKeyCommand.suggestionCommand(keyCode: 48, modifiers: [.command]))
+    XCTAssertNil(AIChatComposerKeyCommand.suggestionCommand(keyCode: 125, modifiers: [.shift]))
+    XCTAssertNil(AIChatComposerKeyCommand.suggestionCommand(keyCode: 49, modifiers: []))
   }
 
-  func testOpenClawComposerCompletionMovesInsertionPointToEnd() {
+  func testAIChatComposerCompletionMovesInsertionPointToEnd() {
     XCTAssertEqual(
-      OpenClawComposerSelection.updatedRange(
+      AIChatComposerSelection.updatedRange(
         previous: NSRange(location: 2, length: 0),
         textLength: 18,
         movesToEnd: true
@@ -6101,7 +6101,7 @@ final class Org2ModelsTests: XCTestCase {
       NSRange(location: 18, length: 0)
     )
     XCTAssertEqual(
-      OpenClawComposerSelection.updatedRange(
+      AIChatComposerSelection.updatedRange(
         previous: NSRange(location: 5, length: 2),
         textLength: 18,
         movesToEnd: false
@@ -6110,7 +6110,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testOpenClawComposerDropPrefersFileURLsOverTextInsertion() throws {
+  func testAIChatComposerDropPrefersFileURLsOverTextInsertion() throws {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-drop-test-\(UUID().uuidString)"))
     pasteboard.clearContents()
     let first = URL(fileURLWithPath: "/tmp/first note.txt")
@@ -6118,38 +6118,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(pasteboard.writeObjects([first as NSURL, second as NSURL]))
 
     XCTAssertEqual(
-      OpenClawComposerDrop.payload(from: pasteboard),
+      AIChatComposerDrop.payload(from: pasteboard),
       .fileURLs([first, second])
     )
   }
 
-  func testOpenClawComposerDropAcceptsRawImageData() {
+  func testAIChatComposerDropAcceptsRawImageData() {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("org2-image-drop-test-\(UUID().uuidString)"))
     pasteboard.clearContents()
     let png = Data([0x89, 0x50, 0x4e, 0x47])
     pasteboard.setData(png, forType: .png)
 
     XCTAssertEqual(
-      OpenClawComposerDrop.payload(from: pasteboard),
+      AIChatComposerDrop.payload(from: pasteboard),
       .image(data: png, fileName: "Dropped Image.png", mimeType: "image/png")
     )
   }
 
-  func testOpenClawSlashCommandSelectionWrapsAndClamps() {
-    let suggestions = OpenClawSlashCommands.suggestions(for: "/")
+  func testAIChatSlashCommandSelectionWrapsAndClamps() {
+    let suggestions = AIChatSlashCommands.suggestions(for: "/")
     XCTAssertGreaterThan(suggestions.count, 2)
-    XCTAssertEqual(OpenClawSlashCommandSelection.selectedCommand(in: suggestions, index: 0), suggestions[0])
-    XCTAssertEqual(OpenClawSlashCommandSelection.selectedCommand(in: suggestions, index: 100), suggestions.last)
-    XCTAssertNil(OpenClawSlashCommandSelection.selectedCommand(in: [], index: 0))
+    XCTAssertEqual(AIChatSlashCommandSelection.selectedCommand(in: suggestions, index: 0), suggestions[0])
+    XCTAssertEqual(AIChatSlashCommandSelection.selectedCommand(in: suggestions, index: 100), suggestions.last)
+    XCTAssertNil(AIChatSlashCommandSelection.selectedCommand(in: [], index: 0))
 
-    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(0, by: 1, count: 3), 1)
-    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(2, by: 1, count: 3), 0)
-    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(0, by: -1, count: 3), 2)
-    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(4, by: 1, count: 3), 2)
-    XCTAssertEqual(OpenClawSlashCommandSelection.movedIndex(4, by: 1, count: 0), 0)
+    XCTAssertEqual(AIChatSlashCommandSelection.movedIndex(0, by: 1, count: 3), 1)
+    XCTAssertEqual(AIChatSlashCommandSelection.movedIndex(2, by: 1, count: 3), 0)
+    XCTAssertEqual(AIChatSlashCommandSelection.movedIndex(0, by: -1, count: 3), 2)
+    XCTAssertEqual(AIChatSlashCommandSelection.movedIndex(4, by: 1, count: 3), 2)
+    XCTAssertEqual(AIChatSlashCommandSelection.movedIndex(4, by: 1, count: 0), 0)
   }
 
-  func testOpenClawContextPresentationSeparatesMultipleContextPillsFromUserText() {
+  func testAIChatContextPresentationSeparatesMultipleContextPillsFromUserText() {
     let raw = """
     Use selected block “Launch risks” at /remote/org2/projects.org2:12-18 as context.
 
@@ -6157,7 +6157,7 @@ final class Org2ModelsTests: XCTestCase {
 
     What should change?
     """
-    let presentation = OpenClawContextPresentation(raw)
+    let presentation = AIChatContextPresentation(raw)
 
     XCTAssertEqual(presentation.contexts.map(\.title), ["Launch risks", "Product plan"])
     XCTAssertEqual(presentation.contexts.map(\.kind), ["selected block", "selected page"])
@@ -6176,8 +6176,8 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testOpenClawContextPresentationHidesLegacyOpaqueReference() {
-    let presentation = OpenClawContextPresentation(
+  func testAIChatContextPresentationHidesLegacyOpaqueReference() {
+    let presentation = AIChatContextPresentation(
       "Use selected page at 74717eff-8133-4b2c-a8eb-fa622adc2e0d.org2:1 as context.\n\nWhy did this fail?"
     )
 
@@ -6186,8 +6186,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(presentation.clipboardText, "[Context: Page]\nWhy did this fail?")
   }
 
-  func testOpenClawContextPresentationHidesAutomaticActionPromptBehindPill() throws {
-    let raw = OpenClawContextPresentation.automaticContext(
+  func testAIChatContextPresentationHidesAutomaticActionPromptBehindPill() throws {
+    let raw = AIChatContextPresentation.automaticContext(
       kind: "approval item",
       title: "Approve Dashjoin first-touch draft",
       reference: "/remote/org2/approvals.org2:27",
@@ -6199,7 +6199,7 @@ final class Org2ModelsTests: XCTestCase {
       """,
       userText: "Please remove the repeated company name and revise the open drafts."
     )
-    let presentation = OpenClawContextPresentation(raw)
+    let presentation = AIChatContextPresentation(raw)
 
     XCTAssertEqual(presentation.contexts.map(\.title), ["Approve Dashjoin first-touch draft"])
     XCTAssertEqual(presentation.contexts.map(\.kind), ["approval item"])
@@ -6215,7 +6215,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertFalse(presentation.clipboardText.contains("OpenClaw approval thread"))
 
-    let replacement = OpenClawContextPresentation(
+    let replacement = AIChatContextPresentation(
       presentation.replacingUserText("Use a warmer tone.")
     )
     XCTAssertEqual(replacement.contexts.first?.automaticPrompt, presentation.contexts.first?.automaticPrompt)
@@ -6227,7 +6227,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testLegacyOpenClawContextPillResolvesPageTitleAndOpensSource() throws {
+  func testLegacyAIChatContextPillResolvesPageTitleAndOpensSource() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-context-pill-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -6242,23 +6242,23 @@ final class Org2ModelsTests: XCTestCase {
     )
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root, persistsDefault: false)
-    let context = try XCTUnwrap(OpenClawContextPresentation(
+    let context = try XCTUnwrap(AIChatContextPresentation(
       "Use selected page at \(filename):1 as context.\n\nWhat should change?"
     ).contexts.first)
 
-    let resolved = store.resolvedOpenClawContext(context)
+    let resolved = store.resolvedAIChatContext(context)
     XCTAssertEqual(resolved.title, "Scarf pricing strategy")
     XCTAssertEqual(resolved.reference, context.reference)
     XCTAssertEqual(resolved.sourceLine, context.sourceLine)
 
-    store.openOpenClawContext(resolved)
+    store.openAIChatContext(resolved)
     XCTAssertEqual(store.selectedLocation?.file, file.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
   }
 
   func testOpenClawComposerDraftSyncMergesExternalDraftChangesWithoutDroppingLocalTyping() {
     XCTAssertEqual(
-      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+      AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: "old",
         previousStoreDraft: "old",
         nextStoreDraft: "external"
@@ -6266,7 +6266,7 @@ final class Org2ModelsTests: XCTestCase {
       "external"
     )
     XCTAssertEqual(
-      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+      AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: "local edit",
         previousStoreDraft: "",
         nextStoreDraft: "Use selected entry as context.\n\n"
@@ -6274,7 +6274,7 @@ final class Org2ModelsTests: XCTestCase {
       "Use selected entry as context.\n\nlocal edit"
     )
     XCTAssertEqual(
-      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+      AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: "draft plus local edit",
         previousStoreDraft: "draft",
         nextStoreDraft: "Use selected entry as context.\n\ndraft"
@@ -6282,7 +6282,7 @@ final class Org2ModelsTests: XCTestCase {
       "Use selected entry as context.\n\ndraft plus local edit"
     )
     XCTAssertEqual(
-      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+      AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: "local edit",
         previousStoreDraft: "",
         nextStoreDraft: ""
@@ -6292,71 +6292,71 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawComposerDraftCacheDoesNotPublishStoreChangesWhileTyping() throws {
+  func testAIChatComposerDraftCacheDoesNotPublishStoreChangesWhileTyping() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
 
     let draftChanged = ThreadSafeTestFlag()
     withObservationTracking {
-      _ = store.openClawDraft
+      _ = store.aiChatDraft
     } onChange: {
       _ = draftChanged.setIfUnset()
     }
 
-    store.cacheOpenClawComposerDraft("typing into a large chat")
-    store.cacheOpenClawComposerDraft("typing into a large chat thread")
+    store.cacheAIChatComposerDraft("typing into a large chat")
+    store.cacheAIChatComposerDraft("typing into a large chat thread")
 
-    XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertEqual(store.aiChatDraft, "")
     XCTAssertFalse(draftChanged.value)
   }
 
   @MainActor
-  func testOpenClawComposerDraftCacheRestoresDraftsAcrossThreadSwitches() throws {
+  func testAIChatComposerDraftCacheRestoresDraftsAcrossThreadSwitches() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.createOpenClawChatThread()
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.cacheOpenClawComposerDraft("first local draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.cacheAIChatComposerDraft("first local draft")
 
-    store.createOpenClawChatThread()
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawDraft, "")
-    store.cacheOpenClawComposerDraft("second local draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatDraft, "")
+    store.cacheAIChatComposerDraft("second local draft")
 
-    store.selectOpenClawChatThread(firstThreadID)
-    XCTAssertEqual(store.openClawDraft, "first local draft")
+    store.selectAIChatThread(firstThreadID)
+    XCTAssertEqual(store.aiChatDraft, "first local draft")
 
-    store.selectOpenClawChatThread(secondThreadID)
-    XCTAssertEqual(store.openClawDraft, "second local draft")
+    store.selectAIChatThread(secondThreadID)
+    XCTAssertEqual(store.aiChatDraft, "second local draft")
   }
 
-  func testOpenClawVoiceDictationAppendsToDraftBeforeSend() {
+  func testAIChatVoiceDictationAppendsToDraftBeforeSend() {
     XCTAssertEqual(
-      WorkspaceStore.openClawDraftByAppendingDictation(existing: "Existing instruction", dictatedText: "Dictated note"),
+      WorkspaceStore.aiChatDraftByAppendingDictation(existing: "Existing instruction", dictatedText: "Dictated note"),
       "Existing instruction\n\nDictated note"
     )
     XCTAssertEqual(
-      WorkspaceStore.openClawDraftByAppendingDictation(existing: "  ", dictatedText: " Dictated note\n"),
+      WorkspaceStore.aiChatDraftByAppendingDictation(existing: "  ", dictatedText: " Dictated note\n"),
       "Dictated note"
     )
   }
 
-  func testOpenClawVoiceTranscriptionProgressIsEstimatedAndCapped() {
-    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 1), 8)
-    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 20), 80)
-    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 100), 180)
+  func testAIChatVoiceTranscriptionProgressIsEstimatedAndCapped() {
+    XCTAssertEqual(WorkspaceStore.estimatedAIChatVoiceTranscriptionDuration(for: 1), 8)
+    XCTAssertEqual(WorkspaceStore.estimatedAIChatVoiceTranscriptionDuration(for: 20), 80)
+    XCTAssertEqual(WorkspaceStore.estimatedAIChatVoiceTranscriptionDuration(for: 100), 180)
 
     XCTAssertEqual(
-      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 0, estimatedDuration: 10),
+      WorkspaceStore.aiChatVoiceTranscriptionProgress(elapsed: 0, estimatedDuration: 10),
       0.02,
       accuracy: 0.001
     )
     XCTAssertEqual(
-      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 5, estimatedDuration: 10),
+      WorkspaceStore.aiChatVoiceTranscriptionProgress(elapsed: 5, estimatedDuration: 10),
       0.5,
       accuracy: 0.001
     )
     XCTAssertEqual(
-      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 20, estimatedDuration: 10),
+      WorkspaceStore.aiChatVoiceTranscriptionProgress(elapsed: 20, estimatedDuration: 10),
       0.95,
       accuracy: 0.001
     )
@@ -6385,10 +6385,10 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testOpenClawVoiceTranscriptionElapsedTextFormatsDuration() {
-    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 0.8), "0s")
-    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 12.4), "12s")
-    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 75.9), "1m 15s")
+  func testAIChatVoiceTranscriptionElapsedTextFormatsDuration() {
+    XCTAssertEqual(WorkspaceStore.aiChatVoiceTranscriptionElapsedText(elapsed: 0.8), "0s")
+    XCTAssertEqual(WorkspaceStore.aiChatVoiceTranscriptionElapsedText(elapsed: 12.4), "12s")
+    XCTAssertEqual(WorkspaceStore.aiChatVoiceTranscriptionElapsedText(elapsed: 75.9), "1m 15s")
   }
 
   func testRenderedSearchHighlightQueryNormalizesSearchText() {
@@ -6441,7 +6441,7 @@ final class Org2ModelsTests: XCTestCase {
     store.renderedSearchHighlightQuery = "needle"
     store.isPageSearchPresented = true
     store.pageSearchQuery = "needle"
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Other",
       file: "/tmp/other.org",
       line: 1,
@@ -6562,30 +6562,30 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawSendQueueSerializesConsecutiveMessages() async throws {
-    let recorder = OpenClawQueuedSendRecorder()
+  func testAIChatSendQueueSerializesConsecutiveMessages() async throws {
+    let recorder = AIChatQueuedSendRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-queue-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
 
-    store.openClawDraft = "first"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first"
+    let firstSend = Task { await store.sendAIChatMessage() }
     try await waitForCondition {
-      store.isSendingOpenClawMessage
+      store.isSendingAIChatMessage
     }
-    store.openClawDraft = "second"
-    let secondSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "second"
+    let secondSend = Task { await store.sendAIChatMessage() }
 
     await firstSend.value
     await secondSend.value
 
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:first",
       "assistant:reply 1",
       "user:second",
@@ -6596,9 +6596,9 @@ final class Org2ModelsTests: XCTestCase {
       ["user:first"],
       ["user:first", "assistant:reply 1", "user:second"]
     ])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
-    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
+    XCTAssertEqual(store.aiChatStatusText, "OpenClaw replied")
   }
 
   @MainActor
@@ -6607,29 +6607,29 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-ai-chat-context-isolation-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let recorder = OpenClawWorkspaceContextRecorder()
+    let recorder = AIChatWorkspaceContextRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, context in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, context in
         await recorder.send(context: context)
       }
     )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
-    store.createOpenClawChatThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(threadID, title: "Apryse file-extension backfill")
-    store.openClawMessages = [
-      OpenClawChatMessage(
+    store.createAIChatThread(runtime: .openClaw)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(threadID, title: "Apryse file-extension backfill")
+    store.aiChatMessages = [
+      AIChatMessage(
         role: .user,
         content: "Track the Apryse work in /remote/org2/notes/apryse.org2:12."
       ),
-      OpenClawChatMessage(role: .assistant, content: "The Apryse backfill is still running.")
+      AIChatMessage(role: .assistant, content: "The Apryse backfill is still running.")
     ]
 
-    store.selectedSurface = .openClaw
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedSurface = .aiChat
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Send Jesse tailored KitOps follow-up examples",
       file: root.appendingPathComponent("meetings/kitops.org2").path,
       line: 44,
@@ -6645,7 +6645,7 @@ final class Org2ModelsTests: XCTestCase {
       isSubtree: true
     )
 
-    await store.sendOpenClawMessage(text: "What's the latest on this one?")
+    await store.sendAIChatMessage(text: "What's the latest on this one?")
 
     let recordedContexts = await recorder.recordedContexts()
     let context = try XCTUnwrap(recordedContexts.first)
@@ -6664,29 +6664,29 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-ai-chat-reference-isolation-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let recorder = OpenClawWorkspaceContextRecorder()
+    let recorder = AIChatWorkspaceContextRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, context in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, context in
         await recorder.send(context: context)
       }
     )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
-    store.createOpenClawChatThread()
-    store.openClawMessages = [
-      OpenClawChatMessage(
+    store.createAIChatThread(runtime: .openClaw)
+    store.aiChatMessages = [
+      AIChatMessage(
         role: .user,
         content: "Use /remote/org2/notes/apryse.org2:12 for this thread."
       ),
-      OpenClawChatMessage(
+      AIChatMessage(
         role: .assistant,
         content: "I mistakenly used [KitOps](/remote/org2/meetings/kitops.org2:44)."
       )
     ]
 
-    await store.sendOpenClawMessage(text: "Continue with Apryse.")
+    await store.sendAIChatMessage(text: "Continue with Apryse.")
 
     let recordedContexts = await recorder.recordedContexts()
     let context = try XCTUnwrap(recordedContexts.first)
@@ -6696,14 +6696,14 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testInProgressMessageQueuesByDefaultAndCanSteerNow() async throws {
-    let sendRecorder = OpenClawSuspendedSendRecorder()
+    let sendRecorder = AIChatSuspendedSendRecorder()
     let steerRecorder = AIChatSteerRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-steer-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await sendRecorder.send(messages: messages)
       }
     )
@@ -6711,13 +6711,13 @@ final class Org2ModelsTests: XCTestCase {
       await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
     }
 
-    store.openClawDraft = "first request"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first request"
+    let firstSend = Task { await store.sendAIChatMessage() }
     await sendRecorder.waitUntilStarted()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.sendComposedOpenClawMessage(text: "focus on the failing test")
-    let queuedMessage = try XCTUnwrap(store.openClawMessages.last)
+    store.sendComposedAIChatMessage(text: "focus on the failing test")
+    let queuedMessage = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertTrue(store.isAIChatMessageQueued(queuedMessage.id))
     XCTAssertTrue(store.canSteerQueuedAIChatMessage(queuedMessage.id))
     XCTAssertEqual(queuedMessage.deliveryKind, .followUp)
@@ -6726,18 +6726,18 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.steerQueuedAIChatMessage(queuedMessage.id)
     try await waitForCondition {
-      store.openClawMessages.last?.deliveryStatus == .sent
+      store.aiChatMessages.last?.deliveryStatus == .sent
     }
 
     let steeredContents = await steerRecorder.recordedContents()
     XCTAssertEqual(steeredContents, ["focus on the failing test"])
-    XCTAssertEqual(store.openClawMessages.map(\.deliveryKind), [.turn, .steer])
+    XCTAssertEqual(store.aiChatMessages.map(\.deliveryKind), [.turn, .steer])
     XCTAssertFalse(store.isAIChatMessageQueued(queuedMessage.id))
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.runtime, .openClaw)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.runtime, .openClaw)
 
     await sendRecorder.finish(reply: "finished with the new direction")
     await firstSend.value
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:first request",
       "user:focus on the failing test",
       "assistant:finished with the new direction"
@@ -6746,14 +6746,14 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testExplicitInProgressSteerBypassesQueue() async throws {
-    let sendRecorder = OpenClawSuspendedSendRecorder()
+    let sendRecorder = AIChatSuspendedSendRecorder()
     let steerRecorder = AIChatSteerRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-explicit-steer-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await sendRecorder.send(messages: messages)
       }
     )
@@ -6761,21 +6761,21 @@ final class Org2ModelsTests: XCTestCase {
       await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
     }
 
-    store.openClawDraft = "first request"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first request"
+    let firstSend = Task { await store.sendAIChatMessage() }
     await sendRecorder.waitUntilStarted()
 
-    store.sendComposedOpenClawMessage(
+    store.sendComposedAIChatMessage(
       text: "change direction immediately",
       delivery: .steer
     )
     try await waitForCondition {
-      store.openClawMessages.last?.deliveryStatus == .sent
+      store.aiChatMessages.last?.deliveryStatus == .sent
     }
 
     let steeredContents = await steerRecorder.recordedContents()
     XCTAssertEqual(steeredContents, ["change direction immediately"])
-    let steerMessage = try XCTUnwrap(store.openClawMessages.last)
+    let steerMessage = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertEqual(steerMessage.deliveryKind, .steer)
     XCTAssertFalse(store.isAIChatMessageQueued(steerMessage.id))
 
@@ -6784,7 +6784,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() throws {
-    let attachment = OpenClawChatAttachment(
+    let attachment = AIChatAttachment(
       fileName: "reference.txt",
       mimeType: "text/plain",
       data: Data("hello".utf8)
@@ -6830,30 +6830,30 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-openclaw-dictation-origin-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         "reply to \(messages.last?.content ?? "")"
       }
     )
 
-    store.createOpenClawChatThread()
-    let originThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.publishOpenClawComposerDraft("Existing origin draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let originThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.publishAIChatComposerDraft("Existing origin draft")
 
-    store.createOpenClawChatThread()
-    let otherThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.publishOpenClawComposerDraft("Unrelated other-thread draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let otherThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.publishAIChatComposerDraft("Unrelated other-thread draft")
 
-    let accepted = await store.sendOpenClawDictation("Dictated follow-up", to: originThreadID)
+    let accepted = await store.sendAIChatDictation("Dictated follow-up", to: originThreadID)
     XCTAssertTrue(accepted)
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, otherThreadID)
-    XCTAssertEqual(store.openClawDraft, "Unrelated other-thread draft")
+    XCTAssertEqual(store.selectedAIChatThreadID, otherThreadID)
+    XCTAssertEqual(store.aiChatDraft, "Unrelated other-thread draft")
     XCTAssertTrue(
-      store.openClawChatThreads.first(where: { $0.id == otherThreadID })?.messages.isEmpty == true
+      store.aiChatThreads.first(where: { $0.id == otherThreadID })?.messages.isEmpty == true
     )
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == originThreadID })?.messages.map(\.content),
+      store.aiChatThreads.first(where: { $0.id == originThreadID })?.messages.map(\.content),
       [
         "Existing origin draft\n\nDictated follow-up",
         "reply to Existing origin draft\n\nDictated follow-up",
@@ -6867,52 +6867,52 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-openclaw-dictation-draft-origin-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL
+      aiChatTranscriptURL: transcriptURL
     )
 
-    store.createOpenClawChatThread()
-    let originThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.publishOpenClawComposerDraft("Existing origin draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let originThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.publishAIChatComposerDraft("Existing origin draft")
 
-    store.createOpenClawChatThread()
-    let otherThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.publishOpenClawComposerDraft("Unrelated other-thread draft")
+    store.createAIChatThread(runtime: .openClaw)
+    let otherThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.publishAIChatComposerDraft("Unrelated other-thread draft")
 
-    XCTAssertTrue(store.insertOpenClawDictationIntoDraft("Dictated follow-up", in: originThreadID))
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, otherThreadID)
-    XCTAssertEqual(store.openClawDraft, "Unrelated other-thread draft")
+    XCTAssertTrue(store.insertAIChatDictationIntoDraft("Dictated follow-up", in: originThreadID))
+    XCTAssertEqual(store.selectedAIChatThreadID, otherThreadID)
+    XCTAssertEqual(store.aiChatDraft, "Unrelated other-thread draft")
 
-    store.selectOpenClawChatThread(originThreadID)
-    XCTAssertEqual(store.openClawDraft, "Existing origin draft\n\nDictated follow-up")
-    XCTAssertTrue(store.openClawMessages.isEmpty)
+    store.selectAIChatThread(originThreadID)
+    XCTAssertEqual(store.aiChatDraft, "Existing origin draft\n\nDictated follow-up")
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
   }
 
   @MainActor
   func testQueuedMessagesCanReturnToComposerOrBeRemovedBeforeSending() async throws {
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-edit-queue-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
 
-    store.openClawDraft = "first in flight"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first in flight"
+    let firstSend = Task { await store.sendAIChatMessage() }
     await recorder.waitUntilStarted()
 
-    store.openClawDraft = "edit this queued message"
+    store.aiChatDraft = "edit this queued message"
     var editSendReturned = false
     let editSend = Task { @MainActor in
-      await store.sendOpenClawMessage()
+      await store.sendAIChatMessage()
       editSendReturned = true
     }
     try await waitForCondition(timeout: 1) { editSendReturned }
     if !editSendReturned {
-      if let queuedID = store.openClawMessages.last?.id,
+      if let queuedID = store.aiChatMessages.last?.id,
          store.isAIChatMessageQueued(queuedID) {
         store.deleteQueuedAIChatMessage(queuedID)
       }
@@ -6923,25 +6923,25 @@ final class Org2ModelsTests: XCTestCase {
       return
     }
     await editSend.value
-    let editMessage = try XCTUnwrap(store.openClawMessages.last)
+    let editMessage = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertTrue(store.isAIChatMessageQueued(editMessage.id))
-    XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.openClawMessages.first?.id)))
+    XCTAssertFalse(store.isAIChatMessageQueued(try XCTUnwrap(store.aiChatMessages.first?.id)))
 
     store.editQueuedAIChatMessage(editMessage.id)
 
-    XCTAssertEqual(store.openClawDraft, "edit this queued message")
-    XCTAssertFalse(store.openClawMessages.contains(where: { $0.id == editMessage.id }))
-    XCTAssertEqual(store.openClawQueuedMessageCount, 1)
+    XCTAssertEqual(store.aiChatDraft, "edit this queued message")
+    XCTAssertFalse(store.aiChatMessages.contains(where: { $0.id == editMessage.id }))
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 1)
 
-    store.openClawDraft = "delete this queued message"
+    store.aiChatDraft = "delete this queued message"
     var deleteSendReturned = false
     let deleteSend = Task { @MainActor in
-      await store.sendOpenClawMessage()
+      await store.sendAIChatMessage()
       deleteSendReturned = true
     }
     try await waitForCondition(timeout: 1) { deleteSendReturned }
     if !deleteSendReturned {
-      if let queuedID = store.openClawMessages.last?.id,
+      if let queuedID = store.aiChatMessages.last?.id,
          store.isAIChatMessageQueued(queuedID) {
         store.deleteQueuedAIChatMessage(queuedID)
       }
@@ -6952,113 +6952,113 @@ final class Org2ModelsTests: XCTestCase {
       return
     }
     await deleteSend.value
-    let deleteMessage = try XCTUnwrap(store.openClawMessages.last)
+    let deleteMessage = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertTrue(store.isAIChatMessageQueued(deleteMessage.id))
 
     store.deleteQueuedAIChatMessage(deleteMessage.id)
 
-    XCTAssertFalse(store.openClawMessages.contains(where: { $0.id == deleteMessage.id }))
-    XCTAssertEqual(store.openClawQueuedMessageCount, 1)
+    XCTAssertFalse(store.aiChatMessages.contains(where: { $0.id == deleteMessage.id }))
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 1)
 
     await recorder.finish(reply: "first reply")
     await firstSend.value
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["first in flight", "first reply"])
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["first in flight", "first reply"])
   }
 
   @MainActor
-  func testOpenClawQueuedRepliesNotifyWhenInsertedBeforeLaterUserMessages() async throws {
-    let recorder = OpenClawQueuedSendRecorder()
+  func testAIChatQueuedRepliesNotifyWhenInsertedBeforeLaterUserMessages() async throws {
+    let recorder = AIChatQueuedSendRecorder()
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-queue-unread-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
     var soundCount = 0
-    store.openClawIncomingMessageSoundPlayer = {
+    store.aiChatIncomingMessageSoundPlayer = {
       soundCount += 1
     }
     store.selectedSurface = .agenda
 
-    store.openClawDraft = "first"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first"
+    let firstSend = Task { await store.sendAIChatMessage() }
     try await waitForCondition {
-      store.isSendingOpenClawMessage
+      store.isSendingAIChatMessage
     }
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
-    store.openClawDraft = "second"
-    let secondSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "second"
+    let secondSend = Task { await store.sendAIChatMessage() }
 
     await firstSend.value
     await secondSend.value
 
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:first",
       "assistant:reply 1",
       "user:second",
       "assistant:reply 2"
     ])
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 2)
-    XCTAssertEqual(store.openClawUnreadMessageCount, 2)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 2)
+    XCTAssertEqual(store.aiChatUnreadMessageCount, 2)
     XCTAssertEqual(soundCount, 2)
   }
 
   @MainActor
-  func testOpenClawCanSendInAnotherThreadWhileCurrentThreadIsProcessing() async throws {
+  func testAIChatCanSendInAnotherThreadWhileCurrentThreadIsProcessing() async throws {
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-parallel-threads-\(UUID().uuidString).json")
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: transcriptURL,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
         try await Task.sleep(nanoseconds: 200_000_000)
         return "reply to \(messages.last?.content ?? "")"
       }
     )
 
-    store.openClawDraft = "first"
-    let firstSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "first"
+    let firstSend = Task { await store.sendAIChatMessage() }
     try await waitForCondition {
-      store.isSendingOpenClawMessage
+      store.isSendingAIChatMessage
     }
-    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawSendingThreadIDs, [firstThreadID])
+    let firstThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatSendingThreadIDs, [firstThreadID])
 
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
 
-    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let secondThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
     XCTAssertNotEqual(firstThreadID, secondThreadID)
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawSendingThreadIDs, [firstThreadID])
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatSendingThreadIDs, [firstThreadID])
 
-    store.openClawDraft = "second"
-    let secondSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "second"
+    let secondSend = Task { await store.sendAIChatMessage() }
     try await waitForCondition {
-      store.isSendingOpenClawMessage
+      store.isSendingAIChatMessage
     }
-    XCTAssertTrue(store.openClawSendingThreadIDs.contains(secondThreadID))
+    XCTAssertTrue(store.aiChatSendingThreadIDs.contains(secondThreadID))
 
     await firstSend.value
     await secondSend.value
 
-    store.selectOpenClawChatThread(firstThreadID)
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    store.selectAIChatThread(firstThreadID)
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:first",
       "assistant:reply to first"
     ])
 
-    store.selectOpenClawChatThread(secondThreadID)
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    store.selectAIChatThread(secondThreadID)
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:second",
       "assistant:reply to second"
     ])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
-    XCTAssertTrue(store.openClawSendingThreadIDs.isEmpty)
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
+    XCTAssertTrue(store.aiChatSendingThreadIDs.isEmpty)
   }
 
   @MainActor
@@ -7074,57 +7074,57 @@ final class Org2ModelsTests: XCTestCase {
       try? FileManager.default.removeItem(at: secondRoot)
     }
 
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let suiteName = "org2-ai-chat-corpus-switch-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawFallbackTranscriptURL: firstRoot.appendingPathComponent("legacy-openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatFallbackTranscriptURL: firstRoot.appendingPathComponent("legacy-openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       },
       legacyDefaultsDomains: []
     )
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     store.setCorpusRoot(firstRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    store.openClawDraft = "keep working"
-    let send = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "keep working"
+    let send = Task { await store.sendAIChatMessage() }
     await recorder.waitUntilStarted()
-    let originatingThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let originatingThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
 
     store.setCorpusRoot(secondRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
 
-    XCTAssertTrue(store.openClawChatThreads.isEmpty)
-    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertTrue(store.aiChatThreads.isEmpty)
+    XCTAssertFalse(store.isSendingAIChatMessage)
 
     store.setCorpusRoot(firstRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
-    XCTAssertTrue(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(store.selectedAIChatThreadID, originatingThreadID)
+    XCTAssertTrue(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sending)
 
     store.setCorpusRoot(secondRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
 
     await recorder.finish(reply: "finished in the background")
     await send.value
-    XCTAssertTrue(store.openClawChatThreads.isEmpty)
+    XCTAssertTrue(store.aiChatThreads.isEmpty)
 
     store.setCorpusRoot(firstRoot, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, originatingThreadID)
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.selectedAIChatThreadID, originatingThreadID)
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:keep working",
       "assistant:finished in the background"
     ])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
   }
 
   @MainActor
@@ -7138,13 +7138,13 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: base) }
 
     let sharedThreadID = UUID()
-    let alphaThread = OpenClawChatThread(
+    let alphaThread = AIChatThread(
       id: sharedThreadID,
       title: "Alpha thread",
       sessionKey: "alpha-thread",
       messages: []
     )
-    let betaThread = OpenClawChatThread(
+    let betaThread = AIChatThread(
       id: sharedThreadID,
       title: "Beta thread",
       sessionKey: "beta-thread",
@@ -7156,7 +7156,7 @@ final class Org2ModelsTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: [alphaThread],
         selectedThreadID: sharedThreadID,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: alphaTranscript
     )
@@ -7164,20 +7164,20 @@ final class Org2ModelsTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: [betaThread],
         selectedThreadID: sharedThreadID,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: betaTranscript
     )
 
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let suiteName = "org2-ai-chat-active-origin-collision-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       },
       legacyDefaultsDomains: []
@@ -7185,49 +7185,49 @@ final class Org2ModelsTests: XCTestCase {
 
     store.setCorpusRoot(alpha, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, sharedThreadID)
-    store.openClawDraft = "alpha request"
-    let alphaSend = Task { await store.sendOpenClawMessage() }
+    XCTAssertEqual(store.selectedAIChatThreadID, sharedThreadID)
+    store.aiChatDraft = "alpha request"
+    let alphaSend = Task { await store.sendAIChatMessage() }
     await recorder.waitUntilStarted()
-    XCTAssertTrue(store.isSendingOpenClawMessage)
+    XCTAssertTrue(store.isSendingAIChatMessage)
 
     store.setCorpusRoot(beta, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, sharedThreadID)
-    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.selectedAIChatThreadID, sharedThreadID)
+    XCTAssertFalse(store.isSendingAIChatMessage)
     XCTAssertFalse(store.isAIChatThreadRunning(sharedThreadID))
-    XCTAssertTrue(store.openClawSendingThreadIDs.isEmpty)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
-    store.openClawDraft = "beta draft must stay"
-    store.attachOpenClawAttachment(
+    XCTAssertTrue(store.aiChatSendingThreadIDs.isEmpty)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
+    store.aiChatDraft = "beta draft must stay"
+    store.attachAIChatAttachment(
       data: Data("beta attachment".utf8),
       fileName: "beta.txt",
       mimeType: "text/plain"
     )
 
-    store.sendComposedOpenClawMessage(text: "beta draft must stay")
+    store.sendComposedAIChatMessage(text: "beta draft must stay")
 
-    XCTAssertTrue(store.openClawMessages.isEmpty)
-    XCTAssertEqual(store.openClawDraft, "beta draft must stay")
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta.txt"])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
+    XCTAssertEqual(store.aiChatDraft, "beta draft must stay")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["beta.txt"])
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
 
     await recorder.finish(reply: "alpha completed")
     await alphaSend.value
-    XCTAssertTrue(store.openClawMessages.isEmpty)
-    XCTAssertEqual(store.openClawDraft, "beta draft must stay")
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta.txt"])
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
+    XCTAssertEqual(store.aiChatDraft, "beta draft must stay")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["beta.txt"])
 
     store.setCorpusRoot(alpha, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:alpha request",
       "assistant:alpha completed"
     ])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
   }
 
   @MainActor
@@ -7241,35 +7241,35 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: base) }
 
     let sharedThreadID = UUID()
-    let alphaThread = OpenClawChatThread(
+    let alphaThread = AIChatThread(
       id: sharedThreadID,
       title: "Alpha thread",
       sessionKey: "alpha-thread",
       messages: []
     )
-    let betaSelected = OpenClawChatThread(
+    let betaSelected = AIChatThread(
       title: "Beta selected",
       sessionKey: "beta-selected",
-      messages: [OpenClawChatMessage(role: .assistant, content: "selected history")]
+      messages: [AIChatMessage(role: .assistant, content: "selected history")]
     )
     let betaWarm = (0..<16).map { index in
-      OpenClawChatThread(
+      AIChatThread(
         title: "Beta warm \(index)",
         sessionKey: "beta-warm-\(index)",
-        messages: [OpenClawChatMessage(role: .assistant, content: "warm \(index)")]
+        messages: [AIChatMessage(role: .assistant, content: "warm \(index)")]
       )
     }
-    let betaCold = OpenClawChatThread(
+    let betaCold = AIChatThread(
       id: sharedThreadID,
       title: "Beta cold thread",
       sessionKey: "beta-cold-thread",
-      messages: [OpenClawChatMessage(role: .assistant, content: "beta history")]
+      messages: [AIChatMessage(role: .assistant, content: "beta history")]
     )
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(
         threads: [alphaThread],
         selectedThreadID: sharedThreadID,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: alpha.appendingPathComponent(".org2/openclaw-chat.json")
     )
@@ -7277,20 +7277,20 @@ final class Org2ModelsTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: [betaSelected] + betaWarm + [betaCold],
         selectedThreadID: betaSelected.id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: beta.appendingPathComponent(".org2/openclaw-chat.json")
     )
 
-    let recorder = OpenClawSuspendedSendRecorder()
+    let recorder = AIChatSuspendedSendRecorder()
     let suiteName = "org2-ai-chat-active-origin-cold-remote-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       },
       legacyDefaultsDomains: []
@@ -7298,22 +7298,22 @@ final class Org2ModelsTests: XCTestCase {
 
     store.setCorpusRoot(alpha, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    store.openClawDraft = "alpha request"
-    let alphaSend = Task { await store.sendOpenClawMessage() }
+    store.aiChatDraft = "alpha request"
+    let alphaSend = Task { await store.sendAIChatMessage() }
     await recorder.waitUntilStarted()
 
     store.setCorpusRoot(beta, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, betaSelected.id)
+    XCTAssertEqual(store.selectedAIChatThreadID, betaSelected.id)
     XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(sharedThreadID))
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    store.openClawDraft = "beta local draft"
-    store.attachOpenClawAttachment(
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    store.aiChatDraft = "beta local draft"
+    store.attachAIChatAttachment(
       data: Data("beta local attachment".utf8),
       fileName: "beta-local.txt",
       mimeType: "text/plain"
     )
-    let remoteAttachment = OpenClawChatAttachment(
+    let remoteAttachment = AIChatAttachment(
       fileName: "mobile.txt",
       mimeType: "text/plain",
       data: Data("mobile attachment".utf8)
@@ -7327,35 +7327,35 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertNil(acceptedDestination)
     XCTAssertTrue(store.unloadedAIChatThreadIDsForTesting.contains(sharedThreadID))
-    XCTAssertEqual(store.openClawDraft, "beta local draft")
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
-    XCTAssertFalse(store.isSendingOpenClawMessage)
-    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertEqual(store.aiChatDraft, "beta local draft")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["beta-local.txt"])
+    XCTAssertFalse(store.isSendingAIChatMessage)
+    XCTAssertEqual(store.aiChatQueuedMessageCount, 0)
 
     await recorder.finish(reply: "alpha completed")
     await alphaSend.value
-    XCTAssertEqual(store.openClawDraft, "beta local draft")
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
+    XCTAssertEqual(store.aiChatDraft, "beta local draft")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["beta-local.txt"])
 
-    store.selectOpenClawChatThread(sharedThreadID)
+    store.selectAIChatThread(sharedThreadID)
     await store.waitForAIChatThreadHydrationForTesting(sharedThreadID)
-    XCTAssertEqual(store.openClawMessages.map(\.content), ["beta history"])
-    XCTAssertTrue(store.openClawMessages.allSatisfy(\.attachments.isEmpty))
+    XCTAssertEqual(store.aiChatMessages.map(\.content), ["beta history"])
+    XCTAssertTrue(store.aiChatMessages.allSatisfy(\.attachments.isEmpty))
 
-    store.selectOpenClawChatThread(betaSelected.id)
-    XCTAssertEqual(store.openClawDraft, "beta local draft")
-    XCTAssertEqual(store.openClawPendingAttachments.map(\.fileName), ["beta-local.txt"])
+    store.selectAIChatThread(betaSelected.id)
+    XCTAssertEqual(store.aiChatDraft, "beta local draft")
+    XCTAssertEqual(store.aiChatPendingAttachments.map(\.fileName), ["beta-local.txt"])
 
     store.setCorpusRoot(alpha, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+    XCTAssertEqual(store.aiChatMessages.map { "\($0.role.rawValue):\($0.content)" }, [
       "user:alpha request",
       "assistant:alpha completed"
     ])
   }
 
   @MainActor
-  func testOpenClawChatScrollPositionPersistsAndResets() throws {
+  func testAIChatScrollPositionPersistsAndResets() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-scroll-position-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7366,80 +7366,80 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
 
-    XCTAssertNil(store.openClawChatScrollPosition)
+    XCTAssertNil(store.aiChatScrollPosition)
 
-    store.recordOpenClawChatScrollPosition(0.42)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 0.42, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition(isAssistantPanel: false)), 0.42, accuracy: 0.001)
+    store.recordAIChatScrollPosition(0.42)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition), 0.42, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition(isAssistantPanel: false)), 0.42, accuracy: 0.001)
 
-    store.recordOpenClawChatScrollPosition(2)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 1, accuracy: 0.001)
+    store.recordAIChatScrollPosition(2)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition), 1, accuracy: 0.001)
 
-    store.recordOpenClawChatScrollPosition(0.25, isAssistantPanel: true)
-    XCTAssertEqual(try XCTUnwrap(store.openClawAssistantChatScrollPosition), 0.25, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition(isAssistantPanel: true)), 0.25, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 1, accuracy: 0.001)
+    store.recordAIChatScrollPosition(0.25, isAssistantPanel: true)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatAssistantChatScrollPosition), 0.25, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition(isAssistantPanel: true)), 0.25, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition), 1, accuracy: 0.001)
 
-    store.resetOpenClawChat()
-    XCTAssertNil(store.openClawChatScrollPosition)
-    XCTAssertNil(store.openClawAssistantChatScrollPosition)
+    store.resetAIChat()
+    XCTAssertNil(store.aiChatScrollPosition)
+    XCTAssertNil(store.aiChatAssistantChatScrollPosition)
   }
 
   @MainActor
-  func testReselectingPinnedOpenClawThreadPreservesPositionWithoutNewGeneration() throws {
+  func testReselectingPinnedAIChatThreadPreservesPositionWithoutNewGeneration() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Oldest"),
-      OpenClawChatMessage(role: .assistant, content: "Newest")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Oldest"),
+      AIChatMessage(role: .assistant, content: "Newest")
     ]
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.toggleOpenClawChatThreadPin(threadID)
-    store.recordOpenClawChatScrollPosition(0)
-    let previousGeneration = store.openClawChatSelectionGeneration
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.toggleAIChatThreadPin(threadID)
+    store.recordAIChatScrollPosition(0)
+    let previousGeneration = store.aiChatSelectionGeneration
 
-    store.selectOpenClawChatThread(threadID)
+    store.selectAIChatThread(threadID)
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
-    XCTAssertTrue(store.selectedOpenClawChatThread?.isPinned == true)
-    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 0, accuracy: 0.001)
-    XCTAssertEqual(store.openClawChatSelectionGeneration, previousGeneration)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
+    XCTAssertTrue(store.selectedAIChatThread?.isPinned == true)
+    XCTAssertEqual(try XCTUnwrap(store.aiChatScrollPosition), 0, accuracy: 0.001)
+    XCTAssertEqual(store.aiChatSelectionGeneration, previousGeneration)
   }
 
   @MainActor
   func testScrollBridgeCanRecordOldThreadIdentityAfterSelectionChanges() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.openClawMessages = [OpenClawChatMessage(role: .assistant, content: "First")]
-    let firstID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.recordOpenClawChatScrollPosition(0.2, threadID: firstID)
-    let secondID = store.createOpenClawChatThread(runtime: .codex)
+    store.aiChatMessages = [AIChatMessage(role: .assistant, content: "First")]
+    let firstID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.recordAIChatScrollPosition(0.2, threadID: firstID)
+    let secondID = store.createAIChatThread(runtime: .codex)
 
     // The still-mounted bridge reports its old coordinator identity after the
     // store has already published the new selection.
-    store.recordOpenClawChatScrollPosition(0.73, threadID: firstID)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondID)
-    XCTAssertNil(store.openClawChatScrollPosition(isAssistantPanel: false, threadID: secondID))
+    store.recordAIChatScrollPosition(0.73, threadID: firstID)
+    XCTAssertEqual(store.selectedAIChatThreadID, secondID)
+    XCTAssertNil(store.aiChatScrollPosition(isAssistantPanel: false, threadID: secondID))
     XCTAssertEqual(
-      try XCTUnwrap(store.openClawChatScrollPosition(isAssistantPanel: false, threadID: firstID)),
+      try XCTUnwrap(store.aiChatScrollPosition(isAssistantPanel: false, threadID: firstID)),
       0.73,
       accuracy: 0.001
     )
 
-    let previousCompletion = store.openClawChatScrollRestorationCompletionGeneration
-    store.completeOpenClawChatScrollRestoration(threadID: secondID)
-    XCTAssertEqual(store.lastCompletedOpenClawChatScrollRestorationThreadID, secondID)
+    let previousCompletion = store.aiChatScrollRestorationCompletionGeneration
+    store.completeAIChatScrollRestoration(threadID: secondID)
+    XCTAssertEqual(store.lastCompletedAIChatScrollRestorationThreadID, secondID)
     XCTAssertEqual(
-      store.openClawChatScrollRestorationCompletionGeneration,
+      store.aiChatScrollRestorationCompletionGeneration,
       previousCompletion + 1
     )
   }
 
   @MainActor
-  func testAskOpenClawAboutCurrentEntryInjectsMappedReference() throws {
+  func testAskAIChatAboutCurrentEntryInjectsMappedReference() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7450,7 +7450,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
@@ -7461,43 +7461,43 @@ final class Org2ModelsTests: XCTestCase {
       text: "* Test\nbody",
       isSubtree: true
     )
-    store.openClawDraft = "What should I do next?"
+    store.aiChatDraft = "What should I do next?"
 
-    store.askOpenClawAboutCurrentSelection()
+    store.askAIChatAboutCurrentSelection()
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertFalse(store.isOpenClawAssistantPresented)
-    let contextThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: Test")
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertFalse(store.isAIChatAssistantPresented)
+    let contextThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatThreads.first?.title, "Ask: Test")
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
-    XCTAssertEqual(store.openClawStatusText, "Added daily.org2:7 to OpenClaw")
+    XCTAssertEqual(store.aiChatStatusText, "Added daily.org2:7 to OpenClaw")
 
-    store.askOpenClawAboutCurrentSelection()
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, contextThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    store.askAIChatAboutCurrentSelection()
+    XCTAssertEqual(store.selectedAIChatThreadID, contextThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
 
     store.performUndoCommand()
-    XCTAssertEqual(store.openClawDraft, "What should I do next?")
-    XCTAssertEqual(store.openClawStatusText, "Undid OpenClaw draft change")
+    XCTAssertEqual(store.aiChatDraft, "What should I do next?")
+    XCTAssertEqual(store.aiChatStatusText, "Undid OpenClaw draft change")
 
     store.performRedoCommand()
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use selected entry “Test” at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
     )
-    XCTAssertEqual(store.openClawStatusText, "Redid OpenClaw draft change")
+    XCTAssertEqual(store.aiChatStatusText, "Redid OpenClaw draft change")
   }
 
   @MainActor
-  func testAskOpenClawAboutMultipleEntriesReusesEmptyContextThread() throws {
+  func testAskAIChatAboutMultipleEntriesReusesEmptyContextThread() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-multiple-ai-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7506,7 +7506,7 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
     store.corpusRoot = root
@@ -7519,7 +7519,7 @@ final class Org2ModelsTests: XCTestCase {
       isSubtree: true
     )
 
-    store.askOpenClawAboutCurrentSelection()
+    store.askAIChatAboutCurrentSelection()
     store.selectedRenderedBlocks = []
     store.selectedBlockID = nil
     store.selectedEntrySource = EntrySource(
@@ -7529,10 +7529,10 @@ final class Org2ModelsTests: XCTestCase {
       text: "* Deployment checklist\nDetails",
       isSubtree: true
     )
-    store.askOpenClawAboutCurrentSelection()
+    store.askAIChatAboutCurrentSelection()
 
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     XCTAssertEqual(presentation.contexts.map(\.title), ["Deployment checklist", "Launch risks"])
     XCTAssertEqual(presentation.contexts.map(\.reference), [
       "/remote/org2/deploy.org2:9",
@@ -7569,7 +7569,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     store.openClawRemoteCorpusPath = "/remote/org2"
@@ -7579,13 +7579,13 @@ final class Org2ModelsTests: XCTestCase {
 
     store.startNewAIThreadFromCorpusFileSelection(including: second)
 
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     XCTAssertEqual(presentation.contexts.map(\.title), ["launch", "pricing"])
     XCTAssertEqual(presentation.contexts.map(\.reference), [
       "/remote/org2/launch.org2:1",
       "/remote/org2/pricing.org2:1"
     ])
-    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+    XCTAssertEqual(store.selectedAIChatThread?.title, "Context: 2 selected items")
   }
 
   @MainActor
@@ -7608,16 +7608,16 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     store.openClawRemoteCorpusPath = "/remote/org2"
 
-    let firstDraft = store.openClawDraftByAddingCorpusFileContext(
+    let firstDraft = store.aiChatDraftByAddingCorpusFileContext(
       file,
       to: "Please review this."
     )
-    let firstPresentation = OpenClawContextPresentation(firstDraft)
+    let firstPresentation = AIChatContextPresentation(firstDraft)
     XCTAssertEqual(firstPresentation.contexts.map(\.kind), ["selected file"])
     XCTAssertEqual(firstPresentation.contexts.map(\.title), ["revenue scout"])
     XCTAssertEqual(firstPresentation.contexts.map(\.reference), [
@@ -7625,13 +7625,13 @@ final class Org2ModelsTests: XCTestCase {
     ])
     XCTAssertEqual(firstPresentation.userText, "Please review this.")
 
-    let duplicateDraft = store.openClawDraftByAddingCorpusFileContext(file, to: firstDraft)
+    let duplicateDraft = store.aiChatDraftByAddingCorpusFileContext(file, to: firstDraft)
     XCTAssertEqual(duplicateDraft, firstDraft)
-    XCTAssertEqual(OpenClawContextPresentation(duplicateDraft).contexts.count, 1)
+    XCTAssertEqual(AIChatContextPresentation(duplicateDraft).contexts.count, 1)
   }
 
   @MainActor
-  func testAskOpenClawAboutCurrentSelectionPrefersSelectedRenderedBlock() throws {
+  func testAskAIChatAboutCurrentSelectionPrefersSelectedRenderedBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-block-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7653,7 +7653,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
@@ -7667,17 +7667,17 @@ final class Org2ModelsTests: XCTestCase {
     })
     store.selectBlock(paragraph)
 
-    store.askOpenClawAboutCurrentSelection()
+    store.askAIChatAboutCurrentSelection()
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
     XCTAssertEqual(store.selectedBlockID, paragraph.id)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: First paragraph")
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatThreads.first?.title, "Ask: First paragraph")
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use selected block “First paragraph” at /remote/org2/project.org2:13-14 as context.\n\n"
     )
-    XCTAssertEqual(store.openClawStatusText, "Added project.org2:13-14 to OpenClaw")
+    XCTAssertEqual(store.aiChatStatusText, "Added project.org2:13-14 to OpenClaw")
   }
 
   @MainActor
@@ -7691,14 +7691,14 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
-    let threadID = store.createOpenClawChatThread(runtime: .codex)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Keep this conversation")
+    let threadID = store.createAIChatThread(runtime: .codex)
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Keep this conversation")
     ]
     store.selectedEntrySource = EntrySource(
       file: root.appendingPathComponent("notes/plan.org").path,
@@ -7707,21 +7707,21 @@ final class Org2ModelsTests: XCTestCase {
       text: "* Plan\nDetails",
       isSubtree: true
     )
-    store.makeSurfacePrimary(.openClaw)
+    store.makeSurfacePrimary(.aiChat)
 
-    store.askOpenClawAboutCurrentSelection()
+    store.askAIChatAboutCurrentSelection()
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawChatThreads.first?.messages.count, 1)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatThreads.first?.messages.count, 1)
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use selected entry “Plan” at /remote/org2/notes/plan.org:4 as context.\n\n"
     )
   }
 
   @MainActor
-  func testAskOpenClawAboutRenderedHTMLHeadingUsesExactSourceBlock() throws {
+  func testAskAIChatAboutRenderedHTMLHeadingUsesExactSourceBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-html-heading-ai-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7743,7 +7743,7 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
     store.corpusRoot = root
@@ -7751,17 +7751,17 @@ final class Org2ModelsTests: XCTestCase {
     store.selectedEntrySource = source
     store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
 
-    store.askOpenClawAboutSourceHeading(at: 22)
+    store.askAIChatAboutSourceHeading(at: 22)
 
     let heading = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 22 })
     XCTAssertEqual(store.selectedBlockID, heading.id)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.openClawDraft, "Use selected block “Target heading” at /remote/org2/project.org2:22 as context.\n\n")
-    XCTAssertEqual(store.openClawStatusText, "Added project.org2:22 to OpenClaw")
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.aiChatDraft, "Use selected block “Target heading” at /remote/org2/project.org2:22 as context.\n\n")
+    XCTAssertEqual(store.aiChatStatusText, "Added project.org2:22 to OpenClaw")
   }
 
   @MainActor
-  func testAskOpenClawAboutRenderedBoldSectionUsesExactSourceBlock() throws {
+  func testAskAIChatAboutRenderedBoldSectionUsesExactSourceBlock() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-html-section-ai-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -7778,7 +7778,7 @@ final class Org2ModelsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       legacyDefaultsDomains: []
     )
     store.corpusRoot = root
@@ -7786,16 +7786,16 @@ final class Org2ModelsTests: XCTestCase {
     store.selectedEntrySource = source
     store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
 
-    store.askOpenClawAboutSourceHeading(at: 40)
+    store.askAIChatAboutSourceHeading(at: 40)
 
     let section = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 40 })
     XCTAssertEqual(store.selectedBlockID, section.id)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.openClawDraft, "Use selected block “Revenue” at /remote/org2/board.org2:40 as context.\n\n")
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.aiChatDraft, "Use selected block “Revenue” at /remote/org2/board.org2:40 as context.\n\n")
   }
 
-  func testOpenClawFileReferenceExtractsOrgPaths() {
-    let refs = OpenClawFileReference.extract(from: """
+  func testAIChatFileReferenceExtractsOrgPaths() {
+    let refs = AIChatFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
     Also [thread](file:///srv/org2/threads/follow-up.org2#9).
     Ranges work at /srv/org2/notes/range.org2:12-18 and /srv/org2/notes/github.org2#L21-L24.
@@ -7822,7 +7822,7 @@ final class Org2ModelsTests: XCTestCase {
       .link(
         label: "personal.org",
         target: "/srv/org2/personal.org:58",
-        fileReference: OpenClawFileReference(path: "/srv/org2/personal.org", line: 58)
+        fileReference: AIChatFileReference(path: "/srv/org2/personal.org", line: 58)
       ),
       .text(".")
     ])
@@ -7851,7 +7851,7 @@ final class Org2ModelsTests: XCTestCase {
       .link(
         label: "personal.org",
         target: "/workspace/org2/personal.org:58-63",
-        fileReference: OpenClawFileReference(path: "/workspace/org2/personal.org", line: 58)
+        fileReference: AIChatFileReference(path: "/workspace/org2/personal.org", line: 58)
       ),
       .text(".")
     ])
@@ -7894,13 +7894,13 @@ final class Org2ModelsTests: XCTestCase {
         .link(
           label: "Beta",
           target: "id:beta-456",
-          fileReference: OpenClawFileReference(path: alpha.path, line: 7)
+          fileReference: AIChatFileReference(path: alpha.path, line: 7)
         ),
         .text(" and "),
         .link(
           label: "A Node",
           target: "A Node",
-          fileReference: OpenClawFileReference(path: alpha.path, line: 1)
+          fileReference: AIChatFileReference(path: alpha.path, line: 1)
         ),
         .text(".")
       ]
@@ -7913,7 +7913,7 @@ final class Org2ModelsTests: XCTestCase {
         .link(
           label: "Alpha Node",
           target: "id:alpha-123",
-          fileReference: OpenClawFileReference(path: alpha.path, line: 1)
+          fileReference: AIChatFileReference(path: alpha.path, line: 1)
         ),
         .text(".")
       ]
@@ -7938,7 +7938,7 @@ final class Org2ModelsTests: XCTestCase {
         .link(
           label: "Sarah",
           target: "Sarah",
-          fileReference: OpenClawFileReference(path: sarah.path, line: 1)
+          fileReference: AIChatFileReference(path: sarah.path, line: 1)
         ),
         .text(".")
       ]
@@ -7966,8 +7966,8 @@ final class Org2ModelsTests: XCTestCase {
     ])
 
     let firstURL = try XCTUnwrap(map.link(atDisplayUTF16Location: 4)?.url)
-    let firstReference = try XCTUnwrap(OpenClawFileReference.fromDeepLinkURL(firstURL))
-    XCTAssertEqual(firstReference, OpenClawFileReference(path: "/tmp/alpha.org2", line: 7))
+    let firstReference = try XCTUnwrap(AIChatFileReference.fromDeepLinkURL(firstURL))
+    XCTAssertEqual(firstReference, AIChatFileReference(path: "/tmp/alpha.org2", line: 7))
     XCTAssertEqual(map.link(atDisplayUTF16Location: 13)?.url, firstURL)
     XCTAssertNil(map.link(atDisplayUTF16Location: 3))
     XCTAssertNil(map.link(atDisplayUTF16Location: 43))
@@ -7979,7 +7979,7 @@ final class Org2ModelsTests: XCTestCase {
       .link(
         label: "Project brief",
         target: "id:project-brief",
-        fileReference: OpenClawFileReference(path: "/tmp/notes/project.org2", line: 17)
+        fileReference: AIChatFileReference(path: "/tmp/notes/project.org2", line: 17)
       ),
       .text(" and "),
       .link(
@@ -8089,7 +8089,7 @@ final class Org2ModelsTests: XCTestCase {
       resolver.resolve(target: "id:one"),
       OrgRoamResolvedLink(
         title: "Shared",
-        fileReference: OpenClawFileReference(path: "/tmp/one.org2", line: 1)
+        fileReference: AIChatFileReference(path: "/tmp/one.org2", line: 1)
       )
     )
   }
@@ -8103,7 +8103,7 @@ final class Org2ModelsTests: XCTestCase {
       resolver.resolve(target: "Project: Alpha/Beta"),
       OrgRoamResolvedLink(
         title: "Project: Alpha/Beta",
-        fileReference: OpenClawFileReference(path: "/tmp/project.org2", line: 12)
+        fileReference: AIChatFileReference(path: "/tmp/project.org2", line: 12)
       )
     )
   }
@@ -8232,7 +8232,7 @@ final class Org2ModelsTests: XCTestCase {
       .link(
         label: "2026-06-12.org:7",
         target: "notes/daily/2026-06-12.org",
-        fileReference: OpenClawFileReference(path: "notes/daily/2026-06-12.org", line: 7)
+        fileReference: AIChatFileReference(path: "notes/daily/2026-06-12.org", line: 7)
       ),
       .text(" for context.")
     ])
@@ -10004,22 +10004,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("/todo " + longRichParagraph))
   }
 
-  func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
-    let reference = OpenClawFileReference(path: "file:notes/daily.org2#L12-L16", line: nil)
+  func testAIChatFileReferenceDeepLinkRoundTrips() throws {
+    let reference = AIChatFileReference(path: "file:notes/daily.org2#L12-L16", line: nil)
     let url = try XCTUnwrap(reference.deepLinkURL)
-    let restored = try XCTUnwrap(OpenClawFileReference.fromDeepLinkURL(url))
+    let restored = try XCTUnwrap(AIChatFileReference.fromDeepLinkURL(url))
 
     XCTAssertEqual(restored.path, "notes/daily.org2")
     XCTAssertEqual(restored.line, 12)
   }
 
-  func testOpenClawFileReferenceRecognizesRelativePDFLinks() throws {
-    let reference = try XCTUnwrap(OpenClawFileReference.fromLinkTarget("views/reports/brief.PDF"))
+  func testAIChatFileReferenceRecognizesRelativePDFLinks() throws {
+    let reference = try XCTUnwrap(AIChatFileReference.fromLinkTarget("views/reports/brief.PDF"))
 
     XCTAssertEqual(reference.path, "views/reports/brief.PDF")
     XCTAssertNil(reference.line)
     XCTAssertEqual(
-      OpenClawFileReference.extract(from: "Review views/reports/brief.PDF before the meeting."),
+      AIChatFileReference.extract(from: "Review views/reports/brief.PDF before the meeting."),
       [reference]
     )
   }
@@ -10091,11 +10091,11 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testQuickOpenSearchesAndOpensAIChatThreadsByTitle() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.createOpenClawChatThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.renameOpenClawChatThread(threadID, title: "Launch readiness review")
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "This message body uses unrelated words.")
+    store.createAIChatThread(runtime: .openClaw)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.renameAIChatThread(threadID, title: "Launch readiness review")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "This message body uses unrelated words.")
     ]
     store.corpusFiles = [
       CorpusFile(path: "/tmp/notes.org2", relativePath: "notes.org2", modifiedAt: nil, byteCount: nil)
@@ -10115,8 +10115,8 @@ final class Org2ModelsTests: XCTestCase {
     })
     store.selectQuickOpenItem(item)
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
 
     store.quickOpenQuery = "unrelated words"
     try await waitForCondition {
@@ -10150,7 +10150,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawFileReferenceMapsRemotePathIntoDetailPane() throws {
+  func testAIChatFileReferenceMapsRemotePathIntoDetailPane() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-\(UUID().uuidString)", isDirectory: true)
     let notes = root.appendingPathComponent("notes", isDirectory: true)
@@ -10166,9 +10166,9 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     store.openClawRemoteCorpusPath = "/srv/org2"
-    store.openChatFileReference(OpenClawFileReference(path: "/srv/org2/notes/alice.org2", line: 3))
+    store.openChatFileReference(AIChatFileReference(path: "/srv/org2/notes/alice.org2", line: 3))
 
-    guard case .openClaw(let thread) = store.selectedLocation else {
+    guard case .aiChatThreadRecord(let thread) = store.selectedLocation else {
       return XCTFail("Expected selected chat file reference")
     }
     XCTAssertEqual(thread.file, note.path)
@@ -10178,7 +10178,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawLargePageReferenceRequestsDeepSourceLine() async throws {
+  func testAIChatLargePageReferenceRequestsDeepSourceLine() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-large-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10188,7 +10188,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1_400))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 1_400))
 
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1_400)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
@@ -10199,7 +10199,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawReferenceWithinActivePageJumpsWithoutReloadingSource() async throws {
+  func testAIChatReferenceWithinActivePageJumpsWithoutReloadingSource() async throws {
     actor SourceLoads {
       private var count = 0
       private var modes: [EntrySourceMode] = []
@@ -10239,7 +10239,7 @@ final class Org2ModelsTests: XCTestCase {
       )
     }
 
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 1))
     try await waitForCondition(timeout: 8) {
       store.selectedEntrySource?.file == note.path
         && !store.isLoadingEntrySource
@@ -10250,7 +10250,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(initialLoadCount, 1)
     XCTAssertEqual(initialLoadModes, [.page])
 
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 80))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 80))
     try await Task.sleep(nanoseconds: 100_000_000)
 
     let finalLoadCount = await loads.value()
@@ -10262,7 +10262,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawReferenceWithinActivePageReloadsTimestampPreservingSyncChange() async throws {
+  func testAIChatReferenceWithinActivePageReloadsTimestampPreservingSyncChange() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-same-page-sync-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10278,7 +10278,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 1))
     try await waitForCondition(timeout: 8) {
       store.selectedEntrySource?.text.contains("Slide Alpha") == true
         && !store.isLoadingEntrySource
@@ -10289,7 +10289,7 @@ final class Org2ModelsTests: XCTestCase {
       [.modificationDate: originalModifiedAt],
       ofItemAtPath: note.path
     )
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 3))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 3))
 
     try await waitForCondition(timeout: 8) {
       store.selectedEntrySource?.text.contains("Slide Bravo") == true
@@ -10299,7 +10299,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawFileReferenceRevealsDetailFromExpandedChat() async throws {
+  func testAIChatFileReferenceRevealsDetailFromExpandedChat() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-expanded-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10313,21 +10313,21 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.makeSurfacePrimary(.openClaw)
-    let reference = OpenClawFileReference(path: note.path, line: 3)
+    store.makeSurfacePrimary(.aiChat)
+    let reference = AIChatFileReference(path: note.path, line: 3)
     store.openChatFileReference(reference)
     try await waitForCondition {
       store.selectedEntrySource != nil
     }
 
-    store.expandSurface(.openClaw)
+    store.expandSurface(.aiChat)
     XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
 
     store.openChatFileReference(reference)
 
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
     XCTAssertEqual(store.selectedLocation?.file, note.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 3)
   }
@@ -10344,11 +10344,11 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    let firstThread = OpenClawThread(title: "First", file: first.path, line: 1, zone: "test", modifiedAt: nil)
-    store.select(.openClaw(firstThread))
+    let firstThread = AIChatThreadRecord(title: "First", file: first.path, line: 1, zone: "test", modifiedAt: nil)
+    store.select(.aiChatThreadRecord(firstThread))
     XCTAssertFalse(store.canNavigateBack)
 
-    store.openChatFileReference(OpenClawFileReference(path: second.path, line: 1))
+    store.openChatFileReference(AIChatFileReference(path: second.path, line: 1))
 
     XCTAssertTrue(store.canNavigateBack)
     XCTAssertEqual(store.selectedLocation?.file, second.path)
@@ -10470,23 +10470,23 @@ final class Org2ModelsTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
-    store.createOpenClawChatThread()
-    store.createOpenClawChatThread()
-    store.createOpenClawChatThread()
-    store.makeSurfacePrimary(.openClaw)
-    let threads = store.visibleOpenClawChatThreads
+    store.createAIChatThread(runtime: .openClaw)
+    store.createAIChatThread(runtime: .openClaw)
+    store.createAIChatThread(runtime: .openClaw)
+    store.makeSurfacePrimary(.aiChat)
+    let threads = store.visibleAIChatThreads
     XCTAssertGreaterThanOrEqual(threads.count, 3)
 
-    store.selectOpenClawChatThread(threads[1].id)
-    store.selectOpenClawChatThread(threads[2].id)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threads[2].id)
+    store.selectAIChatThread(threads[1].id)
+    store.selectAIChatThread(threads[2].id)
+    XCTAssertEqual(store.selectedAIChatThreadID, threads[2].id)
 
     store.navigateBack()
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threads[1].id)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.selectedAIChatThreadID, threads[1].id)
   }
 
   @MainActor
@@ -10536,7 +10536,7 @@ final class Org2ModelsTests: XCTestCase {
       }
       """.utf8))
     }
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Heading",
       file: target.path,
       line: 3,
@@ -10599,8 +10599,8 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, context in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, context in
         let prompt = try XCTUnwrap(messages.last?.content)
         XCTAssertTrue(prompt.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\""))
         XCTAssertTrue(prompt.contains("Target artifact relative path: \(artifactRelativePath)"))
@@ -10633,7 +10633,7 @@ final class Org2ModelsTests: XCTestCase {
       }
     )
     store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Node",
       file: target.path,
       line: 1,
@@ -10658,28 +10658,28 @@ final class Org2ModelsTests: XCTestCase {
     store.toggleBacklinkFileGroup(firstGroup)
     XCTAssertFalse(store.expandedBacklinkFileIDs.contains(firstGroup.id))
 
-    store.createOpenClawChatThread()
-    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Existing unrelated chat")
+    store.createAIChatThread(runtime: .openClaw)
+    let originalThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Existing unrelated chat")
     ]
 
     await store.briefCurrentNode()
 
-    XCTAssertEqual(store.openClawDraft, "")
-    XCTAssertNotEqual(store.selectedOpenClawChatThreadID, originalThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 2)
-    XCTAssertEqual(store.openClawMessages.count, 2)
-    XCTAssertEqual(store.openClawMessages.last?.content, "No artifact written")
+    XCTAssertEqual(store.aiChatDraft, "")
+    XCTAssertNotEqual(store.selectedAIChatThreadID, originalThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 2)
+    XCTAssertEqual(store.aiChatMessages.count, 2)
+    XCTAssertEqual(store.aiChatMessages.last?.content, "No artifact written")
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == originalThreadID })?.messages.map(\.content),
+      store.aiChatThreads.first(where: { $0.id == originalThreadID })?.messages.map(\.content),
       ["Existing unrelated chat"]
     )
     XCTAssertEqual(store.statusText, "Node brief artifact was not written")
   }
 
   @MainActor
-  func testBriefCurrentNodeCanReuseSelectedOpenClawThreadWhenConfigured() async throws {
+  func testBriefCurrentNodeCanReuseSelectedAIChatThreadWhenConfigured() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-context-current-chat-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10697,23 +10697,23 @@ final class Org2ModelsTests: XCTestCase {
     Canonical target body.
     """.write(to: target, atomically: true, encoding: .utf8)
 
-    let recorder = OpenClawMessageSendRecorder()
+    let recorder = AIChatMessageSendRecorder()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
     store.setCorpusRoot(root)
-    store.openClawBriefsStartNewThread = false
-    store.createOpenClawChatThread()
-    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Existing context")
+    store.aiChatBriefsStartNewThread = false
+    store.createAIChatThread(runtime: .openClaw)
+    let originalThreadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "Existing context")
     ]
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Node",
       file: target.path,
       line: 1,
@@ -10724,11 +10724,11 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNode()
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, originalThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, 1)
-    XCTAssertEqual(store.openClawMessages.count, 3)
-    XCTAssertEqual(store.openClawMessages.first?.content, "Existing context")
-    XCTAssertEqual(store.openClawMessages.last?.content, "reply 1")
+    XCTAssertEqual(store.selectedAIChatThreadID, originalThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, 1)
+    XCTAssertEqual(store.aiChatMessages.count, 3)
+    XCTAssertEqual(store.aiChatMessages.first?.content, "Existing context")
+    XCTAssertEqual(store.aiChatMessages.last?.content, "reply 1")
     let recordedCalls = await recorder.recordedCalls()
     let requestMessages = try XCTUnwrap(recordedCalls.first)
     XCTAssertEqual(requestMessages.first?.content, "Existing context")
@@ -10882,7 +10882,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Node",
       file: target.path,
       line: 1,
@@ -10893,9 +10893,9 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNode()
 
-    XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertEqual(store.aiChatDraft, "")
     XCTAssertEqual(store.selectedSurface, .files)
-    guard case .openClaw(let selected)? = store.selectedLocation else {
+    guard case .aiChatThreadRecord(let selected)? = store.selectedLocation else {
       XCTFail("Expected cached brief artifact to be selected")
       return
     }
@@ -10997,7 +10997,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.currentNodeBriefArtifact?.relativePath, legacyRelativePath)
     await store.briefCurrentNode()
 
-    guard case .openClaw(let selected)? = store.selectedLocation else {
+    guard case .aiChatThreadRecord(let selected)? = store.selectedLocation else {
       XCTFail("Expected the legacy Maven Central brief to open")
       return
     }
@@ -11357,14 +11357,14 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testBackgroundOpenClawThreadRefreshKeepsExistingListInteractive() async throws {
+  func testBackgroundAIChatThreadRefreshKeepsExistingListInteractive() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-background-openclaw-\(UUID().uuidString)", isDirectory: true)
     let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
     let agents = corpus.appendingPathComponent("agents", isDirectory: true)
     try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
 
-    let staleThread = OpenClawThread(
+    let staleThread = AIChatThreadRecord(
       title: "Existing thread",
       file: agents.appendingPathComponent("old.org2").path,
       zone: "agents",
@@ -11372,16 +11372,16 @@ final class Org2ModelsTests: XCTestCase {
     )
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(corpus)
-    store.openClawThreads = [staleThread]
+    store.aiChatThreadRecords = [staleThread]
 
-    await store.refreshOpenClawThreads(showsLoading: false)
+    await store.refreshAIChatThreadRecords(showsLoading: false)
 
-    XCTAssertFalse(store.isLoadingOpenClawThreads)
-    XCTAssertTrue(store.openClawThreads.isEmpty)
+    XCTAssertFalse(store.isLoadingAIChatThreadRecords)
+    XCTAssertTrue(store.aiChatThreadRecords.isEmpty)
   }
 
   @MainActor
-  func testBriefCurrentNodeAutoOpensArtifactAfterOpenClawWritesIt() async throws {
+  func testBriefCurrentNodeAutoOpensArtifactAfterAIChatWritesIt() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-brief-autoload-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -11405,7 +11405,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatSendHandler: { messages, _, _, _ in
         XCTAssertTrue(messages.last?.content.contains("Target artifact relative path: \(artifactRelativePath)") == true)
         try FileManager.default.createDirectory(
           at: artifactURL.deletingLastPathComponent(),
@@ -11426,7 +11426,7 @@ final class Org2ModelsTests: XCTestCase {
       }
     )
     store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Node",
       file: target.path,
       line: 1,
@@ -11437,18 +11437,18 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNode()
 
-    guard case .openClaw(let selected)? = store.selectedLocation else {
+    guard case .aiChatThreadRecord(let selected)? = store.selectedLocation else {
       XCTFail("Expected generated brief artifact to be selected")
       return
     }
     XCTAssertEqual(selected.file, artifactURL.path)
     XCTAssertEqual(selected.title, "Brief: Target Node")
     XCTAssertEqual(store.selectedSurface, .files)
-    XCTAssertTrue(store.openClawMessages.last?.changeSummary?.files.contains(where: { $0.relativePath == artifactRelativePath }) == true)
+    XCTAssertTrue(store.aiChatMessages.last?.changeSummary?.files.contains(where: { $0.relativePath == artifactRelativePath }) == true)
   }
 
   @MainActor
-  func testBriefCurrentNodeAutoOpensArtifactWrittenAfterOpenClawReply() async throws {
+  func testBriefCurrentNodeAutoOpensArtifactWrittenAfterAIChatReply() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-brief-delayed-autoload-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -11472,7 +11472,7 @@ final class Org2ModelsTests: XCTestCase {
     let artifactPath = artifactURL.path
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawSendHandler: { _, _, _, _ in
+      aiChatSendHandler: { _, _, _, _ in
         Task.detached {
           try? await Task.sleep(nanoseconds: 250_000_000)
           try? FileManager.default.createDirectory(
@@ -11495,7 +11495,7 @@ final class Org2ModelsTests: XCTestCase {
       }
     )
     store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Target Node",
       file: target.path,
       line: 1,
@@ -11506,7 +11506,7 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNode()
 
-    guard case .openClaw(let selected)? = store.selectedLocation else {
+    guard case .aiChatThreadRecord(let selected)? = store.selectedLocation else {
       XCTFail("Expected delayed generated brief artifact to be selected")
       return
     }
@@ -11571,7 +11571,7 @@ final class Org2ModelsTests: XCTestCase {
       isPageNode: true
     )
     let threadID = UUID()
-    let chatThread = OpenClawChatSearchResult(
+    let chatThread = AIChatSearchResult(
       threadID: threadID,
       messageID: nil,
       matchKind: .threadTitle,
@@ -11580,7 +11580,7 @@ final class Org2ModelsTests: XCTestCase {
       messageCount: 2,
       updatedAt: Date()
     )
-    let chatMessage = OpenClawChatSearchResult(
+    let chatMessage = AIChatSearchResult(
       threadID: threadID,
       messageID: UUID(),
       matchKind: .messageText,
@@ -11602,7 +11602,7 @@ final class Org2ModelsTests: XCTestCase {
 
     store.searchResults = [corpusText, entry, active]
     store.workspaceFileSearchResults = [file]
-    store.openClawChatSearchResults = [chatMessage, chatThread]
+    store.aiChatSearchResults = [chatMessage, chatThread]
     store.workspaceAgentWorkSearchResults = [approval]
     store.workspacePageSearchResults = [page]
 
@@ -11693,18 +11693,18 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testWorkspaceChatSearchSeparatesThreadTitlesFromMessageText() {
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       id: UUID(),
       title: "Billing reconciliation",
       createdAt: Date(),
       updatedAt: Date(),
       sessionKey: "search-test",
       messages: [
-        OpenClawChatMessage(role: .user, content: "Review the billing reconciliation details.")
+        AIChatMessage(role: .user, content: "Review the billing reconciliation details.")
       ]
     )
 
-    let results = WorkspaceStore.searchOpenClawChatThreads(
+    let results = WorkspaceStore.searchAIChatThreads(
       [thread],
       query: "billing",
       limit: 10
@@ -11716,9 +11716,9 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testWorkspaceChatSearchDoesNotExposeHiddenAutomaticPromptText() {
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .user,
-      content: OpenClawContextPresentation.automaticContext(
+      content: AIChatContextPresentation.automaticContext(
         kind: "approval item",
         title: "Approve Dashjoin first-touch draft",
         reference: ".org2/runs/run-123.org2:40",
@@ -11726,7 +11726,7 @@ final class Org2ModelsTests: XCTestCase {
         userText: "Please revise the repetitive phrasing."
       )
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       id: UUID(),
       title: "Draft revision",
       createdAt: Date(),
@@ -11735,12 +11735,12 @@ final class Org2ModelsTests: XCTestCase {
       messages: [message]
     )
 
-    let visibleResults = WorkspaceStore.searchOpenClawChatThreads(
+    let visibleResults = WorkspaceStore.searchAIChatThreads(
       [thread],
       query: "repetitive",
       limit: 10
     )
-    let hiddenResults = WorkspaceStore.searchOpenClawChatThreads(
+    let hiddenResults = WorkspaceStore.searchAIChatThreads(
       [thread],
       query: "AUTOMATIC_INTERNAL_PAYLOAD",
       limit: 10
@@ -11808,27 +11808,27 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testWorkspaceSearchIncludesOpenClawChatThreads() async throws {
+  func testWorkspaceSearchIncludesAIChatThreads() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "How should we structure chat thread navigation?"),
-      OpenClawChatMessage(role: .assistant, content: "Nest threads under OpenClaw in the sidebar.")
+    store.aiChatMessages = [
+      AIChatMessage(role: .user, content: "How should we structure chat thread navigation?"),
+      AIChatMessage(role: .assistant, content: "Nest threads under OpenClaw in the sidebar.")
     ]
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
     store.searchQuery = "sidebar"
 
     await store.runSearch()
 
     XCTAssertTrue(store.searchResults.isEmpty)
-    XCTAssertEqual(store.openClawChatSearchResults.count, 1)
-    XCTAssertEqual(store.openClawChatSearchResults.first?.threadID, threadID)
+    XCTAssertEqual(store.aiChatSearchResults.count, 1)
+    XCTAssertEqual(store.aiChatSearchResults.first?.threadID, threadID)
     XCTAssertEqual(store.selectedSurface, .home)
 
-    let result = try XCTUnwrap(store.openClawChatSearchResults.first)
-    store.selectOpenClawChatSearchResult(result)
+    let result = try XCTUnwrap(store.aiChatSearchResults.first)
+    store.selectAIChatSearchResult(result)
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
   }
 
   @MainActor
@@ -11839,16 +11839,16 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
 
-    let matchedThreadID = store.createOpenClawChatThread()
-    store.renameOpenClawChatThread(matchedThreadID, title: "Older matched thread")
-    let otherThreadID = store.createOpenClawChatThread()
-    store.renameOpenClawChatThread(otherThreadID, title: "Newer active thread")
-    store.settleOpenClawChatThread(matchedThreadID)
+    let matchedThreadID = store.createAIChatThread(runtime: .openClaw)
+    store.renameAIChatThread(matchedThreadID, title: "Older matched thread")
+    let otherThreadID = store.createAIChatThread(runtime: .openClaw)
+    store.renameAIChatThread(otherThreadID, title: "Newer active thread")
+    store.settleAIChatThread(matchedThreadID)
 
-    let result = OpenClawChatSearchResult(
+    let result = AIChatSearchResult(
       threadID: matchedThreadID,
       messageID: nil,
       matchKind: .threadTitle,
@@ -11857,22 +11857,22 @@ final class Org2ModelsTests: XCTestCase {
       messageCount: 0,
       updatedAt: Date()
     )
-    store.selectOpenClawChatSearchResult(result)
+    store.selectAIChatSearchResult(result)
 
-    XCTAssertEqual(store.sidebarPromotedOpenClawChatThreadID, matchedThreadID)
-    XCTAssertEqual(store.sidebarOpenClawChatThreads.first?.id, matchedThreadID)
-    XCTAssertTrue(try XCTUnwrap(store.sidebarOpenClawChatThreads.first).isSettled)
-    XCTAssertFalse(store.sidebarSettledOpenClawChatThreads.contains(where: { $0.id == matchedThreadID }))
+    XCTAssertEqual(store.sidebarPromotedAIChatThreadID, matchedThreadID)
+    XCTAssertEqual(store.sidebarAIChatThreads.first?.id, matchedThreadID)
+    XCTAssertTrue(try XCTUnwrap(store.sidebarAIChatThreads.first).isSettled)
+    XCTAssertFalse(store.sidebarSettledAIChatThreads.contains(where: { $0.id == matchedThreadID }))
 
-    store.reopenOpenClawChatThread(matchedThreadID)
+    store.reopenAIChatThread(matchedThreadID)
 
-    XCTAssertEqual(store.sidebarOpenClawChatThreads.first?.id, matchedThreadID)
-    XCTAssertFalse(try XCTUnwrap(store.sidebarOpenClawChatThreads.first).isSettled)
+    XCTAssertEqual(store.sidebarAIChatThreads.first?.id, matchedThreadID)
+    XCTAssertFalse(try XCTUnwrap(store.sidebarAIChatThreads.first).isSettled)
 
-    store.selectOpenClawChatThread(otherThreadID)
+    store.selectAIChatThread(otherThreadID)
 
-    XCTAssertNil(store.sidebarPromotedOpenClawChatThreadID)
-    XCTAssertEqual(store.sidebarOpenClawChatThreads.map(\.id), store.visibleOpenClawChatThreads.map(\.id))
+    XCTAssertNil(store.sidebarPromotedAIChatThreadID)
+    XCTAssertEqual(store.sidebarAIChatThreads.map(\.id), store.visibleAIChatThreads.map(\.id))
   }
 
   @MainActor
@@ -11999,7 +11999,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .search)
     XCTAssertEqual(store.searchFocusToken, 1)
 
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Current page",
       file: "/tmp/current.org",
       line: 1,
@@ -12022,7 +12022,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .meetings)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
     let threadFindGeneration = store.aiChatFindRequestGeneration
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
     XCTAssertEqual(store.aiChatFindRequestGeneration, threadFindGeneration + 1)
@@ -12048,7 +12048,7 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .sources)
-    XCTAssertFalse(store.isOpenClawAssistantPresented)
+    XCTAssertFalse(store.isAIChatAssistantPresented)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "/", keyCode: 44, modifiers: [.command])))
     XCTAssertTrue(store.isKeyboardShortcutsPresented)
@@ -12076,8 +12076,8 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testCommandFFollowsClickedPaneInSplitChatAndRenderedDocument() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.makeSurfacePrimary(.openClaw)
-    store.select(.openClaw(OpenClawThread(
+    store.makeSurfacePrimary(.aiChat)
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Rendered page",
       file: "/tmp/rendered-page.org2",
       line: 1,
@@ -12205,7 +12205,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
     XCTAssertEqual(WorkspaceSurface.sources.commandShortcutTitle, "⌘0")
-    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(WorkspaceSurface.aiChat.commandShortcutTitle, "⌘6")
     XCTAssertEqual(WorkspaceSurface.skills.commandShortcutTitle, "⌘⇧K")
     XCTAssertEqual(
       WorkspaceSurface.sidebarCases,
@@ -12237,14 +12237,14 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testDetailPaneLayoutActionsCloseExpandAndReopenOnSelection() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    let thread = OpenClawThread(
+    let thread = AIChatThreadRecord(
       title: "Current page",
       file: "/tmp/current.org2",
       line: 1,
       zone: "test",
       modifiedAt: nil
     )
-    store.select(.openClaw(thread))
+    store.select(.aiChatThreadRecord(thread))
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
 
@@ -12266,16 +12266,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isWorkspaceDetailPaneExpanded)
 
     store.closeDetailPane()
-    store.select(.openClaw(thread))
+    store.select(.aiChatThreadRecord(thread))
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
   }
 
   @MainActor
-  func testOpenClawAssistantRequestsUseWorkspaceSurface() throws {
+  func testAIChatAssistantRequestsUseWorkspaceSurface() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     XCTAssertFalse(store.isNodeContextPanePresented)
-    let thread = OpenClawThread(
+    let thread = AIChatThreadRecord(
       title: "Current page",
       file: "/tmp/current.org2",
       line: 1,
@@ -12283,7 +12283,7 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil
     )
 
-    store.select(.openClaw(thread))
+    store.select(.aiChatThreadRecord(thread))
     XCTAssertFalse(store.isNodeContextPanePresented)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
@@ -12296,9 +12296,9 @@ final class Org2ModelsTests: XCTestCase {
     store.selectedSurface = .agenda
     store.isWorkspaceSurfacePaneClosed = false
     store.isNodeContextPanePresented = false
-    store.setOpenClawAssistantPanelPresented(true)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertFalse(store.isOpenClawAssistantPresented)
+    store.setAIChatAssistantPanelPresented(true)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertFalse(store.isAIChatAssistantPresented)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
   }
@@ -13313,13 +13313,13 @@ final class Org2ModelsTests: XCTestCase {
 
     store.startNewAIThreadFromAgendaSelection(including: second)
 
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     XCTAssertEqual(presentation.contexts.map(\.title), ["Prepare launch", "Review pricing"])
     XCTAssertEqual(presentation.contexts.map(\.reference), [
       "/remote/org2/agenda.org2:1",
       "/remote/org2/agenda.org2:4"
     ])
-    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+    XCTAssertEqual(store.selectedAIChatThread?.title, "Context: 2 selected items")
   }
 
   @MainActor
@@ -14156,7 +14156,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testSidebarFileNavigationKeepsVisibleOpenClawChatBesideDocument() throws {
+  func testSidebarFileNavigationKeepsVisibleAIChatBesideDocument() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-sidebar-file-chat-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -14166,7 +14166,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.expandSurface(.openClaw)
+    store.expandSurface(.aiChat)
     XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
 
     store.openSidebarFile(CorpusFile(
@@ -14176,7 +14176,7 @@ final class Org2ModelsTests: XCTestCase {
       byteCount: nil
     ))
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
     XCTAssertEqual(store.selectedLocation?.file, note.path)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
@@ -14190,21 +14190,21 @@ final class Org2ModelsTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json")
     )
     store.setCorpusRoot(root)
-    store.createOpenClawChatThread()
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    store.openClawDraft = "Keep this unsent message"
+    store.createAIChatThread(runtime: .openClaw)
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.aiChatDraft = "Keep this unsent message"
 
     for (key, code) in [("7", UInt16(26)), ("8", UInt16(28)), ("9", UInt16(25))] {
-      store.expandSurface(.openClaw)
+      store.expandSurface(.aiChat)
       XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
       XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: key, keyCode: code, modifiers: [.command])))
       await store.waitForDailyNoteNavigationForTesting()
-      XCTAssertEqual(store.selectedSurface, .openClaw)
-      XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
-      XCTAssertEqual(store.openClawDraft, "Keep this unsent message")
+      XCTAssertEqual(store.selectedSurface, .aiChat)
+      XCTAssertEqual(store.selectedAIChatThreadID, threadID)
+      XCTAssertEqual(store.aiChatDraft, "Keep this unsent message")
       XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
       XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
       XCTAssertEqual(store.activeWorkspacePane, .detail)
@@ -14217,9 +14217,9 @@ final class Org2ModelsTests: XCTestCase {
     store.dailyNotePickerDate = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2024, month: 2, day: 29)))
     store.openDailyNoteFromDatePicker()
     await store.waitForDailyNoteNavigationForTesting()
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
-    XCTAssertEqual(store.openClawDraft, "Keep this unsent message")
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.selectedAIChatThreadID, threadID)
+    XCTAssertEqual(store.aiChatDraft, "Keep this unsent message")
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
     XCTAssertTrue(store.selectedLocation?.file.hasSuffix("/2024-02-29.org") == true)
@@ -14244,9 +14244,9 @@ final class Org2ModelsTests: XCTestCase {
     store.activateSelectedCorpusFileFromList(dailyFile)
     XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
 
-    store.makeSurfacePrimary(.openClaw)
+    store.makeSurfacePrimary(.aiChat)
     store.activateSelectedCorpusFileFromList(dailyFile)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .aiChat)
 
     store.makeSurfacePrimary(.agenda)
     store.closeSurfacePane(.agenda)
@@ -14290,7 +14290,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenHomeCreatesTodayDailyNoteAsOpenClawDetail() async throws {
+  func testOpenHomeCreatesTodayDailyNoteAsAIChatDetail() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-home-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -14314,7 +14314,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
     XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertEqual(store.selectedCorpusFileID, daily.path)
-    XCTAssertEqual(store.selectedOpenClawThreadID, daily.path)
+    XCTAssertEqual(store.selectedAIChatThreadRecordID, daily.path)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
@@ -14356,7 +14356,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertTrue(store.hasWorkspaceDetailContent)
     XCTAssertEqual(store.selectedCorpusFileID, daily.path)
-    XCTAssertEqual(store.selectedOpenClawThreadID, daily.path)
+    XCTAssertEqual(store.selectedAIChatThreadRecordID, daily.path)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
@@ -14368,7 +14368,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(store.selectedEntryRenderError)
   }
 
-  func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
+  func testAIChatWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
     let localRoot = "/local/org2"
     let remoteRoot = "/srv/org2"
     let note = "\(localRoot)/notes/alice.org2"
@@ -14451,7 +14451,7 @@ final class Org2ModelsTests: XCTestCase {
       error: nil
     )
 
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: localRoot,
       remoteCorpusRoot: remoteRoot,
       selectedSurface: "Today",
@@ -17981,14 +17981,14 @@ final class Org2ModelsTests: XCTestCase {
       matchedLines: nil,
       date: nil
     )
-    let recorder = OpenClawQueuedSendRecorder()
+    let recorder = AIChatQueuedSendRecorder()
     let defaultsSuiteName = "org2-workspace-similar-todos-defaults-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: defaultsSuiteName)!
     defer { defaults.removePersistentDomain(forName: defaultsSuiteName) }
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatSendHandler: { messages, _, _, _ in
         try await recorder.send(messages: messages)
       }
     )
@@ -18010,7 +18010,7 @@ final class Org2ModelsTests: XCTestCase {
 
     store.similarTodoAssignee = "contact-finder"
     store.similarTodoStatus = "ready"
-    await store.assignSimilarTodos(askOpenClaw: true)
+    await store.assignSimilarTodos(askAIChat: true)
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertEqual(updated.components(separatedBy: ":ASSIGNEE: contact-finder").count - 1, 2)
@@ -18279,7 +18279,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    store.select(.openClaw(OpenClawThread(
+    store.select(.aiChatThreadRecord(AIChatThreadRecord(
       title: "Source",
       file: source.path,
       line: 3,
@@ -18331,11 +18331,11 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json")
     )
     store.setWorkspaceRealtimeRefreshActive(false)
     store.setCorpusRoot(root, persistsDefault: false)
-    let location = WorkspaceLocation.openClaw(OpenClawThread(
+    let location = WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
       title: "Note",
       file: note.path,
       line: 3,
@@ -18369,7 +18369,7 @@ final class Org2ModelsTests: XCTestCase {
   func testDataNotebookRefreshUpdatesSelectedFileModificationDate() throws {
     let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
     let refreshedDate = Date(timeIntervalSince1970: 1_800_000_000)
-    let location = WorkspaceLocation.openClaw(OpenClawThread(
+    let location = WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
       title: "Dashboard",
       file: "/tmp/dashboard.org2",
       line: 7,
@@ -18384,7 +18384,7 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: refreshedDate
     )
 
-    guard case .openClaw(let thread)? = refreshed else {
+    guard case .aiChatThreadRecord(let thread)? = refreshed else {
       return XCTFail("Expected the selected OpenClaw file location")
     }
     XCTAssertEqual(thread.modifiedAt, refreshedDate)
@@ -18415,7 +18415,7 @@ final class Org2ModelsTests: XCTestCase {
     store.selectedFileDataNotebookDidInspectForTesting = { isMainThread in
       threadRecorder.append(isMainThread)
     }
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Dashboard",
       file: notebook.path,
       line: 1,
@@ -18430,7 +18430,7 @@ final class Org2ModelsTests: XCTestCase {
       XCTAssertTrue(store.selectedFileIsDataNotebook)
     }
 
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Note",
       file: note.path,
       line: 1,
@@ -18474,7 +18474,7 @@ final class Org2ModelsTests: XCTestCase {
       return false
     }
 
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Dashboard",
       file: notebook.path,
       line: 1,
@@ -18482,7 +18482,7 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil
     ))
     await gate.waitUntilStarted()
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Note",
       file: note.path,
       line: 1,
@@ -18531,7 +18531,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
     store.setCorpusRoot(corpus)
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Dashboard",
       file: notebook.path,
       line: 1,
@@ -19249,7 +19249,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json")
     )
     store.formatOrgFilesOnSave = false
     store.setCorpusRoot(root)
@@ -19299,7 +19299,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json")
     )
     store.formatOrgFilesOnSave = false
     store.setCorpusRoot(root)
@@ -19348,10 +19348,10 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json")
     )
     store.formatOrgFilesOnSave = false
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     store.setCorpusRoot(root)
     store.selectCorpusFile(CorpusFile(
       path: note.path,
@@ -19379,10 +19379,10 @@ final class Org2ModelsTests: XCTestCase {
 
     let failingStore = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("failing-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("failing-chat.json")
     )
     failingStore.formatOrgFilesOnSave = false
-    failingStore.openClawTranscriptSaverForTesting = {}
+    failingStore.aiChatTranscriptSaverForTesting = {}
     failingStore.setCorpusRoot(root)
     failingStore.selectCorpusFile(CorpusFile(
       path: note.path,
@@ -19419,12 +19419,12 @@ final class Org2ModelsTests: XCTestCase {
     let cleanStore = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: cleanDefaults,
-      openClawTranscriptURL: root.appendingPathComponent("clean-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("clean-chat.json"),
       legacyDefaultsDomains: []
     )
     await cleanStore.waitForAIChatTranscriptLoadForTesting()
     var cleanSaveCount = 0
-    cleanStore.openClawTranscriptSaverForTesting = { cleanSaveCount += 1 }
+    cleanStore.aiChatTranscriptSaverForTesting = { cleanSaveCount += 1 }
     cleanStore.setAIChatTranscriptWritesBlockedForTesting(true)
 
     XCTAssertFalse(cleanStore.hasUnpersistedAIChatTranscriptMutationForTesting)
@@ -19438,19 +19438,19 @@ final class Org2ModelsTests: XCTestCase {
     let dirtyStore = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: dirtyDefaults,
-      openClawTranscriptURL: root.appendingPathComponent("dirty-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("dirty-chat.json"),
       legacyDefaultsDomains: []
     )
     await dirtyStore.waitForAIChatTranscriptLoadForTesting()
-    dirtyStore.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
-    dirtyStore.openClawTranscriptSaverForTesting = {}
-    let threadID = dirtyStore.createOpenClawChatThread(runtime: .codex)
+    dirtyStore.aiChatTranscriptPersistenceDelayNanoseconds = 60_000_000_000
+    dirtyStore.aiChatTranscriptSaverForTesting = {}
+    let threadID = dirtyStore.createAIChatThread(runtime: .codex)
     dirtyStore.flushDeferredAIChatTranscriptPersistence()
     XCTAssertFalse(dirtyStore.hasUnpersistedAIChatTranscriptMutationForTesting)
     XCTAssertNil(dirtyStore.aiChatThreadMessageMutationVersionForTesting(threadID))
 
     dirtyStore.setAIChatTranscriptWritesBlockedForTesting(true)
-    dirtyStore.renameOpenClawChatThread(threadID, title: "Unsaved read-only rename")
+    dirtyStore.renameAIChatThread(threadID, title: "Unsaved read-only rename")
 
     XCTAssertTrue(dirtyStore.hasUnpersistedAIChatTranscriptMutationForTesting)
     XCTAssertNil(
@@ -19475,14 +19475,14 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     await store.waitForAIChatTranscriptLoadForTesting()
-    store.openClawTranscriptPersistenceDelayNanoseconds = 60_000_000_000
+    store.aiChatTranscriptPersistenceDelayNanoseconds = 60_000_000_000
     var saveCount = 0
     var lateThreadID: UUID?
-    store.openClawTranscriptSaverForTesting = {
+    store.aiChatTranscriptSaverForTesting = {
       saveCount += 1
       if saveCount == 1 {
         lateThreadID = store.createAIChatRemoteThread(runtime: .codex)
@@ -22853,7 +22853,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawThreadsUseConfiguredDirectories() async throws {
+  func testAIChatThreadRecordsUseConfiguredDirectories() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-openclaw-\(UUID().uuidString)", isDirectory: true)
     let threads = root.appendingPathComponent("threads", isDirectory: true)
@@ -22871,12 +22871,12 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    await store.refreshOpenClawThreads()
+    await store.refreshAIChatThreadRecords()
 
-    XCTAssertEqual(store.openClawThreads.count, 1)
-    XCTAssertEqual(store.openClawThreads[0].title, "Agent Thread")
-    XCTAssertEqual(store.openClawThreads[0].zone, "threads")
-    XCTAssertEqual(store.openClawThreads[0].idValue, "11111111-1111-4111-8111-111111111111")
+    XCTAssertEqual(store.aiChatThreadRecords.count, 1)
+    XCTAssertEqual(store.aiChatThreadRecords[0].title, "Agent Thread")
+    XCTAssertEqual(store.aiChatThreadRecords[0].zone, "threads")
+    XCTAssertEqual(store.aiChatThreadRecords[0].idValue, "11111111-1111-4111-8111-111111111111")
   }
 
   @MainActor

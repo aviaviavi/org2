@@ -551,7 +551,7 @@ private struct ApprovalsView: View {
           .tint(.teal)
 
           Button {
-            Task { await store.sendToOpenClaw(.discuss, approval: item) }
+            Task { await store.sendToAIChat(.discuss, approval: item) }
           } label: {
             Label("Discuss", systemImage: "paperplane")
           }
@@ -655,7 +655,7 @@ private struct ApprovalsView: View {
   @MainActor
   private func requestChanges(_ item: ApprovalEntry, feedback: String) async {
     guard remote.isPaired else {
-      await store.sendToOpenClaw(.discuss, approval: item, message: feedback)
+      await store.sendToAIChat(.discuss, approval: item, message: feedback)
       return
     }
     await remote.decideApproval(item, decision: "revised", note: feedback)
@@ -1057,7 +1057,7 @@ private struct ApprovalDetailView: View {
 
           Button {
             Task {
-              await store.sendToOpenClaw(.discuss, approval: item, message: message)
+              await store.sendToAIChat(.discuss, approval: item, message: message)
               dismiss()
             }
           } label: {

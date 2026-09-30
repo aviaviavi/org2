@@ -58,7 +58,7 @@ final class WorkspaceProjectTests: XCTestCase {
   }
 
   func testProjectBriefSurvivesLocalAndGatewayPromptConstruction() {
-    let context = OpenClawWorkspaceContext(localCorpusRoot: "/local", remoteCorpusRoot: "/remote",
+    let context = AIChatWorkspaceContext(localCorpusRoot: "/local", remoteCorpusRoot: "/remote",
       selectedSurface: "AI Chat", selectedLocation: nil, selectedEntrySource: nil,
       backlinks: nil, agenda: nil, searchQuery: "", searchResults: [], projectContext: "Project brief fixture")
     XCTAssertTrue(context.systemPrompt().contains("Project brief fixture"))
@@ -90,12 +90,12 @@ final class WorkspaceProjectTests: XCTestCase {
       brief: "",
       briefTruncated: false
     )
-    let active = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+    let active = AIChatSidebarThreadSummary(thread: AIChatThread(
       id: activeID,
       title: "Active",
       sessionKey: "active"
     ))
-    let settled = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+    let settled = AIChatSidebarThreadSummary(thread: AIChatThread(
       id: settledID,
       title: "Settled",
       sessionKey: "settled",
@@ -115,7 +115,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let sharedThreadID = UUID()
     let first = project(threadID: sharedThreadID)
     let second = project(threadID: sharedThreadID)
-    let summary = OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+    let summary = AIChatSidebarThreadSummary(thread: AIChatThread(
       id: sharedThreadID,
       title: "Shared",
       sessionKey: "shared"
@@ -141,7 +141,7 @@ final class WorkspaceProjectTests: XCTestCase {
   func testProjectSidebarPresentationStaysFlatAcrossRapidRefreshAndCollapse() {
     let threadIDs = (0..<8).map { _ in UUID() }
     let summaries = threadIDs.map { id in
-      OpenClawSidebarThreadSummary(thread: OpenClawChatThread(
+      AIChatSidebarThreadSummary(thread: AIChatThread(
         id: id,
         title: id.uuidString,
         sessionKey: id.uuidString
@@ -222,7 +222,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let recorder = WorkspaceProjectRefreshRecorder()
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -251,7 +251,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let expected = project(threadID: UUID())
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -280,7 +280,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let recorder = WorkspaceProjectFlakyRefreshRecorder(project: expected)
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -303,7 +303,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let expected = project(threadID: UUID())
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -333,7 +333,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.projectListLoaderForTesting = { _ in
@@ -358,11 +358,11 @@ final class WorkspaceProjectTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    let sourceID = store.createOpenClawChatThread(runtime: .openClaw)
+    let sourceID = store.createAIChatThread(runtime: .openClaw)
     let projectID = UUID().uuidString.lowercased()
     let projectURL = root.appendingPathComponent("launch.org")
     let projectText = """
@@ -401,7 +401,7 @@ final class WorkspaceProjectTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -419,13 +419,13 @@ final class WorkspaceProjectTests: XCTestCase {
     try projectText.write(to: projectURL, atomically: true, encoding: .utf8)
     await store.refreshProjects()
 
-    let initialThreadCount = store.openClawChatThreads.count
+    let initialThreadCount = store.aiChatThreads.count
     let missingProjectThreadID = await store.createAIChatRemoteThread(
       destinationID: AIChatDestinationConfiguration.localCodexID,
       projectID: "missing-project"
     )
     XCTAssertNil(missingProjectThreadID)
-    XCTAssertEqual(store.openClawChatThreads.count, initialThreadCount)
+    XCTAssertEqual(store.aiChatThreads.count, initialThreadCount)
 
     let createdThreadID = await store.createAIChatRemoteThread(
       destinationID: AIChatDestinationConfiguration.localCodexID,
@@ -433,7 +433,7 @@ final class WorkspaceProjectTests: XCTestCase {
     )
     let threadID = try XCTUnwrap(createdThreadID)
 
-    XCTAssertNotNil(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    XCTAssertNotNil(store.aiChatThreads.first(where: { $0.id == threadID }))
     XCTAssertTrue(
       try XCTUnwrap(store.projectNotes.first(where: { $0.id == projectID }))
         .contains(threadID)

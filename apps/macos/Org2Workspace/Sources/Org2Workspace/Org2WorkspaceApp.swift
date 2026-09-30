@@ -125,7 +125,7 @@ struct Org2WorkspaceApp: App {
 
         Button("New AI Thread") {
           store.createAIChatThread()
-          store.makeSurfacePrimary(.openClaw)
+          store.makeSurfacePrimary(.aiChat)
         }
         .keyboardShortcut("n", modifiers: [.command])
       }

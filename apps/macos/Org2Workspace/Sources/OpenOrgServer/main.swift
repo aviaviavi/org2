@@ -130,8 +130,8 @@ struct OpenOrgServer {
                     "scheduler": store.automationSchedulerStatusText,
                     "schedulerError": store.automationSchedulerErrorText ?? "",
                     "filesystemAccess": store.codexSandboxAccess.rawValue,
-                    "threads": store.openClawChatThreads.count,
-                    "runningThreads": store.openClawChatThreads.filter {
+                    "threads": store.aiChatThreads.count,
+                    "runningThreads": store.aiChatThreads.filter {
                       store.isAIChatThreadRunningOnCurrentHost($0.id)
                     }.count,
                     "peerHosts": store.aiChatRemoteLiveHosts.map {

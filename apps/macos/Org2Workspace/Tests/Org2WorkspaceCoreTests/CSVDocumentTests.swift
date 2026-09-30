@@ -279,11 +279,11 @@ final class CSVDocumentTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     await store.waitForAIChatTranscriptLoadForTesting()
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     store.setCorpusRoot(root, persistsDefault: false)
 
     let source = EntrySource(
@@ -431,7 +431,7 @@ final class CSVDocumentTests: XCTestCase {
 
     let store = try makeStore()
     store.setCorpusRoot(root, persistsDefault: false)
-    store.openChatFileReference(OpenClawFileReference(path: csv.path, line: nil))
+    store.openChatFileReference(AIChatFileReference(path: csv.path, line: nil))
 
     try await waitForCondition {
       store.selectedEntrySource?.file == csv.path && !store.isLoadingEntrySource
@@ -470,7 +470,7 @@ final class CSVDocumentTests: XCTestCase {
       try Data(contentsOf: url)
     }
 
-    store.openChatFileReference(OpenClawFileReference(path: "reports/brief.pdf", line: nil))
+    store.openChatFileReference(AIChatFileReference(path: "reports/brief.pdf", line: nil))
 
     try await waitForCondition {
       store.linkedPDFPreviewData != nil && !store.isLoadingLinkedPDFPreview
@@ -518,7 +518,7 @@ final class CSVDocumentTests: XCTestCase {
       throw CocoaError(.fileReadUnsupportedScheme)
     }
 
-    store.openChatFileReference(OpenClawFileReference(path: "media/chart.png", line: nil))
+    store.openChatFileReference(AIChatFileReference(path: "media/chart.png", line: nil))
     XCTAssertEqual(store.selectedLocation?.file, image.path)
     XCTAssertTrue(store.selectedFileIsImage)
     XCTAssertFalse(store.selectedFileIsVideo)
@@ -529,7 +529,7 @@ final class CSVDocumentTests: XCTestCase {
     store.handleCorpusFileEvents([image.path], corpusRoot: root, requiresFullScan: false)
     XCTAssertEqual(store.linkedMediaPreviewRevision, revision + 1)
 
-    store.openChatFileReference(OpenClawFileReference(path: "media/demo.mp4", line: nil))
+    store.openChatFileReference(AIChatFileReference(path: "media/demo.mp4", line: nil))
     XCTAssertEqual(store.selectedLocation?.file, video.path)
     XCTAssertTrue(store.selectedFileIsVideo)
     XCTAssertTrue(store.selectedFileIsNativePreview)
@@ -560,7 +560,7 @@ final class CSVDocumentTests: XCTestCase {
     store.setCorpusRoot(root, persistsDefault: false)
     store.entrySourceLoaderForTesting = { _, _, _ in throw CocoaError(.fileReadUnsupportedScheme) }
     store.linkedPDFDataLoaderForTesting = { url in try Data(contentsOf: url) }
-    store.openChatFileReference(OpenClawFileReference(path: "brief.pdf", line: nil))
+    store.openChatFileReference(AIChatFileReference(path: "brief.pdf", line: nil))
     try await waitForCondition {
       store.linkedPDFPreviewData == goodData && !store.isLoadingLinkedPDFPreview
     }

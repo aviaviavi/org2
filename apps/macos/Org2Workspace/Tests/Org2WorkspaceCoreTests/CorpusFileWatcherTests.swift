@@ -176,7 +176,7 @@ final class CorpusFileWatcherTests: XCTestCase {
     )
     XCTAssertEqual(
       WorkspaceStore.invalidatedWorkspaceSurfaces(for: [meeting], corpusRoot: root),
-      [.agenda, .approvals, .search, .meetings, .openClaw]
+      [.agenda, .approvals, .search, .meetings, .aiChat]
     )
   }
 
@@ -687,7 +687,7 @@ final class CorpusFileWatcherTests: XCTestCase {
     store.setCorpusRoot(root, persistsDefault: false)
     store.setWorkspaceRealtimeRefreshActive(true)
     defer { store.setWorkspaceRealtimeRefreshActive(false) }
-    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1))
+    store.openChatFileReference(AIChatFileReference(path: note.path, line: 1))
 
     var deadline = Date().addingTimeInterval(8)
     while store.selectedEntrySource?.text.contains("* Alpha") != true,

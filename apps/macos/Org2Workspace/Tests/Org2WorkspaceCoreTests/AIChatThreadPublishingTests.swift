@@ -97,21 +97,21 @@ final class AIChatThreadPublishingTests: XCTestCase {
   }
 
   func testPublishableMessagesKeepOnlyDeliveredConversationText() {
-    let context = OpenClawContextPresentation.automaticContext(
+    let context = AIChatContextPresentation.automaticContext(
       kind: "note",
       title: "Private roadmap",
       reference: "notes/roadmap.org",
       prompt: "SECRET CONTEXT BODY",
       userText: "What should we ship next?"
     )
-    let queued = OpenClawChatMessage(role: .user, content: "Queued draft")
+    let queued = AIChatMessage(role: .user, content: "Queued draft")
     let messages = [
-      OpenClawChatMessage(role: .user, content: context),
-      OpenClawChatMessage(role: .user, content: "Failed send", sendFailure: "offline", deliveryStatus: .failed),
-      OpenClawChatMessage(role: .user, content: "Still sending", deliveryStatus: .sending),
+      AIChatMessage(role: .user, content: context),
+      AIChatMessage(role: .user, content: "Failed send", sendFailure: "offline", deliveryStatus: .failed),
+      AIChatMessage(role: .user, content: "Still sending", deliveryStatus: .sending),
       queued,
-      OpenClawChatMessage(role: .user, content: "Room copy", isRoomDispatchCopy: true),
-      OpenClawChatMessage(role: .assistant, content: "Ship *sharing*.", authorLabel: "OpenCode"),
+      AIChatMessage(role: .user, content: "Room copy", isRoomDispatchCopy: true),
+      AIChatMessage(role: .assistant, content: "Ship *sharing*.", authorLabel: "OpenCode"),
     ]
 
     let published = AIChatThreadPublicationSnapshot.publishableMessages(

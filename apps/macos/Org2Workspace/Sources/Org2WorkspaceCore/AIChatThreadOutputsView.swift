@@ -217,7 +217,7 @@ struct AIChatThreadOutputsPanel: View {
   }
 
   private func open(_ path: String) {
-    store.openChatFileReference(OpenClawFileReference(path: path, line: nil))
+    store.openChatFileReference(AIChatFileReference(path: path, line: nil))
     onOpen()
   }
 }
@@ -318,7 +318,7 @@ private struct AIChatOutputsFolderEntryRow: View {
         if entry.isDirectory {
           isExpanded.toggle()
         } else {
-          store.openChatFileReference(OpenClawFileReference(path: entry.path, line: nil))
+          store.openChatFileReference(AIChatFileReference(path: entry.path, line: nil))
           onOpen()
         }
       } label: {

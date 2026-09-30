@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct OpenOrgFileReferenceActionKey: EnvironmentKey {
-  static let defaultValue: @MainActor @Sendable (OpenClawFileReference) -> Void = { _ in }
+  static let defaultValue: @MainActor @Sendable (AIChatFileReference) -> Void = { _ in }
 }
 
 struct OrgRoamLinkResolverKey: EnvironmentKey {
@@ -38,7 +38,7 @@ struct OrgInlineTextLinkActivationKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-  var openOrgFileReference: @MainActor @Sendable (OpenClawFileReference) -> Void {
+  var openOrgFileReference: @MainActor @Sendable (AIChatFileReference) -> Void {
     get { self[OpenOrgFileReferenceActionKey.self] }
     set { self[OpenOrgFileReferenceActionKey.self] = newValue }
   }
@@ -138,13 +138,13 @@ struct OrgInlineText: View {
       .font(font)
       .lineSpacing(lineSpacing)
       .environment(\.openURL, OpenURLAction { url in
-        if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
+        if let reference = AIChatFileReference.fromDeepLinkURL(url) {
           openOrgFileReference(reference)
           return .handled
         }
 
         if url.isFileURL {
-          openOrgFileReference(OpenClawFileReference(path: url.path, line: nil))
+          openOrgFileReference(AIChatFileReference(path: url.path, line: nil))
           return .handled
         }
 
@@ -310,7 +310,7 @@ struct OrgInlineRenderedTextLinkMap: Equatable {
     }
   }
 
-  private static func linkURL(target: String, fileReference: OpenClawFileReference?) -> URL? {
+  private static func linkURL(target: String, fileReference: AIChatFileReference?) -> URL? {
     if let fileReference {
       return fileReference.deepLinkURL
     }
@@ -732,7 +732,7 @@ enum OrgInlineAttributedString {
 }
 
 enum OrgInlineLinkTooltip {
-  static func text(target: String, fileReference: OpenClawFileReference?) -> String {
+  static func text(target: String, fileReference: AIChatFileReference?) -> String {
     if let fileReference {
       let path = (fileReference.path as NSString).abbreviatingWithTildeInPath
       let extensionName = URL(fileURLWithPath: fileReference.path).pathExtension.lowercased()

@@ -66,9 +66,9 @@ struct Org2WorkspaceScreenshotRenderer {
       }
       if verifiesCodeCopy {
         await MainActor.run {
-          store.selectedSurface = .openClaw
-          store.openClawMessages = [
-            OpenClawChatMessage(
+          store.selectedSurface = .aiChat
+          store.aiChatMessages = [
+            AIChatMessage(
               role: .assistant,
               content: """
               Added in OpenOrg Preview:
@@ -89,23 +89,23 @@ struct Org2WorkspaceScreenshotRenderer {
               org2 lint --recursive
               #+end_src
               """,
-              changeSummary: OpenClawCorpusChangeSummary(files: [
-                OpenClawCorpusFileChange(
+              changeSummary: AIChatCorpusChangeSummary(files: [
+                AIChatCorpusFileChange(
                   relativePath: "apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/AIChatTranscriptDocument.swift",
                   status: .modified,
                   insertions: 18,
                   deletions: 4
                 )
               ]),
-              responseTrace: OpenClawResponseTrace(
+              responseTrace: AIChatResponseTrace(
                 reasoning: "Preserve the established message interface while keeping one selectable transcript document.",
                 activities: [
-                  OpenClawRunActivity(
+                  AIChatRunActivity(
                     id: "read", runID: "preview", kind: .tool,
-                    title: "Read chat presentation", detail: "OpenClawChatViews.swift",
+                    title: "Read chat presentation", detail: "AIChatViews.swift",
                     status: .succeeded
                   ),
-                  OpenClawRunActivity(
+                  AIChatRunActivity(
                     id: "test", runID: "preview", kind: .tool,
                     title: "Run selection checks", detail: "9 tests passed",
                     status: .succeeded
@@ -115,8 +115,8 @@ struct Org2WorkspaceScreenshotRenderer {
             )
           ]
           if verifiesChatSelection {
-            store.openClawMessages.append(OpenClawChatMessage(role: .user, content: "Select across this message boundary."))
-            store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "The third message remains in the same document."))
+            store.aiChatMessages.append(AIChatMessage(role: .user, content: "Select across this message boundary."))
+            store.aiChatMessages.append(AIChatMessage(role: .assistant, content: "The third message remains in the same document."))
           }
         }
       }

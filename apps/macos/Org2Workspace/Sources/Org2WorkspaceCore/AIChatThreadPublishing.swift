@@ -18,7 +18,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
 
   struct Message: Sendable, Equatable {
     let id: UUID
-    let role: OpenClawChatMessage.Role
+    let role: AIChatMessage.Role
     let author: String
     let createdAt: Date
     /// User and system text as written, or normalized Org for assistants.
@@ -39,7 +39,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
   static let embeddedImageByteLimit = 4 * 1_024 * 1_024
 
   static func publishableMessages(
-    _ messages: [OpenClawChatMessage],
+    _ messages: [AIChatMessage],
     userName: String,
     queuedMessageIDs: Set<UUID> = [],
     assistantTitles: [UUID: String] = [:],
@@ -52,7 +52,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
               message.deliveryStatus == .sent || message.deliveryStatus == .interrupted,
               !queuedMessageIDs.contains(message.id)
         else { return nil }
-        let text = OpenClawContextPresentation(message.content).userText
+        let text = AIChatContextPresentation(message.content).userText
         let attachments = message.attachments.map(Self.attachment)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
         else { return nil }
@@ -77,7 +77,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
             ? "Org2"
             : assistantTitles[message.id] ?? message.authorLabel ?? defaultAssistantTitle,
           createdAt: message.createdAt,
-          text: formatted ? OpenClawMessageOrgNormalizer.normalized(message.content) : message.content,
+          text: formatted ? AIChatMessageOrgNormalizer.normalized(message.content) : message.content,
           formatted: formatted,
           attachments: message.attachments.map(Self.attachment)
         )
@@ -85,7 +85,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
     }
   }
 
-  private static func attachment(_ attachment: OpenClawChatAttachment) -> Attachment {
+  private static func attachment(_ attachment: AIChatAttachment) -> Attachment {
     let isImage = attachment.mimeType.lowercased().hasPrefix("image/")
       && attachment.mimeType.lowercased() != "image/svg+xml"
     let dataURL = isImage && attachment.byteCount <= embeddedImageByteLimit
@@ -493,7 +493,7 @@ extension WorkspaceStore {
       let publication = chatThreadPublication(for: threadID) == nil
         ? try await publishChatThread(threadID)
         : try await republishChatThread(threadID, force: false)
-      OpenClawMessageClipboard.write(publication.url.absoluteString)
+      AIChatMessageClipboard.write(publication.url.absoluteString)
       statusText = "Copied the shared thread link"
     } catch {
       errorText = error.localizedDescription
@@ -541,7 +541,7 @@ extension WorkspaceStore {
     force: Bool
   ) async throws -> LocalDocumentPublication {
     let existing = chatThreadPublication(for: threadID)
-    guard let metadata = openClawChatThreads.first(where: { $0.id == threadID }) else {
+    guard let metadata = aiChatThreads.first(where: { $0.id == threadID }) else {
       if let existing, !force { return existing }
       throw AIChatThreadPublishingError.missingThread
     }
@@ -584,14 +584,14 @@ extension WorkspaceStore {
   }
 
   private func chatThreadRespondingStatus(for threadID: UUID) -> String? {
-    guard openClawSendingThreadIDs.contains(threadID) || aiChatRemoteLiveTurn(for: threadID) != nil,
-          let thread = openClawChatThreads.first(where: { $0.id == threadID })
+    guard aiChatSendingThreadIDs.contains(threadID) || aiChatRemoteLiveTurn(for: threadID) != nil,
+          let thread = aiChatThreads.first(where: { $0.id == threadID })
     else { return nil }
     return "\(aiChatDestinationTitle(thread.destinationID)) is working on a reply…"
   }
 
   private func chatThreadPublicationSignature(
-    for thread: OpenClawChatThread
+    for thread: AIChatThread
   ) -> AIChatThreadPublicationSignature {
     AIChatThreadPublicationSignature(
       title: thread.title,
@@ -606,7 +606,7 @@ extension WorkspaceStore {
   }
 
   private func chatThreadPublicationSnapshot(
-    for thread: OpenClawChatThread
+    for thread: AIChatThread
   ) -> AIChatThreadPublicationSnapshot {
     let userName = NSFullUserName().trimmingCharacters(in: .whitespacesAndNewlines)
     var queuedMessageIDs = Set<UUID>()

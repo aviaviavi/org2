@@ -195,7 +195,7 @@ final class BrowserClipImportTests: XCTestCase {
     try await withSessionFixture { store, root, clip, result in
       let source = root.appendingPathComponent("draft.org")
       try "* Draft\nOriginal text\n".write(to: source, atomically: true, encoding: .utf8)
-      let location = WorkspaceLocation.openClaw(OpenClawThread(
+      let location = WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
         title: "Draft", file: source.path, line: 1, zone: "test", modifiedAt: nil
       ))
       store.select(location)
@@ -235,7 +235,7 @@ final class BrowserClipImportTests: XCTestCase {
     let suite = "Org2BrowserClipSession.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let store = WorkspaceStore(defaults: defaults, openClawTranscriptURL: root.appendingPathComponent("chat.json"))
+    let store = WorkspaceStore(defaults: defaults, aiChatTranscriptURL: root.appendingPathComponent("chat.json"))
     store.setWorkspaceRealtimeRefreshActive(false)
     store.setCorpusRoot(root, persistsDefault: false)
     store.isCapturePanelPresented = true

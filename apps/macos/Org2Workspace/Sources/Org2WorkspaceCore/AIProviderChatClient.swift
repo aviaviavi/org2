@@ -82,9 +82,9 @@ public struct AIProviderChatClient: Sendable {
   }
 
   public func send(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     model: String,
-    workspaceContext: OpenClawWorkspaceContext,
+    workspaceContext: AIChatWorkspaceContext,
     destinationName: String
   ) async throws -> String {
     try await sendResult(
@@ -96,9 +96,9 @@ public struct AIProviderChatClient: Sendable {
   }
 
   public func sendResult(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     model: String,
-    workspaceContext: OpenClawWorkspaceContext,
+    workspaceContext: AIChatWorkspaceContext,
     destinationName: String
   ) async throws -> AIProviderChatResult {
     let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -196,7 +196,7 @@ public struct AIProviderChatClient: Sendable {
   }
 
   private func requestBody(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     model: String,
     system: String
   ) throws -> [String: Any] {
@@ -226,7 +226,7 @@ public struct AIProviderChatClient: Sendable {
     }
   }
 
-  private func openAIMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
+  private func openAIMessage(_ message: AIChatMessage) throws -> [String: Any] {
     let content = attributedContent(message)
     guard !message.attachments.isEmpty else {
       return ["role": providerRole(message.role), "content": content]
@@ -238,7 +238,7 @@ public struct AIProviderChatClient: Sendable {
     return ["role": providerRole(message.role), "content": parts]
   }
 
-  private func anthropicMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
+  private func anthropicMessage(_ message: AIChatMessage) throws -> [String: Any] {
     var content: [[String: Any]] = [["type": "text", "text": attributedContent(message)]]
     content += try message.attachments.map {
       [
@@ -253,7 +253,7 @@ public struct AIProviderChatClient: Sendable {
     return ["role": providerRole(message.role), "content": content]
   }
 
-  private func ollamaMessage(_ message: OpenClawChatMessage) throws -> [String: Any] {
+  private func ollamaMessage(_ message: AIChatMessage) throws -> [String: Any] {
     var result: [String: Any] = [
       "role": providerRole(message.role),
       "content": attributedContent(message),
@@ -264,11 +264,11 @@ public struct AIProviderChatClient: Sendable {
     return result
   }
 
-  private func providerRole(_ role: OpenClawChatMessage.Role) -> String {
+  private func providerRole(_ role: AIChatMessage.Role) -> String {
     role == .assistant ? "assistant" : "user"
   }
 
-  private func attributedContent(_ message: OpenClawChatMessage) -> String {
+  private func attributedContent(_ message: AIChatMessage) -> String {
     guard message.role == .assistant,
           let authorLabel = message.authorLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
           !authorLabel.isEmpty
@@ -276,7 +276,7 @@ public struct AIProviderChatClient: Sendable {
     return "[\(authorLabel)]\n\(message.content)"
   }
 
-  private func validateAttachments(in messages: [OpenClawChatMessage]) throws {
+  private func validateAttachments(in messages: [AIChatMessage]) throws {
     if let attachment = messages.flatMap(\.attachments).first(where: {
       !$0.mimeType.lowercased().hasPrefix("image/")
     }) {

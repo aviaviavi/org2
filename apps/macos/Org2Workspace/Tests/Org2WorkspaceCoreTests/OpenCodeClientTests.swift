@@ -102,7 +102,7 @@ final class OpenCodeClientTests: XCTestCase {
   }
 
   func testSteerUsesExplicitDeliveryAndPreservesAttachments() throws {
-    let attachment = OpenClawChatAttachment(
+    let attachment = AIChatAttachment(
       fileName: "note.txt",
       mimeType: "text/plain",
       data: Data("context".utf8)

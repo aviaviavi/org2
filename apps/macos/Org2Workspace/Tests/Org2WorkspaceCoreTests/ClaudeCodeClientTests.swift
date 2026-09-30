@@ -143,7 +143,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       claudeSendHandlerForTesting: { messages, _, _ in
         XCTAssertEqual(messages.last(where: { $0.role == .user })?.content, "Hello Claude")
         return ClaudeCodeTurnResult(sessionID: "claude-session-1", reply: "Hello from Claude")
@@ -164,9 +164,9 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     let threadID = store.createAIChatThread(
       destinationID: AIChatDestinationConfiguration.localClaudeID
     )
-    await store.sendOpenClawMessage(text: "Hello Claude")
+    await store.sendAIChatMessage(text: "Hello Claude")
 
-    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    let thread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == threadID }))
     XCTAssertEqual(thread.runtime, .claude)
     XCTAssertEqual(thread.destinationID, AIChatDestinationConfiguration.localClaudeID)
     XCTAssertEqual(
@@ -201,7 +201,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     let store = WorkspaceStore(
       cli: cli,
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       claudeSendHandlerForTesting: { messages, _, _ in
         let prompt = messages.last(where: { $0.role == .user })?.content ?? ""
         XCTAssertTrue(prompt.contains("ORG2_WORKFLOW_ID: weekly-claude-brief"))
@@ -239,7 +239,7 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     XCTAssertEqual(run.status, "completed")
     XCTAssertEqual(run.attempt?.triggerId, "schedule")
     XCTAssertEqual(run.outcome?.summary, "The weekly brief is ready.")
-    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.title == "Automation: Weekly Claude brief" }))
+    let thread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.title == "Automation: Weekly Claude brief" }))
     XCTAssertEqual(thread.destinationID, AIChatDestinationConfiguration.localClaudeID)
     XCTAssertEqual(thread.model, "opus")
     XCTAssertEqual(thread.messages.last(where: { $0.role == .assistant })?.content, "The weekly brief is ready.")

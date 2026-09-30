@@ -11,7 +11,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
       .deletingLastPathComponent()
     let source = try String(
       contentsOf: packageRoot.appendingPathComponent(
-        "Sources/Org2WorkspaceCore/OpenClawChatViews.swift"
+        "Sources/Org2WorkspaceCore/AIChatViews.swift"
       ),
       encoding: .utf8
     )
@@ -342,7 +342,7 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertTrue(source.contains("CommandGroup(replacing: .newItem)"))
     XCTAssertTrue(source.contains("Button(\"New AI Thread\")"))
     XCTAssertTrue(source.contains("store.createAIChatThread()"))
-    XCTAssertTrue(source.contains("store.makeSurfacePrimary(.openClaw)"))
+    XCTAssertTrue(source.contains("store.makeSurfacePrimary(.aiChat)"))
     XCTAssertTrue(source.contains(#".keyboardShortcut("n", modifiers: [.command])"#))
   }
 
@@ -544,56 +544,56 @@ final class WorkspaceListSelectionTests: XCTestCase {
 
   func testSettledThreadDisclosurePreservesTheUsersChoice() {
     XCTAssertFalse(
-      OpenClawSettledThreadDisclosure.updated(isExpanded: false, settledThreadCount: 3)
+      AIChatSettledThreadDisclosure.updated(isExpanded: false, settledThreadCount: 3)
     )
     XCTAssertTrue(
-      OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 4)
+      AIChatSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 4)
     )
     XCTAssertFalse(
-      OpenClawSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 0)
+      AIChatSettledThreadDisclosure.updated(isExpanded: true, settledThreadCount: 0)
     )
   }
 
   func testSettledThreadPaginationLoadsBoundedBatches() {
-    XCTAssertEqual(OpenClawSettledThreadPagination.pageSize, 30)
+    XCTAssertEqual(AIChatSettledThreadPagination.pageSize, 30)
     XCTAssertEqual(
-      OpenClawSettledThreadPagination.nextLimit(currentLimit: 30, totalCount: 253),
+      AIChatSettledThreadPagination.nextLimit(currentLimit: 30, totalCount: 253),
       60
     )
     XCTAssertEqual(
-      OpenClawSettledThreadPagination.nextLimit(currentLimit: 240, totalCount: 253),
+      AIChatSettledThreadPagination.nextLimit(currentLimit: 240, totalCount: 253),
       253
     )
     XCTAssertEqual(
-      OpenClawSettledThreadPagination.clampedLimit(currentLimit: 90, totalCount: 25),
+      AIChatSettledThreadPagination.clampedLimit(currentLimit: 90, totalCount: 25),
       25
     )
     XCTAssertEqual(
-      OpenClawSettledThreadPagination.moreTitle(currentLimit: 240, totalCount: 253),
+      AIChatSettledThreadPagination.moreTitle(currentLimit: 240, totalCount: 253),
       "Show 13 more · 13 remaining"
     )
   }
 
   func testSidebarThreadRowIdentitySurvivesSettlementChanges() {
     let threadID = UUID()
-    let activeThread = OpenClawChatThread(
+    let activeThread = AIChatThread(
       id: threadID,
       title: "Thread",
       sessionKey: "agent:main:thread"
     )
-    let settledThread = activeThread.replacingOpenClawChatMetadata(
+    let settledThread = activeThread.replacingAIChatMetadata(
       isArchived: true,
       settledAt: .some(Date(timeIntervalSince1970: 1_700_000_000))
     )
 
     XCTAssertEqual(
-      OpenClawSidebarThreadRowIdentity(thread: activeThread),
-      OpenClawSidebarThreadRowIdentity(thread: settledThread)
+      AIChatSidebarThreadRowIdentity(thread: activeThread),
+      AIChatSidebarThreadRowIdentity(thread: settledThread)
     )
     XCTAssertNotEqual(
-      OpenClawSidebarThreadRowIdentity(thread: activeThread),
-      OpenClawSidebarThreadRowIdentity(
-        thread: OpenClawChatThread(title: "Other", sessionKey: "agent:main:other")
+      AIChatSidebarThreadRowIdentity(thread: activeThread),
+      AIChatSidebarThreadRowIdentity(
+        thread: AIChatThread(title: "Other", sessionKey: "agent:main:other")
       )
     )
   }
@@ -601,28 +601,28 @@ final class WorkspaceListSelectionTests: XCTestCase {
   func testChatSidebarSummaryDoesNotRetainTranscriptContent() {
     let threadID = UUID()
     let updatedAt = Date(timeIntervalSince1970: 1_800_000_000)
-    let firstThread = OpenClawChatThread(
+    let firstThread = AIChatThread(
       id: threadID,
       title: "Thread",
       updatedAt: updatedAt,
       sessionKey: "agent:main:thread",
       messages: [
-        OpenClawChatMessage(role: .assistant, content: String(repeating: "a", count: 10_000))
+        AIChatMessage(role: .assistant, content: String(repeating: "a", count: 10_000))
       ]
     )
-    let secondThread = OpenClawChatThread(
+    let secondThread = AIChatThread(
       id: threadID,
       title: "Thread",
       updatedAt: updatedAt,
       sessionKey: "agent:main:thread",
       messages: [
-        OpenClawChatMessage(role: .assistant, content: String(repeating: "b", count: 10_000))
+        AIChatMessage(role: .assistant, content: String(repeating: "b", count: 10_000))
       ]
     )
 
     XCTAssertEqual(
-      OpenClawSidebarThreadSummary(thread: firstThread),
-      OpenClawSidebarThreadSummary(thread: secondThread),
+      AIChatSidebarThreadSummary(thread: firstThread),
+      AIChatSidebarThreadSummary(thread: secondThread),
       "Sidebar redraws should compare compact row metadata instead of entire transcript payloads"
     )
   }
@@ -640,12 +640,12 @@ final class WorkspaceListSelectionTests: XCTestCase {
     XCTAssertFalse(source.contains("contextualThreadID"))
     XCTAssertFalse(source.contains("contextThread:"))
     XCTAssertTrue(source.contains("rename(summary.id)"))
-    XCTAssertTrue(source.contains("OpenClawSidebarThreadContextMenuTarget("))
+    XCTAssertTrue(source.contains("AIChatSidebarThreadContextMenuTarget("))
     XCTAssertTrue(source.contains("NSApp.currentEvent?.type == .rightMouseDown"))
     XCTAssertTrue(source.contains("rename?(threadID)"))
     XCTAssertTrue(source.contains("presenting: chatRenameRequest"))
     XCTAssertTrue(source.contains("let threadID = request.threadID"))
-    XCTAssertTrue(source.contains("store.renameOpenClawChatThread(threadID, title: title)"))
+    XCTAssertTrue(source.contains("store.renameAIChatThread(threadID, title: title)"))
     XCTAssertGreaterThanOrEqual(
       source.components(separatedBy: "chatRenameRequest = nil").count - 1,
       2,

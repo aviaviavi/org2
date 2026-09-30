@@ -7,12 +7,12 @@ final class AIChatThreadOutputsTests: XCTestCase {
   private let home = "/Users/me"
   private let room = "/corpus/views/data-rooms/acme"
 
-  private func reply(_ content: String, edits: [(String, OpenClawCorpusFileChange.Status)] = []) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  private func reply(_ content: String, edits: [(String, AIChatCorpusFileChange.Status)] = []) -> AIChatMessage {
+    AIChatMessage(
       role: .assistant,
       content: content,
-      changeSummary: edits.isEmpty ? nil : OpenClawCorpusChangeSummary(files: edits.map {
-        OpenClawCorpusFileChange(relativePath: $0.0, status: $0.1, insertions: 1, deletions: 0)
+      changeSummary: edits.isEmpty ? nil : AIChatCorpusChangeSummary(files: edits.map {
+        AIChatCorpusFileChange(relativePath: $0.0, status: $0.1, insertions: 1, deletions: 0)
       })
     )
   }
@@ -26,7 +26,7 @@ final class AIChatThreadOutputsTests: XCTestCase {
       "Updated [[file:views/data-rooms/acme/sales/pipeline.org][pipeline]], see views/data-rooms/acme/sales/pipeline.org again.",
       edits: [("views/data-rooms/acme/sales/pipeline.org", .modified), ("daily/2026-09-29.org", .modified)]
     )
-    let messages = [OpenClawChatMessage(role: .user, content: "see /corpus/notes/ignored.org"), first, second]
+    let messages = [AIChatMessage(role: .user, content: "see /corpus/notes/ignored.org"), first, second]
 
     let outputs = AIChatThreadOutputs.derive(
       messages: messages,

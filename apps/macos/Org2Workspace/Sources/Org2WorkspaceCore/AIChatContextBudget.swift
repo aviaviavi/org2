@@ -80,7 +80,7 @@ struct AIChatPersistentContextState: Sendable {
     fullPrompt: (_ requiresRecovery: Bool) -> String,
     includesTranscript: Bool,
     roomPrompt: String,
-    attachments: [OpenClawChatAttachment]
+    attachments: [AIChatAttachment]
   ) -> AIChatPersistentContextEnvelope {
     let staleKeys = sections.keys.filter {
       $0.transcriptPath == key.transcriptPath
@@ -150,7 +150,7 @@ enum AIChatContextBudget {
     return max(1, Int(ceil(Double(text.utf8.count) / 4.0)))
   }
 
-  static func estimatedAttachmentTokens(_ attachments: [OpenClawChatAttachment]) -> Int {
+  static func estimatedAttachmentTokens(_ attachments: [AIChatAttachment]) -> Int {
     attachments.reduce(0) { total, attachment in
       // Base64 provider payloads are roughly four bytes for every three source
       // bytes. The normal text estimator then maps those bytes to tokens.
@@ -159,9 +159,9 @@ enum AIChatContextBudget {
   }
 
   static func boundedHistory(
-    _ messages: [OpenClawChatMessage],
+    _ messages: [AIChatMessage],
     tokenBudget: Int = statelessHistoryTokenBudget
-  ) -> [OpenClawChatMessage] {
+  ) -> [AIChatMessage] {
     guard let currentMessage = messages.last else { return [] }
     let budget = max(1, tokenBudget)
     var selected = [currentMessage]
@@ -208,7 +208,7 @@ enum AIChatContextBudget {
     forceRecovery: Bool,
     includesTranscript: Bool,
     roomPrompt: String = "",
-    attachments: [OpenClawChatAttachment] = []
+    attachments: [AIChatAttachment] = []
   ) -> AIChatPersistentContextEnvelope {
     let sections = promptSections(fullPrompt)
     let snapshot = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
@@ -279,7 +279,7 @@ enum AIChatContextBudget {
 
   static func statelessTelemetry(
     systemPrompt: String,
-    history: [OpenClawChatMessage],
+    history: [AIChatMessage],
     roomPrompt: String = ""
   ) -> OpenOrgContextTelemetry {
     let sections = promptSections(systemPrompt)
@@ -346,7 +346,7 @@ enum AIChatContextBudget {
     mode: OpenOrgContextTelemetry.Mode,
     sections: [(key: String, text: String)],
     roomPrompt: String,
-    attachments: [OpenClawChatAttachment]
+    attachments: [AIChatAttachment]
   ) -> OpenOrgContextTelemetry {
     var staticTokens = 0
     var projectTokens = 0

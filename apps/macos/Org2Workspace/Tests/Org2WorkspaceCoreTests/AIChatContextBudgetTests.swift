@@ -63,7 +63,7 @@ final class AIChatContextBudgetTests: XCTestCase {
 
   func testStatelessHistoryHasOneHardTokenBudget() {
     let messages = (0..<80).map { index in
-      OpenClawChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant, content: String(repeating: "x", count: 1_000))
+      AIChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant, content: String(repeating: "x", count: 1_000))
     }
     let bounded = AIChatContextBudget.boundedHistory(messages)
     let estimated = bounded.reduce(0) {
@@ -76,9 +76,9 @@ final class AIChatContextBudgetTests: XCTestCase {
   }
 
   func testStatelessHistoryNeverTruncatesCurrentRequest() throws {
-    let earlier = OpenClawChatMessage(role: .assistant, content: String(repeating: "history ", count: 2_000))
+    let earlier = AIChatMessage(role: .assistant, content: String(repeating: "history ", count: 2_000))
     let currentContent = "BEGIN-CURRENT\n" + String(repeating: "instruction ", count: 8_000) + "\nEND-CURRENT"
-    let current = OpenClawChatMessage(role: .user, content: currentContent)
+    let current = AIChatMessage(role: .user, content: currentContent)
 
     let bounded = AIChatContextBudget.boundedHistory(
       [earlier, current],
@@ -136,7 +136,7 @@ final class AIChatContextBudgetTests: XCTestCase {
   }
 
   func testResponseTraceRoundTripsProviderAndComponentTelemetry() throws {
-    let trace = OpenClawResponseTrace(
+    let trace = AIChatResponseTrace(
       usage: AIChatTokenUsage(
         inputTokens: 120,
         cachedInputTokens: 80,
@@ -151,7 +151,7 @@ final class AIChatContextBudgetTests: XCTestCase {
       )
     )
     let decoded = try JSONDecoder().decode(
-      OpenClawResponseTrace.self,
+      AIChatResponseTrace.self,
       from: JSONEncoder().encode(trace)
     )
     XCTAssertEqual(decoded, trace)
@@ -165,8 +165,8 @@ final class AIChatContextBudgetTests: XCTestCase {
       "Org2 working rules\n\nStable instruction",
     ].joined(separator: "\n\n---\n\n")
     let history = [
-      OpenClawChatMessage(role: .assistant, content: "Earlier answer"),
-      OpenClawChatMessage(role: .user, content: "Current request"),
+      AIChatMessage(role: .assistant, content: "Earlier answer"),
+      AIChatMessage(role: .user, content: "Current request"),
     ]
 
     let telemetry = AIChatContextBudget.statelessTelemetry(

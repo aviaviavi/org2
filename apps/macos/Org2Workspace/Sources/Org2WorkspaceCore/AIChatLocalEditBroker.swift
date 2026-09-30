@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public struct OpenClawLocalEditWorkspaceContext: Equatable, Sendable {
+public struct AIChatLocalEditWorkspaceContext: Equatable, Sendable {
   public let nodeDisplayName: String
   public let turnID: String
 
@@ -19,15 +19,15 @@ public struct OpenClawLocalEditWorkspaceContext: Equatable, Sendable {
     For corpus reads and writes, use the OpenClaw `nodes` tool with action `invoke`, node `\(nodeDisplayName)`, and one of these typed commands. Do not edit corpus files with Gateway filesystem or shell tools during this turn.
 
     1. Read effective local text, including any unsaved editor draft:
-       invokeCommand: \(OpenClawLocalEditBroker.readCommand)
+       invokeCommand: \(AIChatLocalEditBroker.readCommand)
        invokeParamsJson: {"turnId":"\(turnID)","path":"relative/path.org"}
        For an additional authorized corpus, include its exact local root from the workspace context as "corpusRoot".
     2. Preview one or more whole-file replacements. Existing files require the exact sha256 returned by read:
-       invokeCommand: \(OpenClawLocalEditBroker.previewCommand)
+       invokeCommand: \(AIChatLocalEditBroker.previewCommand)
        invokeParamsJson: {"turnId":"\(turnID)","edits":[{"path":"relative/path.org","expectedSha256":"<read sha256>","replacementText":"<complete replacement text>"}]}
        To create a file, omit expectedSha256 and set "createsFile":true.
     3. Apply the exact preview only after preview succeeds:
-       invokeCommand: \(OpenClawLocalEditBroker.applyCommand)
+       invokeCommand: \(AIChatLocalEditBroker.applyCommand)
        invokeParamsJson: {"turnId":"\(turnID)","previewId":"<previewId>"}
 
     Always read before replacing an existing file. Preserve the complete effective document, including unsaved user text. If a stale-document error occurs, read again and rebuild the replacement. The apply result is the authoritative change set for this response.
@@ -35,21 +35,21 @@ public struct OpenClawLocalEditWorkspaceContext: Equatable, Sendable {
   }
 }
 
-public enum OpenClawLocalEditDocumentOrigin: String, Codable, Sendable {
+public enum AIChatLocalEditDocumentOrigin: String, Codable, Sendable {
   case disk
   case editor
   case missing
 }
 
-public struct OpenClawLocalEditDocument: Equatable, Sendable {
+public struct AIChatLocalEditDocument: Equatable, Sendable {
   public let relativePath: String
   public let text: String
-  public let origin: OpenClawLocalEditDocumentOrigin
+  public let origin: AIChatLocalEditDocumentOrigin
 
   public init(
     relativePath: String,
     text: String,
-    origin: OpenClawLocalEditDocumentOrigin
+    origin: AIChatLocalEditDocumentOrigin
   ) {
     self.relativePath = relativePath
     self.text = text
@@ -57,11 +57,11 @@ public struct OpenClawLocalEditDocument: Equatable, Sendable {
   }
 
   public var sha256: String {
-    OpenClawLocalEditBroker.sha256(text)
+    AIChatLocalEditBroker.sha256(text)
   }
 }
 
-public struct OpenClawLocalEditReplacement: Equatable, Sendable {
+public struct AIChatLocalEditReplacement: Equatable, Sendable {
   public let relativePath: String
   public let expectedSHA256: String?
   public let replacementText: String
@@ -80,15 +80,15 @@ public struct OpenClawLocalEditReplacement: Equatable, Sendable {
   }
 }
 
-public struct OpenClawLocalEditApplyResult: Equatable, Sendable {
-  public let summary: OpenClawCorpusChangeSummary
+public struct AIChatLocalEditApplyResult: Equatable, Sendable {
+  public let summary: AIChatCorpusChangeSummary
 
-  public init(summary: OpenClawCorpusChangeSummary) {
+  public init(summary: AIChatCorpusChangeSummary) {
     self.summary = summary
   }
 }
 
-public struct OpenClawLocalEditCommandResult: Equatable, Sendable {
+public struct AIChatLocalEditCommandResult: Equatable, Sendable {
   public let ok: Bool
   public let payloadJSON: String?
   public let errorCode: String?
@@ -107,7 +107,7 @@ public struct OpenClawLocalEditCommandResult: Equatable, Sendable {
   }
 }
 
-public enum OpenClawLocalEditError: LocalizedError, Equatable, Sendable {
+public enum AIChatLocalEditError: LocalizedError, Equatable, Sendable {
   case invalidRequest(String)
   case inactiveTurn
   case unsupportedCommand(String)
@@ -145,19 +145,19 @@ public enum OpenClawLocalEditError: LocalizedError, Equatable, Sendable {
 /// effective local document first, including an unsaved editor draft when one is
 /// active, and then preview a replacement against that exact SHA-256. Applying a
 /// preview rechecks every document before any writes begin.
-public actor OpenClawLocalEditBroker {
+public actor AIChatLocalEditBroker {
   public static let readCommand = "org2.workspace.read"
   public static let previewCommand = "org2.workspace.patch.preview"
   public static let applyCommand = "org2.workspace.patch.apply"
   public static let commands = [readCommand, previewCommand, applyCommand]
 
   public typealias DocumentReader =
-    @MainActor @Sendable (String, String, String?) throws -> OpenClawLocalEditDocument
+    @MainActor @Sendable (String, String, String?) throws -> AIChatLocalEditDocument
   public typealias ReplacementApplier =
     @MainActor @Sendable (
       String,
-      [OpenClawLocalEditReplacement]
-    ) async throws -> OpenClawLocalEditApplyResult
+      [AIChatLocalEditReplacement]
+    ) async throws -> AIChatLocalEditApplyResult
 
   private struct ReadRequest: Decodable {
     let turnID: String
@@ -217,9 +217,9 @@ public actor OpenClawLocalEditBroker {
     let id: String
     let turnID: String
     let createdAt: Date
-    let replacements: [OpenClawLocalEditReplacement]
-    let documentsByPath: [String: OpenClawLocalEditDocument]
-    let summary: OpenClawCorpusChangeSummary
+    let replacements: [AIChatLocalEditReplacement]
+    let documentsByPath: [String: AIChatLocalEditDocument]
+    let summary: AIChatCorpusChangeSummary
   }
 
   private struct AppliedDocumentState {
@@ -259,7 +259,7 @@ public actor OpenClawLocalEditBroker {
     appliedDocumentsByTurnID.removeValue(forKey: turnID)
   }
 
-  public func consumeChangeSummary(for turnID: String) -> OpenClawCorpusChangeSummary? {
+  public func consumeChangeSummary(for turnID: String) -> AIChatCorpusChangeSummary? {
     guard let documents = appliedDocumentsByTurnID.removeValue(forKey: turnID)
     else {
       return nil
@@ -277,7 +277,7 @@ public actor OpenClawLocalEditBroker {
     guard !changes.isEmpty else {
       return nil
     }
-    return OpenClawCorpusChangeSummary(files: changes)
+    return AIChatCorpusChangeSummary(files: changes)
   }
 
   private func recordAppliedDocuments(from preview: Preview) {
@@ -296,7 +296,7 @@ public actor OpenClawLocalEditBroker {
     appliedDocumentsByTurnID[preview.turnID] = appliedDocuments
   }
 
-  public func handle(command: String, paramsJSON: String?) async -> OpenClawLocalEditCommandResult {
+  public func handle(command: String, paramsJSON: String?) async -> AIChatLocalEditCommandResult {
     do {
       switch command {
       case Self.readCommand:
@@ -306,16 +306,16 @@ public actor OpenClawLocalEditBroker {
       case Self.applyCommand:
         return try await handleApply(paramsJSON)
       default:
-        throw OpenClawLocalEditError.unsupportedCommand(command)
+        throw AIChatLocalEditError.unsupportedCommand(command)
       }
-    } catch let error as OpenClawLocalEditError {
-      return OpenClawLocalEditCommandResult(
+    } catch let error as AIChatLocalEditError {
+      return AIChatLocalEditCommandResult(
         ok: false,
         errorCode: Self.errorCode(error),
         errorMessage: error.localizedDescription
       )
     } catch {
-      return OpenClawLocalEditCommandResult(
+      return AIChatLocalEditCommandResult(
         ok: false,
         errorCode: "LOCAL_EDIT_FAILED",
         errorMessage: error.localizedDescription
@@ -323,12 +323,12 @@ public actor OpenClawLocalEditBroker {
     }
   }
 
-  private func handleRead(_ paramsJSON: String?) async throws -> OpenClawLocalEditCommandResult {
+  private func handleRead(_ paramsJSON: String?) async throws -> AIChatLocalEditCommandResult {
     let request: ReadRequest = try decode(paramsJSON)
     try requireActiveTurn(request.turnID)
     let document = try await documentReader(request.turnID, request.path, request.corpusRoot)
     guard document.text.utf8.count <= Self.maximumDocumentBytes else {
-      throw OpenClawLocalEditError.oversizedRequest
+      throw AIChatLocalEditError.oversizedRequest
     }
     return try successJSON([
       "path": document.relativePath,
@@ -339,53 +339,53 @@ public actor OpenClawLocalEditBroker {
     ])
   }
 
-  private func handlePreview(_ paramsJSON: String?) async throws -> OpenClawLocalEditCommandResult {
+  private func handlePreview(_ paramsJSON: String?) async throws -> AIChatLocalEditCommandResult {
     let request: PreviewRequest = try decode(paramsJSON)
     try requireActiveTurn(request.turnID)
     guard !request.edits.isEmpty,
           request.edits.count <= Self.maximumEditCount,
           request.edits.reduce(0, { $0 + $1.replacementText.utf8.count }) <= Self.maximumTotalReplacementBytes
     else {
-      throw OpenClawLocalEditError.oversizedRequest
+      throw AIChatLocalEditError.oversizedRequest
     }
 
-    var replacements: [OpenClawLocalEditReplacement] = []
-    var changes: [OpenClawCorpusFileChange] = []
-    var documentsByPath: [String: OpenClawLocalEditDocument] = [:]
+    var replacements: [AIChatLocalEditReplacement] = []
+    var changes: [AIChatCorpusFileChange] = []
+    var documentsByPath: [String: AIChatLocalEditDocument] = [:]
     var seenPaths = Set<String>()
 
     for edit in request.edits {
       let document = try await documentReader(request.turnID, edit.path, nil)
       guard seenPaths.insert(document.relativePath).inserted else {
-        throw OpenClawLocalEditError.invalidRequest("duplicate path \(document.relativePath)")
+        throw AIChatLocalEditError.invalidRequest("duplicate path \(document.relativePath)")
       }
       guard edit.replacementText.utf8.count <= Self.maximumDocumentBytes else {
-        throw OpenClawLocalEditError.oversizedRequest
+        throw AIChatLocalEditError.oversizedRequest
       }
 
       if edit.createsFile {
         guard document.origin == .missing else {
-          throw OpenClawLocalEditError.existingDocument(document.relativePath)
+          throw AIChatLocalEditError.existingDocument(document.relativePath)
         }
       } else {
         guard document.origin != .missing else {
-          throw OpenClawLocalEditError.missingDocument(document.relativePath)
+          throw AIChatLocalEditError.missingDocument(document.relativePath)
         }
         guard let expectedSHA256 = edit.expectedSHA256?
           .trimmingCharacters(in: .whitespacesAndNewlines),
           !expectedSHA256.isEmpty
         else {
-          throw OpenClawLocalEditError.invalidRequest(
+          throw AIChatLocalEditError.invalidRequest(
             "expectedSha256 is required for \(document.relativePath)"
           )
         }
         guard expectedSHA256 == document.sha256 else {
-          throw OpenClawLocalEditError.staleDocument(document.relativePath)
+          throw AIChatLocalEditError.staleDocument(document.relativePath)
         }
       }
 
       documentsByPath[document.relativePath] = document
-      let replacement = OpenClawLocalEditReplacement(
+      let replacement = AIChatLocalEditReplacement(
         relativePath: document.relativePath,
         expectedSHA256: edit.createsFile ? nil : document.sha256,
         replacementText: edit.replacementText,
@@ -401,7 +401,7 @@ public actor OpenClawLocalEditBroker {
       }
     }
 
-    let summary = OpenClawCorpusChangeSummary(files: changes)
+    let summary = AIChatCorpusChangeSummary(files: changes)
     let preview = Preview(
       id: UUID().uuidString.lowercased(),
       turnID: request.turnID,
@@ -421,27 +421,27 @@ public actor OpenClawLocalEditBroker {
     ])
   }
 
-  private func handleApply(_ paramsJSON: String?) async throws -> OpenClawLocalEditCommandResult {
+  private func handleApply(_ paramsJSON: String?) async throws -> AIChatLocalEditCommandResult {
     let request: ApplyRequest = try decode(paramsJSON)
     try requireActiveTurn(request.turnID)
     removeExpiredPreviews()
     guard let preview = previews[request.previewID],
           preview.turnID == request.turnID
     else {
-      throw OpenClawLocalEditError.expiredPreview
+      throw AIChatLocalEditError.expiredPreview
     }
 
     for replacement in preview.replacements {
       let document = try await documentReader(request.turnID, replacement.relativePath, nil)
       if replacement.createsFile {
         guard document.origin == .missing else {
-          throw OpenClawLocalEditError.staleDocument(replacement.relativePath)
+          throw AIChatLocalEditError.staleDocument(replacement.relativePath)
         }
       } else {
         guard document.origin != .missing,
               document.sha256 == replacement.expectedSHA256
         else {
-          throw OpenClawLocalEditError.staleDocument(replacement.relativePath)
+          throw AIChatLocalEditError.staleDocument(replacement.relativePath)
         }
       }
     }
@@ -459,7 +459,7 @@ public actor OpenClawLocalEditBroker {
 
   private func requireActiveTurn(_ turnID: String) throws {
     guard activeTurnIDs.contains(turnID) else {
-      throw OpenClawLocalEditError.inactiveTurn
+      throw AIChatLocalEditError.inactiveTurn
     }
   }
 
@@ -467,21 +467,21 @@ public actor OpenClawLocalEditBroker {
     guard let paramsJSON,
           let data = paramsJSON.data(using: .utf8)
     else {
-      throw OpenClawLocalEditError.invalidRequest("paramsJSON is required")
+      throw AIChatLocalEditError.invalidRequest("paramsJSON is required")
     }
     do {
       return try JSONDecoder().decode(T.self, from: data)
     } catch {
-      throw OpenClawLocalEditError.invalidRequest(error.localizedDescription)
+      throw AIChatLocalEditError.invalidRequest(error.localizedDescription)
     }
   }
 
-  private func successJSON(_ value: [String: Any]) throws -> OpenClawLocalEditCommandResult {
+  private func successJSON(_ value: [String: Any]) throws -> AIChatLocalEditCommandResult {
     let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     guard let json = String(data: data, encoding: .utf8) else {
-      throw OpenClawLocalEditError.invalidRequest("could not encode result")
+      throw AIChatLocalEditError.invalidRequest("could not encode result")
     }
-    return OpenClawLocalEditCommandResult(ok: true, payloadJSON: json)
+    return AIChatLocalEditCommandResult(ok: true, payloadJSON: json)
   }
 
   private func removeExpiredPreviews(now: Date = Date()) {
@@ -500,7 +500,7 @@ public actor OpenClawLocalEditBroker {
     previews = previews.filter { Set(retainedIDs).contains($0.key) }
   }
 
-  private static func errorCode(_ error: OpenClawLocalEditError) -> String {
+  private static func errorCode(_ error: AIChatLocalEditError) -> String {
     switch error {
     case .invalidRequest: "INVALID_REQUEST"
     case .inactiveTurn: "INACTIVE_TURN"
@@ -520,7 +520,7 @@ public actor OpenClawLocalEditBroker {
   }
 
   nonisolated private static func changeDictionary(
-    _ change: OpenClawCorpusFileChange
+    _ change: AIChatCorpusFileChange
   ) -> [String: Any] {
     [
       "path": change.relativePath,
@@ -534,26 +534,26 @@ public actor OpenClawLocalEditBroker {
     path: String,
     before: String?,
     after: String?
-  ) -> OpenClawCorpusFileChange? {
+  ) -> AIChatCorpusFileChange? {
     switch (before, after) {
     case let (before?, after?):
       guard before != after else { return nil }
       let counts = lineChangeCounts(before: before, after: after)
-      return OpenClawCorpusFileChange(
+      return AIChatCorpusFileChange(
         relativePath: path,
         status: .modified,
         insertions: counts.insertions,
         deletions: counts.deletions
       )
     case let (nil, after?):
-      return OpenClawCorpusFileChange(
+      return AIChatCorpusFileChange(
         relativePath: path,
         status: .created,
         insertions: textLines(after).count,
         deletions: 0
       )
     case let (before?, nil):
-      return OpenClawCorpusFileChange(
+      return AIChatCorpusFileChange(
         relativePath: path,
         status: .deleted,
         insertions: 0,

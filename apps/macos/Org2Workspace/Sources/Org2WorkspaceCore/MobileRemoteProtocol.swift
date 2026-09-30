@@ -515,8 +515,8 @@ public struct MobileRemoteActivity: Codable, Hashable, Identifiable, Sendable {
 }
 
 public enum MobileRemoteActivityPresentation {
-  public static func items(from activities: [OpenClawRunActivity]) -> [MobileRemoteActivity] {
-    OpenClawActivityFeed.items(from: activities).map { item in
+  public static func items(from activities: [AIChatRunActivity]) -> [MobileRemoteActivity] {
+    AIChatActivityFeed.items(from: activities).map { item in
       MobileRemoteActivity(
         id: item.id,
         title: item.title,

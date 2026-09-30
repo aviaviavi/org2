@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
+public struct AIChatSlashCommand: Identifiable, Equatable, Sendable {
   public enum Origin: String, Sendable {
     case org2
     case builtInSkill
@@ -46,14 +46,14 @@ public struct OpenClawSlashCommand: Identifiable, Equatable, Sendable {
   }
 }
 
-public enum OpenClawSlashCommandParseResult: Equatable, Sendable {
+public enum AIChatSlashCommandParseResult: Equatable, Sendable {
   case message(String)
-  case command(OpenClawSlashCommand, arguments: String)
+  case command(AIChatSlashCommand, arguments: String)
   case unknown(String)
 }
 
-public enum OpenClawSlashCommands {
-  public static let all: [OpenClawSlashCommand] = [
+public enum AIChatSlashCommands {
+  public static let all: [AIChatSlashCommand] = [
     .init(name: "help", summary: "Show every available command", systemImage: "questionmark.circle"),
     .init(name: "search", arguments: "QUERY", summary: "Search the current corpus", systemImage: "magnifyingglass"),
     .init(name: "open", arguments: "PATH", summary: "Open a corpus file", systemImage: "doc.text"),
@@ -68,15 +68,15 @@ public enum OpenClawSlashCommands {
     .init(name: "summarize", summary: "Ask the agent to summarize the current document", systemImage: "text.alignleft", isAgentAssisted: true),
   ]
 
-  public static func parse(_ rawValue: String) -> OpenClawSlashCommandParseResult {
+  public static func parse(_ rawValue: String) -> AIChatSlashCommandParseResult {
     parse(rawValue, gatewayCommands: [])
   }
 
   public static func parse(
     _ rawValue: String,
-    gatewayCommands: [OpenClawSlashCommand],
-    corpusSkills: [OpenClawSlashCommand] = []
-  ) -> OpenClawSlashCommandParseResult {
+    gatewayCommands: [AIChatSlashCommand],
+    corpusSkills: [AIChatSlashCommand] = []
+  ) -> AIChatSlashCommandParseResult {
     let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard value.hasPrefix("/") else { return .message(value) }
     if value.hasPrefix("//") { return .message(String(value.dropFirst())) }
@@ -95,16 +95,16 @@ public enum OpenClawSlashCommands {
     return .command(command, arguments: arguments)
   }
 
-  public static func suggestions(for rawValue: String, limit: Int = 7) -> [OpenClawSlashCommand] {
+  public static func suggestions(for rawValue: String, limit: Int = 7) -> [AIChatSlashCommand] {
     suggestions(for: rawValue, gatewayCommands: [], limit: limit)
   }
 
   public static func suggestions(
     for rawValue: String,
-    gatewayCommands: [OpenClawSlashCommand],
-    corpusSkills: [OpenClawSlashCommand] = [],
+    gatewayCommands: [AIChatSlashCommand],
+    corpusSkills: [AIChatSlashCommand] = [],
     limit: Int = 7
-  ) -> [OpenClawSlashCommand] {
+  ) -> [AIChatSlashCommand] {
     guard rawValue.hasPrefix("/"), !rawValue.hasPrefix("//"), !rawValue.contains("\n") else { return [] }
     let fragment = rawValue.dropFirst().split(whereSeparator: { $0.isWhitespace }).first.map(String.init)?.lowercased() ?? ""
     guard !rawValue.dropFirst().contains(where: { $0.isWhitespace }) else { return [] }
@@ -120,8 +120,8 @@ public enum OpenClawSlashCommands {
   }
 
   public static func helpText(
-    gatewayCommands: [OpenClawSlashCommand],
-    corpusSkills: [OpenClawSlashCommand] = []
+    gatewayCommands: [AIChatSlashCommand],
+    corpusSkills: [AIChatSlashCommand] = []
   ) -> String {
     let localRows = all.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
     let skills = merged(with: gatewayCommands, corpusSkills: corpusSkills).filter {
@@ -148,9 +148,9 @@ public enum OpenClawSlashCommands {
   }
 
   public static func merged(
-    with gatewayCommands: [OpenClawSlashCommand],
-    corpusSkills: [OpenClawSlashCommand] = []
-  ) -> [OpenClawSlashCommand] {
+    with gatewayCommands: [AIChatSlashCommand],
+    corpusSkills: [AIChatSlashCommand] = []
+  ) -> [AIChatSlashCommand] {
     let localNames = Set(all.map(\.name))
     let uniqueSkills = corpusSkills.filter { command in
       (command.origin == .builtInSkill || command.origin == .corpusSkill)
@@ -164,8 +164,8 @@ public enum OpenClawSlashCommands {
 
   public static func isGatewayCommand(
     _ rawValue: String,
-    gatewayCommands: [OpenClawSlashCommand],
-    corpusSkills: [OpenClawSlashCommand] = []
+    gatewayCommands: [AIChatSlashCommand],
+    corpusSkills: [AIChatSlashCommand] = []
   ) -> Bool {
     let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard value.hasPrefix("/"), !value.hasPrefix("//") else { return false }
@@ -185,15 +185,15 @@ enum CorpusAgentSkillCatalog {
 
   private final class CommandCache: @unchecked Sendable {
     private let lock = NSLock()
-    private var values: [CacheKey: [OpenClawSlashCommand]] = [:]
+    private var values: [CacheKey: [AIChatSlashCommand]] = [:]
 
-    func value(for key: CacheKey) -> [OpenClawSlashCommand]? {
+    func value(for key: CacheKey) -> [AIChatSlashCommand]? {
       lock.lock()
       defer { lock.unlock() }
       return values[key]
     }
 
-    func insert(_ commands: [OpenClawSlashCommand], for key: CacheKey) {
+    func insert(_ commands: [AIChatSlashCommand], for key: CacheKey) {
       lock.lock()
       values[key] = commands
       lock.unlock()
@@ -211,7 +211,7 @@ enum CorpusAgentSkillCatalog {
   static func commands(
     in corpusRoot: URL,
     bundledSkillURL: URL? = BuiltInOrg2Skill.availableSourceURL()
-  ) -> [OpenClawSlashCommand] {
+  ) -> [AIChatSlashCommand] {
     let key = cacheKey(corpusRoot: corpusRoot, bundledSkillURL: bundledSkillURL)
     if let cached = cache.value(for: key) {
       return cached
@@ -225,7 +225,7 @@ enum CorpusAgentSkillCatalog {
     in corpusRoot: URL,
     force: Bool = false,
     discoveryThreadObserver: (@Sendable (Bool) -> Void)? = nil
-  ) async -> [OpenClawSlashCommand] {
+  ) async -> [AIChatSlashCommand] {
     await Task.detached(priority: .utility) {
       discoveryThreadObserver?(currentThreadIsMainThread())
       let bundledSkillURL = BuiltInOrg2Skill.availableSourceURL()
@@ -244,7 +244,7 @@ enum CorpusAgentSkillCatalog {
     bundledSkillURL: URL?,
     force: Bool = false,
     discoveryThreadObserver: (@Sendable (Bool) -> Void)? = nil
-  ) async -> [OpenClawSlashCommand] {
+  ) async -> [AIChatSlashCommand] {
     let key = cacheKey(corpusRoot: corpusRoot, bundledSkillURL: bundledSkillURL)
     if !force, let cached = cache.value(for: key) {
       return cached
@@ -278,7 +278,7 @@ enum CorpusAgentSkillCatalog {
   private nonisolated static func discoverCommands(
     in corpusRoot: URL,
     bundledSkillURL: URL?
-  ) -> [OpenClawSlashCommand] {
+  ) -> [AIChatSlashCommand] {
     let skillsRoot = corpusRoot
       .appendingPathComponent(".agents", isDirectory: true)
       .appendingPathComponent("skills", isDirectory: true)
@@ -289,9 +289,9 @@ enum CorpusAgentSkillCatalog {
     )) ?? []
 
     var seenNames: Set<String> = []
-    let commands: [OpenClawSlashCommand] = directories
+    let commands: [AIChatSlashCommand] = directories
       .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-      .compactMap { directory -> OpenClawSlashCommand? in
+      .compactMap { directory -> AIChatSlashCommand? in
         guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
           return nil
         }
@@ -313,9 +313,9 @@ enum CorpusAgentSkillCatalog {
   private static func command(
     at skillURL: URL,
     fallbackName: String,
-    origin: OpenClawSlashCommand.Origin,
+    origin: AIChatSlashCommand.Origin,
     seenNames: inout Set<String>
-  ) -> OpenClawSlashCommand? {
+  ) -> AIChatSlashCommand? {
     guard let source = try? String(contentsOf: skillURL, encoding: .utf8),
           let frontMatter = frontMatter(from: source),
           frontMatter["user-invocable"]?.lowercased() != "false"
@@ -330,7 +330,7 @@ enum CorpusAgentSkillCatalog {
     let summary = declaredSummary?.isEmpty == false
       ? declaredSummary ?? ""
       : "Use the \(name) corpus skill"
-    return OpenClawSlashCommand(
+    return AIChatSlashCommand(
       name: name,
       arguments: "[ARGS]",
       summary: summary,
@@ -427,7 +427,7 @@ enum OpenClawGatewayCommandCatalog {
     let required: Bool?
   }
 
-  static func decode(_ data: Data) throws -> [OpenClawSlashCommand] {
+  static func decode(_ data: Data) throws -> [AIChatSlashCommand] {
     try JSONDecoder().decode(Payload.self, from: data).commands.compactMap { entry in
       let name = normalizedName(entry.name)
       guard !name.isEmpty else { return nil }
@@ -435,7 +435,7 @@ enum OpenClawGatewayCommandCatalog {
         .map(normalizedName)
         .filter { !$0.isEmpty && $0 != name }
       let arguments = argumentSynopsis(for: entry)
-      return OpenClawSlashCommand(
+      return AIChatSlashCommand(
         name: name,
         aliases: Array(Set(aliases)).sorted(),
         arguments: arguments,
@@ -474,26 +474,26 @@ enum OpenClawGatewayCommandCatalog {
   }
 }
 
-public struct OpenClawSpellingIssue: Equatable, Sendable {
+public struct AIChatSpellingIssue: Equatable, Sendable {
   public let word: String
   public let line: Int
   public let suggestions: [String]
 }
 
 @MainActor
-public enum OpenClawSpellchecker {
+public enum AIChatSpellchecker {
   public static func issues(
     in text: String,
     snapshot: OrgSourceEditorSemanticSnapshot,
     lineOffset: Int = 0,
     limit: Int = 50
-  ) -> [OpenClawSpellingIssue] {
+  ) -> [AIChatSpellingIssue] {
     let proseLines = Set(snapshot.regions
       .filter { $0.kind == .headline || $0.kind == .paragraph }
       .flatMap { $0.startLine...$0.endLine })
     let lines = text.components(separatedBy: .newlines)
     let checker = NSSpellChecker.shared
-    var result: [OpenClawSpellingIssue] = []
+    var result: [AIChatSpellingIssue] = []
     var seen = Set<String>()
 
     for (index, originalLine) in lines.enumerated() where proseLines.contains(index + 1) {

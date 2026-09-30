@@ -2,15 +2,15 @@ import AppKit
 import ImageIO
 import SwiftUI
 
-enum OpenClawAttachmentPreviewKind: Equatable, Sendable {
+enum AIChatAttachmentPreviewKind: Equatable, Sendable {
   case image
   case pdf
   case text
   case unsupported
 }
 
-extension OpenClawAttachmentPresentation {
-  static func previewKind(for attachment: OpenClawChatAttachment) -> OpenClawAttachmentPreviewKind {
+extension AIChatAttachmentPresentation {
+  static func previewKind(for attachment: AIChatAttachment) -> AIChatAttachmentPreviewKind {
     let mimeType = attachment.mimeType.lowercased()
     let fileExtension = URL(fileURLWithPath: attachment.fileName).pathExtension.lowercased()
     if mimeType.hasPrefix("image/") || imageExtensions.contains(fileExtension) { return .image }
@@ -59,26 +59,26 @@ extension OpenClawAttachmentPresentation {
 /// Decoded Core Graphics images are immutable after construction. The wrapper
 /// makes that ownership explicit while I/O and ImageIO decoding happen on the
 /// cache actor rather than in a SwiftUI body.
-final class OpenClawAttachmentImageBox: @unchecked Sendable {
+final class AIChatAttachmentImageBox: @unchecked Sendable {
   let image: CGImage
   init(_ image: CGImage) { self.image = image }
 }
 
-enum OpenClawLoadedAttachmentPreview: @unchecked Sendable {
-  case image(OpenClawAttachmentImageBox)
+enum AIChatLoadedAttachmentPreview: @unchecked Sendable {
+  case image(AIChatAttachmentImageBox)
   case pdf(Data)
   case text(String)
   case unavailable
 }
 
-actor OpenClawAttachmentBackgroundCache {
-  static let shared = OpenClawAttachmentBackgroundCache()
+actor AIChatAttachmentBackgroundCache {
+  static let shared = AIChatAttachmentBackgroundCache()
   private static let imageLimit = 24
 
-  private var images: [String: OpenClawAttachmentImageBox] = [:]
+  private var images: [String: AIChatAttachmentImageBox] = [:]
   private var imageOrder: [String] = []
 
-  func image(for attachment: OpenClawChatAttachment) throws -> OpenClawAttachmentImageBox {
+  func image(for attachment: AIChatAttachment) throws -> AIChatAttachmentImageBox {
     let key = attachment.persistedContentDigest
     if let cached = images[key] {
       touch(key)
@@ -92,9 +92,9 @@ actor OpenClawAttachmentBackgroundCache {
             [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
           )
     else {
-      throw OpenClawChatAttachment.DataError.unreadableBlob(attachment.fileName)
+      throw AIChatAttachment.DataError.unreadableBlob(attachment.fileName)
     }
-    let box = OpenClawAttachmentImageBox(image)
+    let box = AIChatAttachmentImageBox(image)
     images[key] = box
     touch(key)
     while imageOrder.count > Self.imageLimit, let oldest = imageOrder.first {
@@ -104,15 +104,15 @@ actor OpenClawAttachmentBackgroundCache {
     return box
   }
 
-  func preview(for attachment: OpenClawChatAttachment) throws -> OpenClawLoadedAttachmentPreview {
-    switch OpenClawAttachmentPresentation.previewKind(for: attachment) {
+  func preview(for attachment: AIChatAttachment) throws -> AIChatLoadedAttachmentPreview {
+    switch AIChatAttachmentPresentation.previewKind(for: attachment) {
     case .image:
       return .image(try image(for: attachment))
     case .pdf:
       return .pdf(try attachment.loadData())
     case .text:
       let data = try attachment.loadData()
-      guard let text = OpenClawAttachmentPresentation.decodedText(data: data) else {
+      guard let text = AIChatAttachmentPresentation.decodedText(data: data) else {
         return .unavailable
       }
       return .text(text)
@@ -120,7 +120,7 @@ actor OpenClawAttachmentBackgroundCache {
       let mimeType = attachment.mimeType.lowercased()
       if mimeType.isEmpty || mimeType == "application/octet-stream" {
         let data = try attachment.loadData()
-        if let text = OpenClawAttachmentPresentation.decodedText(data: data) {
+        if let text = AIChatAttachmentPresentation.decodedText(data: data) {
           return .text(text)
         }
       }
@@ -134,14 +134,14 @@ actor OpenClawAttachmentBackgroundCache {
   }
 }
 
-struct OpenClawAsyncAttachmentImage<Placeholder: View>: View {
-  let attachment: OpenClawChatAttachment
+struct AIChatAsyncAttachmentImage<Placeholder: View>: View {
+  let attachment: AIChatAttachment
   let placeholder: (_ error: String?) -> Placeholder
-  @State private var image: OpenClawAttachmentImageBox?
+  @State private var image: AIChatAttachmentImageBox?
   @State private var errorText: String?
 
   init(
-    attachment: OpenClawChatAttachment,
+    attachment: AIChatAttachment,
     @ViewBuilder placeholder: @escaping (_ error: String?) -> Placeholder
   ) {
     self.attachment = attachment
@@ -159,13 +159,13 @@ struct OpenClawAsyncAttachmentImage<Placeholder: View>: View {
       }
     }
     .task(id: "\(attachment.id.uuidString)-\(attachment.persistedContentDigest)") {
-      guard OpenClawAttachmentPresentation.previewKind(for: attachment) == .image else {
+      guard AIChatAttachmentPresentation.previewKind(for: attachment) == .image else {
         image = nil
         errorText = nil
         return
       }
       do {
-        image = try await OpenClawAttachmentBackgroundCache.shared.image(for: attachment)
+        image = try await AIChatAttachmentBackgroundCache.shared.image(for: attachment)
         errorText = nil
       } catch {
         image = nil
@@ -175,10 +175,10 @@ struct OpenClawAsyncAttachmentImage<Placeholder: View>: View {
   }
 }
 
-struct OpenClawAttachmentPreviewView: View {
+struct AIChatAttachmentPreviewView: View {
   @Environment(\.dismiss) private var dismiss
-  let attachment: OpenClawChatAttachment
-  @State private var loadedPreview: OpenClawLoadedAttachmentPreview?
+  let attachment: AIChatAttachment
+  @State private var loadedPreview: AIChatLoadedAttachmentPreview?
   @State private var loadError: String?
 
   var body: some View {
@@ -198,7 +198,7 @@ struct OpenClawAttachmentPreviewView: View {
     .background(WorkspaceDesign.surfaceBackground)
     .task(id: "\(attachment.id.uuidString)-\(attachment.persistedContentDigest)") {
       do {
-        loadedPreview = try await OpenClawAttachmentBackgroundCache.shared.preview(for: attachment)
+        loadedPreview = try await AIChatAttachmentBackgroundCache.shared.preview(for: attachment)
         loadError = nil
       } catch {
         loadedPreview = nil
@@ -209,7 +209,7 @@ struct OpenClawAttachmentPreviewView: View {
 
   private var header: some View {
     HStack(spacing: 12) {
-      Image(systemName: OpenClawAttachmentPresentation.systemImage(for: attachment.mimeType))
+      Image(systemName: AIChatAttachmentPresentation.systemImage(for: attachment.mimeType))
         .font(.headline)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)

@@ -149,7 +149,7 @@ enum ParagraphWikiLinkCompletion {
     let queryRange = NSRange(location: bodyLocation, length: max(0, queryEnd - bodyLocation))
     let query = ns.substring(with: queryRange).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty,
-          OpenClawFileReference.fromLinkTarget(query) == nil,
+          AIChatFileReference.fromLinkTarget(query) == nil,
           !query.lowercased().hasPrefix("id:")
     else {
       return nil
@@ -396,7 +396,7 @@ struct ParagraphFocusedInlineEditor: View {
       let target = link.target.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !target.isEmpty else { return false }
       if target.lowercased().hasPrefix("id:") { return false }
-      return OpenClawFileReference.fromLinkTarget(target) == nil
+      return AIChatFileReference.fromLinkTarget(target) == nil
     case .plainURL, .fileReference:
       return false
     }

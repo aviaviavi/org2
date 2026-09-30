@@ -17,7 +17,7 @@ final class AIChatLargePasteTests: XCTestCase {
     defer { board.releaseGlobally() }
     let trace = String(repeating: "Thread 9: exception at frame 42\n", count: 5000)
     board.setString(trace, forType: .string)
-    let editor = OpenClawComposerTextView.CommandSubmitTextView()
+    let editor = AIChatComposerTextView.CommandSubmitTextView()
     editor.string = "Please investigate. "
     editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
     var pasted: String?
@@ -34,7 +34,7 @@ final class AIChatLargePasteTests: XCTestCase {
     defer { board.releaseGlobally() }
     let text = String(repeating: "x", count: 8000)
     board.setString(text, forType: .string)
-    let editor = OpenClawComposerTextView.CommandSubmitTextView()
+    let editor = AIChatComposerTextView.CommandSubmitTextView()
     editor.onPasteLargeText = { _ in false }
     XCTAssertFalse(editor.attachLargePaste(from: board))
     XCTAssertEqual(board.string(forType: .string), text)
@@ -46,15 +46,15 @@ final class AIChatLargePasteTests: XCTestCase {
 
   func testTextAttachmentExpandsOnlyOutboundCopyAndPreservesRouting() throws {
     let text = String(repeating: "trace 🦉\r\n", count: 10000)
-    let attachment = OpenClawChatAttachment(fileName: "Pasted Text.txt", mimeType: "text/plain", data: Data(text.utf8))
-    let image = OpenClawChatAttachment(fileName: "image.png", mimeType: "image/png", data: Data([1, 2]))
-    let message = OpenClawChatMessage(
+    let attachment = AIChatAttachment(fileName: "Pasted Text.txt", mimeType: "text/plain", data: Data(text.utf8))
+    let image = AIChatAttachment(fileName: "image.png", mimeType: "image/png", data: Data([1, 2]))
+    let message = AIChatMessage(
       role: .user, content: "Please fix this", attachments: [attachment, image],
       deliveryStatus: .sending, deliveryKind: .steer, targetRuntime: .codex,
       audienceDestinationIDs: ["codex"], targetDestinationID: "codex", isRoomDispatchCopy: true,
       roomRoundID: UUID()
     )
-    let restored = try JSONDecoder().decode(OpenClawChatMessage.self, from: JSONEncoder().encode(message))
+    let restored = try JSONDecoder().decode(AIChatMessage.self, from: JSONEncoder().encode(message))
     let outbound = try AIChatTextAttachments.expanding(restored)
     XCTAssertTrue(outbound.content.contains(text))
     XCTAssertTrue(outbound.content.hasPrefix(message.content))
@@ -67,12 +67,12 @@ final class AIChatLargePasteTests: XCTestCase {
     XCTAssertTrue(outbound.isRoomDispatchCopy)
     XCTAssertEqual(restored.content, message.content)
     XCTAssertEqual(restored.attachments.count, 2)
-    XCTAssertEqual(OpenClawAttachmentPresentation.previewKind(for: attachment), .text)
+    XCTAssertEqual(AIChatAttachmentPresentation.previewKind(for: attachment), .text)
   }
 
   func testInvalidUTF8FailsInsteadOfSilentlyDroppingAttachment() {
-    let message = OpenClawChatMessage(role: .user, content: "", attachments: [
-      OpenClawChatAttachment(fileName: "bad.txt", mimeType: "text/plain", data: Data([0xff]))
+    let message = AIChatMessage(role: .user, content: "", attachments: [
+      AIChatAttachment(fileName: "bad.txt", mimeType: "text/plain", data: Data([0xff]))
     ])
     XCTAssertThrowsError(try AIChatTextAttachments.expanding(message))
   }
@@ -84,37 +84,37 @@ final class AIChatLargePasteTests: XCTestCase {
     let received = CapturedPasteMessages()
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         await received.set(messages)
         return "Received"
       }
     )
     let trace = String(repeating: "stack frame\n", count: 5000)
-    XCTAssertTrue(store.attachOpenClawAttachment(data: Data(trace.utf8), fileName: "Pasted Text.txt", mimeType: "text/plain"))
-    store.openClawDraft = "Please fix this"
-    await store.sendOpenClawMessage()
+    XCTAssertTrue(store.attachAIChatAttachment(data: Data(trace.utf8), fileName: "Pasted Text.txt", mimeType: "text/plain"))
+    store.aiChatDraft = "Please fix this"
+    await store.sendAIChatMessage()
     let messages = await received.messages
     let outbound = try XCTUnwrap(messages.last(where: { $0.role == .user }))
     XCTAssertTrue(outbound.content.contains(trace))
     XCTAssertTrue(outbound.attachments.isEmpty)
-    let stored = try XCTUnwrap(store.openClawMessages.last(where: { $0.role == .user }))
+    let stored = try XCTUnwrap(store.aiChatMessages.last(where: { $0.role == .user }))
     XCTAssertEqual(stored.content, "Please fix this")
     XCTAssertEqual(stored.attachments.count, 1)
-    XCTAssertTrue(store.openClawPendingAttachments.isEmpty)
+    XCTAssertTrue(store.aiChatPendingAttachments.isEmpty)
   }
 
   func testRestoredMegabyteDraftSizingRemainsBounded() {
     let draft = String(repeating: "long trace line with symbols \n", count: 40000)
     let start = Date()
     for _ in 0..<100 {
-      XCTAssertEqual(OpenClawComposerSizing.height(for: draft, compact: false), 190)
+      XCTAssertEqual(AIChatComposerSizing.height(for: draft, compact: false), 190)
     }
     XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
   }
 }
 
 private actor CapturedPasteMessages {
-  var messages: [OpenClawChatMessage] = []
-  func set(_ messages: [OpenClawChatMessage]) { self.messages = messages }
+  var messages: [AIChatMessage] = []
+  func set(_ messages: [AIChatMessage]) { self.messages = messages }
 }

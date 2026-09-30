@@ -20,11 +20,11 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    let threadID = store.createOpenClawChatThread(runtime: .codex)
+    let threadID = store.createAIChatThread(runtime: .codex)
     store.flushDeferredAIChatTranscriptPersistence()
     try await store.waitForAIChatTranscriptPersistenceForTesting()
     XCTAssertTrue(FileManager.default.fileExists(atPath: transcript.path))
@@ -41,7 +41,7 @@ final class AIChatInboxTests: XCTestCase {
 
     XCTAssertTrue(result.success, result.text)
     let delivered = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.first
     )
     XCTAssertEqual(delivered.content, "The delegated check is complete.")
     XCTAssertEqual(delivered.authorLabel, "Build Scout")
@@ -67,13 +67,13 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    let threadID = store.createOpenClawChatThread(runtime: .codex)
-    store.settleOpenClawChatThread(threadID)
-    XCTAssertTrue(store.openClawChatThreads.first(where: { $0.id == threadID })?.isSettled == true)
+    let threadID = store.createAIChatThread(runtime: .codex)
+    store.settleAIChatThread(threadID)
+    XCTAssertTrue(store.aiChatThreads.first(where: { $0.id == threadID })?.isSettled == true)
     let messageID = UUID()
     let inbox = root
       .appendingPathComponent(".org2", isDirectory: true)
@@ -96,7 +96,7 @@ final class AIChatInboxTests: XCTestCase {
     await store.drainAIChatInbox()
 
     let delivered = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.id == threadID })
+      store.aiChatThreads.first(where: { $0.id == threadID })
     )
     XCTAssertEqual(delivered.messages.count, 1)
     XCTAssertEqual(delivered.messages[0].id, messageID)
@@ -112,11 +112,11 @@ final class AIChatInboxTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let restoredMessage = try XCTUnwrap(
-      restored.openClawChatThreads.first(where: { $0.id == threadID })?.messages.first
+      restored.aiChatThreads.first(where: { $0.id == threadID })?.messages.first
     )
     XCTAssertEqual(restoredMessage.authorLabel, "Revenue Scout")
     XCTAssertEqual(restoredMessage.authorAgentRef, "agent-profile-revenue-scout")
@@ -125,7 +125,7 @@ final class AIChatInboxTests: XCTestCase {
       .write(to: envelope, options: .atomic)
     await store.drainAIChatInbox()
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.count,
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.count,
       1
     )
     XCTAssertFalse(FileManager.default.fileExists(atPath: envelope.path))
@@ -148,11 +148,11 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    let threadID = store.createOpenClawChatThread(runtime: .codex)
+    let threadID = store.createAIChatThread(runtime: .codex)
     store.flushDeferredAIChatTranscriptPersistence()
 
     let inbox = root
@@ -169,7 +169,7 @@ final class AIChatInboxTests: XCTestCase {
       "createdAt": "2026-08-19T19:30:00.000Z",
       "authorLabel": "Build Scout",
     ], options: [.prettyPrinted]).write(to: envelope, options: .atomic)
-    store.openClawTranscriptSaverForTesting = {
+    store.aiChatTranscriptSaverForTesting = {
       throw CocoaError(
         .fileWriteUnknown,
         userInfo: [NSLocalizedDescriptionKey: "Injected transcript failure"]
@@ -201,13 +201,13 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    let autoSettledID = store.createOpenClawChatThread(runtime: .codex)
-    let explicitlySettledID = store.createOpenClawChatThread(runtime: .codex)
-    _ = store.createOpenClawChatThread(runtime: .codex)
+    let autoSettledID = store.createAIChatThread(runtime: .codex)
+    let explicitlySettledID = store.createAIChatThread(runtime: .codex)
+    _ = store.createAIChatThread(runtime: .codex)
 
     let configure = try writeOperation([
       "kind": "configure-auto-settle",
@@ -229,9 +229,9 @@ final class AIChatInboxTests: XCTestCase {
 
     await store.drainAIChatInbox()
 
-    XCTAssertEqual(store.openClawThreadSettlementSettings.autoSettleAfterSeconds, 123.5)
+    XCTAssertEqual(store.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 123.5)
     let autoSettled = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.id == autoSettledID })
+      store.aiChatThreads.first(where: { $0.id == autoSettledID })
     )
     XCTAssertTrue(autoSettled.isSettled)
     XCTAssertEqual(
@@ -241,7 +241,7 @@ final class AIChatInboxTests: XCTestCase {
       accuracy: 0.001
     )
     let explicitlySettled = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.id == explicitlySettledID })
+      store.aiChatThreads.first(where: { $0.id == explicitlySettledID })
     )
     XCTAssertTrue(explicitlySettled.isSettled)
     XCTAssertEqual(
@@ -256,16 +256,16 @@ final class AIChatInboxTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     await restored.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(restored.openClawThreadSettlementSettings.autoSettleAfterSeconds, 123.5)
+    XCTAssertEqual(restored.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 123.5)
     XCTAssertTrue(
-      restored.openClawChatThreads.first(where: { $0.id == autoSettledID })?.isSettled == true
+      restored.aiChatThreads.first(where: { $0.id == autoSettledID })?.isSettled == true
     )
     XCTAssertTrue(
-      restored.openClawChatThreads.first(where: { $0.id == explicitlySettledID })?.isSettled == true
+      restored.aiChatThreads.first(where: { $0.id == explicitlySettledID })?.isSettled == true
     )
   }
 
@@ -285,7 +285,7 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
@@ -293,7 +293,7 @@ final class AIChatInboxTests: XCTestCase {
       "kind": "configure-auto-settle",
       "autoSettleAfterSeconds": 9876,
     ], id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", createdAt: "2026-08-20T10:00:00.000Z", root: root)
-    store.openClawTranscriptSaverForTesting = {
+    store.aiChatTranscriptSaverForTesting = {
       throw CocoaError(
         .fileWriteUnknown,
         userInfo: [NSLocalizedDescriptionKey: "Injected operation durability failure"]
@@ -302,16 +302,16 @@ final class AIChatInboxTests: XCTestCase {
 
     await store.drainAIChatInbox()
 
-    XCTAssertEqual(store.openClawThreadSettlementSettings.autoSettleAfterSeconds, 9876)
+    XCTAssertEqual(store.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 9876)
     XCTAssertTrue(FileManager.default.fileExists(atPath: operation.path))
     XCTAssertTrue(store.errorText?.contains("not persisted durably") == true)
 
     var successfulDurabilityBarriers = 0
-    store.openClawTranscriptSaverForTesting = { successfulDurabilityBarriers += 1 }
+    store.aiChatTranscriptSaverForTesting = { successfulDurabilityBarriers += 1 }
     await store.drainAIChatInbox()
 
     XCTAssertEqual(successfulDurabilityBarriers, 1)
-    XCTAssertEqual(store.openClawThreadSettlementSettings.autoSettleAfterSeconds, 9876)
+    XCTAssertEqual(store.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 9876)
     XCTAssertFalse(FileManager.default.fileExists(atPath: operation.path))
   }
 
@@ -331,11 +331,11 @@ final class AIChatInboxTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)
-    _ = store.createOpenClawChatThread(runtime: .codex)
+    _ = store.createAIChatThread(runtime: .codex)
 
     let nonUUID = try writeOperation([
       "kind": "reopen-thread",
@@ -356,7 +356,7 @@ final class AIChatInboxTests: XCTestCase {
 
     await store.drainAIChatInbox()
 
-    XCTAssertEqual(store.openClawThreadSettlementSettings.autoSettleAfterSeconds, 7200)
+    XCTAssertEqual(store.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 7200)
     XCTAssertFalse(FileManager.default.fileExists(atPath: valid.path))
     for file in [nonUUID, unknownThread, invalid] {
       XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
@@ -383,7 +383,7 @@ final class AIChatInboxTests: XCTestCase {
     )
     let store = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawFallbackTranscriptURL: fixture.fallbackTranscript,
+      aiChatFallbackTranscriptURL: fixture.fallbackTranscript,
       legacyDefaultsDomains: [],
       automaticStarterCorpusURL: nil
     )
@@ -429,7 +429,7 @@ final class AIChatInboxTests: XCTestCase {
         legacyURL: fixture.betaTranscript
       )
     }
-    store.openClawMessages.append(OpenClawChatMessage(role: .user, content: "beta mutation"))
+    store.aiChatMessages.append(AIChatMessage(role: .user, content: "beta mutation"))
     let betaMutationVersion = try XCTUnwrap(
       store.aiChatThreadMessageMutationVersionForTesting(threadID)
     )
@@ -441,7 +441,7 @@ final class AIChatInboxTests: XCTestCase {
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: envelope.path))
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.map(\.content),
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.map(\.content),
       ["beta history", "beta mutation"]
     )
     XCTAssertEqual(
@@ -461,7 +461,7 @@ final class AIChatInboxTests: XCTestCase {
     try flushThread(id: threadID, content: "beta", transcriptURL: fixture.betaTranscript)
     let store = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawFallbackTranscriptURL: fixture.fallbackTranscript,
+      aiChatFallbackTranscriptURL: fixture.fallbackTranscript,
       legacyDefaultsDomains: [],
       automaticStarterCorpusURL: nil
     )
@@ -494,7 +494,7 @@ final class AIChatInboxTests: XCTestCase {
     await drain.value
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: operation.path))
-    XCTAssertNotEqual(store.openClawThreadSettlementSettings.autoSettleAfterSeconds, 4321)
+    XCTAssertNotEqual(store.aiChatThreadSettlementSettings.autoSettleAfterSeconds, 4321)
   }
 
   func testCorpusEventsRecognizeAIChatInboxDeliveries() {
@@ -552,17 +552,17 @@ final class AIChatInboxTests: XCTestCase {
   }
 
   private func flushThread(id: UUID, content: String, transcriptURL: URL) throws {
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       id: id,
       title: content,
       sessionKey: "session-\(content)",
-      messages: [OpenClawChatMessage(role: .assistant, content: content)]
+      messages: [AIChatMessage(role: .assistant, content: content)]
     )
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(
         threads: [thread],
         selectedThreadID: id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: transcriptURL
     )

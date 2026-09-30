@@ -49,7 +49,7 @@ public enum OpenCodeEvent: Sendable {
   case sessionStarted(sessionID: String)
   case reasoning(id: String, text: String)
   case textDelta(String)
-  case activity(id: String, title: String, status: OpenClawRunActivity.Status)
+  case activity(id: String, title: String, status: AIChatRunActivity.Status)
   case warning(String)
 }
 
@@ -113,7 +113,7 @@ struct OpenCodeStreamDecoder: Sendable {
         ?? UUID().uuidString.lowercased()
       let tool = part["tool"] as? String ?? "tool"
       let state = part["state"] as? [String: Any]
-      let status: OpenClawRunActivity.Status
+      let status: AIChatRunActivity.Status
       switch state?["status"] as? String {
       case "completed": status = .succeeded
       case "error", "failed": status = .failed
@@ -761,7 +761,7 @@ sys.exit(result.returncode)
     existingSessionID: String?,
     message: String,
     systemPrompt: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     cwd: URL,
     model: String?,
     reasoningEffort: String?,
@@ -1051,7 +1051,7 @@ sys.exit(result.returncode)
     openOrgThreadID: UUID,
     sessionID: String,
     message: String,
-    attachments: [OpenClawChatAttachment]
+    attachments: [AIChatAttachment]
   ) async throws {
     guard let active = activeRuns[openOrgThreadID], active.process.isRunning else {
       throw OpenCodeError.invalidResponse("there is no active OpenCode turn to steer")
@@ -1129,7 +1129,7 @@ sys.exit(result.returncode)
 
   nonisolated static func steerRequestData(
     message: String,
-    attachments: [OpenClawChatAttachment]
+    attachments: [AIChatAttachment]
   ) throws -> String {
     var request: [String: Any] = [
       "text": message,
@@ -1323,7 +1323,7 @@ sys.exit(result.returncode)
   }
 
   private nonisolated static func materializeAttachments(
-    _ attachments: [OpenClawChatAttachment],
+    _ attachments: [AIChatAttachment],
     under temporaryRoot: URL
   ) throws -> [URL] {
     var usedNames = Set<String>()

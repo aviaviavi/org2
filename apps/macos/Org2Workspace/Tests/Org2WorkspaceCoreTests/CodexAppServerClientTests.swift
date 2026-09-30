@@ -18,7 +18,7 @@ final class CodexAppServerClientTests: XCTestCase {
     """
 
     let thread = try JSONDecoder().decode(
-      OpenClawChatThread.self,
+      AIChatThread.self,
       from: Data(json.utf8)
     )
 
@@ -29,7 +29,7 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   func testCodexChatThreadRuntimeRoundTrips() throws {
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Local Codex",
       runtime: .codex,
       sessionKey: "unused-for-codex",
@@ -39,7 +39,7 @@ final class CodexAppServerClientTests: XCTestCase {
     )
 
     let data = try JSONEncoder().encode(thread)
-    let restored = try JSONDecoder().decode(OpenClawChatThread.self, from: data)
+    let restored = try JSONDecoder().decode(AIChatThread.self, from: data)
 
     XCTAssertEqual(restored.runtime, .codex)
     XCTAssertEqual(restored.runtimeThreadID, "thr_codex")
@@ -48,7 +48,7 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   func testChatRuntimeLocksAfterFirstMessage() {
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Runtime picker",
       runtime: .openClaw,
       sessionKey: "agent:main:runtime-picker"
@@ -57,14 +57,14 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(thread.canChangeAIRuntime)
     XCTAssertFalse(
       thread.replacingMessages([
-        OpenClawChatMessage(role: .user, content: "Hello")
+        AIChatMessage(role: .user, content: "Hello")
       ]).canChangeAIRuntime
     )
   }
 
   func testReplacingThreadMessagesPreservesNamedDestinationRouting() {
     let destinationID = "managed-remote-codex"
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Remote Codex",
       runtime: .codex,
       destinationID: destinationID,
@@ -72,13 +72,13 @@ final class CodexAppServerClientTests: XCTestCase {
       runtimeThreadID: "thr-remote",
       runtimeThreadIDsByDestination: [destinationID: "thr-remote"],
       model: "gpt-remote",
-      messages: [OpenClawChatMessage(role: .user, content: "Work remotely")]
+      messages: [AIChatMessage(role: .user, content: "Work remotely")]
     )
     let messages = thread.messages + [
-      OpenClawChatMessage(role: .assistant, content: "Remote work completed")
+      AIChatMessage(role: .assistant, content: "Remote work completed")
     ]
 
-    let updated = WorkspaceStore.updatedOpenClawChatThread(
+    let updated = WorkspaceStore.updatedAIChatThread(
       thread,
       messages: messages,
       newAssistantMessageCount: 1,
@@ -101,20 +101,20 @@ final class CodexAppServerClientTests: XCTestCase {
       adapter: .codexManagedRemote,
       endpoint: "remote-mac"
     )
-    let damagedThread = OpenClawChatThread(
+    let damagedThread = AIChatThread(
       title: "Remote work",
       runtime: .codex,
       destinationID: AIChatDestinationConfiguration.localCodexID,
       sessionKey: "unused-for-codex",
       runtimeThreadID: "thr-remote",
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "Run this remotely",
           targetRuntime: .codex,
           targetDestinationID: destination.id
         ),
-        OpenClawChatMessage(role: .assistant, content: "Done remotely")
+        AIChatMessage(role: .assistant, content: "Done remotely")
       ]
     )
 
@@ -176,7 +176,7 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   func testCodexWorkspaceSnapshotIncludesUnsavedSelectedSource() {
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: "/tmp/example-corpus",
       remoteCorpusRoot: nil,
       selectedSurface: "Files",
@@ -202,7 +202,7 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   func testWorkspacePromptsDistinguishRuntimeFromPortableAgentIdentity() {
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: "/tmp/example-corpus",
       remoteCorpusRoot: "/srv/example-corpus",
       selectedSurface: "AI Chat",
@@ -263,7 +263,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
   func testRemoteCodexPromptUsesRuntimeCorpusWithoutClientEditBroker() {
     let localRoot = "/Users/avi/avi.org2"
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: localRoot,
       remoteCorpusRoot: nil,
       selectedSurface: "AI Chat",
@@ -297,7 +297,7 @@ final class CodexAppServerClientTests: XCTestCase {
   }
 
   func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: "/tmp/personal",
       remoteCorpusRoot: "/srv/personal",
       selectedSurface: "AI Chat",
@@ -354,7 +354,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
   func testThreadContinuationTeachesExplicitAsynchronousReporting() {
     let threadID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: "/tmp/personal",
       remoteCorpusRoot: "/srv/personal",
       selectedSurface: "AI Chat",
@@ -414,7 +414,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let id = store.addAIChatDestination()
@@ -427,7 +427,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
@@ -441,10 +441,10 @@ final class CodexAppServerClientTests: XCTestCase {
     restored.createAIChatThread(destinationID: AIChatDestinationConfiguration.localCodexID)
     restored.setSelectedAIChatModel("local-model")
     restored.createAIChatThread(destinationID: id)
-    XCTAssertNil(restored.selectedOpenClawChatThread?.model)
+    XCTAssertNil(restored.selectedAIChatThread?.model)
     restored.setSelectedAIChatModel("remote-model")
     restored.createAIChatThread(destinationID: id)
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "remote-model")
+    XCTAssertEqual(restored.selectedAIChatThread?.model, "remote-model")
   }
 
   @MainActor
@@ -458,7 +458,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let initial = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     XCTAssertEqual(
@@ -488,7 +488,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     XCTAssertNil(restored.aiChatDestination(id: disabledClaude.id))
@@ -506,7 +506,7 @@ final class CodexAppServerClientTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: transcript) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
 
@@ -531,7 +531,7 @@ final class CodexAppServerClientTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: transcript) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
 
@@ -545,7 +545,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     XCTAssertNotNil(restored.aiChatDestination(id: AIChatDestinationConfiguration.openClawID))
@@ -561,7 +561,7 @@ final class CodexAppServerClientTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: transcript) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let destinationID = store.addAIChatDestination(adapter: .codexManagedRemote)
@@ -586,7 +586,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let id = store.addAIChatDestination(adapter: .codexManagedRemote)
@@ -598,7 +598,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
@@ -630,7 +630,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
 
@@ -648,7 +648,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let destinationID = store.addAIChatDestination(adapter: .codexManagedRemote)
@@ -661,7 +661,7 @@ final class CodexAppServerClientTests: XCTestCase {
     store.createAIChatThread(destinationID: destinationID)
     store.createAIChatThread()
 
-    XCTAssertEqual(store.selectedOpenClawChatThread?.destinationID, destinationID)
+    XCTAssertEqual(store.selectedAIChatThread?.destinationID, destinationID)
     XCTAssertEqual(store.selectedAIChatDestination.adapter, .codexManagedRemote)
   }
 
@@ -676,7 +676,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let id = store.addAIChatDestination(adapter: .openRouter)
@@ -688,7 +688,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     let restoredDestination = try XCTUnwrap(restored.aiChatDestination(id: id))
@@ -697,7 +697,7 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(restoredDestination.isEnabled)
 
     restored.createAIChatThread(destinationID: id)
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "anthropic/claude-test")
+    XCTAssertEqual(restored.selectedAIChatThread?.model, "anthropic/claude-test")
   }
 
   @MainActor
@@ -732,8 +732,8 @@ final class CodexAppServerClientTests: XCTestCase {
     let recorder = OpenClawDestinationRoutingRecorder()
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
-      openClawSendHandler: { _, agentID, sessionKey, _ in
+      aiChatTranscriptURL: transcript,
+      aiChatSendHandler: { _, agentID, sessionKey, _ in
         await recorder.record(agentID: agentID, sessionKey: sessionKey)
         return "Routed reply"
       },
@@ -747,7 +747,7 @@ final class CodexAppServerClientTests: XCTestCase {
     )
 
     store.createAIChatThread(destinationID: AIChatDestinationConfiguration.openClawID)
-    await store.sendOpenClawMessage(text: "Use the configured Org2 agent")
+    await store.sendAIChatMessage(text: "Use the configured Org2 agent")
 
     let routing = await recorder.value()
     XCTAssertEqual(routing?.agentID, "org2")
@@ -894,8 +894,8 @@ final class CodexAppServerClientTests: XCTestCase {
     let recorder = AIChatContextRecorder()
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: container.appendingPathComponent("chat.json"),
-      openClawSendHandler: { _, _, _, context in
+      aiChatTranscriptURL: container.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { _, _, _, context in
         await recorder.record(context)
         return "Both corpora are available."
       },
@@ -910,7 +910,7 @@ final class CodexAppServerClientTests: XCTestCase {
     store.aiChatCorpusAccessScope = .allCorpora
     store.aiChatCustomInstructions = "Name the corpus for every citation."
 
-    await store.sendOpenClawMessage(text: "What can you see?")
+    await store.sendAIChatMessage(text: "What can you see?")
 
     let recordedContext = await recorder.value()
     let context = try XCTUnwrap(recordedContext)
@@ -930,32 +930,32 @@ final class CodexAppServerClientTests: XCTestCase {
 
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
-    store.createOpenClawChatThread()
+    store.createAIChatThread(runtime: .openClaw)
     XCTAssertTrue(store.canChangeSelectedAIChatRuntime)
     store.setSelectedAIChatRuntime(.codex)
     store.setSelectedAIChatModel("gpt-test")
     store.setSelectedAIChatReasoningEffort("high")
-    XCTAssertEqual(store.selectedOpenClawChatThread?.runtime, .codex)
-    XCTAssertEqual(store.selectedOpenClawChatThread?.model, "gpt-test")
-    XCTAssertEqual(store.selectedOpenClawChatThread?.reasoningEffort, "high")
+    XCTAssertEqual(store.selectedAIChatThread?.runtime, .codex)
+    XCTAssertEqual(store.selectedAIChatThread?.model, "gpt-test")
+    XCTAssertEqual(store.selectedAIChatThread?.reasoningEffort, "high")
     XCTAssertEqual(
-      store.visibleOpenClawChatThreads.first(where: {
-        $0.id == store.selectedOpenClawChatThreadID
+      store.visibleAIChatThreads.first(where: {
+        $0.id == store.selectedAIChatThreadID
       })?.runtime,
       .codex
     )
 
     let restored = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.runtime, .codex)
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.model, "gpt-test")
-    XCTAssertEqual(restored.selectedOpenClawChatThread?.reasoningEffort, "high")
+    XCTAssertEqual(restored.selectedAIChatThread?.runtime, .codex)
+    XCTAssertEqual(restored.selectedAIChatThread?.model, "gpt-test")
+    XCTAssertEqual(restored.selectedAIChatThread?.reasoningEffort, "high")
   }
 
   func testClientRunsCodexTurnAndAnswersDynamicToolCall() async throws {
@@ -1635,7 +1635,7 @@ final class CodexAppServerClientTests: XCTestCase {
       expectedTurnID: "turn-steer",
       message: "Focus on the failing test first.",
       attachments: [
-        OpenClawChatAttachment(fileName: "example.png", mimeType: "image/png", data: Data([1, 2, 3]))
+        AIChatAttachment(fileName: "example.png", mimeType: "image/png", data: Data([1, 2, 3]))
       ]
     )
 
@@ -1984,13 +1984,13 @@ final class CodexAppServerClientTests: XCTestCase {
 }
 
 private actor AIChatContextRecorder {
-  private var context: OpenClawWorkspaceContext?
+  private var context: AIChatWorkspaceContext?
 
-  func record(_ context: OpenClawWorkspaceContext?) {
+  func record(_ context: AIChatWorkspaceContext?) {
     self.context = context
   }
 
-  func value() -> OpenClawWorkspaceContext? {
+  func value() -> AIChatWorkspaceContext? {
     context
   }
 }

@@ -27,7 +27,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       status: "", search: search, searchGeneration: generation, initialPosition: position, compact: false,
       live: live)
   }
-  private func document(attachments: [OpenClawChatAttachment] = []) async throws -> WKWebView {
+  private func document(attachments: [AIChatAttachment] = []) async throws -> WKWebView {
     let resources = OrgHTMLLocalResourceSchemeHandler()
     resources.configure(
       source: EntrySource(
@@ -79,7 +79,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     ))
     let liveInputSource = source[start.lowerBound..<end.lowerBound]
 
-    XCTAssertTrue(liveInputSource.contains("store.isSendingOpenClawMessage"))
+    XCTAssertTrue(liveInputSource.contains("store.isSendingAIChatMessage"))
     XCTAssertTrue(liveInputSource.contains("store.selectedAIChatActiveDestinationID"))
     XCTAssertFalse(liveInputSource.contains("!store.selectedAIChatIsSharedRoom"))
   }
@@ -235,7 +235,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       bitsPerPixel: 0
     ))
     let imageData = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-    let attachment = OpenClawChatAttachment(
+    let attachment = AIChatAttachment(
       fileName: "Screenshot.png",
       mimeType: "image/png",
       data: imageData
@@ -271,9 +271,9 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
   }
 
   func testEstablishedMessageChromeAndInlineSummariesRemainVisible() async throws {
-    let trace = AIChatTranscriptHTML.Trace(OpenClawResponseTrace(
+    let trace = AIChatTranscriptHTML.Trace(AIChatResponseTrace(
       reasoning: "Checked the existing renderer before changing the transcript.",
-      activities: [OpenClawRunActivity(
+      activities: [AIChatRunActivity(
         id: "tool-1", runID: "run", kind: .tool, title: "Read source",
         detail: "/tmp/ContentView.swift", status: .succeeded
       )],
@@ -289,8 +289,8 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
         projectTokens: 5
       )
     ))
-    let changeSummary = AIChatTranscriptHTML.ChangeSummary(OpenClawCorpusChangeSummary(files: [
-      OpenClawCorpusFileChange(relativePath: "ContentView.swift", status: .modified, insertions: 4, deletions: 2)
+    let changeSummary = AIChatTranscriptHTML.ChangeSummary(AIChatCorpusChangeSummary(files: [
+      AIChatCorpusFileChange(relativePath: "ContentView.swift", status: .modified, insertions: 4, deletions: 2)
     ]))
     let view = try await document()
     try await update(view, payload([entry(
@@ -340,8 +340,8 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
   }
 
   func testLoadedUserMessageReusesItsWarmSafePresentation() {
-    OpenClawMessagePresentationCache.removeAllForTesting()
-    let message = OpenClawChatMessage(
+    AIChatMessagePresentationCache.removeAllForTesting()
+    let message = AIChatMessage(
       role: .user,
       content: """
       Use selected file “Private” at notes/private.org as context.
@@ -354,8 +354,8 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     )
     XCTAssertNil(AIChatTranscriptHTML.cachedPreparedBody(for: message, expanded: false))
 
-    OpenClawMessagePresentationCache.install(
-      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(message))
+    AIChatMessagePresentationCache.install(
+      AIChatMessagePresentationBuilder.prepare(AIChatMessagePresentationInput(message))
     )
     let warm = AIChatTranscriptHTML.cachedPreparedBody(for: message, expanded: false)
 
@@ -367,18 +367,18 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
   }
 
   func testPlainAssistantMessageReusesWarmPresentationWithoutRichRendering() {
-    OpenClawMessagePresentationCache.removeAllForTesting()
-    let plain = OpenClawChatMessage(
+    AIChatMessagePresentationCache.removeAllForTesting()
+    let plain = AIChatMessage(
       role: .assistant,
       content: "A local plain-text response with no Org syntax."
     )
-    let structured = OpenClawChatMessage(
+    let structured = AIChatMessage(
       role: .assistant,
       content: "* Result\n\n- One item"
     )
-    OpenClawMessagePresentationCache.install([
-      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(plain)),
-      OpenClawMessagePresentationBuilder.prepare(OpenClawMessagePresentationInput(structured)),
+    AIChatMessagePresentationCache.install([
+      AIChatMessagePresentationBuilder.prepare(AIChatMessagePresentationInput(plain)),
+      AIChatMessagePresentationBuilder.prepare(AIChatMessagePresentationInput(structured)),
     ])
 
     let body = AIChatTranscriptHTML.cachedPreparedBody(for: plain, expanded: false)
@@ -389,12 +389,12 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
 
   func testAuxiliaryControlsKeepIconsTextAndActionsAlignedAtNarrowWidths() async throws {
     let activities = (0..<4).map { index in
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "tool-\(index)", runID: "run", kind: .tool, title: "Activity \(index)",
         detail: "A useful detail", status: .succeeded
       )
     }
-    let trace = try XCTUnwrap(AIChatTranscriptHTML.Trace(OpenClawResponseTrace(
+    let trace = try XCTUnwrap(AIChatTranscriptHTML.Trace(AIChatResponseTrace(
       reasoning: "Checked the transcript layout before updating it.",
       activities: activities
     )))
@@ -444,8 +444,8 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
   }
 
   func testLiveAgentUpdatesAndAnimationRemainInsideTheSelectableDocument() async throws {
-    func activity(_ title: String, status: OpenClawRunActivity.Status) -> AIChatTranscriptHTML.Activity {
-      AIChatTranscriptHTML.Activity(OpenClawActivityFeedItem(
+    func activity(_ title: String, status: AIChatRunActivity.Status) -> AIChatTranscriptHTML.Activity {
+      AIChatTranscriptHTML.Activity(AIChatActivityFeedItem(
         id: title, title: title, detail: "Started", latestDetail: "Still working",
         status: status, count: 1, updatedAt: Date()
       ))
@@ -566,15 +566,15 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     let reasoning = "Reuse the =Org2= renderer for *reasoning*, too."
     let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
     let commentaryHTML = try await cli.renderAppHTML(
-      OpenClawMessageOrgNormalizer.normalized(commentary),
+      AIChatMessageOrgNormalizer.normalized(commentary),
       sourcePath: "/tmp/chat-message.org"
     )
     let reasoningHTML = try await cli.renderAppHTML(
-      OpenClawMessageOrgNormalizer.normalized(reasoning),
+      AIChatMessageOrgNormalizer.normalized(reasoning),
       sourcePath: "/tmp/chat-message.org"
     )
     let trace = try XCTUnwrap(AIChatTranscriptHTML.Trace(
-      OpenClawResponseTrace(reasoning: reasoning),
+      AIChatResponseTrace(reasoning: reasoning),
       reasoningHTML: reasoningHTML
     ))
     let live = AIChatTranscriptHTML.Live(
@@ -614,7 +614,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
 
   func testOrgAndLegacyCitationsRenderAsLinksWithExactLineTargets() async throws {
     let raw = "Org [[file:/tmp/note.org::16][project notes]], legacy [source](/tmp/file.swift:42), web [site](https://example.com)."
-    let normalized = OpenClawMessageOrgNormalizer.normalized(raw)
+    let normalized = AIChatMessageOrgNormalizer.normalized(raw)
     XCTAssertTrue(normalized.contains("[[file:/tmp/file.swift::42][source]]"))
     let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
     let html = try await cli.renderAppHTML(normalized, sourcePath: "/tmp/chat-message.org")
@@ -639,7 +639,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
   }
 
   func testAllRuntimePromptsRequestOrgCitations() {
-    let context = OpenClawWorkspaceContext(localCorpusRoot: "/tmp/corpus", remoteCorpusRoot: "/tmp/corpus",
+    let context = AIChatWorkspaceContext(localCorpusRoot: "/tmp/corpus", remoteCorpusRoot: "/tmp/corpus",
       selectedSurface: "AI Chat", selectedLocation: nil, selectedEntrySource: nil, backlinks: nil,
       agenda: nil, searchQuery: "", searchResults: [])
     for prompt in [context.systemPrompt(), context.codexSystemPrompt(), context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")] {

@@ -2161,20 +2161,20 @@ final class AgentRunModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     store.openClawRemoteCorpusPath = "/remote/org2"
 
-    store.askOpenClawAboutAgentRun(try makeRun())
+    store.askAIChatAboutAgentRun(try makeRun())
 
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertEqual(store.openClawChatThreads.first?.title, "Run: Prepare a cited briefing")
+    XCTAssertEqual(store.selectedSurface, .aiChat)
+    XCTAssertEqual(store.aiChatThreads.first?.title, "Run: Prepare a cited briefing")
     XCTAssertEqual(
-      store.openClawDraft,
+      store.aiChatDraft,
       "Use agent run “Prepare a cited briefing” at /remote/org2/.org2/runs/run-1.org2:1 as context.\n\n"
     )
-    XCTAssertEqual(store.openClawStatusText, "Added .org2/runs/run-1.org2:1 to OpenClaw")
+    XCTAssertEqual(store.aiChatStatusText, "Added .org2/runs/run-1.org2:1 to OpenClaw")
   }
 
   @MainActor
@@ -2202,14 +2202,14 @@ final class AgentRunModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     store.openClawRemoteCorpusPath = "/remote/org2"
 
-    store.askOpenClawAboutAgentRun(run)
+    store.askAIChatAboutAgentRun(run)
 
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     let title = try XCTUnwrap(presentation.contexts.first?.title)
     XCTAssertTrue(title.hasPrefix("Reduce OpenOrg per-turn context overhead"))
     XCTAssertTrue(title.hasSuffix("…"))
@@ -2217,7 +2217,7 @@ final class AgentRunModelsTests: XCTestCase {
     XCTAssertFalse(title.contains("Repository:"))
     XCTAssertFalse(title.contains("Execute this newly approved"))
     XCTAssertEqual(presentation.userText, "")
-    let threadTitle = try XCTUnwrap(store.openClawChatThreads.first?.title)
+    let threadTitle = try XCTUnwrap(store.aiChatThreads.first?.title)
     XCTAssertTrue(threadTitle.hasPrefix("Run: Reduce OpenOrg per-turn context overhead"))
     XCTAssertLessThanOrEqual(threadTitle.count, 80)
   }
@@ -2246,23 +2246,23 @@ final class AgentRunModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     store.openClawRemoteCorpusPath = "/remote/org2"
     store.replaceAgentRunsForTesting([first, second])
-    store.createOpenClawChatThread(runtime: .codex)
+    store.createAIChatThread(runtime: .codex)
 
     let visibleIDs = [first.id, second.id]
     store.handleAgentRunClick(first, visibleRunIDs: visibleIDs)
     store.handleAgentRunClick(second, visibleRunIDs: visibleIDs, modifiers: [.command])
     store.startNewAIThreadFromAgentRunSelection(including: second)
 
-    XCTAssertEqual(store.openClawChatThreads.count, 2)
-    XCTAssertEqual(store.selectedOpenClawChatThread?.runtime, .codex)
-    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
-    XCTAssertTrue(store.openClawMessages.isEmpty)
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    XCTAssertEqual(store.aiChatThreads.count, 2)
+    XCTAssertEqual(store.selectedAIChatThread?.runtime, .codex)
+    XCTAssertEqual(store.selectedAIChatThread?.title, "Context: 2 selected items")
+    XCTAssertTrue(store.aiChatMessages.isEmpty)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     XCTAssertEqual(presentation.contexts.map(\.title), [
       "Prepare the launch brief",
       "Review the launch risks"
@@ -2318,13 +2318,13 @@ final class AgentRunModelsTests: XCTestCase {
 
     store.startNewAIThreadFromApprovalSelection(including: second)
 
-    let presentation = OpenClawContextPresentation(store.openClawDraft)
+    let presentation = AIChatContextPresentation(store.aiChatDraft)
     XCTAssertEqual(presentation.contexts.map(\.title), ["Approve launch", "Approve pricing"])
     XCTAssertEqual(presentation.contexts.map(\.reference), [
       "/remote/org2/approvals.org2:1",
       "/remote/org2/approvals.org2:3"
     ])
-    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Context: 2 selected items")
+    XCTAssertEqual(store.selectedAIChatThread?.title, "Context: 2 selected items")
   }
 
   @MainActor

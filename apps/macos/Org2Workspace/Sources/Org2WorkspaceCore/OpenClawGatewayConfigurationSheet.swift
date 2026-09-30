@@ -114,8 +114,8 @@ public struct OpenClawGatewayConfigurationSheet: View {
         Toggle("Clear saved token", isOn: $clearToken)
           .disabled(!store.openClawHasStoredToken)
 
-        if !store.openClawStatusText.isEmpty {
-          Text(store.openClawStatusText)
+        if !store.aiChatStatusText.isEmpty {
+          Text(store.aiChatStatusText)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(3)

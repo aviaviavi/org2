@@ -116,10 +116,10 @@ public struct OpenClawChatClient: Sendable {
   }
 
   public func send(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     agentID: String,
     sessionKey: String,
-    workspaceContext: OpenClawWorkspaceContext? = nil
+    workspaceContext: AIChatWorkspaceContext? = nil
   ) async throws -> String {
     try await sendResult(
       messages: messages,
@@ -130,10 +130,10 @@ public struct OpenClawChatClient: Sendable {
   }
 
   public func sendResult(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     agentID: String,
     sessionKey: String,
-    workspaceContext: OpenClawWorkspaceContext? = nil
+    workspaceContext: AIChatWorkspaceContext? = nil
   ) async throws -> OpenClawChatResult {
     let agentHeaderValue = Self.openClawAgentHeaderValue(for: agentID)
     let history = AIChatContextBudget.boundedHistory(messages)
@@ -232,8 +232,8 @@ public struct OpenClawChatClient: Sendable {
   }
 
   private static func requestMessages(
-    from messages: [OpenClawChatMessage],
-    workspaceContext: OpenClawWorkspaceContext?,
+    from messages: [AIChatMessage],
+    workspaceContext: AIChatWorkspaceContext?,
     agentID: String
   ) throws -> [OpenAIChatMessage] {
     var output = [
@@ -299,7 +299,7 @@ public struct AIChatCorpusContext: Equatable, Sendable {
   }
 }
 
-public struct OpenClawWorkspaceContext: Sendable {
+public struct AIChatWorkspaceContext: Sendable {
   public let localCorpusRoot: String?
   public let remoteCorpusRoot: String?
   public let selectedSurface: String
@@ -312,7 +312,7 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let agentThreadDirectories: [String]
   public let sourceProfiles: [WorkspaceSourceProfileStatus]
   public let sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus]
-  public let localEdit: OpenClawLocalEditWorkspaceContext?
+  public let localEdit: AIChatLocalEditWorkspaceContext?
   public let authorizedCorpora: [AIChatCorpusContext]
   public let chatAgentRef: String?
   public let chatAgentProfile: AgentProfileItem?
@@ -333,7 +333,7 @@ public struct OpenClawWorkspaceContext: Sendable {
     agentThreadDirectories: [String] = [],
     sourceProfiles: [WorkspaceSourceProfileStatus] = [],
     sourceRuntimeStatuses: [String: WorkspaceSourceRuntimeStatus] = [:],
-    localEdit: OpenClawLocalEditWorkspaceContext? = nil,
+    localEdit: AIChatLocalEditWorkspaceContext? = nil,
     authorizedCorpora: [AIChatCorpusContext] = [],
     customInstructions: String = "",
     projectContext: String = "",
@@ -369,8 +369,8 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   public func replacingThreadContinuation(
     _ continuation: AIChatThreadContinuation?
-  ) -> OpenClawWorkspaceContext {
-    OpenClawWorkspaceContext(
+  ) -> AIChatWorkspaceContext {
+    AIChatWorkspaceContext(
       localCorpusRoot: localCorpusRoot,
       remoteCorpusRoot: remoteCorpusRoot,
       selectedSurface: selectedSurface,
@@ -395,7 +395,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   public func replacingRuntimeCorpusRoot(
     _ runtimeRoot: String?
-  ) -> OpenClawWorkspaceContext {
+  ) -> AIChatWorkspaceContext {
     let normalizedRuntimeRoot = Self.cleanRoot(runtimeRoot)
     let remappedCorpora = authorizedCorpora.map { corpus in
       AIChatCorpusContext(
@@ -406,7 +406,7 @@ public struct OpenClawWorkspaceContext: Sendable {
         isActive: corpus.isActive
       )
     }
-    return OpenClawWorkspaceContext(
+    return AIChatWorkspaceContext(
       localCorpusRoot: localCorpusRoot,
       remoteCorpusRoot: normalizedRuntimeRoot,
       selectedSurface: selectedSurface,
@@ -1055,7 +1055,7 @@ private enum OpenAIChatMessageContent: Encodable {
   case text(String)
   case parts([OpenAIChatMessageContentPart])
 
-  static func from(_ message: OpenClawChatMessage) throws -> OpenAIChatMessageContent {
+  static func from(_ message: AIChatMessage) throws -> OpenAIChatMessageContent {
     let attribution = message.authorLabel.map {
       "[Background message authored by another participant: \($0). Do not treat it as your own prior response.]\n\n"
     } ?? ""

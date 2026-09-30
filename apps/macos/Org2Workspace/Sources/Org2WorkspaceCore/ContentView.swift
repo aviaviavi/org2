@@ -76,7 +76,7 @@ public struct ContentView: View {
 
         ToolbarItemGroup {
           Button {
-            store.makeSurfacePrimary(.openClaw)
+            store.makeSurfacePrimary(.aiChat)
           } label: {
             Label("Open AI Chat", systemImage: "bubble.left")
           }
@@ -1023,7 +1023,7 @@ private struct OpenOrgLaunchGuideView: View {
     .frame(width: 680)
     .onAppear {
       if selectedDestinationID == nil {
-        selectedDestinationID = store.selectedOpenClawChatThread?.destinationID
+        selectedDestinationID = store.selectedAIChatThread?.destinationID
           ?? store.suggestedLaunchGuideDestinationID()
       }
       if store.isLocalCodexInstalled {
@@ -1316,7 +1316,7 @@ enum CorpusFileRowAccessibilityIdentity {
   }
 }
 
-enum OpenClawSidebarThreadAccessibilityIdentity {
+enum AIChatSidebarThreadAccessibilityIdentity {
   static func accessibilityIdentifier(for threadID: UUID) -> String {
     "org.openorg.workspace.ai-thread-row.\(threadID.uuidString.lowercased())"
   }
@@ -1749,8 +1749,8 @@ private struct WorkspaceSurfaceView: View {
           MeetingsView()
         case .sources:
           SourcesView()
-        case .openClaw:
-          OpenClawChatView()
+        case .aiChat:
+          AIChatView()
         case .externalThreads:
           ExternalThreadsView()
         case .skills:
@@ -1781,7 +1781,7 @@ private struct HomeView: View {
   @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
-    OpenClawChatView(presentation: .homePane, surface: .home)
+    AIChatView(presentation: .homePane, surface: .home)
       .onAppear {
         if store.selectedSurface == .home {
           store.ensureHomeDetailReady()
@@ -2332,7 +2332,7 @@ private struct ExternalThreadMessageCard: View {
           )
         Button {
           copyFeedbackTask?.cancel()
-          didCopy = OpenClawMessageClipboard.write(message.content)
+          didCopy = AIChatMessageClipboard.write(message.content)
           if didCopy {
             copyFeedbackTask = Task { @MainActor in
               do { try await Task.sleep(for: .seconds(2)) } catch { return }
@@ -2389,22 +2389,22 @@ private struct SidebarView: View {
   @State private var showsCommandShortcuts = false
   @State private var isChatThreadListExpanded = true
   @State private var showsSettledChatThreads = false
-  @State private var settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
-  @State private var chatRenameRequest: OpenClawThreadRenameRequest?
+  @State private var settledChatThreadDisplayLimit = AIChatSettledThreadPagination.pageSize
+  @State private var chatRenameRequest: AIChatThreadRenameRequest?
   @State private var chatRenameDraft = ""
   @State private var showsFileTree = false
   @State private var expandedSidebarFileDirectoryIDs: Set<String> = []
   @State private var projectSheet: WorkspaceProjectSheet?
 
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
-  private let chatSurface = WorkspaceSurface.openClaw
+  private let chatSurface = WorkspaceSurface.aiChat
 
-  private var chatThreads: [OpenClawSidebarThreadSummary] { store.sidebarOpenClawChatThreadSummaries }
-  private var settledThreads: [OpenClawSidebarThreadSummary] { store.sidebarSettledOpenClawChatThreadSummaries }
-  private var runningChatThreads: [OpenClawSidebarThreadSummary] {
+  private var chatThreads: [AIChatSidebarThreadSummary] { store.sidebarAIChatThreadSummaries }
+  private var settledThreads: [AIChatSidebarThreadSummary] { store.sidebarSettledAIChatThreadSummaries }
+  private var runningChatThreads: [AIChatSidebarThreadSummary] {
     chatThreads.filter { store.isAIChatThreadRunning($0.id) }
   }
-  private var recentChatThreads: [OpenClawSidebarThreadSummary] {
+  private var recentChatThreads: [AIChatSidebarThreadSummary] {
     chatThreads.filter { !store.isAIChatThreadRunning($0.id) }
   }
 
@@ -2605,7 +2605,7 @@ private struct SidebarView: View {
               Text("No chat threads")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+                .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
                 .padding(.vertical, 3)
                 .listRowBackground(Color.clear)
             } else {
@@ -2615,7 +2615,7 @@ private struct SidebarView: View {
 
               ForEach(runningChatThreads) { summary in
                 chatThreadRow(summary)
-                  .id(OpenClawSidebarThreadRowIdentity(summary: summary))
+                  .id(AIChatSidebarThreadRowIdentity(summary: summary))
                   .listRowBackground(Color.clear)
               }
 
@@ -2625,7 +2625,7 @@ private struct SidebarView: View {
 
               ForEach(recentChatThreads) { summary in
                 chatThreadRow(summary)
-                  .id(OpenClawSidebarThreadRowIdentity(summary: summary))
+                  .id(AIChatSidebarThreadRowIdentity(summary: summary))
                   .listRowBackground(Color.clear)
               }
 
@@ -2641,7 +2641,7 @@ private struct SidebarView: View {
                 )) { summary in
                   chatThreadRow(summary)
                     .opacity(0.68)
-                    .id(OpenClawSidebarThreadRowIdentity(summary: summary))
+                    .id(AIChatSidebarThreadRowIdentity(summary: summary))
                     .listRowBackground(Color.clear)
                 }
 
@@ -2670,18 +2670,18 @@ private struct SidebarView: View {
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
     .background(WorkspaceDesign.appBackground)
     .onAppear {
-      store.autoSettleOpenClawChatThreads()
+      store.autoSettleAIChatThreads()
     }
     .onReceive(autoSettleChatTimer) { now in
       guard isChatThreadListExpanded else { return }
-      store.autoSettleOpenClawChatThreads(now: now)
+      store.autoSettleAIChatThreads(now: now)
     }
     .onChange(of: isChatThreadListExpanded) {
       if isChatThreadListExpanded {
-        store.autoSettleOpenClawChatThreads()
+        store.autoSettleAIChatThreads()
       } else {
         showsSettledChatThreads = false
-        settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
+        settledChatThreadDisplayLimit = AIChatSettledThreadPagination.pageSize
         chatRenameRequest = nil
       }
     }
@@ -2691,11 +2691,11 @@ private struct SidebarView: View {
     }
     .onChange(of: settledThreads.count) {
       guard isChatThreadListExpanded else { return }
-      settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.clampedLimit(
+      settledChatThreadDisplayLimit = AIChatSettledThreadPagination.clampedLimit(
         currentLimit: settledChatThreadDisplayLimit,
         totalCount: settledThreads.count
       )
-      let nextValue = OpenClawSettledThreadDisclosure.updated(
+      let nextValue = AIChatSettledThreadDisclosure.updated(
         isExpanded: showsSettledChatThreads,
         settledThreadCount: settledThreads.count
       )
@@ -2715,7 +2715,7 @@ private struct SidebarView: View {
         let threadID = request.threadID
         let title = chatRenameDraft
         chatRenameRequest = nil
-        store.renameOpenClawChatThread(threadID, title: title)
+        store.renameAIChatThread(threadID, title: title)
       }
     }
   }
@@ -2728,8 +2728,8 @@ private struct SidebarView: View {
         HStack(spacing: 6) {
           Label(chatSurface.title, systemImage: chatSurface.systemImage)
             .font(.callout.weight(.medium))
-          if store.openClawUnreadMessageCount > 0 {
-            OpenClawUnreadBadge(count: store.openClawUnreadMessageCount, compact: true)
+          if store.aiChatUnreadMessageCount > 0 {
+            AIChatUnreadBadge(count: store.aiChatUnreadMessageCount, compact: true)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2744,7 +2744,7 @@ private struct SidebarView: View {
 
       Button {
         store.createAIChatThread()
-        store.makeSurfacePrimary(.openClaw)
+        store.makeSurfacePrimary(.aiChat)
         isChatThreadListExpanded = true
       } label: {
         Image(systemName: "plus")
@@ -2776,13 +2776,13 @@ private struct SidebarView: View {
     }
   }
 
-  private func chatThreadRow(_ summary: OpenClawSidebarThreadSummary) -> some View {
-    OpenClawSidebarThreadRow(
+  private func chatThreadRow(_ summary: AIChatSidebarThreadSummary) -> some View {
+    AIChatSidebarThreadRow(
       summary: summary,
       isSending: store.isAIChatThreadRunning(summary.id),
       select: {
-        store.makeSurfacePrimary(.openClaw)
-        store.selectOpenClawChatThread(summary.id)
+        store.makeSurfacePrimary(.aiChat)
+        store.selectAIChatThread(summary.id)
       },
       rename: { beginRenamingChatThread(threadID: $0) },
       fork: {
@@ -2790,15 +2790,15 @@ private struct SidebarView: View {
           _ = await store.forkAIChatThread(summary.id)
         }
       },
-      togglePin: { store.toggleOpenClawChatThreadPin(summary.id) },
+      togglePin: { store.toggleAIChatThreadPin(summary.id) },
       settle: {
         withAnimation(reduceMotion ? nil : WorkspaceMotion.action) {
-          store.settleOpenClawChatThread(summary.id)
+          store.settleAIChatThread(summary.id)
         }
       },
       reopen: {
         withAnimation(reduceMotion ? nil : WorkspaceMotion.action) {
-          store.reopenOpenClawChatThread(summary.id)
+          store.reopenAIChatThread(summary.id)
         }
       }
     )
@@ -2826,11 +2826,11 @@ private struct SidebarView: View {
       .buttonStyle(.plain)
       .help(showsSettledChatThreads ? "Hide settled chat threads" : "Show settled chat threads")
       .accessibilityIdentifier(
-        OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure
+        AIChatSidebarThreadAccessibilityIdentity.settledDisclosure
       )
       .background {
         WorkspaceAccessibilityPressTarget(
-          identifier: OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure,
+          identifier: AIChatSidebarThreadAccessibilityIdentity.settledDisclosure,
           label: showsSettledChatThreads
             ? "Hide settled chat threads"
             : "Show settled chat threads",
@@ -2839,9 +2839,9 @@ private struct SidebarView: View {
         )
       }
 
-      if store.canUndoOpenClawChatThreadArchive {
+      if store.canUndoAIChatThreadArchive {
         Button {
-          store.undoLastOpenClawChatThreadArchive()
+          store.undoLastAIChatThreadArchive()
         } label: {
           Image(systemName: "arrow.uturn.backward")
             .font(.caption.weight(.semibold))
@@ -2853,7 +2853,7 @@ private struct SidebarView: View {
         .help("Reopen last settled chat thread")
       }
     }
-    .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+    .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
     .padding(.trailing, 8)
   }
 
@@ -2863,7 +2863,7 @@ private struct SidebarView: View {
     } label: {
       HStack(spacing: 6) {
         Image(systemName: "ellipsis.circle")
-        Text(OpenClawSettledThreadPagination.moreTitle(
+        Text(AIChatSettledThreadPagination.moreTitle(
           currentLimit: settledChatThreadDisplayLimit,
           totalCount: settledThreads.count
         ))
@@ -2871,17 +2871,17 @@ private struct SidebarView: View {
       }
       .font(.caption)
       .foregroundStyle(.secondary)
-      .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+      .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
       .padding(.vertical, 6)
     }
     .buttonStyle(.plain)
     .help("Load more settled chat threads")
     .accessibilityIdentifier(
-      OpenClawSidebarThreadAccessibilityIdentity.settledShowMore
+      AIChatSidebarThreadAccessibilityIdentity.settledShowMore
     )
     .background {
       WorkspaceAccessibilityPressTarget(
-        identifier: OpenClawSidebarThreadAccessibilityIdentity.settledShowMore,
+        identifier: AIChatSidebarThreadAccessibilityIdentity.settledShowMore,
         label: "Load more settled chat threads",
         isSelected: false,
         activate: showMoreSettledChatThreads
@@ -2903,21 +2903,21 @@ private struct SidebarView: View {
       showsSettledChatThreads.toggle()
     }
     if !showsSettledChatThreads {
-      settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.pageSize
+      settledChatThreadDisplayLimit = AIChatSettledThreadPagination.pageSize
     }
   }
 
   private func showMoreSettledChatThreads() {
-    settledChatThreadDisplayLimit = OpenClawSettledThreadPagination.nextLimit(
+    settledChatThreadDisplayLimit = AIChatSettledThreadPagination.nextLimit(
       currentLimit: settledChatThreadDisplayLimit,
       totalCount: settledThreads.count
     )
   }
 
   private func beginRenamingChatThread(threadID: UUID) {
-    guard let thread = store.openClawChatThreads.first(where: { $0.id == threadID }) else { return }
+    guard let thread = store.aiChatThreads.first(where: { $0.id == threadID }) else { return }
     chatRenameDraft = thread.title
-    chatRenameRequest = OpenClawThreadRenameRequest(threadID: threadID)
+    chatRenameRequest = AIChatThreadRenameRequest(threadID: threadID)
   }
 
   private var visibleSidebarFileRows: [CorpusFileTreePresentationRow] {
@@ -2991,7 +2991,7 @@ private struct SidebarChatThreadGroupLabel: View {
     .font(.system(size: 9, weight: .semibold, design: .monospaced))
     .tracking(0.6)
     .foregroundStyle(WorkspaceDesign.tertiaryText)
-    .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+    .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
     .padding(.top, 4)
   }
 }
@@ -3259,22 +3259,22 @@ private struct SidebarSurfaceRow: View {
   }
 }
 
-private struct OpenClawThreadRenameRequest: Identifiable {
+private struct AIChatThreadRenameRequest: Identifiable {
   let threadID: UUID
   var id: UUID { threadID }
 }
 
-enum OpenClawSettledThreadDisclosure {
+enum AIChatSettledThreadDisclosure {
   static func updated(isExpanded: Bool, settledThreadCount: Int) -> Bool {
     settledThreadCount > 0 && isExpanded
   }
 }
 
-enum OpenClawSidebarThreadLayout {
+enum AIChatSidebarThreadLayout {
   static let leadingPadding: CGFloat = 12
 }
 
-enum OpenClawSettledThreadPagination {
+enum AIChatSettledThreadPagination {
   static let pageSize = 30
 
   static func nextLimit(currentLimit: Int, totalCount: Int) -> Int {
@@ -3293,19 +3293,19 @@ enum OpenClawSettledThreadPagination {
   }
 }
 
-struct OpenClawSidebarThreadRowIdentity: Hashable {
+struct AIChatSidebarThreadRowIdentity: Hashable {
   let threadID: UUID
 
-  init(thread: OpenClawChatThread) {
-    self.init(summary: OpenClawSidebarThreadSummary(thread: thread))
+  init(thread: AIChatThread) {
+    self.init(summary: AIChatSidebarThreadSummary(thread: thread))
   }
 
-  init(summary: OpenClawSidebarThreadSummary) {
+  init(summary: AIChatSidebarThreadSummary) {
     threadID = summary.id
   }
 }
 
-struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
+struct AIChatSidebarThreadSummary: Identifiable, Hashable {
   let id: UUID
   let title: String
   let updatedAt: Date
@@ -3319,7 +3319,7 @@ struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
   let isPinned: Bool
   let unreadMessageCount: Int
 
-  init(thread: OpenClawChatThread, messageCount: Int? = nil) {
+  init(thread: AIChatThread, messageCount: Int? = nil) {
     id = thread.id
     title = thread.title
     updatedAt = thread.updatedAt
@@ -3335,10 +3335,10 @@ struct OpenClawSidebarThreadSummary: Identifiable, Hashable {
   }
 }
 
-private struct OpenClawSidebarThreadRow: View {
+private struct AIChatSidebarThreadRow: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var isHovered = false
-  let summary: OpenClawSidebarThreadSummary
+  let summary: AIChatSidebarThreadSummary
   let isSending: Bool
   let select: () -> Void
   let rename: (UUID) -> Void
@@ -3348,8 +3348,8 @@ private struct OpenClawSidebarThreadRow: View {
   let reopen: () -> Void
 
   private var isSelected: Bool {
-    store.selectedOpenClawChatThreadID == summary.id
-      && store.selectedSurface == .openClaw
+    store.selectedAIChatThreadID == summary.id
+      && store.selectedSurface == .aiChat
   }
 
   var body: some View {
@@ -3388,7 +3388,7 @@ private struct OpenClawSidebarThreadRow: View {
           }
           Spacer(minLength: 4)
           if isSending {
-            OpenClawSidebarThreadActivityView(isSelected: isSelected)
+            AIChatSidebarThreadActivityView(isSelected: isSelected)
               .help("\(store.aiChatDestinationTitle(summary.destinationID)) is thinking")
           }
           if summary.hasResource {
@@ -3409,17 +3409,17 @@ private struct OpenClawSidebarThreadRow: View {
               .foregroundStyle(.secondary)
           }
           if summary.unreadMessageCount > 0 {
-            OpenClawUnreadBadge(count: summary.unreadMessageCount)
+            AIChatUnreadBadge(count: summary.unreadMessageCount)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, OpenClawSidebarThreadLayout.leadingPadding)
+        .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
 
-      OpenClawSidebarThreadSettlementButton(
+      AIChatSidebarThreadSettlementButton(
         isSettled: summary.isSettled,
         isVisible: isSelected || isHovered
       ) {
@@ -3463,7 +3463,7 @@ private struct OpenClawSidebarThreadRow: View {
       }
 
       Button {
-        OpenClawMessageClipboard.write(summary.id.uuidString.lowercased())
+        AIChatMessageClipboard.write(summary.id.uuidString.lowercased())
       } label: {
         Label("Copy Thread ID", systemImage: "doc.on.doc")
       }
@@ -3510,7 +3510,7 @@ private struct OpenClawSidebarThreadRow: View {
       // is opened with a physical right-click. A native hit target keeps the menu
       // attached to the NSView that was actually clicked while the SwiftUI menu
       // remains available to accessibility actions.
-      OpenClawSidebarThreadContextMenuTarget(
+      AIChatSidebarThreadContextMenuTarget(
         threadID: summary.id,
         title: summary.title,
         isSelected: isSelected,
@@ -3550,7 +3550,7 @@ private struct OpenClawSidebarThreadRow: View {
   }()
 }
 
-struct OpenClawSidebarThreadActivityView: View {
+struct AIChatSidebarThreadActivityView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let isSelected: Bool
 
@@ -3590,7 +3590,7 @@ struct OpenClawSidebarThreadActivityView: View {
   }
 }
 
-private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
+private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
   let threadID: UUID
   let title: String
   let isSelected: Bool
@@ -3629,7 +3629,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
     view.copyShareLink = copyShareLink
     view.stopSharing = stopSharing
     view.setAccessibilityIdentifier(
-      OpenClawSidebarThreadAccessibilityIdentity.accessibilityIdentifier(for: threadID)
+      AIChatSidebarThreadAccessibilityIdentity.accessibilityIdentifier(for: threadID)
     )
     view.setAccessibilityLabel(title)
     view.setAccessibilitySelected(isSelected)
@@ -3755,7 +3755,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
 
     @objc func copyThreadID() {
       guard let threadID else { return }
-      OpenClawMessageClipboard.write(threadID.uuidString.lowercased())
+      AIChatMessageClipboard.write(threadID.uuidString.lowercased())
     }
 
     @objc func copyThreadShareLink() {
@@ -3774,7 +3774,7 @@ private struct OpenClawSidebarThreadContextMenuTarget: NSViewRepresentable {
   }
 }
 
-private struct OpenClawUnreadBadge: View {
+private struct AIChatUnreadBadge: View {
   let count: Int
   var compact = false
 
@@ -4454,7 +4454,7 @@ private struct QuickOpenView: View {
 }
 
 private struct QuickOpenChatThreadRow: View {
-  let thread: OpenClawChatThread
+  let thread: AIChatThread
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
@@ -4563,14 +4563,14 @@ private struct SimilarTodoAssignmentView: View {
         Spacer(minLength: 0)
 
         Button {
-          Task { await store.assignSimilarTodos(askOpenClaw: false) }
+          Task { await store.assignSimilarTodos(askAIChat: false) }
         } label: {
           Label("Assign", systemImage: "person.crop.circle.badge.checkmark")
         }
         .disabled(store.selectedSimilarTodoCandidateIDs.isEmpty)
 
         Button {
-          Task { await store.assignSimilarTodos(askOpenClaw: true) }
+          Task { await store.assignSimilarTodos(askAIChat: true) }
         } label: {
           Label("Assign & Ask OpenClaw", systemImage: "sparkles")
         }
@@ -7504,7 +7504,7 @@ private struct RunCenterDetail: View {
           .disabled(isMutating)
           .help("Create a reusable workflow definition from this one-off run")
       }
-      Button { store.askOpenClawAboutAgentRun(run) } label: {
+      Button { store.askAIChatAboutAgentRun(run) } label: {
         Label("Ask AI", systemImage: "sparkles")
       }
       .buttonStyle(WorkspaceActionButtonStyle())
@@ -7801,7 +7801,7 @@ private struct ApprovalsView: View {
         message: $discussionMessage,
         discuss: { message, threadMode in
           discussionItem = nil
-          Task { await store.discussApprovalInOpenClaw(item, message: message, threadMode: threadMode) }
+          Task { await store.discussApprovalInAIChat(item, message: message, threadMode: threadMode) }
         }
       )
         .environment(store)
@@ -8415,8 +8415,8 @@ private struct ApprovalDiscussionSheet: View {
   @Environment(WorkspaceStore.self) private var store
   let item: ApprovalItem
   @Binding var message: String
-  let discuss: (String, OpenClawThreadMode) -> Void
-  @State private var threadMode: OpenClawThreadMode = .newThread
+  let discuss: (String, AIChatThreadMode) -> Void
+  @State private var threadMode: AIChatThreadMode = .newThread
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -8444,9 +8444,9 @@ private struct ApprovalDiscussionSheet: View {
         )
 
       Picker("Destination", selection: $threadMode) {
-        ForEach(OpenClawThreadMode.allCases) { mode in
+        ForEach(AIChatThreadMode.allCases) { mode in
           if let title = mode.discussionDestinationTitle(
-            selectedThreadTitle: store.selectedOpenClawChatThread?.title
+            selectedThreadTitle: store.selectedAIChatThread?.title
           ) {
             Text(title).tag(mode)
           }
@@ -8477,8 +8477,8 @@ private struct ApprovalDiscussionSheet: View {
     .onAppear {
       threadMode = .newThread
     }
-    .onChange(of: store.selectedOpenClawChatThreadID) {
-      if threadMode == .currentThread, store.selectedOpenClawChatThread == nil {
+    .onChange(of: store.selectedAIChatThreadID) {
+      if threadMode == .currentThread, store.selectedAIChatThread == nil {
         threadMode = .newThread
       }
     }
@@ -9291,7 +9291,7 @@ private struct SearchView: View {
     case .file(let file):
       store.selectSearchFile(file)
     case .chatThread(let result), .chatMessage(let result):
-      store.selectOpenClawChatSearchResult(result)
+      store.selectAIChatSearchResult(result)
     case .agentWork(let result):
       store.selectAgentWorkSearchResult(result)
     case .page(let node):
@@ -9375,7 +9375,7 @@ private struct AgentWorkSearchRow: View {
 }
 
 private struct ChatSearchRow: View {
-  let result: OpenClawChatSearchResult
+  let result: AIChatSearchResult
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -9567,7 +9567,7 @@ private struct NodeSearchContextMenu: View {
 
     Button {
       store.selectSearchNode(node)
-      store.askOpenClawAboutCurrentSelection()
+      store.askAIChatAboutCurrentSelection()
     } label: {
       Label("Ask AI", systemImage: "sparkles")
     }
@@ -10552,7 +10552,7 @@ private struct MeetingProcessingRow: View {
   }
 }
 
-private enum OpenClawChatPresentation {
+private enum AIChatPresentation {
   case fullPage
   case assistantPanel
   case homePane
@@ -10562,7 +10562,7 @@ private enum OpenClawChatPresentation {
   }
 }
 
-private struct OpenClawChatView: View {
+private struct AIChatView: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var isChatNearBottom = true
   @State private var isShowingThreadFind = false
@@ -10573,14 +10573,14 @@ private struct OpenClawChatView: View {
   @State private var threadFindMatchTask: Task<Void, Never>?
   @State private var selectedThreadFindMessageID: UUID?
   @State private var threadFindNavigationGeneration = 0
-  @State private var transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
-  @State private var transcriptWindowAnchor: OpenClawChatTranscriptAnchor?
+  @State private var transcriptDisplayLimit = AIChatTranscriptWindow.initialLimit
+  @State private var transcriptWindowAnchor: AIChatTranscriptAnchor?
   @State private var threadOutputs = AIChatThreadOutputs.empty
   @State private var threadOutputsThreadID: UUID?
-  let presentation: OpenClawChatPresentation
+  let presentation: AIChatPresentation
   let surface: WorkspaceSurface?
 
-  init(presentation: OpenClawChatPresentation = .fullPage, surface: WorkspaceSurface? = .openClaw) {
+  init(presentation: AIChatPresentation = .fullPage, surface: WorkspaceSurface? = .aiChat) {
     self.presentation = presentation
     self.surface = surface
   }
@@ -10614,7 +10614,7 @@ private struct OpenClawChatView: View {
     }
     .environment(\.aiChatMediaCorpusRoot, store.corpusRoot)
     .task {
-      await store.refreshOpenClawCommands()
+      await store.refreshAIChatCommands()
     }
     .task(id: threadOutputsSignature) {
       await refreshThreadOutputs()
@@ -10628,13 +10628,13 @@ private struct OpenClawChatView: View {
       guard isShowingThreadFind else { return }
       refreshThreadFindMatches()
     }
-    .onChange(of: store.selectedOpenClawChatThreadID) { _, _ in
-      transcriptDisplayLimit = OpenClawChatTranscriptWindow.initialLimit
+    .onChange(of: store.selectedAIChatThreadID) { _, _ in
+      transcriptDisplayLimit = AIChatTranscriptWindow.initialLimit
       transcriptWindowAnchor = nil
       guard isShowingThreadFind else { return }
       rebuildThreadFindIndex()
     }
-    .onChange(of: store.openClawMessages.count) { previousCount, currentCount in
+    .onChange(of: store.aiChatMessages.count) { previousCount, currentCount in
       if currentCount > previousCount && !isChatNearBottom {
         transcriptDisplayLimit += currentCount - previousCount
       }
@@ -10667,7 +10667,7 @@ private struct OpenClawChatView: View {
 
       Divider()
 
-      OpenClawComposerView(
+      AIChatComposerView(
         focusOnAppear: presentation != .assistantPanel,
         compact: presentation.isCompact
       )
@@ -10684,13 +10684,13 @@ private struct OpenClawChatView: View {
         title: store.selectedAIChatIsSharedRoom
           ? "Shared AI Room · Experimental"
           : "\(store.selectedAIChatDestination.title) Chat",
-        subtitle: store.openClawStatusText,
+        subtitle: store.aiChatStatusText,
         surface: surface
       ) {
         headerActions
       }
     case .homePane:
-      HeaderBar(title: "AI Chat", subtitle: store.openClawStatusText, surface: surface) {
+      HeaderBar(title: "AI Chat", subtitle: store.aiChatStatusText, surface: surface) {
         homeHeaderActions
       }
     case .assistantPanel:
@@ -10698,7 +10698,7 @@ private struct OpenClawChatView: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(store.selectedAIChatDisplayTitle)
             .font(.headline)
-          Text(store.openClawStatusText)
+          Text(store.aiChatStatusText)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
@@ -10715,7 +10715,7 @@ private struct OpenClawChatView: View {
           .labelStyle(.iconOnly)
 
         Button {
-          store.makeSurfacePrimary(.openClaw)
+          store.makeSurfacePrimary(.aiChat)
         } label: {
           Label("Make Primary", systemImage: "rectangle.split.2x1")
         }
@@ -10723,7 +10723,7 @@ private struct OpenClawChatView: View {
         .help("Open AI Chat")
 
         Button {
-          store.expandSurface(.openClaw)
+          store.expandSurface(.aiChat)
         } label: {
           Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
         }
@@ -10731,7 +10731,7 @@ private struct OpenClawChatView: View {
         .help("Show only AI Chat")
 
         Button {
-          store.closeSurfacePane(.openClaw)
+          store.closeSurfacePane(.aiChat)
         } label: {
           Label("Close", systemImage: "xmark")
         }
@@ -10763,11 +10763,11 @@ private struct OpenClawChatView: View {
     newChatButton
 
     Button {
-      store.resetOpenClawChat()
+      store.resetAIChat()
     } label: {
       Label("Clear", systemImage: "trash")
     }
-    .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
+    .disabled(store.isSendingAIChatMessage || store.aiChatMessages.isEmpty)
 
     AIChatSettingsButton()
   }
@@ -10805,11 +10805,11 @@ private struct OpenClawChatView: View {
 
     Menu {
       Button {
-        store.resetOpenClawChat()
+        store.resetAIChat()
       } label: {
         Label("Clear", systemImage: "trash")
       }
-      .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
+      .disabled(store.isSendingAIChatMessage || store.aiChatMessages.isEmpty)
 
       AIChatSettingsButton()
     } label: {
@@ -10820,14 +10820,14 @@ private struct OpenClawChatView: View {
   }
 
   private var chatTranscript: some View {
-    let window = OpenClawChatTranscriptWindow(
-      messages: store.openClawMessages,
+    let window = AIChatTranscriptWindow(
+      messages: store.aiChatMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom,
       displayLimit: transcriptDisplayLimit,
       anchor: transcriptWindowAnchor
     )
     return AIChatTranscriptDocument(
-      liveState: store.openClawLiveState,
+      liveState: store.aiChatLiveState,
       items: window.visibleItems,
       compact: presentation.isCompact,
       earlierTitle: window.hasEarlierMessages ? window.earlierMessagesTitle : nil,
@@ -10842,13 +10842,13 @@ private struct OpenClawChatView: View {
         }
       },
       onPosition: { position in
-        isChatNearBottom = position >= OpenClawChatScrollVisibility.nearBottomThreshold
+        isChatNearBottom = position >= AIChatScrollVisibility.nearBottomThreshold
       }
     )
     .onChange(of: threadFindNavigationGeneration) { _, _ in
       guard let match = threadFindMatches.first(where: { $0.messageID == selectedThreadFindMessageID }),
             !window.contains(match.scrollTargetID) else { return }
-      transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
+      transcriptWindowAnchor = AIChatTranscriptAnchor(
         itemID: match.scrollTargetID, rawMessageIndex: match.anchorRawMessageIndex
       )
     }
@@ -10864,7 +10864,7 @@ private struct OpenClawChatView: View {
   private func refreshThreadFindMatches() {
     threadFindMatchTask?.cancel()
     let query = threadFindQuery
-    guard OpenClawProgressPresentation.containsNonWhitespace(query) else {
+    guard AIChatProgressPresentation.containsNonWhitespace(query) else {
       threadFindMatches = []
       selectedThreadFindMessageID = nil
       return
@@ -10905,9 +10905,9 @@ private struct OpenClawChatView: View {
     // Array/String storage is copy-on-write, so this snapshot is constant-time.
     // Per-message search normalization and attachment-name projection happen in
     // the detached worker below instead of while the find bar is opening.
-    let messages = store.openClawMessages
+    let messages = store.aiChatMessages
     let isSharedRoom = store.selectedAIChatIsSharedRoom
-    let threadID = store.selectedOpenClawChatThreadID
+    let threadID = store.selectedAIChatThreadID
     threadFindIndexTask = Task { @MainActor in
       do {
         try await Task.sleep(for: .milliseconds(24))
@@ -10923,7 +10923,7 @@ private struct OpenClawChatView: View {
         worker.cancel()
       }
       guard !Task.isCancelled,
-            threadID == store.selectedOpenClawChatThreadID
+            threadID == store.selectedAIChatThreadID
       else { return }
       threadFindCandidates = candidates
       refreshThreadFindMatches()
@@ -10953,11 +10953,11 @@ private struct OpenClawChatView: View {
   }
 
   private var threadOutputsSignature: ThreadOutputsSignature {
-    let last = store.openClawMessages.last
+    let last = store.aiChatMessages.last
     return ThreadOutputsSignature(
-      threadID: store.selectedOpenClawChatThreadID,
+      threadID: store.selectedAIChatThreadID,
       corpusRoot: store.corpusRoot?.path,
-      messageCount: store.openClawMessages.count,
+      messageCount: store.aiChatMessages.count,
       lastMessageID: last?.id,
       lastMessageLength: last?.content.utf8.count ?? 0,
       lastMessageChangeCount: last?.changeSummary?.files.count ?? -1
@@ -10965,8 +10965,8 @@ private struct OpenClawChatView: View {
   }
 
   private func refreshThreadOutputs() async {
-    let threadID = store.selectedOpenClawChatThreadID
-    let messages = store.openClawMessages
+    let threadID = store.selectedAIChatThreadID
+    let messages = store.aiChatMessages
     let corpusRoot = store.corpusRoot?.standardizedFileURL.path
     let remoteRoot = store.aiChatOutputsRemoteCorpusPath
     if threadOutputsThreadID != threadID || threadOutputs.corpusRoot != corpusRoot || messages.isEmpty {
@@ -10982,7 +10982,7 @@ private struct OpenClawChatView: View {
         remoteCorpusRoot: remoteRoot
       ).resolvingFileStatus()
     }.value
-    guard !Task.isCancelled, threadID == store.selectedOpenClawChatThreadID else { return }
+    guard !Task.isCancelled, threadID == store.selectedAIChatThreadID else { return }
     threadOutputs = outputs
     threadOutputsThreadID = threadID
   }
@@ -10990,11 +10990,11 @@ private struct OpenClawChatView: View {
   /// Scrolls the transcript to a reply, reusing the find bar's navigation.
   private func jumpToMessage(_ messageID: UUID) {
     let candidates = AIChatThreadSearch.candidates(
-      in: store.openClawMessages,
+      in: store.aiChatMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom
     )
     guard let candidate = candidates.first(where: { $0.messageID == messageID }) else { return }
-    transcriptWindowAnchor = OpenClawChatTranscriptAnchor(
+    transcriptWindowAnchor = AIChatTranscriptAnchor(
       itemID: candidate.scrollTargetID,
       rawMessageIndex: candidate.anchorRawMessageIndex
     )
@@ -11014,12 +11014,12 @@ private struct OpenClawChatView: View {
   }
 }
 
-struct OpenClawChatTranscriptAnchor: Equatable {
+struct AIChatTranscriptAnchor: Equatable {
   let itemID: UUID
   let rawMessageIndex: Int
 }
 
-struct OpenClawChatTranscriptStack<Content: View>: View {
+struct AIChatTranscriptStack<Content: View>: View {
   let spacing: CGFloat
   @ViewBuilder let content: () -> Content
 
@@ -11043,27 +11043,27 @@ struct OpenClawChatTranscriptStack<Content: View>: View {
   }
 }
 
-struct OpenClawChatTranscriptWindow: Equatable {
+struct AIChatTranscriptWindow: Equatable {
   static let initialLimit = 24
   static let pageSize = 40
   static let maximumDisplayLimit = initialLimit + (pageSize * 2)
   static let maximumRawMessageScanCount = maximumDisplayLimit * 4
   static let initialDisplayedContentUTF8ByteLimit = 256 * 1_024
   private static let pageDisplayedContentUTF8ByteLimit =
-    pageSize * OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+    pageSize * AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
 
   let visibleItems: [AIChatRoomTranscriptItem]
   let displayLimit: Int
   let earlierBatchCount: Int
-  let earlierPageAnchor: OpenClawChatTranscriptAnchor?
+  let earlierPageAnchor: AIChatTranscriptAnchor?
   private let hasEarlierItems: Bool
   private let resolvedNextDisplayLimit: Int
 
   init(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     isSharedRoom: Bool,
     displayLimit: Int,
-    anchor: OpenClawChatTranscriptAnchor? = nil
+    anchor: AIChatTranscriptAnchor? = nil
   ) {
     let resolvedLimit = min(
       Self.maximumDisplayLimit,
@@ -11131,7 +11131,7 @@ struct OpenClawChatTranscriptWindow: Equatable {
          in: boundedMessages,
          absoluteOffset: rawMessageRange.lowerBound
        ) {
-      earlierPageAnchor = OpenClawChatTranscriptAnchor(
+      earlierPageAnchor = AIChatTranscriptAnchor(
         itemID: firstVisibleItem.id,
         rawMessageIndex: rawIndex
       )
@@ -11140,7 +11140,7 @@ struct OpenClawChatTranscriptWindow: Equatable {
     }
   }
 
-  var visibleMessagesForPresentation: [OpenClawChatMessage] {
+  var visibleMessagesForPresentation: [AIChatMessage] {
     visibleItems.flatMap(\.visibleChatBubbleMessages)
   }
 
@@ -11205,7 +11205,7 @@ struct OpenClawChatTranscriptWindow: Equatable {
 
   private static func rawMessageIndex(
     forItemID itemID: UUID,
-    in messages: [OpenClawChatMessage],
+    in messages: [AIChatMessage],
     absoluteOffset: Int
   ) -> Int? {
     guard let index = messages.firstIndex(where: { message in
@@ -11302,7 +11302,7 @@ private extension Array where Element == AIChatRoomTranscriptItem {
   }
 }
 
-struct OpenClawChatScrollVisibility: Equatable {
+struct AIChatScrollVisibility: Equatable {
   static let nearBottomThreshold = 0.985
 
   let position: Double
@@ -11321,17 +11321,17 @@ struct OpenClawChatScrollVisibility: Equatable {
   }
 }
 
-enum OpenClawChatAutomaticScrollTarget: Equatable {
+enum AIChatAutomaticScrollTarget: Equatable {
   case latestMessage
   case typingIndicator
 }
 
-struct OpenClawChatScrollUpdate: Equatable {
+struct AIChatScrollUpdate: Equatable {
   let threadID: UUID?
   let messageCount: Int
   let isSending: Bool
 
-  func automaticTarget(after previous: Self) -> OpenClawChatAutomaticScrollTarget? {
+  func automaticTarget(after previous: Self) -> AIChatAutomaticScrollTarget? {
     guard threadID == previous.threadID else { return nil }
     if isSending && !previous.isSending {
       return .typingIndicator
@@ -11343,7 +11343,7 @@ struct OpenClawChatScrollUpdate: Equatable {
   }
 }
 
-struct OpenClawChatScrollRestoration: Equatable {
+struct AIChatScrollRestoration: Equatable {
   let threadID: UUID?
   let selectionGeneration: Int
   let savedPosition: Double?
@@ -11358,7 +11358,7 @@ struct OpenClawChatScrollRestoration: Equatable {
 }
 
 @MainActor
-enum OpenClawChatScrollGeometry {
+enum AIChatScrollGeometry {
   static func constrainedBounds(in scrollView: NSScrollView) -> NSRect? {
     let clipView = scrollView.contentView
     let currentBounds = clipView.bounds
@@ -11372,7 +11372,7 @@ enum OpenClawChatScrollGeometry {
   }
 }
 
-enum OpenClawChatAccessibilityIdentity {
+enum AIChatAccessibilityIdentity {
   static let transcriptScrollBridge = "org.openorg.chat.transcript-scroll-bridge"
 }
 
@@ -12162,7 +12162,7 @@ private struct DetailHeader: View {
       return "magnifyingglass"
     case .backlink:
       return "link"
-    case .openClaw:
+    case .aiChatThreadRecord:
       if store.selectedFileIsPDF { return "doc.richtext" }
       if store.selectedFileIsImage { return "photo" }
       if store.selectedFileIsVideo { return "film" }
@@ -12479,21 +12479,21 @@ private struct DetailHeader: View {
   private var intelligenceMenu: some View {
     Menu {
       Button {
-        store.askOpenClawAboutCurrentSelection()
+        store.askAIChatAboutCurrentSelection()
       } label: {
         Label("Ask AI", systemImage: "sparkles")
       }
-      .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
+      .disabled(!store.canAskAIChatAboutCurrentSelection || store.isLoadingEntrySource)
 
       Button {
-        store.openCanonicalOpenClawResourceThread()
+        store.openCanonicalAIChatResourceThread()
       } label: {
         Label(
           "AI Thread",
-          systemImage: store.hasCanonicalOpenClawResourceThread ? "text.bubble.fill" : "text.bubble"
+          systemImage: store.hasCanonicalAIChatResourceThread ? "text.bubble.fill" : "text.bubble"
         )
       }
-      .disabled(!store.canOpenCanonicalOpenClawResourceThread)
+      .disabled(!store.canOpenCanonicalAIChatResourceThread)
 
       Divider()
 
@@ -12522,7 +12522,7 @@ private struct DetailHeader: View {
 
       if case .meeting = location {
         Button {
-          store.askOpenClawAboutSelectedMeeting()
+          store.askAIChatAboutSelectedMeeting()
         } label: {
           Label("Meeting", systemImage: "waveform.and.mic")
         }
@@ -12841,7 +12841,7 @@ private struct OrgRenderedDocumentPreview: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             activateWorkspacePane: { store.activateWorkspacePane(.detail) },
-            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            askAIAboutHeading: { store.askAIChatAboutSourceHeading(at: $0) },
             performEntryAction: { store.performRenderedEntryAction($0, at: $1) },
             reportStatus: { store.statusText = $0 },
             allowsCheckboxMutations: source.isEditable,
@@ -13689,7 +13689,7 @@ private struct OrgSourceEditorWithLinkTools: View {
             restorationSourceLine: store.documentViewportSourceLine(for: source),
             layout: store.renderedDocumentLayout,
             activateWorkspacePane: { store.activateWorkspacePane(.detail) },
-            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+            askAIAboutHeading: { store.askAIChatAboutSourceHeading(at: $0) },
             performEntryAction: { _, _ in },
             allowsEntryContextMenu: false,
             reportStatus: { store.statusText = $0 },
@@ -13958,11 +13958,11 @@ private struct EntryBodyView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .contextMenu {
       Button {
-        store.askOpenClawAboutCurrentSelection()
+        store.askAIChatAboutCurrentSelection()
       } label: {
         Label("Ask AI", systemImage: "sparkles")
       }
-      .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
+      .disabled(!store.canAskAIChatAboutCurrentSelection || store.isLoadingEntrySource)
     }
   }
 
@@ -13985,7 +13985,7 @@ private struct EntryBodyView: View {
       Text(Org2Display.cleanInline(backlink.context))
         .font(.body)
         .textSelection(.enabled)
-    case .openClaw:
+    case .aiChatThreadRecord:
       Text("Source unavailable")
         .font(.callout)
         .foregroundStyle(.secondary)
@@ -14035,7 +14035,7 @@ private enum DetailMetadata {
         ("Source", Org2Display.cleanInline(backlink.srcTitle)),
         ("Line", "\(backlink.lineForEditor)")
       ]
-    case .openClaw(let thread):
+    case .aiChatThreadRecord(let thread):
       let rows: [(String, String)] = [
         ("Zone", thread.zone),
         ("Modified", thread.modifiedAt.map(dateLabel) ?? ""),

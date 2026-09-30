@@ -26,7 +26,7 @@ public enum ClaudeCodeError: LocalizedError, Sendable {
 public enum ClaudeCodeEvent: Sendable {
   case sessionStarted(sessionID: String)
   case textDelta(String)
-  case activity(id: String, title: String, status: OpenClawRunActivity.Status)
+  case activity(id: String, title: String, status: AIChatRunActivity.Status)
   case warning(String)
 }
 
@@ -194,7 +194,7 @@ public actor ClaudeCodeClient {
     existingSessionID: String?,
     message: String,
     systemPrompt: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     cwd: URL,
     model: String?,
     sandboxAccess: CodexSandboxAccess
@@ -344,7 +344,7 @@ public actor ClaudeCodeClient {
   }
 
   private nonisolated static func materializeAttachments(
-    _ attachments: [OpenClawChatAttachment],
+    _ attachments: [AIChatAttachment],
     under temporaryRoot: URL
   ) throws -> (directory: URL?, urls: [URL]) {
     guard !attachments.isEmpty else { return (nil, []) }

@@ -163,7 +163,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
   let corpusRoot: URL?
   let linkResolver: OrgRoamLinkResolver
   @Binding var height: CGFloat
-  let openFileReference: (OpenClawFileReference) -> Void
+  let openFileReference: (AIChatFileReference) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -221,7 +221,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     var loaded = false
     var loading = false
     var onHeight: ((CGFloat) -> Void)?
-    var openFileReference: ((OpenClawFileReference) -> Void)?
+    var openFileReference: ((AIChatFileReference) -> Void)?
     var linkResolver = OrgRoamLinkResolver.empty
     var sourcePath = ""
     var corpusRoot: URL?
@@ -274,7 +274,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
       guard message.frameInfo.isMainFrame else { return }
       if message.name == "chatCopyCode", let text = message.body as? String {
-        OpenClawMessageClipboard.write(text)
+        AIChatMessageClipboard.write(text)
         return
       }
       guard let value = message.body as? Double,
@@ -287,7 +287,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
       guard navigationAction.navigationType == .linkActivated,
         let url = navigationAction.request.url else { decisionHandler(.allow); return }
       decisionHandler(.cancel)
-      if url.scheme == OpenClawFileReference.deepLinkScheme, url.host == "open-link",
+      if url.scheme == AIChatFileReference.deepLinkScheme, url.host == "open-link",
         let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "target" })?.value {
         if let resolved = linkResolver.resolve(target: target) {
           openFileReference?(resolved.fileReference)
@@ -299,13 +299,13 @@ struct AIChatDocumentWebView: NSViewRepresentable {
             guard let self else { return }
             let resolved = await OrgHTMLLinkTarget.resolve(target, relativeTo: sourcePath, corpusRoot: corpusRoot)
             guard !Task.isCancelled, let resolved else { return }
-            openFileReference?(OpenClawFileReference(path: resolved.url.path, line: resolved.line))
+            openFileReference?(AIChatFileReference(path: resolved.url.path, line: resolved.line))
           }
         }
-      } else if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
+      } else if let reference = AIChatFileReference.fromDeepLinkURL(url) {
         openFileReference?(reference)
       } else if url.isFileURL {
-        openFileReference?(OpenClawFileReference(path: url.path, line: nil))
+        openFileReference?(AIChatFileReference(path: url.path, line: nil))
       } else if ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
         NSWorkspace.shared.open(url)
       }

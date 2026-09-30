@@ -59,7 +59,7 @@ public struct AIChatLiveTurnRecord: Codable, Sendable, Equatable {
   public var startedAt: Date?
   public var streamingReply: String
   public var reasoning: String
-  public var activities: [OpenClawRunActivity]
+  public var activities: [AIChatRunActivity]
   public var statusText: String?
 
   public init(
@@ -70,7 +70,7 @@ public struct AIChatLiveTurnRecord: Codable, Sendable, Equatable {
     startedAt: Date? = nil,
     streamingReply: String = "",
     reasoning: String = "",
-    activities: [OpenClawRunActivity] = [],
+    activities: [AIChatRunActivity] = [],
     statusText: String? = nil
   ) {
     self.threadID = threadID

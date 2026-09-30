@@ -871,7 +871,7 @@ final class OrgSyntaxTextEditorLifecycleTests: XCTestCase {
     }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
       legacyDefaultsDomains: []
     )
     store.formatOrgFilesOnSave = false

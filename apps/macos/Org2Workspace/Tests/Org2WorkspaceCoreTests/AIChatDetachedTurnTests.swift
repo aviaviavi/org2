@@ -31,8 +31,8 @@ final class AIChatDetachedTurnTests: XCTestCase {
   func testStaleSendRepairInterruptsOnlyThisHostsTurnsFromAnEarlierProcess() {
     let startedAt = Date()
     let earlier = startedAt.addingTimeInterval(-60)
-    func send(_ content: String, host: String?, acceptedAt: Date?, createdAt: Date = earlier) -> OpenClawChatMessage {
-      OpenClawChatMessage(
+    func send(_ content: String, host: String?, acceptedAt: Date?, createdAt: Date = earlier) -> AIChatMessage {
+      AIChatMessage(
         role: .user,
         content: content,
         createdAt: createdAt,
@@ -47,7 +47,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
     let remote = send("remote", host: "desktop-there", acceptedAt: earlier)
     let handoff = send("handoff", host: "desktop-here", acceptedAt: nil)
     let acceptedNow = send("accepted by this process", host: "desktop-here", acceptedAt: startedAt.addingTimeInterval(1))
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Mixed",
       sessionKey: "mixed",
       messages: [local, legacy, remote, handoff, acceptedNow]
@@ -67,7 +67,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
 
   func testStaleSendRepairLeavesRecoverablePendingTurnsAndColdThreads() {
     let startedAt = Date()
-    let message = OpenClawChatMessage(
+    let message = AIChatMessage(
       role: .user,
       content: "Reattach me",
       createdAt: startedAt.addingTimeInterval(-60),
@@ -77,18 +77,18 @@ final class AIChatDetachedTurnTests: XCTestCase {
         acceptedAt: startedAt.addingTimeInterval(-60)
       )
     )
-    let recoverable = OpenClawChatThread(
+    let recoverable = AIChatThread(
       title: "Recoverable",
       sessionKey: "recoverable",
       messages: [message],
-      pendingTurn: OpenClawPendingTurn(
+      pendingTurn: AIChatPendingTurn(
         userMessageID: message.id,
         runID: message.id.uuidString.lowercased(),
         agentID: "opencode",
         gatewayMessage: ""
       )
     )
-    let cold = OpenClawChatThread(title: "Cold", sessionKey: "cold", messages: [message])
+    let cold = AIChatThread(title: "Cold", sessionKey: "cold", messages: [message])
       .metadataOnly()
 
     let repaired = WorkspaceStore.interruptStaleLocalAIChatSends(
@@ -108,7 +108,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
     let transcriptURL = root.appendingPathComponent("chat.json")
     let hostRef = AIChatHostIdentity.desktop(writer: AIChatTranscriptStore.shared.writerIdentity).ref
     let earlier = Date().addingTimeInterval(-60)
-    let stale = OpenClawChatMessage(
+    let stale = AIChatMessage(
       role: .user,
       content: "Rebuilt the app mid-turn",
       createdAt: earlier,
@@ -119,7 +119,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
         acceptedAt: earlier
       )
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Mid-turn restart",
       runtime: .openCode,
       destinationID: "missing-destination",
@@ -130,7 +130,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: [thread],
         selectedThreadID: thread.id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: transcriptURL
     )
@@ -141,7 +141,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
 
     XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == thread.id })?.messages.first?.deliveryStatus,
+      store.aiChatThreads.first(where: { $0.id == thread.id })?.messages.first?.deliveryStatus,
       .interrupted
     )
     let persisted = AIChatTranscriptStore.shared.loadThread(
@@ -159,7 +159,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
     let transcriptURL = root.appendingPathComponent("chat.json")
     let hostRef = AIChatHostIdentity.desktop(writer: AIChatTranscriptStore.shared.writerIdentity).ref
     let earlier = Date().addingTimeInterval(-3_600)
-    let stale = OpenClawChatMessage(
+    let stale = AIChatMessage(
       role: .user,
       content: "Rebuilt the app mid-turn",
       createdAt: earlier,
@@ -170,7 +170,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
         acceptedAt: earlier
       )
     )
-    let cold = OpenClawChatThread(
+    let cold = AIChatThread(
       title: "Cold mid-turn restart",
       createdAt: earlier,
       updatedAt: earlier,
@@ -180,17 +180,17 @@ final class AIChatDetachedTurnTests: XCTestCase {
       messages: [stale]
     )
     let fillers = (0..<(AIChatTranscriptStore.eagerWorkingSetLimit + 4)).map { index in
-      OpenClawChatThread(
+      AIChatThread(
         title: "Recent \(index)",
         sessionKey: "recent-\(index)",
-        messages: [OpenClawChatMessage(role: .user, content: "hello \(index)")]
+        messages: [AIChatMessage(role: .user, content: "hello \(index)")]
       )
     }
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(
         threads: fillers + [cold],
         selectedThreadID: fillers[0].id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: transcriptURL
     )
@@ -198,7 +198,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
     let store = try makeStore(transcriptURL: transcriptURL)
     await store.waitForAIChatTranscriptLoadForTesting()
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == cold.id })?.messages.count,
+      store.aiChatThreads.first(where: { $0.id == cold.id })?.messages.count,
       0,
       "The fixture thread must start cold"
     )
@@ -209,7 +209,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
 
     XCTAssertFalse(store.isAIChatThreadRunning(cold.id))
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == cold.id })?.messages.first?.deliveryStatus,
+      store.aiChatThreads.first(where: { $0.id == cold.id })?.messages.first?.deliveryStatus,
       .interrupted
     )
     let persisted = AIChatTranscriptStore.shared.loadThread(
@@ -231,15 +231,15 @@ final class AIChatDetachedTurnTests: XCTestCase {
       adapter: .openCodeRemote,
       endpoint: "press"
     )
-    let user = OpenClawChatMessage(role: .user, content: "Keep going", deliveryStatus: .sending)
-    let pendingTurn = OpenClawPendingTurn(
+    let user = AIChatMessage(role: .user, content: "Keep going", deliveryStatus: .sending)
+    let pendingTurn = AIChatPendingTurn(
       userMessageID: user.id,
       runID: user.id.uuidString.lowercased(),
       agentID: "opencode",
       destinationID: destination.id,
       gatewayMessage: ""
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Remote turn",
       runtime: .openCode,
       destinationID: destination.id,
@@ -251,7 +251,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
       AIChatTranscriptSnapshot(
         threads: [thread],
         selectedThreadID: thread.id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: transcriptURL
     )
@@ -261,8 +261,8 @@ final class AIChatDetachedTurnTests: XCTestCase {
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
-      openClawRecoveryHandler: { turn, _ in
+      aiChatTranscriptURL: transcriptURL,
+      aiChatRecoveryHandler: { turn, _ in
         await recovered.append(turn.runID)
         return "Finished while OpenOrg restarted"
       },
@@ -272,14 +272,14 @@ final class AIChatDetachedTurnTests: XCTestCase {
     await store.waitForAIChatTranscriptLoadForTesting()
     store.updateAIChatDestination(destination)
 
-    await store.recoverPendingOpenClawTurns()
+    await store.recoverPendingAIChatTurns()
 
     let runIDs = await recovered.values
     XCTAssertEqual(runIDs, [pendingTurn.runID])
-    let messages = store.openClawChatThreads.first(where: { $0.id == thread.id })?.messages ?? []
+    let messages = store.aiChatThreads.first(where: { $0.id == thread.id })?.messages ?? []
     XCTAssertEqual(messages.map(\.content), ["Keep going", "Finished while OpenOrg restarted"])
     XCTAssertEqual(messages.first?.deliveryStatus, .sent)
-    XCTAssertNil(store.openClawChatThreads.first(where: { $0.id == thread.id })?.pendingTurn)
+    XCTAssertNil(store.aiChatThreads.first(where: { $0.id == thread.id })?.pendingTurn)
     XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
   }
 
@@ -381,7 +381,7 @@ final class AIChatDetachedTurnTests: XCTestCase {
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(root, persistsDefault: false)

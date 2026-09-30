@@ -15,7 +15,7 @@ public struct BundledAgentClient: Sendable {
   public func send(
     settings: AIProviderChatSettings,
     model: String,
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     system: String,
     tools: [JSONValue],
     onEvent: @escaping @Sendable (JSONValue) async -> Void,

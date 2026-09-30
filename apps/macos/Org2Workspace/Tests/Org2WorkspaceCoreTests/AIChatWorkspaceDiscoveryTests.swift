@@ -18,18 +18,18 @@ final class AIChatWorkspaceDiscoveryTests: XCTestCase {
   }
 
   func testChatHistorySearchReturnsStableCitationsAndBoundedReadWindow() throws {
-    let first = OpenClawChatMessage(role: .user, content: "I made Nutella cookies last weekend")
-    let recipe = OpenClawChatMessage(
+    let first = AIChatMessage(role: .user, content: "I made Nutella cookies last weekend")
+    let recipe = AIChatMessage(
       role: .assistant,
       content: "Use flour, butter, brown sugar, and one cup of Nutella. Bake for ten minutes."
     )
-    let unrelated = OpenClawChatMessage(role: .assistant, content: "The release is ready.")
-    let matching = OpenClawChatThread(
+    let unrelated = AIChatMessage(role: .assistant, content: "The release is ready.")
+    let matching = AIChatThread(
       title: "Nutella cookie recipe",
       sessionKey: "recipe",
       messages: [first, recipe]
     )
-    let other = OpenClawChatThread(
+    let other = AIChatThread(
       title: "Release",
       sessionKey: "release",
       messages: [unrelated]

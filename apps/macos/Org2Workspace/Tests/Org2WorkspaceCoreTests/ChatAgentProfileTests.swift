@@ -5,15 +5,15 @@ import XCTest
 final class ChatAgentProfileTests: XCTestCase {
   func testThreadAgentSurvivesPersistenceHydrationAndMetadataUpdates() throws {
     let ref = UUID().uuidString
-    let original = OpenClawChatThread(title: "Agent chat", sessionKey: "test", agentRef: ref)
-    let restored = try JSONDecoder().decode(OpenClawChatThread.self, from: JSONEncoder().encode(original))
+    let original = AIChatThread(title: "Agent chat", sessionKey: "test", agentRef: ref)
+    let restored = try JSONDecoder().decode(AIChatThread.self, from: JSONEncoder().encode(original))
     XCTAssertEqual(restored.agentRef, ref)
-    XCTAssertEqual(restored.replacingOpenClawChatMetadata(title: "Renamed").agentRef, ref)
+    XCTAssertEqual(restored.replacingAIChatMetadata(title: "Renamed").agentRef, ref)
     XCTAssertEqual(restored.replacingPendingTurn(nil).agentRef, ref)
     XCTAssertEqual(restored.hydrating(messages: []).agentRef, ref)
-    XCTAssertNil(restored.replacingOpenClawChatMetadata(agentRef: .some(nil)).agentRef)
-    let legacy = OpenClawChatThread(title: "Old chat", sessionKey: "legacy")
-    XCTAssertNil(try JSONDecoder().decode(OpenClawChatThread.self, from: JSONEncoder().encode(legacy)).agentRef)
+    XCTAssertNil(restored.replacingAIChatMetadata(agentRef: .some(nil)).agentRef)
+    let legacy = AIChatThread(title: "Old chat", sessionKey: "legacy")
+    XCTAssertNil(try JSONDecoder().decode(AIChatThread.self, from: JSONEncoder().encode(legacy)).agentRef)
   }
 
   func testAgentContextIsIncludedForEveryRuntimeAndKeepsStableIdentity() {
@@ -23,7 +23,7 @@ final class ChatAgentProfileTests: XCTestCase {
       capabilities: ["Research"], skills: ["account-research"], defaultRuntime: "openclaw",
       runtimeBindings: [], goalRefs: [goal],
       primaryGoalRef: goal, reportsToAgentRef: nil, file: "/local/agent-profiles/scout.org", createdAt: "today", updatedAt: "today")
-    let context = OpenClawWorkspaceContext(localCorpusRoot: "/local", remoteCorpusRoot: "/remote",
+    let context = AIChatWorkspaceContext(localCorpusRoot: "/local", remoteCorpusRoot: "/remote",
       selectedSurface: "AI Chat", selectedLocation: nil, selectedEntrySource: nil, backlinks: nil,
       agenda: nil, searchQuery: "", searchResults: [], chatAgentRef: ref, chatAgentProfile: profile)
     for prompt in [context.systemPrompt(), context.codexSystemPrompt(), context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")] {
@@ -45,7 +45,7 @@ final class ChatAgentProfileTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: transcript) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcript,
+      aiChatTranscriptURL: transcript,
       legacyDefaultsDomains: []
     )
     store.createAIChatThread(destinationID: AIChatDestinationConfiguration.localCodexID)

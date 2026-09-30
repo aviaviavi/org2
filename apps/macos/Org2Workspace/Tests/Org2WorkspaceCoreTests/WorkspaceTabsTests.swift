@@ -42,7 +42,7 @@ final class WorkspaceTabsTests: XCTestCase {
     let file = "/tmp/outgoing-tab-detail.org"
 
     store.selectedSurface = .agenda
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Outgoing detail",
       file: file,
       line: 1,
@@ -223,7 +223,7 @@ final class WorkspaceTabsTests: XCTestCase {
     let original = "* Editable\nOriginal text\n"
     let edited = "* Editable\nEdited in the first tab\n"
     try original.write(to: file, atomically: true, encoding: .utf8)
-    let location = WorkspaceLocation.openClaw(OpenClawThread(
+    let location = WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
       title: "Editable",
       file: file.path,
       line: 1,
@@ -288,7 +288,7 @@ final class WorkspaceTabsTests: XCTestCase {
     let file = root.appendingPathComponent("editable.org")
     let text = "* Editable\nOriginal text\n"
     try text.write(to: file, atomically: true, encoding: .utf8)
-    let location = WorkspaceLocation.openClaw(OpenClawThread(
+    let location = WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
       title: "Editable",
       file: file.path,
       line: 1,
@@ -355,7 +355,7 @@ final class WorkspaceTabsTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let tab = try XCTUnwrap(store.workspaceTabs.first)
     store.selectedSurface = .agenda
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Project Plan",
       file: "/tmp/project-plan.org",
       line: 1,
@@ -495,7 +495,7 @@ final class WorkspaceTabsTests: XCTestCase {
 
     store.selectedSurface = .files
     store.selectedEntrySourceMode = .page
-    store.selectedLocation = .openClaw(OpenClawThread(
+    store.selectedLocation = .aiChatThreadRecord(AIChatThreadRecord(
       title: "Selected",
       file: selectedFile.path,
       zone: "notes",

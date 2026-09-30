@@ -204,7 +204,7 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   private let lock = NSLock()
   private var sourceDirectory: URL?
   private var corpusRoot: URL?
-  private var chatAttachments: [String: OpenClawChatAttachment] = [:]
+  private var chatAttachments: [String: AIChatAttachment] = [:]
 
   func configure(source: EntrySource, corpusRoot: URL?) {
     let sourceURL = OrgHTMLDocumentView.sourceFileURL(source, corpusRoot: corpusRoot)
@@ -214,9 +214,9 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
     }
   }
 
-  func configureChatAttachments(_ attachments: [OpenClawChatAttachment]) {
+  func configureChatAttachments(_ attachments: [AIChatAttachment]) {
     let images = attachments.filter {
-      OpenClawAttachmentPresentation.previewKind(for: $0) == .image
+      AIChatAttachmentPresentation.previewKind(for: $0) == .image
     }
     lock.withLock {
       chatAttachments = Dictionary(
@@ -227,9 +227,9 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   }
 
   nonisolated static func chatAttachmentResourceURL(
-    for attachment: OpenClawChatAttachment
+    for attachment: AIChatAttachment
   ) -> URL? {
-    guard OpenClawAttachmentPresentation.previewKind(for: attachment) == .image else {
+    guard AIChatAttachmentPresentation.previewKind(for: attachment) == .image else {
       return nil
     }
     var components = URLComponents()
@@ -318,7 +318,7 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
     guard !id.isEmpty,
           let attachment = lock.withLock({ chatAttachments[id] }),
           revision == attachment.persistedContentDigest,
-          OpenClawAttachmentPresentation.previewKind(for: attachment) == .image,
+          AIChatAttachmentPresentation.previewKind(for: attachment) == .image,
           let mimeType = chatAttachmentMIMEType(attachment)
     else {
       urlSchemeTask.didFailWithError(resourceError(.fileReadNoPermission))
@@ -341,7 +341,7 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
     }
   }
 
-  private func chatAttachmentMIMEType(_ attachment: OpenClawChatAttachment) -> String? {
+  private func chatAttachmentMIMEType(_ attachment: AIChatAttachment) -> String? {
     let declared = attachment.mimeType.lowercased()
     if declared.hasPrefix("image/") {
       return declared
@@ -711,7 +711,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var restorationSourceLine: Int?
     var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
     var themeStylesheet = ""
-    var openOrgFileReference: @MainActor (OpenClawFileReference) -> Void = { _ in }
+    var openOrgFileReference: @MainActor (AIChatFileReference) -> Void = { _ in }
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
     var corpusRoot: URL?
@@ -1149,7 +1149,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
-      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme,
+      if url.scheme?.lowercased() == AIChatFileReference.deepLinkScheme,
          url.host == "ask-ai",
          let rawLine = URLComponents(url: url, resolvingAgainstBaseURL: false)?
            .queryItems?
@@ -1162,7 +1162,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
-      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme,
+      if url.scheme?.lowercased() == AIChatFileReference.deepLinkScheme,
          url.host == "open-link",
          let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
            .queryItems?
@@ -1173,7 +1173,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         return
       }
 
-      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme {
+      if url.scheme?.lowercased() == AIChatFileReference.deepLinkScheme {
         decisionHandler(.cancel)
         return
       }
@@ -1348,7 +1348,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         }
 
         if OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url) {
-          self.openOrgFileReference(OpenClawFileReference(
+          self.openOrgFileReference(AIChatFileReference(
             path: fileTarget.url.path,
             line: fileTarget.line
           ))

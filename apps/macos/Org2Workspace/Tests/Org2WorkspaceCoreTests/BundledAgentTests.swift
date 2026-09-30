@@ -25,7 +25,7 @@ final class BundledAgentTests: XCTestCase {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     func makeStore(_ transcript: String) -> WorkspaceStore {
-      WorkspaceStore(defaults: defaults, openClawTranscriptURL: root.appendingPathComponent(transcript), legacyDefaultsDomains: [])
+      WorkspaceStore(defaults: defaults, aiChatTranscriptURL: root.appendingPathComponent(transcript), legacyDefaultsDomains: [])
     }
     var destination = AIChatDestinationConfiguration(name: "Local", mention: "local", adapter: .ollama)
     destination.workspaceToolsEnabled = true
@@ -48,14 +48,14 @@ final class BundledAgentTests: XCTestCase {
       var text = "* TODO Unsaved draft\n"
       var writes = 0
       var reviews = 0
-      let broker = OpenClawLocalEditBroker(documentReader: { turnID, path, _ in
+      let broker = AIChatLocalEditBroker(documentReader: { turnID, path, _ in
         XCTAssertEqual(turnID, "host-turn")
-        return OpenClawLocalEditDocument(relativePath: path, text: text, origin: .editor)
+        return AIChatLocalEditDocument(relativePath: path, text: text, origin: .editor)
       }, replacementApplier: { turnID, replacements in
         XCTAssertEqual(turnID, "host-turn")
         writes += 1
         text = replacements[0].replacementText
-        return OpenClawLocalEditApplyResult(summary: OpenClawCorpusChangeSummary(files: []))
+        return AIChatLocalEditApplyResult(summary: AIChatCorpusChangeSummary(files: []))
       })
       await broker.beginTurn("host-turn")
       let workspace = BundledAgentWorkspaceTools(
@@ -101,11 +101,11 @@ final class BundledAgentTests: XCTestCase {
 
   func testFileChangedDuringApprovalIsNotWritten() async throws {
     var text = "Original"
-    let broker = OpenClawLocalEditBroker(documentReader: { _, path, _ in
-      OpenClawLocalEditDocument(relativePath: path, text: text, origin: .editor)
+    let broker = AIChatLocalEditBroker(documentReader: { _, path, _ in
+      AIChatLocalEditDocument(relativePath: path, text: text, origin: .editor)
     }, replacementApplier: { _, _ in
       XCTFail("Stale patch must not be applied")
-      return OpenClawLocalEditApplyResult(summary: OpenClawCorpusChangeSummary(files: []))
+      return AIChatLocalEditApplyResult(summary: AIChatCorpusChangeSummary(files: []))
     })
     await broker.beginTurn("turn")
     let workspace = BundledAgentWorkspaceTools(
@@ -116,7 +116,7 @@ final class BundledAgentTests: XCTestCase {
     _ = try await workspace.execute("org2_workspace_read", arguments: .object(["path": .string("note.org")]))
     let preview = try await workspace.execute("org2_workspace_patch_preview", arguments: .object([
       "edits": .array([.object([
-        "path": .string("note.org"), "expectedSha256": .string(OpenClawLocalEditBroker.sha256(text)),
+        "path": .string("note.org"), "expectedSha256": .string(AIChatLocalEditBroker.sha256(text)),
         "replacementText": .string("Proposed")
       ])])
     ]))

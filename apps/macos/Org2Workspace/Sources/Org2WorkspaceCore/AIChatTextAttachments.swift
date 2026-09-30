@@ -17,17 +17,17 @@ enum AIChatLargePaste {
 /// Expand only the outbound copy. Stored messages and drafts retain compact,
 /// blob-backed attachments, and every runtime receives ordinary user text.
 enum AIChatTextAttachments {
-  static func expanding(_ message: OpenClawChatMessage) throws -> OpenClawChatMessage {
+  static func expanding(_ message: AIChatMessage) throws -> AIChatMessage {
     guard message.role == .user else { return message }
     let textAttachments = message.attachments.filter { $0.mimeType == "text/plain" }
     guard !textAttachments.isEmpty else { return message }
     let blocks = try textAttachments.map { attachment in
       guard let text = String(data: try attachment.loadData(), encoding: .utf8) else {
-        throw OpenClawChatAttachment.DataError.unreadableBlob(attachment.fileName)
+        throw AIChatAttachment.DataError.unreadableBlob(attachment.fileName)
       }
       return "[Attached text: \(attachment.fileName)]\n\(text)\n[End attached text]"
     }
-    return OpenClawChatMessage(
+    return AIChatMessage(
       id: message.id, role: message.role,
       content: ([message.content] + blocks).joined(separator: "\n\n"),
       attachments: message.attachments.filter { $0.mimeType != "text/plain" },

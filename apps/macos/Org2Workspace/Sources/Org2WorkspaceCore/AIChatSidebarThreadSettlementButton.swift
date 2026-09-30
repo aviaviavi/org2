@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct OpenClawSidebarThreadSettlementButton: View {
+struct AIChatSidebarThreadSettlementButton: View {
   let isSettled: Bool
   let isVisible: Bool
   let action: () -> Void

@@ -95,12 +95,12 @@ struct AIChatSettingsView: View {
       }
 
       Section {
-        Toggle("Start node briefs in a new chat thread", isOn: $store.openClawBriefsStartNewThread)
+        Toggle("Start node briefs in a new chat thread", isOn: $store.aiChatBriefsStartNewThread)
         Picker("Settle inactive threads", selection: Binding(
-          get: { store.openClawThreadSettlementSettings.interval },
-          set: { store.setOpenClawAutoSettleInterval($0) }
+          get: { store.aiChatThreadSettlementSettings.interval },
+          set: { store.setAIChatAutoSettleInterval($0) }
         )) {
-          ForEach(OpenClawAutoSettleInterval.allCases) { interval in
+          ForEach(AIChatAutoSettleInterval.allCases) { interval in
             Text(interval.title).tag(interval)
           }
         }

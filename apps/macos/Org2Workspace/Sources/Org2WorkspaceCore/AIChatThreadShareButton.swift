@@ -8,7 +8,7 @@ struct AIChatThreadShareButton: View {
   @State private var isPresented = false
 
   var body: some View {
-    let threadID = store.selectedOpenClawChatThreadID
+    let threadID = store.selectedAIChatThreadID
     let isShared = threadID.flatMap(store.chatThreadPublication(for:)) != nil
     Button {
       isPresented.toggle()
@@ -16,7 +16,7 @@ struct AIChatThreadShareButton: View {
       Label(isShared ? "Shared" : "Share", systemImage: isShared ? "link.circle.fill" : "square.and.arrow.up")
     }
     .help(isShared ? "This thread has a live local link" : "Share this thread as a live local link")
-    .disabled(threadID == nil || store.openClawMessages.isEmpty && !isShared)
+    .disabled(threadID == nil || store.aiChatMessages.isEmpty && !isShared)
     .accessibilityIdentifier("ai-chat-share-thread")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       if let threadID {
@@ -65,7 +65,7 @@ struct AIChatThreadSharePopover: View {
             NSWorkspace.shared.open(publication.openURL)
           }
           Button {
-            OpenClawMessageClipboard.write(publication.url.absoluteString)
+            AIChatMessageClipboard.write(publication.url.absoluteString)
             copied = true
           } label: {
             Label(copied ? "Copied" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
@@ -124,7 +124,7 @@ struct AIChatThreadSharePopover: View {
     errorText = nil
     do {
       let publication = try await store.publishChatThread(threadID)
-      OpenClawMessageClipboard.write(publication.url.absoluteString)
+      AIChatMessageClipboard.write(publication.url.absoluteString)
       copied = true
     } catch {
       errorText = error.localizedDescription

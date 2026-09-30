@@ -487,7 +487,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
   func testMobileActivityPresentationHidesEmptyLifecycleAndGroupsUsefulWork() throws {
     let now = Date(timeIntervalSince1970: 1_700_000_000)
     let activities = [
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "lifecycle-start",
         runID: "run-1",
         kind: .lifecycle,
@@ -495,7 +495,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
         status: .running,
         updatedAt: now
       ),
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "shell-1",
         runID: "run-1",
         kind: .tool,
@@ -503,7 +503,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
         status: .succeeded,
         updatedAt: now.addingTimeInterval(1)
       ),
-      OpenClawRunActivity(
+      AIChatRunActivity(
         id: "shell-2",
         runID: "run-1",
         kind: .tool,
@@ -535,10 +535,10 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL
+      aiChatTranscriptURL: transcriptURL
     )
 
-    let selectedID = store.createOpenClawChatThread(runtime: .openClaw)
+    let selectedID = store.createAIChatThread(runtime: .openClaw)
     let remoteID = store.createAIChatRemoteThread(runtime: .codex)
 
     var claude = try XCTUnwrap(
@@ -552,11 +552,11 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
       destinationID: AIChatDestinationConfiguration.localClaudeID
     )
 
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, selectedID)
+    XCTAssertEqual(store.selectedAIChatThreadID, selectedID)
     XCTAssertNotEqual(remoteID, selectedID)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == remoteID })?.runtime, .codex)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == remoteID })?.runtime, .codex)
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == claudeRemoteID })?.runtime,
+      store.aiChatThreads.first(where: { $0.id == claudeRemoteID })?.runtime,
       .claude
     )
   }
@@ -572,15 +572,15 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL
+      aiChatTranscriptURL: transcriptURL
     )
     var saveCount = 0
-    store.openClawTranscriptPersistenceDelayNanoseconds = 5_000_000_000
-    store.openClawTranscriptSaverForTesting = { saveCount += 1 }
+    store.aiChatTranscriptPersistenceDelayNanoseconds = 5_000_000_000
+    store.aiChatTranscriptSaverForTesting = { saveCount += 1 }
 
     let remoteID = store.createAIChatRemoteThread(runtime: .codex)
 
-    XCTAssertNotNil(store.openClawChatThreads.first(where: { $0.id == remoteID }))
+    XCTAssertNotNil(store.aiChatThreads.first(where: { $0.id == remoteID }))
     XCTAssertEqual(saveCount, 0)
     store.flushDeferredAIChatTranscriptPersistence()
     XCTAssertEqual(saveCount, 1)
@@ -597,9 +597,9 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL
+      aiChatTranscriptURL: transcriptURL
     )
-    let selectedID = store.createOpenClawChatThread(runtime: .openClaw)
+    let selectedID = store.createAIChatThread(runtime: .openClaw)
     let remoteID = store.createAIChatRemoteThread(runtime: .openClaw)
 
     let destinationID = try XCTUnwrap(store.sendAIChatRemoteMessageDestination(
@@ -608,10 +608,10 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     ))
 
     XCTAssertNotEqual(destinationID, remoteID)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, selectedID)
-    XCTAssertTrue(store.openClawChatThreads.first(where: { $0.id == destinationID })?.isSharedRoom == true)
+    XCTAssertEqual(store.selectedAIChatThreadID, selectedID)
+    XCTAssertTrue(store.aiChatThreads.first(where: { $0.id == destinationID })?.isSharedRoom == true)
     XCTAssertEqual(
-      store.openClawChatThreads.first(where: { $0.id == destinationID })?.messages.first?.audience,
+      store.aiChatThreads.first(where: { $0.id == destinationID })?.messages.first?.audience,
       .codex
     )
   }
@@ -638,7 +638,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: container.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: container.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root)
 
@@ -696,7 +696,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(root, persistsDefault: false)
     let threadRecorder = MobileRemotePreviewThreadRecorder()
@@ -742,7 +742,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: container.appendingPathComponent("openclaw-chat.json")
+      aiChatTranscriptURL: container.appendingPathComponent("openclaw-chat.json")
     )
     store.setCorpusRoot(firstRoot, persistsDefault: false)
     let gate = MobileRemotePreviewGate()
@@ -781,7 +781,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL
+      aiChatTranscriptURL: transcriptURL
     )
     let threadID = store.createAIChatRemoteThread(runtime: .openClaw)
 
@@ -790,24 +790,24 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
       isPinned: true,
       isSettled: true
     ))
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isPinned, true)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isSettled, true)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isPinned, true)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isSettled, true)
 
     XCTAssertTrue(store.updateAIChatRemoteThreadState(
       threadID: threadID,
       isPinned: true,
       isSettled: true
     ))
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isPinned, true)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isSettled, true)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isPinned, true)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isSettled, true)
 
     XCTAssertTrue(store.updateAIChatRemoteThreadState(
       threadID: threadID,
       isPinned: false,
       isSettled: false
     ))
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isPinned, false)
-    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.isSettled, false)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isPinned, false)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.isSettled, false)
   }
 
   @MainActor
@@ -825,15 +825,15 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
-      openClawSendHandler: { _, _, _, context in
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      aiChatSendHandler: { _, _, _, context in
         await recorder.record(context)
         return "Remote reply"
       }
     )
     store.setCorpusRoot(root)
     let threadID = store.createAIChatRemoteThread(runtime: .openClaw)
-    store.renameOpenClawChatThread(threadID, title: "Render Atlanta Talk")
+    store.renameAIChatThread(threadID, title: "Render Atlanta Talk")
 
     XCTAssertTrue(store.sendAIChatRemoteMessage(
       "Use selected page “Opening” at notes/render-atlanta.org2:1 as context.\n\nImprove the talk.",
@@ -841,7 +841,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     ))
     let firstReplyDeadline = Date().addingTimeInterval(5)
     while (
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.count != 2
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.count != 2
         || store.isAIChatThreadRunning(threadID)
     ),
           Date() < firstReplyDeadline {
@@ -864,7 +864,7 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
 
     let recordedContext = await recorder.contexts().last
     let context = try XCTUnwrap(recordedContext)
-    XCTAssertEqual(context.selectedSurface, WorkspaceSurface.openClaw.title)
+    XCTAssertEqual(context.selectedSurface, WorkspaceSurface.aiChat.title)
     XCTAssertNil(context.selectedLocation)
     XCTAssertNil(context.selectedEntrySource)
     XCTAssertNil(context.backlinks)
@@ -891,14 +891,14 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
 
     let secondReplyDeadline = Date().addingTimeInterval(5)
     while (
-      store.openClawChatThreads.first(where: { $0.id == threadID })?.messages.count != 4
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.count != 4
         || store.isAIChatThreadRunning(threadID)
     ),
           Date() < secondReplyDeadline {
       try await Task.sleep(nanoseconds: 20_000_000)
     }
-    store.selectOpenClawChatThread(threadID)
-    store.sendComposedOpenClawMessage(text: "Continue from the Mac")
+    store.selectAIChatThread(threadID)
+    store.sendComposedAIChatMessage(text: "Continue from the Mac")
     let macContextDeadline = Date().addingTimeInterval(5)
     while await recorder.contexts().count < 3, Date() < macContextDeadline {
       try await Task.sleep(nanoseconds: 20_000_000)
@@ -921,15 +921,15 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
 }
 
 private actor MobileRemoteWorkspaceContextRecorder {
-  private var recordedContexts: [OpenClawWorkspaceContext] = []
+  private var recordedContexts: [AIChatWorkspaceContext] = []
 
-  func record(_ context: OpenClawWorkspaceContext?) {
+  func record(_ context: AIChatWorkspaceContext?) {
     if let context {
       recordedContexts.append(context)
     }
   }
 
-  func contexts() -> [OpenClawWorkspaceContext] {
+  func contexts() -> [AIChatWorkspaceContext] {
     recordedContexts
   }
 }

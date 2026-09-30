@@ -46,8 +46,8 @@ enum WorkspaceProjectContext {
 enum WorkspaceProjectThreadVisibility {
   static func activeSummaries(
     for project: WorkspaceProjectNote,
-    from summaries: [OpenClawSidebarThreadSummary]
-  ) -> [OpenClawSidebarThreadSummary] {
+    from summaries: [AIChatSidebarThreadSummary]
+  ) -> [AIChatSidebarThreadSummary] {
     summaries.filter { !$0.isSettled && project.contains($0.id) }
   }
 }
@@ -55,7 +55,7 @@ enum WorkspaceProjectThreadVisibility {
 struct WorkspaceProjectSidebarItem: Identifiable, Hashable {
   enum Content: Hashable {
     case project(WorkspaceProjectNote)
-    case thread(OpenClawSidebarThreadSummary)
+    case thread(AIChatSidebarThreadSummary)
     case empty
   }
 
@@ -67,7 +67,7 @@ struct WorkspaceProjectSidebarItem: Identifiable, Hashable {
 enum WorkspaceProjectSidebarPresentation {
   static func items(
     projects: [WorkspaceProjectNote],
-    summaries: [OpenClawSidebarThreadSummary],
+    summaries: [AIChatSidebarThreadSummary],
     expandedProjectIDs: Set<String>
   ) -> [WorkspaceProjectSidebarItem] {
     var items: [WorkspaceProjectSidebarItem] = []
@@ -152,7 +152,7 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
   @Environment(WorkspaceStore.self) private var store
   @Binding var presentedSheet: WorkspaceProjectSheet?
   @State private var expandedProjects: Set<String> = []
-  @ViewBuilder var threadRow: (OpenClawSidebarThreadSummary) -> ThreadRow
+  @ViewBuilder var threadRow: (AIChatSidebarThreadSummary) -> ThreadRow
 
   var body: some View {
     Section {
@@ -185,7 +185,7 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
     }
     .task(id: store.corpusRoot?.path) { expandedProjects = []; await store.refreshProjectsIfIdle() }
     .onChange(of: store.projectNotes) {
-      guard let selected = store.selectedOpenClawChatThreadID else { return }
+      guard let selected = store.selectedAIChatThreadID else { return }
       for project in store.projectNotes where project.contains(selected) {
         expandedProjects.insert(project.id)
       }
@@ -195,7 +195,7 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
   private var sidebarItems: [WorkspaceProjectSidebarItem] {
     WorkspaceProjectSidebarPresentation.items(
       projects: store.projectNotes,
-      summaries: store.sidebarOpenClawChatThreadSummaries,
+      summaries: store.sidebarAIChatThreadSummaries,
       expandedProjectIDs: expandedProjects
     )
   }

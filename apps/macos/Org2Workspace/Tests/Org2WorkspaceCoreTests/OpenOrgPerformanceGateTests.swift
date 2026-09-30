@@ -648,13 +648,13 @@ private final class WorkspaceRenderPerformanceHarness {
   }
 
   func prepareAIThreadRowAction(_ threadID: UUID) async throws {
-    let identifier = OpenClawSidebarThreadAccessibilityIdentity.accessibilityIdentifier(
+    let identifier = AIChatSidebarThreadAccessibilityIdentity.accessibilityIdentifier(
       for: threadID
     )
     if await revealSidebarAccessibilityElement(identifier: identifier) { return }
 
     if !didExpandSettledAIThreads {
-      let disclosureID = OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure
+      let disclosureID = AIChatSidebarThreadAccessibilityIdentity.settledDisclosure
       guard await revealSidebarAccessibilityElement(identifier: disclosureID),
             let previousRowCount = sidebarTableView()?.numberOfRows,
             clickAccessibilityElement(identifier: disclosureID)
@@ -676,7 +676,7 @@ private final class WorkspaceRenderPerformanceHarness {
     // mounted; the timed action below is always that row's own native press.
     for _ in 0..<64 {
       if await revealSidebarAccessibilityElement(identifier: identifier) { return }
-      let showMoreID = OpenClawSidebarThreadAccessibilityIdentity.settledShowMore
+      let showMoreID = AIChatSidebarThreadAccessibilityIdentity.settledShowMore
       guard await revealSidebarAccessibilityElement(identifier: showMoreID),
             let previousRowCount = sidebarTableView()?.numberOfRows,
             clickAccessibilityElement(identifier: showMoreID)
@@ -694,7 +694,7 @@ private final class WorkspaceRenderPerformanceHarness {
   }
 
   func performAIThreadRowAction(_ threadID: UUID) throws {
-    let identifier = OpenClawSidebarThreadAccessibilityIdentity.accessibilityIdentifier(
+    let identifier = AIChatSidebarThreadAccessibilityIdentity.accessibilityIdentifier(
       for: threadID
     )
     guard clickAccessibilityElement(identifier: identifier) else {
@@ -898,7 +898,7 @@ private final class WorkspaceRenderPerformanceHarness {
   func primaryTranscriptScrollGeometry() async -> OpenOrgScrollGeometry? {
     let views = [hostingView] + Self.descendantViews(in: hostingView)
     guard let webView = views.first(where: {
-      $0.accessibilityIdentifier() == OpenClawChatAccessibilityIdentity.transcriptScrollBridge
+      $0.accessibilityIdentifier() == AIChatAccessibilityIdentity.transcriptScrollBridge
         && $0.window === window
     }) as? WKWebView,
           let value = try? await webView.evaluateJavaScript(
@@ -1028,7 +1028,7 @@ private final class WorkspaceRenderPerformanceHarness {
     let markers: [String]
     switch surface {
     case .home: markers = ["AI Chat"]
-    case .openClaw: markers = ["Codex Chat", "OpenClaw Chat", "Claude Chat", "Shared AI Room"]
+    case .aiChat: markers = ["Codex Chat", "OpenClaw Chat", "Claude Chat", "Shared AI Room"]
     default: markers = [surface.title]
     }
     let labels = Self.accessibilityElements(in: host).compactMap(\.label)
@@ -1079,7 +1079,7 @@ private final class WorkspaceRenderPerformanceHarness {
     // the Show More control live at the bottom, while the disclosure is near
     // the top, so choose the scan direction that avoids needless full redraws.
     let rowIndices: [Int]
-    if identifier == OpenClawSidebarThreadAccessibilityIdentity.settledDisclosure {
+    if identifier == AIChatSidebarThreadAccessibilityIdentity.settledDisclosure {
       rowIndices = Array(0..<tableView.numberOfRows)
     } else {
       rowIndices = Array((0..<tableView.numberOfRows).reversed())
@@ -1187,7 +1187,7 @@ private final class WorkspaceRenderPerformanceHarness {
     case .files: ("3", [.command], 20)
     case .approvals: ("4", [.command], 21)
     case .meetings: ("5", [.command], 23)
-    case .openClaw: ("6", [.command], 22)
+    case .aiChat: ("6", [.command], 22)
     case .sources: ("0", [.command], 29)
     case .search: ("f", [.command, .shift], 3)
     case .skills: ("k", [.command, .shift], 40)
@@ -1258,7 +1258,7 @@ private final class WorkspaceRenderPerformanceHarness {
 }
 
 @MainActor
-private final class MountedOpenClawPerformanceHarness {
+private final class MountedAIChatPerformanceHarness {
   let window: NSWindow
   let hostingView: NSHostingView<AnyView>
 
@@ -2016,10 +2016,10 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     await store.waitForAIChatTranscriptLoadForTesting()
     store.setCorpusRoot(root, persistsDefault: false)
     store.setWorkspaceRealtimeRefreshActive(false)
@@ -2115,9 +2115,9 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       previousSurface = surface
     }
 
-    try harness.performNavigationAction(to: .openClaw)
-    try await harness.waitForVisibleDestination(.openClaw, store: store)
-    let openClawHost = try XCTUnwrap(harness.cachedSurfaceHost(for: .openClaw))
+    try harness.performNavigationAction(to: .aiChat)
+    try await harness.waitForVisibleDestination(.aiChat, store: store)
+    let openClawHost = try XCTUnwrap(harness.cachedSurfaceHost(for: .aiChat))
     XCTAssertTrue(openClawHost === surfaceHost)
     XCTAssertEqual(harness.workspaceSurfaceHostCount(), 1)
     XCTAssertTrue(openClawHost.window === harness.window)
@@ -2137,7 +2137,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     XCTAssertFalse(approvalsHost.isHidden)
     XCTAssertFalse(approvalsHost.isAccessibilityHidden())
     XCTAssertFalse(harness.exposesAccessibilityElement(
-      identifier: WorkspaceSurfaceMountIdentity.accessibilityIdentifier(for: .openClaw)
+      identifier: WorkspaceSurfaceMountIdentity.accessibilityIdentifier(for: .aiChat)
     ))
     XCTAssertTrue(harness.exposesAccessibilityElement(
       identifier: RunsAndReviewPageAccessibilityIdentity.accessibilityIdentifier(for: .runs)
@@ -2199,10 +2199,10 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("performance-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("performance-chat.json"),
       legacyDefaultsDomains: []
     )
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     await store.waitForAIChatTranscriptLoadForTesting()
     store.setCorpusRoot(root, persistsDefault: false)
     store.setWorkspaceRealtimeRefreshActive(false)
@@ -2230,14 +2230,14 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent("performance-chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent("performance-chat.json"),
       legacyDefaultsDomains: []
     )
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     await store.waitForAIChatTranscriptLoadForTesting()
     store.setCorpusRoot(root, persistsDefault: false)
     store.setWorkspaceRealtimeRefreshActive(false)
-    _ = store.createOpenClawChatThread()
+    _ = store.createAIChatThread(runtime: .openClaw)
     store.selectedSurface = .home
 
     let harness = WorkspaceRenderPerformanceHarness(store: store)
@@ -2246,7 +2246,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let baselineRowCount = try XCTUnwrap(harness.sidebarNativeListRowCount())
 
     for _ in 0..<8 {
-      _ = store.createOpenClawChatThread()
+      _ = store.createAIChatThread(runtime: .openClaw)
     }
     await harness.drawAfterDeferredViewUpdates()
 
@@ -2284,14 +2284,14 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     await store.waitForAIChatTranscriptLoadForTesting()
     let transcriptLoadMilliseconds = (CACurrentMediaTime() - transcriptLoadStart) * 1_000
-    XCTAssertEqual(store.openClawChatThreads.count, environment.shape.chat.threadCount)
-    XCTAssertEqual(store.selectedOpenClawChatThreadID, chatFixture.selectedThreadID)
+    XCTAssertEqual(store.aiChatThreads.count, environment.shape.chat.threadCount)
+    XCTAssertEqual(store.selectedAIChatThreadID, chatFixture.selectedThreadID)
     XCTAssertTrue(
       Set(chatFixture.coldAttachmentThreadIDs).isSubset(
         of: store.unloadedAIChatThreadIDsForTesting
@@ -2483,7 +2483,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
 
     var navigationTargetCycle: [(WorkspaceSurface, RunsAndReviewPage?)] = [
       (.agenda, nil), (.files, nil), (.approvals, .runs), (.approvals, .review),
-      (.meetings, nil), (.sources, nil), (.externalThreads, nil), (.openClaw, nil),
+      (.meetings, nil), (.sources, nil), (.externalThreads, nil), (.aiChat, nil),
       (.home, nil), (.search, nil),
     ]
     if ProcessInfo.processInfo.environment["OPENORG_PERFORMANCE_TRACE_NAV_TARGET"]
@@ -2503,10 +2503,10 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       harness: workspaceHarness
     )
 
-    if store.selectedSurface != .openClaw {
-      try workspaceHarness.performNavigationAction(to: .openClaw)
+    if store.selectedSurface != .aiChat {
+      try workspaceHarness.performNavigationAction(to: .aiChat)
     }
-    try await workspaceHarness.waitForVisibleDestination(.openClaw, store: store)
+    try await workspaceHarness.waitForVisibleDestination(.aiChat, store: store)
     let threadIDs = chatFixture.coldAttachmentThreadIDs.filter {
       store.unloadedAIChatThreadIDsForTesting.contains($0)
     }
@@ -2521,7 +2521,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     var tracedThreadID: UUID?
     var tracedThreadStart = CACurrentMediaTime()
     var tracedHydrationMilliseconds: Double?
-    store.openClawThreadHydrationDidLoadForTesting = { threadID in
+    store.aiChatThreadHydrationDidLoadForTesting = { threadID in
       guard tracesThreadSwitches, threadID == tracedThreadID else { return }
       tracedHydrationMilliseconds = (CACurrentMediaTime() - tracedThreadStart) * 1_000
     }
@@ -2608,7 +2608,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       budgets: environment.budgets
     )
     workspaceHarness.orderFront()
-    try await workspaceHarness.waitForVisibleDestination(.openClaw, store: store)
+    try await workspaceHarness.waitForVisibleDestination(.aiChat, store: store)
 
     let composer = try XCTUnwrap(
       workspaceHarness.firstEditableTextView(),
@@ -2722,7 +2722,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let additionalResizeTargets: [(WorkspaceSurface, RunsAndReviewPage?)] = [
       (.home, nil), (.agenda, nil), (.files, nil), (.approvals, .review),
       (.meetings, nil), (.sources, nil), (.externalThreads, nil),
-      (.openClaw, nil), (.search, nil),
+      (.aiChat, nil), (.search, nil),
     ]
     for (targetIndex, target) in additionalResizeTargets.enumerated() {
       let (surface, runPage) = target
@@ -3124,7 +3124,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         )
         await workspaceHarness.drawAfterDeferredViewUpdates()
       default:
-        store.selectedSurface = .openClaw
+        store.selectedSurface = .aiChat
         await workspaceHarness.drawAfterDeferredViewUpdates()
         let targetIndex = (index / 3) % threadIDs.count
         let targetID = threadIDs[targetIndex]
@@ -3339,12 +3339,12 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
             + String(repeating: "body ", count: 40)
         }
         let attachmentIndex = threadIndex - heavyThreadIndex
-        let attachments: [OpenClawChatAttachment]
+        let attachments: [AIChatAttachment]
         if messageIndex == messageCount - 1,
            attachmentIndex >= 0,
            attachmentIndex < attachmentCount {
           let byteCount = baseAttachmentBytes + (attachmentIndex < attachmentRemainder ? 1 : 0)
-          attachments = [OpenClawChatAttachment(
+          attachments = [AIChatAttachment(
             id: deterministicUUID(900_000 + attachmentIndex),
             fileName: "synthetic-attachment-\(attachmentIndex).bin",
             mimeType: "application/octet-stream",
@@ -3353,7 +3353,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         } else {
           attachments = []
         }
-        return OpenClawChatMessage(
+        return AIChatMessage(
           id: deterministicUUID(100_000 + nextMessageID),
           role: messageIndex.isMultiple(of: 2) ? .user : .assistant,
           content: content,
@@ -3362,7 +3362,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         )
       }
       let archived = threadIndex >= shape.activeThreadCount
-      return OpenClawChatThread(
+      return AIChatThread(
         id: deterministicUUID(threadIndex + 1),
         title: "Synthetic thread \(threadIndex + 1)",
         createdAt: createdAt.addingTimeInterval(Double(threadIndex)),
@@ -3379,7 +3379,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let snapshot = AIChatTranscriptSnapshot(
       threads: threads,
       selectedThreadID: selectedThreadID,
-      settlementSettings: OpenClawThreadSettlementSettings()
+      settlementSettings: AIChatThreadSettlementSettings()
     )
     try AIChatTranscriptStore.shared.flush(snapshot, legacyURL: url)
     return OpenOrgChatFixture(
@@ -3398,7 +3398,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     store: WorkspaceStore,
     harness: WorkspaceRenderPerformanceHarness
   ) async throws -> Double {
-    if store.selectedOpenClawChatThreadID != fixture.heavyThreadID {
+    if store.selectedAIChatThreadID != fixture.heavyThreadID {
       try await harness.prepareAIThreadRowAction(fixture.heavyThreadID)
       try harness.performAIThreadRowAction(fixture.heavyThreadID)
       try await waitForThreadRestoration(
@@ -3410,7 +3410,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     }
     XCTAssertLessThanOrEqual(
       harness.accessibilityElementCount(identifierPrefix: "openclaw-chat-message-"),
-      OpenClawChatTranscriptWindow.maximumDisplayLimit,
+      AIChatTranscriptWindow.maximumDisplayLimit,
       "A large-thread find must begin from a bounded mounted transcript window"
     )
 
@@ -3460,7 +3460,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         XCTAssertTrue(harness.exposesAccessibilityElement(identifier: revealedIdentifier))
         XCTAssertLessThanOrEqual(
           harness.accessibilityElementCount(identifierPrefix: "openclaw-chat-message-"),
-          OpenClawChatTranscriptWindow.maximumDisplayLimit,
+          AIChatTranscriptWindow.maximumDisplayLimit,
           "Off-window find reveal must center a bounded transcript instead of mounting the full thread"
         )
         return elapsedMilliseconds
@@ -3483,7 +3483,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       let destinationIDs = (0..<destinationCount).map {
         "performance-destination-\(sampleIndex)-\($0)"
       }
-      let trigger = OpenClawChatMessage(
+      let trigger = AIChatMessage(
         id: deterministicUUID(2_100_000 + sampleIndex),
         role: .user,
         content: "Compare every configured destination",
@@ -3492,7 +3492,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       )
       let responses = Dictionary(uniqueKeysWithValues: destinationIDs.enumerated().map {
         index, destinationID in
-        (destinationID, OpenClawChatMessage(
+        (destinationID, AIChatMessage(
           id: deterministicUUID(2_200_000 + (sampleIndex * destinationCount) + index),
           role: .assistant,
           content: body,
@@ -3508,7 +3508,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
         responsesByDestinationID: responses
       )
       let startedAt = CACurrentMediaTime()
-      let harness = MountedOpenClawPerformanceHarness(
+      let harness = MountedAIChatPerformanceHarness(
         rootView: AnyView(
           ScrollView {
             AIChatRoomRoundView(round: round, compact: false)
@@ -3535,7 +3535,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
   }
 
   private func exerciseCollapsedLargeLiveUpdate() async throws -> OpenOrgLargeLiveUpdateResult {
-    let liveState = OpenClawChatLiveState()
+    let liveState = AIChatLiveState()
     let threadID = deterministicUUID(3_000_000)
     let multiMegabyteReply = String(repeating: "live-update-segment ", count: 180_000)
     XCTAssertGreaterThan((multiMegabyteReply as NSString).length, 3_000_000)
@@ -3544,12 +3544,12 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     XCTAssertTrue(snapshot.isStreamingReplyTruncated)
     XCTAssertLessThanOrEqual(
       snapshot.streamingReply.count,
-      OpenClawChatLiveState.maximumPresentationCharacterCount
+      AIChatLiveState.maximumPresentationCharacterCount
     )
 
     let startedAt = CACurrentMediaTime()
-    let harness = MountedOpenClawPerformanceHarness(
-      rootView: AnyView(OpenClawLiveTypingIndicatorView(
+    let harness = MountedAIChatPerformanceHarness(
+      rootView: AnyView(AIChatLiveTypingIndicatorView(
         liveState: liveState,
         threadID: threadID,
         startedAt: Date(),
@@ -3586,7 +3586,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     XCTAssertTrue(updatedSnapshot.streamingReply.hasSuffix("LATEST_BOUNDED_LIVE_UPDATE"))
     XCTAssertLessThanOrEqual(
       liveState.maximumPresentationCharactersVisitedPerSnapshotForTesting,
-      OpenClawChatLiveState.maximumPresentationCharacterCount * 2
+      AIChatLiveState.maximumPresentationCharacterCount * 2
     )
     XCTAssertEqual(liveState.fullTextMaterializationCountForTesting, 0)
     return OpenOrgLargeLiveUpdateResult(
@@ -3613,15 +3613,15 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let realStore = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       legacyDefaultsDomains: []
     )
     // Selection/read-state changes remain memory-only. The disposable clone
     // also contains any load-time migration output, so the source corpus is
     // never a persistence target.
-    realStore.openClawTranscriptSaverForTesting = {}
+    realStore.aiChatTranscriptSaverForTesting = {}
     await realStore.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertFalse(realStore.openClawChatThreads.isEmpty)
+    XCTAssertFalse(realStore.aiChatThreads.isEmpty)
     realStore.setWorkspaceRealtimeRefreshActive(false)
     realStore.setCorpusRoot(root, persistsDefault: false)
     realStore.setWorkspaceRealtimeRefreshActive(false)
@@ -3732,7 +3732,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let navigationTargetCycle: [(WorkspaceSurface, RunsAndReviewPage?)] = [
       (.home, nil), (.files, nil), (.agenda, nil), (.approvals, .runs),
       (.approvals, .review), (.meetings, nil), (.sources, nil), (.externalThreads, nil),
-      (.openClaw, nil), (.search, nil),
+      (.aiChat, nil), (.search, nil),
     ]
     try await recordWorkspaceNavigationGate(
       scenario: "real-workspace-navigation-to-draw",
@@ -3743,15 +3743,15 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
       budgets: environment.budgets
     )
 
-    if realStore.selectedSurface != .openClaw {
-      try realWorkspaceHarness.performNavigationAction(to: .openClaw)
+    if realStore.selectedSurface != .aiChat {
+      try realWorkspaceHarness.performNavigationAction(to: .aiChat)
     }
-    try await realWorkspaceHarness.waitForVisibleDestination(.openClaw, store: realStore)
+    try await realWorkspaceHarness.waitForVisibleDestination(.aiChat, store: realStore)
     // A legacy monolith is migrated inside the disposable clone before this
     // point. Select the largest settled metadata-only threads from the migrated
     // store itself so the real gate always measures distinct cold shard loads;
     // the synthetic gate above separately guarantees attachment rendering.
-    let realThreadIDs = realStore.openClawChatThreads
+    let realThreadIDs = realStore.aiChatThreads
       .filter { thread in
         thread.isSettled
           && thread.storedMessageCount != nil
@@ -4575,16 +4575,16 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     let deadline = CACurrentMediaTime() + timeout
     while CACurrentMediaTime() < deadline {
       await harness.drawFirstUsableFrame()
-      let isSelected = store.selectedOpenClawChatThreadID == targetID
+      let isSelected = store.selectedAIChatThreadID == targetID
       let visibleMessages = isSelected
-        ? Array(store.openClawMessages.suffix(OpenClawChatTranscriptWindow.initialLimit))
+        ? Array(store.aiChatMessages.suffix(AIChatTranscriptWindow.initialLimit))
         : []
       let hasRequiredAttachment = !requiresVisibleAttachment
         || visibleMessages.contains(where: { !$0.attachments.isEmpty })
       if isSelected,
          !store.unloadedAIChatThreadIDsForTesting.contains(targetID),
          hasRequiredAttachment,
-         store.lastCompletedOpenClawChatScrollRestorationThreadID == targetID {
+         store.lastCompletedAIChatScrollRestorationThreadID == targetID {
         return
       }
       try await Task.sleep(nanoseconds: 1_000_000)
@@ -4607,17 +4607,17 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     var stableGeometryCount = 0
     while CACurrentMediaTime() < deadline {
       await harness.drawAfterDeferredViewUpdates()
-      let hydratedThread = store.openClawChatThreads.first { thread in
+      let hydratedThread = store.aiChatThreads.first { thread in
         thread.id == targetID && thread.storedMessageCount == nil
       }
       let visibleMessages = hydratedThread?.messages
-        .suffix(OpenClawChatTranscriptWindow.initialLimit) ?? []
+        .suffix(AIChatTranscriptWindow.initialLimit) ?? []
       let hasRequiredAttachment = !requiresVisibleAttachment
         || visibleMessages.contains(where: { !$0.attachments.isEmpty })
       lastHadHydratedThread = hydratedThread != nil
       lastHadRequiredAttachment = hasRequiredAttachment
       lastGeometry = await harness.primaryTranscriptScrollGeometry()
-      if store.selectedOpenClawChatThreadID == targetID,
+      if store.selectedAIChatThreadID == targetID,
          hydratedThread != nil,
          hasRequiredAttachment,
          let geometry = lastGeometry,
@@ -4643,7 +4643,7 @@ final class OpenOrgPerformanceGateTests: XCTestCase {
     } ?? "nil"
     XCTFail(
       "Timed out waiting for thread hydration, bottom restoration, and a stable visible frame; "
-        + "selected=\(store.selectedOpenClawChatThreadID?.uuidString ?? "nil"), "
+        + "selected=\(store.selectedAIChatThreadID?.uuidString ?? "nil"), "
         + "hydrated=\(lastHadHydratedThread), attachment=\(lastHadRequiredAttachment), "
         + "stableFrames=\(stableGeometryCount), geometry=\(geometryDescription)"
     )

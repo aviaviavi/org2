@@ -105,13 +105,13 @@ struct AIChatTranscriptDocument: View {
   @Environment(WorkspaceStore.self) private var store
   @Environment(\.openOrgFileReference) private var openFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
-  @ObservedObject private var liveState: OpenClawChatLiveState
+  @ObservedObject private var liveState: AIChatLiveState
   @State private var rendered: [UUID: AIChatTranscriptRenderedBody] = [:]
   @State private var renderedReasoning: [UUID: AIChatTranscriptRenderedReasoning] = [:]
   @State private var preparedLive: PreparedLive?
   @State private var showsAllLiveText = false
   @State private var showsLiveActivity = false
-  @State private var previewedAttachment: OpenClawChatAttachment?
+  @State private var previewedAttachment: AIChatAttachment?
   @State private var expandedMessageIDs: Set<UUID> = []
   @State private var copiedMessageID: UUID?
   @State private var copyFeedbackTask: Task<Void, Never>?
@@ -124,7 +124,7 @@ struct AIChatTranscriptDocument: View {
   let onPosition: (Double) -> Void
 
   init(
-    liveState: OpenClawChatLiveState,
+    liveState: AIChatLiveState,
     items: [AIChatRoomTranscriptItem],
     compact: Bool,
     earlierTitle: String?,
@@ -167,7 +167,7 @@ struct AIChatTranscriptDocument: View {
     let connectionState: OpenClawGatewayConnectionState
     let connectionDetail: String?
     let runID: String?
-    let preparation: OpenClawLiveTextPreparationInput
+    let preparation: AIChatLiveTextPreparationInput
   }
   private struct PreparedLive {
     let threadID: UUID
@@ -177,10 +177,10 @@ struct AIChatTranscriptDocument: View {
     let hasEarlierText: Bool
     let reasoning: String?
     let reasoningHTML: String?
-    let activities: [OpenClawActivityFeedItem]
+    let activities: [AIChatActivityFeedItem]
   }
   private struct MessageSlot {
-    let message: OpenClawChatMessage
+    let message: AIChatMessage
     let isRoomResponse: Bool
   }
   private var messageSlots: [MessageSlot] {
@@ -197,14 +197,14 @@ struct AIChatTranscriptDocument: View {
       }
     }
   }
-  private var messages: [OpenClawChatMessage] { messageSlots.map(\.message) }
+  private var messages: [AIChatMessage] { messageSlots.map(\.message) }
   private var sourcePath: String {
     (store.corpusRoot ?? FileManager.default.temporaryDirectory).appendingPathComponent("chat-message.org").path
   }
 
   private var liveInput: LiveInput? {
-    guard let threadID = store.selectedOpenClawChatThreadID else { return nil }
-    guard store.isSendingOpenClawMessage else {
+    guard let threadID = store.selectedAIChatThreadID else { return nil }
+    guard store.isSendingAIChatMessage else {
       // A turn another OpenOrg host is running for this conversation.
       guard let remote = store.aiChatRemoteLiveTurn(for: threadID) else { return nil }
       let destination = remote.turn.destinationName
@@ -219,7 +219,7 @@ struct AIChatTranscriptDocument: View {
         connectionState: .connected,
         connectionDetail: "Running on \(runningHost)",
         runID: nil,
-        preparation: OpenClawLiveTextPreparationInput(
+        preparation: AIChatLiveTextPreparationInput(
           rawText: remote.turn.streamingReply,
           showsAll: showsAllLiveText,
           hasOmittedPrefix: remote.turn.streamingReply.hasPrefix("…"),
@@ -232,14 +232,14 @@ struct AIChatTranscriptDocument: View {
     let snapshot = liveState.presentationSnapshot(for: threadID)
     return LiveInput(
       threadID: threadID,
-      startedAt: store.openClawRequestStartedAt,
+      startedAt: store.aiChatRequestStartedAt,
       lastEventAt: liveState.lastEventAt(for: threadID),
       runtime: store.selectedAIChatActiveRuntime,
       destinationTitle: store.aiChatDestinationTitle(store.selectedAIChatActiveDestinationID),
       connectionState: liveState.connectionState(for: threadID),
       connectionDetail: liveState.connectionDetail(for: threadID),
       runID: liveState.activeRunID(for: threadID),
-      preparation: OpenClawLiveTextPreparationInput(
+      preparation: AIChatLiveTextPreparationInput(
         rawText: snapshot.streamingReply,
         showsAll: showsAllLiveText,
         hasOmittedPrefix: snapshot.isStreamingReplyTruncated,
@@ -260,16 +260,16 @@ struct AIChatTranscriptDocument: View {
     }
     let reasoningInputs = messages.compactMap { message -> ReasoningInput? in
       guard let trace = message.responseTrace,
-            let reasoning = OpenClawProgressPresentation.reasoningText(from: trace.reasoning),
+            let reasoning = AIChatProgressPresentation.reasoningText(from: trace.reasoning),
             !reasoning.isEmpty
       else { return nil }
       return ReasoningInput(id: message.id, text: reasoning)
     }
     let entries = zip(messageSlots, inputs).map { slot, input in
       let message = slot.message
-      let excerpt = OpenClawMessageBodyExcerpt(
+      let excerpt = AIChatMessageBodyExcerpt(
         message.content,
-        utf8ByteLimit: input.expanded ? nil : OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+        utf8ByteLimit: input.expanded ? nil : AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
       )
       let resolved = rendered[message.id].flatMap {
         $0.source == input.text && $0.expanded == input.expanded ? $0 : nil
@@ -296,7 +296,7 @@ struct AIChatTranscriptDocument: View {
         isTruncated: excerpt.isTruncated,
         responseTrace: message.responseTrace.flatMap { trace in
           let reasoningHTML = renderedReasoning[message.id].flatMap {
-            $0.source == OpenClawProgressPresentation.reasoningText(from: trace.reasoning)
+            $0.source == AIChatProgressPresentation.reasoningText(from: trace.reasoning)
               ? $0.html
               : nil
           }
@@ -307,12 +307,12 @@ struct AIChatTranscriptDocument: View {
     }
     AIChatTranscriptWebView(
       payload: AIChatTranscriptHTML.Payload(
-        thread: store.selectedOpenClawChatThreadID?.uuidString ?? "empty",
+        thread: store.selectedAIChatThreadID?.uuidString ?? "empty",
         entries: entries, earlier: earlierTitle,
-        sending: store.isSendingOpenClawMessage,
-        status: store.openClawMessages.isEmpty ? "Ask about your workspace, or request an edit to review." : store.openClawStatusText,
+        sending: store.isSendingAIChatMessage,
+        status: store.aiChatMessages.isEmpty ? "Ask about your workspace, or request an edit to review." : store.aiChatStatusText,
         search: searchMessageID?.uuidString.lowercased(), searchGeneration: searchGeneration,
-        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: compact) ?? 1,
+        initialPosition: store.aiChatScrollPosition(isAssistantPanel: compact) ?? 1,
         compact: compact,
         live: liveInput.map(livePayload)
       ), attachments: messages.flatMap(\.attachments),
@@ -320,8 +320,8 @@ struct AIChatTranscriptDocument: View {
       linkResolver: linkResolver, openFileReference: openFileReference,
       onAction: handleAction,
       onPosition: { thread, position in
-        guard thread == store.selectedOpenClawChatThreadID?.uuidString else { return }
-        store.recordOpenClawChatScrollPosition(position, isAssistantPanel: compact, threadID: store.selectedOpenClawChatThreadID)
+        guard thread == store.selectedAIChatThreadID?.uuidString else { return }
+        store.recordAIChatScrollPosition(position, isAssistantPanel: compact, threadID: store.selectedAIChatThreadID)
         onPosition(position)
       }
     )
@@ -354,14 +354,14 @@ struct AIChatTranscriptDocument: View {
         do {
           try Task.checkCancellation()
           let prepared = await Task.detached(priority: .userInitiated) {
-            let excerpt = OpenClawMessageBodyExcerpt(
+            let excerpt = AIChatMessageBodyExcerpt(
               input.text,
-              utf8ByteLimit: input.expanded ? nil : OpenClawMessageBodyExcerpt.collapsedUTF8ByteLimit
+              utf8ByteLimit: input.expanded ? nil : AIChatMessageBodyExcerpt.collapsedUTF8ByteLimit
             )
             if input.formatted {
-              return (OpenClawMessageOrgNormalizer.normalized(excerpt.text), [AIChatTranscriptHTML.Context]())
+              return (AIChatMessageOrgNormalizer.normalized(excerpt.text), [AIChatTranscriptHTML.Context]())
             }
-            let presentation = OpenClawContextPresentation(excerpt.text)
+            let presentation = AIChatContextPresentation(excerpt.text)
             return (presentation.userText, presentation.contexts.map(AIChatTranscriptHTML.Context.init))
           }.value
           let html = input.formatted
@@ -395,7 +395,7 @@ struct AIChatTranscriptDocument: View {
         do {
           try Task.checkCancellation()
           let normalized = await Task.detached(priority: .utility) {
-            OpenClawMessageOrgNormalizer.normalized(input.text)
+            AIChatMessageOrgNormalizer.normalized(input.text)
           }.value
           let html = try await AIChatDocumentRenderCache.shared.render(
             normalized,
@@ -426,7 +426,7 @@ struct AIChatTranscriptDocument: View {
       } catch {
         return
       }
-      let prepared = await OpenClawLiveTextPreparationCoordinator.shared.prepare(
+      let prepared = await AIChatLiveTextPreparationCoordinator.shared.prepare(
         streamID: liveInput.threadID,
         input: liveInput.preparation
       )
@@ -450,7 +450,7 @@ struct AIChatTranscriptDocument: View {
       )
     }
     .sheet(item: $previewedAttachment) { attachment in
-      OpenClawAttachmentPreviewView(attachment: attachment)
+      AIChatAttachmentPreviewView(attachment: attachment)
     }
     .onDisappear {
       copyFeedbackTask?.cancel()
@@ -459,7 +459,7 @@ struct AIChatTranscriptDocument: View {
   }
 
   private func cachedPreparedBody(
-    message: OpenClawChatMessage,
+    message: AIChatMessage,
     input: RenderInput
   ) -> AIChatTranscriptRenderedBody? {
     guard let prepared = AIChatTranscriptHTML.cachedPreparedBody(
@@ -490,7 +490,7 @@ struct AIChatTranscriptDocument: View {
     guard let text, !text.isEmpty else { return nil }
     do {
       let normalized = await Task.detached(priority: .utility) {
-        OpenClawMessageOrgNormalizer.normalized(text)
+        AIChatMessageOrgNormalizer.normalized(text)
       }.value
       return try await AIChatDocumentRenderCache.shared.render(
         normalized,
@@ -501,7 +501,7 @@ struct AIChatTranscriptDocument: View {
     }
   }
 
-  private func title(_ message: OpenClawChatMessage) -> String {
+  private func title(_ message: AIChatMessage) -> String {
     let base: String
     if message.role == .user {
       if !message.audienceDestinationIDs.isEmpty {
@@ -519,7 +519,7 @@ struct AIChatTranscriptDocument: View {
 
   private func livePayload(_ input: LiveInput) -> AIChatTranscriptHTML.Live {
     let now = Date()
-    let presentation = OpenClawTypingIndicatorView(
+    let presentation = AIChatTypingIndicatorView(
       startedAt: input.startedAt,
       lastEventAt: input.lastEventAt,
       runtime: input.runtime,
@@ -544,7 +544,7 @@ struct AIChatTranscriptDocument: View {
     let livenessAge = referenceDate.map { max(0, now.timeIntervalSince($0)) } ?? 0
     let animates = input.connectionState != .disconnected
       && (input.connectionState != .connected || input.runID == nil
-        || livenessAge < OpenClawTypingIndicatorView.stalledRunInterval)
+        || livenessAge < AIChatTypingIndicatorView.stalledRunInterval)
     return AIChatTranscriptHTML.Live(
       title: presentation.statusTitle(now: now),
       detail: presentation.statusDetail(now: now),
@@ -568,18 +568,18 @@ struct AIChatTranscriptDocument: View {
   }
 
   private func handleAction(_ action: String, _ id: String?, _ detail: String?) {
-    if action == "restored" { store.completeOpenClawChatScrollRestoration(threadID: store.selectedOpenClawChatThreadID); return }
+    if action == "restored" { store.completeAIChatScrollRestoration(threadID: store.selectedAIChatThreadID); return }
     if action == "earlier" { onEarlier(); return }
-    if action == "stop" { Task { await store.stopOpenClawRun() }; return }
+    if action == "stop" { Task { await store.stopAIChatRun() }; return }
     if action == "liveTextToggle" { showsAllLiveText.toggle(); return }
     if action == "liveActivityToggle" { showsLiveActivity.toggle(); return }
     guard let id, let uuid = UUID(uuidString: id), let message = messages.first(where: { $0.id == uuid }) else { return }
     switch action {
     case "copy":
-      let input = OpenClawMessageClipboard.Input(message)
+      let input = AIChatMessageClipboard.Input(message)
       copyFeedbackTask?.cancel()
       copyFeedbackTask = Task { @MainActor in
-        guard await OpenClawMessageClipboard.copy(input), !Task.isCancelled else { return }
+        guard await AIChatMessageClipboard.copy(input), !Task.isCancelled else { return }
         copiedMessageID = uuid
         do { try await Task.sleep(for: .seconds(2)) } catch { return }
         if copiedMessageID == uuid { copiedMessageID = nil }
@@ -589,7 +589,7 @@ struct AIChatTranscriptDocument: View {
       previewedAttachment = message.attachments.first { $0.id == attachmentID }
     case "expand": expandedMessageIDs.insert(uuid)
     case "collapse": expandedMessageIDs.remove(uuid)
-    case "retry": Task { await store.retryOpenClawMessage(uuid) }
+    case "retry": Task { await store.retryAIChatMessage(uuid) }
     case "edit": store.editQueuedAIChatMessage(uuid)
     case "delete": store.deleteQueuedAIChatMessage(uuid)
     case "steer": Task { await store.steerQueuedAIChatMessage(uuid) }
@@ -607,12 +607,12 @@ enum AIChatTranscriptHTML {
 
   @MainActor
   static func cachedPreparedBody(
-    for message: OpenClawChatMessage,
+    for message: AIChatMessage,
     expanded: Bool
   ) -> PreparedBody? {
     guard !expanded else { return nil }
-    let input = OpenClawMessagePresentationInput(message)
-    guard let cached = OpenClawMessagePresentationCache.cachedPresentation(for: input) else {
+    let input = AIChatMessagePresentationInput(message)
+    guard let cached = AIChatMessagePresentationCache.cachedPresentation(for: input) else {
       return nil
     }
     if message.role != .user {
@@ -632,7 +632,7 @@ enum AIChatTranscriptHTML {
     let kind: String
     let isAutomatic: Bool
 
-    init(_ context: OpenClawPresentedContext) {
+    init(_ context: AIChatPresentedContext) {
       title = context.title
       kind = context.kind
       isAutomatic = context.automaticPrompt != nil
@@ -645,7 +645,7 @@ enum AIChatTranscriptHTML {
     let mimeType: String
     let previewURL: String?
 
-    init(_ attachment: OpenClawChatAttachment) {
+    init(_ attachment: AIChatAttachment) {
       id = attachment.id.uuidString.lowercased()
       fileName = attachment.fileName
       mimeType = attachment.mimeType
@@ -661,7 +661,7 @@ enum AIChatTranscriptHTML {
     let latestDetail: String?
     let status: String
 
-    init(_ item: OpenClawActivityFeedItem) {
+    init(_ item: AIChatActivityFeedItem) {
       title = item.title
       detail = item.detail
       latestDetail = item.latestDetail
@@ -676,11 +676,11 @@ enum AIChatTranscriptHTML {
     let usage: AIChatTokenUsage?
     let context: OpenOrgContextTelemetry?
 
-    init?(_ trace: OpenClawResponseTrace, reasoningHTML: String? = nil) {
+    init?(_ trace: AIChatResponseTrace, reasoningHTML: String? = nil) {
       guard !trace.isEmpty else { return nil }
-      reasoning = OpenClawProgressPresentation.reasoningText(from: trace.reasoning)
+      reasoning = AIChatProgressPresentation.reasoningText(from: trace.reasoning)
       self.reasoningHTML = reasoningHTML
-      activities = OpenClawActivityFeed.items(from: trace.activities).map(Activity.init)
+      activities = AIChatActivityFeed.items(from: trace.activities).map(Activity.init)
       usage = trace.usage
       context = trace.context
     }
@@ -692,7 +692,7 @@ enum AIChatTranscriptHTML {
     let insertions: Int
     let deletions: Int
 
-    init(_ change: OpenClawCorpusFileChange) {
+    init(_ change: AIChatCorpusFileChange) {
       relativePath = change.relativePath
       status = change.status.rawValue
       insertions = change.insertions
@@ -706,7 +706,7 @@ enum AIChatTranscriptHTML {
     let totalDeletions: Int
     let files: [FileChange]
 
-    init(_ summary: OpenClawCorpusChangeSummary) {
+    init(_ summary: AIChatCorpusChangeSummary) {
       title = summary.title
       totalInsertions = summary.totalInsertions
       totalDeletions = summary.totalDeletions
@@ -1297,11 +1297,11 @@ enum AIChatTranscriptHTML {
 
 struct AIChatTranscriptWebView: NSViewRepresentable {
   let payload: AIChatTranscriptHTML.Payload
-  let attachments: [OpenClawChatAttachment]
+  let attachments: [AIChatAttachment]
   let sourcePath: String
   let corpusRoot: URL?
   let linkResolver: OrgRoamLinkResolver
-  let openFileReference: (OpenClawFileReference) -> Void
+  let openFileReference: (AIChatFileReference) -> Void
   let onAction: (String, String?, String?) -> Void
   let onPosition: (String, Double) -> Void
 
@@ -1317,7 +1317,7 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
     view.navigationDelegate=context.coordinator
     view.setValue(false, forKey: "drawsBackground")
     view.setAccessibilityLabel("Chat transcript")
-    view.setAccessibilityIdentifier(OpenClawChatAccessibilityIdentity.transcriptScrollBridge)
+    view.setAccessibilityIdentifier(AIChatAccessibilityIdentity.transcriptScrollBridge)
     view.loadHTMLString(AIChatTranscriptHTML.shell, baseURL: URL(fileURLWithPath: sourcePath).deletingLastPathComponent())
     return view
   }
@@ -1364,7 +1364,7 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
   }
   final class Coordinator: AIChatDocumentWebView.Coordinator {
     var payload: AIChatTranscriptHTML.Payload?
-    var attachments: [OpenClawChatAttachment] = []
+    var attachments: [AIChatAttachment] = []
     var restoredThread: String?
     var restorationThreadAfterDOMUpdate: String?
     var onAction: ((String,String?,String?) -> Void)?

@@ -3,9 +3,9 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 private actor MeetingAutomationSendRecorder {
-  private var calls: [[OpenClawChatMessage]] = []
+  private var calls: [[AIChatMessage]] = []
 
-  func send(_ messages: [OpenClawChatMessage]) -> String {
+  func send(_ messages: [AIChatMessage]) -> String {
     calls.append(messages)
     return "Meeting processed"
   }
@@ -47,8 +47,8 @@ final class MeetingReadyAutomationTests: XCTestCase {
     let recorder = MeetingAutomationSendRecorder()
     let store = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawTranscriptURL: fixture.transcript,
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatTranscriptURL: fixture.transcript,
+      aiChatSendHandler: { messages, _, _, _ in
         await recorder.send(messages)
       },
       legacyDefaultsDomains: []
@@ -68,7 +68,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
       threadID: nil,
       prompt: "Extract the follow-ups."
     ))
-    XCTAssertFalse(store.openClawChatThreads.contains(where: { $0.title.contains("Old planning call") }))
+    XCTAssertFalse(store.aiChatThreads.contains(where: { $0.title.contains("Old planning call") }))
 
     let newMeeting = meeting(
       title: "Launch review",
@@ -93,7 +93,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
     store.meetingTranscriptionDidCompleteForTesting(failedMeeting)
 
     let thread = try XCTUnwrap(
-      store.openClawChatThreads.first(where: { $0.title.contains("Launch review") })
+      store.aiChatThreads.first(where: { $0.title.contains("Launch review") })
     )
     let userMessages = thread.messages.filter { $0.role == .user }
     XCTAssertEqual(userMessages.count, 1)
@@ -102,7 +102,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
     ))
     XCTAssertTrue(userMessages[0].content.contains("Extract the follow-ups."))
 
-    XCTAssertFalse(store.openClawChatThreads.contains(where: {
+    XCTAssertFalse(store.aiChatThreads.contains(where: {
       $0.title.contains("Transcript needs attention") || $0.title.contains("Transcript failed")
     }))
   }
@@ -113,12 +113,12 @@ final class MeetingReadyAutomationTests: XCTestCase {
     defer { fixture.cleanup() }
     let firstStore = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawTranscriptURL: fixture.transcript,
+      aiChatTranscriptURL: fixture.transcript,
       legacyDefaultsDomains: []
     )
     firstStore.setCorpusRoot(fixture.root, persistsDefault: false)
-    let threadID = firstStore.createOpenClawChatThread(runtime: .openClaw)
-    firstStore.settleOpenClawChatThread(threadID)
+    let threadID = firstStore.createAIChatThread(runtime: .openClaw)
+    firstStore.settleAIChatThread(threadID)
     XCTAssertTrue(firstStore.saveMeetingReadyAutomationConfiguration(
       isEnabled: true,
       destinationID: AIChatDestinationConfiguration.openClawID,
@@ -130,7 +130,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
 
     let relaunchedStore = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawTranscriptURL: fixture.transcript,
+      aiChatTranscriptURL: fixture.transcript,
       legacyDefaultsDomains: []
     )
     relaunchedStore.setCorpusRoot(fixture.root, persistsDefault: false)
@@ -159,11 +159,11 @@ final class MeetingReadyAutomationTests: XCTestCase {
     await relaunchedStore.refreshMeetings()
 
     let target = try XCTUnwrap(
-      relaunchedStore.openClawChatThreads.first(where: { $0.id == threadID })
+      relaunchedStore.aiChatThreads.first(where: { $0.id == threadID })
     )
     XCTAssertTrue(target.isSettled)
     XCTAssertEqual(target.messages.filter { $0.role == .user }.count, 0)
-    XCTAssertFalse(relaunchedStore.openClawChatThreads.contains(where: {
+    XCTAssertFalse(relaunchedStore.aiChatThreads.contains(where: {
       $0.messages.contains(where: { $0.content.contains("meeting-ready:meeting-id:customer-sync") })
     }))
   }
@@ -174,8 +174,8 @@ final class MeetingReadyAutomationTests: XCTestCase {
     defer { fixture.cleanup() }
     let store = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawTranscriptURL: fixture.transcript,
-      openClawSendHandler: { _, _, _, _ in "Meeting processed" },
+      aiChatTranscriptURL: fixture.transcript,
+      aiChatSendHandler: { _, _, _, _ in "Meeting processed" },
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(fixture.root, persistsDefault: false)
@@ -220,7 +220,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
     await store.refreshMeetings()
 
     XCTAssertEqual(store.meetings.first?.idValue, canonicalMeetingID)
-    let automationMessages = store.openClawChatThreads
+    let automationMessages = store.aiChatThreads
       .flatMap(\.messages)
       .filter { $0.role == .user && $0.content.contains("#+org2_automation_event_id:") }
     XCTAssertEqual(automationMessages.count, 1)
@@ -233,35 +233,35 @@ final class MeetingReadyAutomationTests: XCTestCase {
   func testColdExistingThreadQueuesExactlyOnceOnlyAfterHydration() async throws {
     let fixture = try makeFixture()
     defer { fixture.cleanup() }
-    let selected = OpenClawChatThread(
+    let selected = AIChatThread(
       title: "Selected",
       sessionKey: "selected",
-      messages: [OpenClawChatMessage(role: .assistant, content: "selected")]
+      messages: [AIChatMessage(role: .assistant, content: "selected")]
     )
     let warm = (0..<16).map { index in
-      OpenClawChatThread(
+      AIChatThread(
         title: "Warm \(index)",
         sessionKey: "warm-\(index)",
-        messages: [OpenClawChatMessage(role: .assistant, content: "warm")]
+        messages: [AIChatMessage(role: .assistant, content: "warm")]
       )
     }
-    let cold = OpenClawChatThread(
+    let cold = AIChatThread(
       title: "Cold meeting target",
       sessionKey: "cold-meeting-target",
-      messages: [OpenClawChatMessage(role: .assistant, content: "existing history")]
+      messages: [AIChatMessage(role: .assistant, content: "existing history")]
     )
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(
         threads: [selected] + warm + [cold],
         selectedThreadID: selected.id,
-        settlementSettings: OpenClawThreadSettlementSettings()
+        settlementSettings: AIChatThreadSettlementSettings()
       ),
       legacyURL: fixture.transcript
     )
     let store = WorkspaceStore(
       defaults: fixture.defaults,
-      openClawTranscriptURL: fixture.transcript,
-      openClawSendHandler: { _, _, _, _ in "Meeting processed" },
+      aiChatTranscriptURL: fixture.transcript,
+      aiChatSendHandler: { _, _, _, _ in "Meeting processed" },
       legacyDefaultsDomains: []
     )
     store.setCorpusRoot(fixture.root, persistsDefault: false)
@@ -275,8 +275,8 @@ final class MeetingReadyAutomationTests: XCTestCase {
     ))
     let shardLoaded = expectation(description: "cold meeting shard loaded")
     let enqueueResolved = expectation(description: "meeting enqueue resolved")
-    store.openClawThreadHydrationDelayNanosecondsForTesting = 300_000_000
-    store.openClawThreadHydrationDidLoadForTesting = { id in
+    store.aiChatThreadHydrationDelayNanosecondsForTesting = 300_000_000
+    store.aiChatThreadHydrationDidLoadForTesting = { id in
       if id == cold.id { shardLoaded.fulfill() }
     }
     store.meetingReadyAutomationEnqueueDidResolveForTesting = { _ in
@@ -295,7 +295,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
     XCTAssertFalse(store.meetingReadyAutomationStatusText.contains("pending"))
     await fulfillment(of: [enqueueResolved], timeout: 2)
 
-    let hydrated = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == cold.id }))
+    let hydrated = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == cold.id }))
     XCTAssertEqual(hydrated.messages.first?.content, "existing history")
     XCTAssertEqual(hydrated.messages.filter {
       $0.role == .user && $0.content.contains("meeting-ready:meeting-id:deferred-launch")
@@ -321,8 +321,8 @@ final class MeetingReadyAutomationTests: XCTestCase {
     let gate = SuspendedMeetingTranscription()
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
-      openClawSendHandler: { messages, _, _, _ in
+      aiChatFallbackTranscriptURL: base.appendingPathComponent("fallback.json"),
+      aiChatSendHandler: { messages, _, _, _ in
         await sendRecorder.send(messages)
       },
       legacyDefaultsDomains: [],
@@ -350,7 +350,7 @@ final class MeetingReadyAutomationTests: XCTestCase {
     await importTask.value
 
     XCTAssertTrue(store.meetings.isEmpty)
-    XCTAssertFalse(store.openClawChatThreads.contains(where: { thread in
+    XCTAssertFalse(store.aiChatThreads.contains(where: { thread in
       thread.messages.contains(where: { $0.content.contains("Alpha planning") })
     }))
     let sendCount = await sendRecorder.callCount()

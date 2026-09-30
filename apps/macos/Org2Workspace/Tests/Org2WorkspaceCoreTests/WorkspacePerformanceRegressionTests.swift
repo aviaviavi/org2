@@ -134,7 +134,7 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
   }
 
   func testLiveChatAppendsLargeCodexTokenBurstWithoutCumulativeReplacement() {
-    let liveState = OpenClawChatLiveState()
+    let liveState = AIChatLiveState()
     let threadID = UUID()
     let tokenCount = 10_000
 
@@ -146,7 +146,7 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
   }
 
   func testLiveChatMultiMegabyteStreamsKeepFlushAndPresentationWorkBounded() {
-    let liveState = OpenClawChatLiveState()
+    let liveState = AIChatLiveState()
     let threadID = UUID()
     let chunk = "abcdefghijklmno🙂"
     let chunkCount = 65_536
@@ -166,22 +166,22 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertTrue(snapshot.isReasoningTruncated)
     XCTAssertEqual(
       snapshot.streamingReply.count,
-      OpenClawChatLiveState.maximumPresentationCharacterCount
+      AIChatLiveState.maximumPresentationCharacterCount
     )
     XCTAssertEqual(
       snapshot.reasoning.count,
-      OpenClawChatLiveState.maximumPresentationCharacterCount
+      AIChatLiveState.maximumPresentationCharacterCount
     )
     XCTAssertLessThanOrEqual(
       liveState.retainedPresentationCharacterCountForTesting(threadID),
-      OpenClawChatLiveState.maximumPresentationCharacterCount * 2
+      AIChatLiveState.maximumPresentationCharacterCount * 2
     )
     XCTAssertLessThanOrEqual(
       liveState.maximumPresentationCharactersVisitedPerSnapshotForTesting,
-      OpenClawChatLiveState.maximumPresentationCharacterCount * 2
+      AIChatLiveState.maximumPresentationCharacterCount * 2
     )
     let maximumExpectedSegmentCount =
-      expectedCharacterCount / OpenClawChatLiveState.streamSegmentTargetCharacterCountForTesting + 1
+      expectedCharacterCount / AIChatLiveState.streamSegmentTargetCharacterCountForTesting + 1
     XCTAssertLessThanOrEqual(
       liveState.streamingSegmentCountForTesting(threadID),
       maximumExpectedSegmentCount
@@ -210,7 +210,7 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     XCTAssertEqual(liveState.reasoning(for: threadID), "new reasoning tail")
     XCTAssertEqual(
       liveState.presentationSnapshot(for: threadID),
-      OpenClawLivePresentationSnapshot(
+      AIChatLivePresentationSnapshot(
         streamingReply: "replacement🙂 tail",
         reasoning: "new reasoning tail",
         isStreamingReplyTruncated: false,

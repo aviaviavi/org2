@@ -316,7 +316,7 @@ final class WorkspaceDocumentMutationLaneTests: XCTestCase {
       "runOrgCrypt",
       "persistGoogleDrivePublication",
       "saveExternalThreadToOrg2",
-      "applyOpenClawLocalEditReplacements",
+      "applyAIChatLocalEditReplacements",
       "encryptOrgCryptSubtreesAfterExplicitSave",
     ] {
       let body = try XCTUnwrap(functionBody(named: functionName, in: source))

@@ -270,7 +270,7 @@ struct OrgRenderedEntryView: View, Equatable {
         Task { await store.moveBlock(block, direction: direction) }
       },
       askAI: {
-        store.askOpenClawAboutBlock(block)
+        store.askAIChatAboutBlock(block)
       },
       duplicate: {
         Task { await store.duplicateBlock(block) }
@@ -1391,13 +1391,13 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private func openRenderedLink(_ url: URL) {
-    if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
+    if let reference = AIChatFileReference.fromDeepLinkURL(url) {
       openOrgFileReference(reference)
       return
     }
 
     if url.isFileURL {
-      openOrgFileReference(OpenClawFileReference(path: url.path, line: nil))
+      openOrgFileReference(AIChatFileReference(path: url.path, line: nil))
       return
     }
 

@@ -6,12 +6,12 @@ import XCTest
 @MainActor
 final class AIChatDocumentMediaTests: XCTestCase {
   func testChatAttachmentsUseRevisionedResourceURLsOnlyForImages() throws {
-    let image = OpenClawChatAttachment(
+    let image = AIChatAttachment(
       fileName: "Screenshot.png",
       mimeType: "image/png",
       data: Data([1, 2, 3])
     )
-    let text = OpenClawChatAttachment(
+    let text = AIChatAttachment(
       fileName: "notes.txt",
       mimeType: "text/plain",
       data: Data("notes".utf8)

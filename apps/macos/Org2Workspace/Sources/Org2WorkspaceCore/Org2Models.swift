@@ -1579,15 +1579,15 @@ public struct SearchResultGroup: Identifiable, Hashable, Sendable {
   }
 }
 
-public enum OpenClawChatSearchMatchKind: String, Hashable, Sendable {
+public enum AIChatSearchMatchKind: String, Hashable, Sendable {
   case threadTitle
   case messageText
 }
 
-public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
+public struct AIChatSearchResult: Identifiable, Hashable, Sendable {
   public let threadID: UUID
   public let messageID: UUID?
-  public let matchKind: OpenClawChatSearchMatchKind
+  public let matchKind: AIChatSearchMatchKind
   public let title: String
   public let snippet: String
   public let messageCount: Int
@@ -1596,7 +1596,7 @@ public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   public init(
     threadID: UUID,
     messageID: UUID?,
-    matchKind: OpenClawChatSearchMatchKind,
+    matchKind: AIChatSearchMatchKind,
     title: String,
     snippet: String,
     messageCount: Int,
@@ -1712,11 +1712,11 @@ public struct WorkspaceAgentWorkSearchResult: Identifiable, Hashable, Sendable {
 public enum WorkspaceTextSearchItem: Identifiable, Hashable, Sendable {
   case activeTodo(SearchResult)
   case file(CorpusFile)
-  case chatThread(OpenClawChatSearchResult)
+  case chatThread(AIChatSearchResult)
   case agentWork(WorkspaceAgentWorkSearchResult)
   case page(OrgRoamNodeReference)
   case entry(SearchResult)
-  case chatMessage(OpenClawChatSearchResult)
+  case chatMessage(AIChatSearchResult)
   case corpusText(SearchResult)
 
   public var id: String {
@@ -2117,7 +2117,7 @@ public enum EntrySourceMode: String, CaseIterable, Identifiable, Sendable {
   }
 }
 
-public struct OpenClawThread: Identifiable, Hashable, Sendable {
+public struct AIChatThreadRecord: Identifiable, Hashable, Sendable {
   public let title: String
   public let file: String
   public let line: Int
@@ -2291,7 +2291,7 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
   }
 
   /// A short caption such as "iPhone via press · ran on press".
-  public func caption(role: OpenClawChatMessage.Role) -> String? {
+  public func caption(role: AIChatMessage.Role) -> String? {
     var parts: [String] = []
     if role == .user {
       let client: String? = {
@@ -2324,7 +2324,7 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
+public struct AIChatMessage: Identifiable, Hashable, Codable, Sendable {
   public enum Role: String, Codable, Sendable {
     case user
     case assistant
@@ -2347,10 +2347,10 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let role: Role
   public let content: String
-  public let attachments: [OpenClawChatAttachment]
+  public let attachments: [AIChatAttachment]
   public let createdAt: Date
-  public let changeSummary: OpenClawCorpusChangeSummary?
-  public let responseTrace: OpenClawResponseTrace?
+  public let changeSummary: AIChatCorpusChangeSummary?
+  public let responseTrace: AIChatResponseTrace?
   public let sendFailure: String?
   public let deliveryStatus: DeliveryStatus
   public let deliveryKind: DeliveryKind
@@ -2371,10 +2371,10 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     id: UUID = UUID(),
     role: Role,
     content: String,
-    attachments: [OpenClawChatAttachment] = [],
+    attachments: [AIChatAttachment] = [],
     createdAt: Date = Date(),
-    changeSummary: OpenClawCorpusChangeSummary? = nil,
-    responseTrace: OpenClawResponseTrace? = nil,
+    changeSummary: AIChatCorpusChangeSummary? = nil,
+    responseTrace: AIChatResponseTrace? = nil,
     sendFailure: String? = nil,
     deliveryStatus: DeliveryStatus = .sent,
     deliveryKind: DeliveryKind = .turn,
@@ -2445,10 +2445,10 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     id = try container.decode(UUID.self, forKey: .id)
     role = try container.decode(Role.self, forKey: .role)
     content = try container.decode(String.self, forKey: .content)
-    attachments = try container.decodeIfPresent([OpenClawChatAttachment].self, forKey: .attachments) ?? []
+    attachments = try container.decodeIfPresent([AIChatAttachment].self, forKey: .attachments) ?? []
     createdAt = try container.decode(Date.self, forKey: .createdAt)
-    changeSummary = try container.decodeIfPresent(OpenClawCorpusChangeSummary.self, forKey: .changeSummary)
-    responseTrace = try container.decodeIfPresent(OpenClawResponseTrace.self, forKey: .responseTrace)
+    changeSummary = try container.decodeIfPresent(AIChatCorpusChangeSummary.self, forKey: .changeSummary)
+    responseTrace = try container.decodeIfPresent(AIChatResponseTrace.self, forKey: .responseTrace)
     sendFailure = try container.decodeIfPresent(String.self, forKey: .sendFailure)
     deliveryStatus = role == .user
       ? (try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus) ?? (sendFailure == nil ? .sent : .failed))
@@ -2494,8 +2494,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     provenance = try? container.decodeIfPresent(AIChatMessageProvenance.self, forKey: .provenance)
   }
 
-  public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  public func replacingSendFailure(_ nextSendFailure: String?) -> AIChatMessage {
+    AIChatMessage(
       id: id,
       role: role,
       content: content,
@@ -2524,8 +2524,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public func replacingDeliveryStatus(
     _ nextDeliveryStatus: DeliveryStatus,
     sendFailure nextSendFailure: String? = nil
-  ) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  ) -> AIChatMessage {
+    AIChatMessage(
       id: id,
       role: role,
       content: content,
@@ -2551,8 +2551,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  public func replacingChangeSummary(_ nextChangeSummary: OpenClawCorpusChangeSummary?) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  public func replacingChangeSummary(_ nextChangeSummary: AIChatCorpusChangeSummary?) -> AIChatMessage {
+    AIChatMessage(
       id: id,
       role: role,
       content: content,
@@ -2578,8 +2578,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  public func replacingProvenance(_ nextProvenance: AIChatMessageProvenance?) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  public func replacingProvenance(_ nextProvenance: AIChatMessageProvenance?) -> AIChatMessage {
+    AIChatMessage(
       id: id,
       role: role,
       content: content,
@@ -2605,8 +2605,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  func replacingAttachments(_ nextAttachments: [OpenClawChatAttachment]) -> OpenClawChatMessage {
-    OpenClawChatMessage(
+  func replacingAttachments(_ nextAttachments: [AIChatAttachment]) -> AIChatMessage {
+    AIChatMessage(
       id: id,
       role: role,
       content: content,
@@ -2633,15 +2633,15 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
+public struct AIChatResponseTrace: Hashable, Codable, Sendable {
   public let reasoning: String
-  public let activities: [OpenClawRunActivity]
+  public let activities: [AIChatRunActivity]
   public let usage: AIChatTokenUsage?
   public let context: OpenOrgContextTelemetry?
 
   public init(
     reasoning: String = "",
-    activities: [OpenClawRunActivity] = [],
+    activities: [AIChatRunActivity] = [],
     usage: AIChatTokenUsage? = nil,
     context: OpenOrgContextTelemetry? = nil
   ) {
@@ -2659,7 +2659,7 @@ public struct OpenClawResponseTrace: Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable {
+public struct AIChatAttachment: Identifiable, Hashable, Codable, Sendable {
   public enum DataError: LocalizedError, Sendable {
     case missingBlob(String)
     case unreadableBlob(String)
@@ -2799,7 +2799,7 @@ public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable 
     "data:\(mimeType);base64,\(try loadData().base64EncodedString())"
   }
 
-  public func hasSameContent(as other: OpenClawChatAttachment) -> Bool {
+  public func hasSameContent(as other: AIChatAttachment) -> Bool {
     fileName == other.fileName
       && storedByteCount == other.storedByteCount
       && contentDigest == other.contentDigest
@@ -2816,7 +2816,7 @@ public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable 
   }
 }
 
-public struct OpenClawResourceReference: Hashable, Codable, Sendable {
+public struct AIChatResourceReference: Hashable, Codable, Sendable {
   public enum Kind: String, Hashable, Codable, Sendable {
     case heading
     case file
@@ -2846,7 +2846,7 @@ public struct OpenClawResourceReference: Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
+public struct AIChatPendingTurn: Hashable, Codable, Sendable {
   public let userMessageID: UUID
   public let runID: String
   /// Stable client-generated key used to correlate `chat.history` after the
@@ -2887,8 +2887,8 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
     idempotencyKey ?? runID
   }
 
-  public func replacingAcceptedRunID(_ acceptedRunID: String) -> OpenClawPendingTurn {
-    OpenClawPendingTurn(
+  public func replacingAcceptedRunID(_ acceptedRunID: String) -> AIChatPendingTurn {
+    AIChatPendingTurn(
       userMessageID: userMessageID,
       runID: acceptedRunID,
       idempotencyKey: historyCorrelationID,
@@ -2902,7 +2902,7 @@ public struct OpenClawPendingTurn: Hashable, Codable, Sendable {
   }
 }
 
-public enum OpenClawAutoSettleInterval: String, CaseIterable, Identifiable, Codable, Sendable {
+public enum AIChatAutoSettleInterval: String, CaseIterable, Identifiable, Codable, Sendable {
   case never
   case oneDay
   case threeDays
@@ -2946,15 +2946,15 @@ public enum OpenClawAutoSettleInterval: String, CaseIterable, Identifiable, Coda
   }
 }
 
-public struct OpenClawThreadSettlementSettings: Hashable, Codable, Sendable {
+public struct AIChatThreadSettlementSettings: Hashable, Codable, Sendable {
   public let autoSettleAfterSeconds: TimeInterval?
 
   public init(autoSettleAfterSeconds: TimeInterval? = nil) {
     self.autoSettleAfterSeconds = autoSettleAfterSeconds.flatMap { $0 > 0 ? $0 : nil }
   }
 
-  public var interval: OpenClawAutoSettleInterval {
-    OpenClawAutoSettleInterval(seconds: autoSettleAfterSeconds)
+  public var interval: AIChatAutoSettleInterval {
+    AIChatAutoSettleInterval(seconds: autoSettleAfterSeconds)
   }
 }
 
@@ -3696,7 +3696,7 @@ public struct AIChatRoomModelSelection: Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
+public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
   public let createdAt: Date
@@ -3709,7 +3709,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let runtimeThreadIDsByDestination: [String: String]
   public let model: String?
   public let reasoningEffort: String?
-  public let messages: [OpenClawChatMessage]
+  public let messages: [AIChatMessage]
   public let storedMessageCount: Int?
   public let storedHasUnresolvedLatestDelivery: Bool?
   public let storedLatestDeliveryNeedsAttention: Bool?
@@ -3717,8 +3717,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let isArchived: Bool
   public let settledAt: Date?
   public let unreadMessageCount: Int
-  public let resource: OpenClawResourceReference?
-  public let pendingTurn: OpenClawPendingTurn?
+  public let resource: AIChatResourceReference?
+  public let pendingTurn: AIChatPendingTurn?
   public let isSharedRoom: Bool
   public let roomAudience: AIChatAudience
   public let roomModels: AIChatRoomModelSelection
@@ -3737,7 +3737,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     runtimeThreadIDsByDestination: [String: String] = [:],
     model: String? = nil,
     reasoningEffort: String? = nil,
-    messages: [OpenClawChatMessage] = [],
+    messages: [AIChatMessage] = [],
     storedMessageCount: Int? = nil,
     storedHasUnresolvedLatestDelivery: Bool? = nil,
     storedLatestDeliveryNeedsAttention: Bool? = nil,
@@ -3745,8 +3745,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     isArchived: Bool = false,
     settledAt: Date? = nil,
     unreadMessageCount: Int = 0,
-    resource: OpenClawResourceReference? = nil,
-    pendingTurn: OpenClawPendingTurn? = nil,
+    resource: AIChatResourceReference? = nil,
+    pendingTurn: AIChatPendingTurn? = nil,
     isSharedRoom: Bool = false,
     roomAudience: AIChatAudience = .thread,
     roomModels: AIChatRoomModelSelection = AIChatRoomModelSelection(),
@@ -3870,7 +3870,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       ?? legacyRuntimeThreadIDsByDestination
     model = try container.decodeIfPresent(String.self, forKey: .model)
     reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
-    messages = try container.decodeIfPresent([OpenClawChatMessage].self, forKey: .messages) ?? []
+    messages = try container.decodeIfPresent([AIChatMessage].self, forKey: .messages) ?? []
     storedMessageCount = try container.decodeIfPresent(Int.self, forKey: .storedMessageCount)
     storedHasUnresolvedLatestDelivery = try container.decodeIfPresent(
       Bool.self,
@@ -3884,8 +3884,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     settledAt = try container.decodeIfPresent(Date.self, forKey: .settledAt) ?? (isArchived ? updatedAt : nil)
     unreadMessageCount = max(0, try container.decodeIfPresent(Int.self, forKey: .unreadMessageCount) ?? 0)
-    resource = try container.decodeIfPresent(OpenClawResourceReference.self, forKey: .resource)
-    pendingTurn = try container.decodeIfPresent(OpenClawPendingTurn.self, forKey: .pendingTurn)
+    resource = try container.decodeIfPresent(AIChatResourceReference.self, forKey: .resource)
+    pendingTurn = try container.decodeIfPresent(AIChatPendingTurn.self, forKey: .pendingTurn)
     isSharedRoom = try container.decodeIfPresent(Bool.self, forKey: .isSharedRoom) ?? false
     roomAudience = isSharedRoom
       ? (try container.decodeIfPresent(AIChatAudience.self, forKey: .roomAudience) ?? .thread)
@@ -3938,7 +3938,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     return audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
   }
 
-  public func replacingOpenClawChatMetadata(
+  public func replacingAIChatMetadata(
     agentRef nextAgentRef: String?? = nil,
     title nextTitle: String? = nil,
     runtime nextRuntime: AIChatRuntime? = nil,
@@ -3956,10 +3956,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     roomModels nextRoomModels: AIChatRoomModelSelection? = nil,
     roomDestinationIDs nextRoomDestinationIDs: [String]? = nil,
     roomModelsByDestination nextRoomModelsByDestination: [String: String]? = nil
-  ) -> OpenClawChatThread {
+  ) -> AIChatThread {
     let archived = nextIsArchived ?? isArchived
     let settlement = nextSettledAt ?? (archived ? settledAt : nil)
-    return OpenClawChatThread(
+    return AIChatThread(
       id: id,
       title: nextTitle ?? title,
       createdAt: createdAt,
@@ -3990,8 +3990,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  public func replacingMessages(_ nextMessages: [OpenClawChatMessage]) -> OpenClawChatThread {
-    OpenClawChatThread(
+  public func replacingMessages(_ nextMessages: [AIChatMessage]) -> AIChatThread {
+    AIChatThread(
       id: id,
       title: title,
       createdAt: createdAt,
@@ -4022,8 +4022,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  public func replacingPendingTurn(_ nextPendingTurn: OpenClawPendingTurn?) -> OpenClawChatThread {
-    OpenClawChatThread(
+  public func replacingPendingTurn(_ nextPendingTurn: AIChatPendingTurn?) -> AIChatThread {
+    AIChatThread(
       id: id,
       title: title,
       createdAt: createdAt,
@@ -4067,8 +4067,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       ?? (self.destinationID == destinationID ? runtimeThreadID : nil)
   }
 
-  func metadataOnly() -> OpenClawChatThread {
-    OpenClawChatThread(
+  func metadataOnly() -> AIChatThread {
+    AIChatThread(
       id: id,
       title: title,
       createdAt: createdAt,
@@ -4099,8 +4099,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  func hydrating(messages nextMessages: [OpenClawChatMessage]) -> OpenClawChatThread {
-    OpenClawChatThread(
+  func hydrating(messages nextMessages: [AIChatMessage]) -> AIChatThread {
+    AIChatThread(
       id: id,
       title: title,
       createdAt: createdAt,
@@ -4131,9 +4131,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     )
   }
 
-  func replacingUpdatedAt(_ nextUpdatedAt: Date) -> OpenClawChatThread {
+  func replacingUpdatedAt(_ nextUpdatedAt: Date) -> AIChatThread {
     guard nextUpdatedAt != updatedAt else { return self }
-    return OpenClawChatThread(
+    return AIChatThread(
       id: id,
       title: title,
       createdAt: createdAt,
@@ -4165,10 +4165,10 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawCorpusChangeSummary: Hashable, Codable, Sendable {
-  public let files: [OpenClawCorpusFileChange]
+public struct AIChatCorpusChangeSummary: Hashable, Codable, Sendable {
+  public let files: [AIChatCorpusFileChange]
 
-  public init(files: [OpenClawCorpusFileChange]) {
+  public init(files: [AIChatCorpusFileChange]) {
     self.files = files
   }
 
@@ -4196,7 +4196,7 @@ public struct OpenClawCorpusChangeSummary: Hashable, Codable, Sendable {
   }
 }
 
-public struct OpenClawCorpusFileChange: Identifiable, Hashable, Codable, Sendable {
+public struct AIChatCorpusFileChange: Identifiable, Hashable, Codable, Sendable {
   public enum Status: String, Hashable, Codable, Sendable {
     case created
     case modified
@@ -4263,7 +4263,7 @@ public struct OpenClawChatCompletionPayload: Decodable, Sendable {
   }
 }
 
-public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
+public struct AIChatFileReference: Identifiable, Hashable, Sendable {
   public static let deepLinkScheme = "org2-workspace"
 
   public let path: String
@@ -4285,12 +4285,12 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
     return "\(title):\(line)"
   }
 
-  public static func extract(from text: String, limit: Int = 8) -> [OpenClawFileReference] {
+  public static func extract(from text: String, limit: Int = 8) -> [AIChatFileReference] {
     let pattern = #"(?<![A-Za-z0-9_./~-])((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md|csv|pdf))(?:(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?)?"#
     guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
     let nsText = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-    var references: [OpenClawFileReference] = []
+    var references: [AIChatFileReference] = []
     var seen = Set<String>()
 
     for match in matches {
@@ -4303,7 +4303,7 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
         line = nil
       }
 
-      let reference = OpenClawFileReference(path: rawPath, line: line)
+      let reference = AIChatFileReference(path: rawPath, line: line)
       guard !reference.path.isEmpty, seen.insert(reference.id).inserted else { continue }
       references.append(reference)
     }
@@ -4311,7 +4311,7 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
     return references
   }
 
-  public static func fromLinkTarget(_ raw: String) -> OpenClawFileReference? {
+  public static func fromLinkTarget(_ raw: String) -> AIChatFileReference? {
     let target = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !target.isEmpty else { return nil }
 
@@ -4323,7 +4323,7 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
       ) != nil
     guard isFileTarget else { return nil }
 
-    return OpenClawFileReference(path: target, line: nil)
+    return AIChatFileReference(path: target, line: nil)
   }
 
   public var deepLinkURL: URL? {
@@ -4339,13 +4339,13 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
     return components.url
   }
 
-  public static func fromDeepLinkURL(_ url: URL) -> OpenClawFileReference? {
+  public static func fromDeepLinkURL(_ url: URL) -> AIChatFileReference? {
     guard url.scheme == deepLinkScheme, url.host == "open-file" else { return nil }
     let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     let path = components?.queryItems?.first(where: { $0.name == "path" })?.value
     let line = components?.queryItems?.first(where: { $0.name == "line" })?.value.flatMap(Int.init)
     guard let path, !path.isEmpty else { return nil }
-    return OpenClawFileReference(path: path, line: line)
+    return AIChatFileReference(path: path, line: line)
   }
 
   private static func cleanPathAndLine(_ raw: String) -> (path: String, line: Int?) {
@@ -4400,8 +4400,8 @@ public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
     "\(file):\(line):\(idValue ?? title)"
   }
 
-  public var fileReference: OpenClawFileReference {
-    OpenClawFileReference(path: file, line: line)
+  public var fileReference: AIChatFileReference {
+    AIChatFileReference(path: file, line: line)
   }
 
   public var preferredLinkTarget: String {
@@ -4414,9 +4414,9 @@ public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
 
 public struct OrgRoamResolvedLink: Equatable, Sendable {
   public let title: String
-  public let fileReference: OpenClawFileReference
+  public let fileReference: AIChatFileReference
 
-  public init(title: String, fileReference: OpenClawFileReference) {
+  public init(title: String, fileReference: AIChatFileReference) {
     self.title = title
     self.fileReference = fileReference
   }
@@ -4634,7 +4634,7 @@ public enum OrgInlineSpan: Equatable, Sendable {
   case strike(String)
   case color(OrgColorBinding)
   case timestamp(OrgInlineTimestamp)
-  case link(label: String, target: String, fileReference: OpenClawFileReference?)
+  case link(label: String, target: String, fileReference: AIChatFileReference?)
 }
 
 public struct OrgColorValue: Equatable, Sendable {
@@ -5254,7 +5254,7 @@ public struct OrgEditableInlineLinkSet: Equatable, Sendable {
         label = ns.substring(with: match.range(at: labelCapture))
           .trimmingCharacters(in: .whitespacesAndNewlines)
       } else if kind == .fileReference,
-                let reference = OpenClawFileReference.fromLinkTarget(target) {
+                let reference = AIChatFileReference.fromLinkTarget(target) {
         label = reference.displayTitle
       } else {
         label = target
@@ -5592,7 +5592,7 @@ public enum OrgInlineParser {
     }
     let expandedTarget = linkResolver.expandedLinkTarget(target)
     let label = parts.dropFirst().joined(separator: "][").trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolved = OpenClawFileReference.fromLinkTarget(expandedTarget).map {
+    let resolved = AIChatFileReference.fromLinkTarget(expandedTarget).map {
       OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
     } ?? linkResolver.resolve(target: expandedTarget)
     let display: String
@@ -5628,7 +5628,7 @@ public enum OrgInlineParser {
     let target = String(raw[targetStart..<targetEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !label.isEmpty, !target.isEmpty else { return nil }
     let expandedTarget = linkResolver.expandedLinkTarget(target)
-    let resolved = OpenClawFileReference.fromLinkTarget(expandedTarget).map {
+    let resolved = AIChatFileReference.fromLinkTarget(expandedTarget).map {
       OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
     } ?? linkResolver.resolve(target: expandedTarget)
     return (
@@ -5729,7 +5729,7 @@ public enum OrgInlineParser {
     } else {
       line = nil
     }
-    let reference = OpenClawFileReference(path: rawPath, line: line)
+    let reference = AIChatFileReference(path: rawPath, line: line)
     let display = reference.displayTitle
     let end = raw.index(cursor, offsetBy: match.range.length)
     return (.link(label: display, target: reference.path, fileReference: reference), end)
@@ -6718,7 +6718,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   case assigned(AssignedWorkItem)
   case search(SearchResult)
   case backlink(BacklinkItem)
-  case openClaw(OpenClawThread)
+  case aiChatThreadRecord(AIChatThreadRecord)
   case meeting(MeetingWorkspaceItem)
 
   public var title: String {
@@ -6727,7 +6727,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .assigned(let item): Org2Display.cleanInline(item.headline)
     case .search(let result): Org2Display.cleanInline(result.title)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.srcTitle)
-    case .openClaw(let thread): Org2Display.cleanInline(thread.title)
+    case .aiChatThreadRecord(let thread): Org2Display.cleanInline(thread.title)
     case .meeting(let meeting): Org2Display.cleanInline(meeting.title)
     }
   }
@@ -6738,7 +6738,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .assigned(let item): [item.todo, item.status, item.assignee].compactMap { $0 }.joined(separator: " ")
     case .search(let result): Org2Display.cleanInline(result.snippet)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.context)
-    case .openClaw(let thread): thread.zone
+    case .aiChatThreadRecord(let thread): thread.zone
     case .meeting(let meeting):
       [meeting.recordedAt, meeting.transcriptionStatus].compactMap { $0 }.joined(separator: " ")
     }
@@ -6750,7 +6750,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .assigned(let item): item.file
     case .search(let result): result.file
     case .backlink(let backlink): backlink.file
-    case .openClaw(let thread): thread.file
+    case .aiChatThreadRecord(let thread): thread.file
     case .meeting(let meeting): meeting.file
     }
   }
@@ -6761,7 +6761,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .assigned(let item): item.lineForEditor
     case .search(let result): result.lineForEditor
     case .backlink(let backlink): backlink.lineForEditor
-    case .openClaw(let thread): thread.lineForEditor
+    case .aiChatThreadRecord(let thread): thread.lineForEditor
     case .meeting(let meeting): meeting.lineForEditor
     }
   }
@@ -6772,7 +6772,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .assigned: nil
     case .search(let result): result.idValue
     case .backlink(let backlink): backlink.srcId
-    case .openClaw(let thread): thread.idValue
+    case .aiChatThreadRecord(let thread): thread.idValue
     case .meeting(let meeting): meeting.idValue
     }
   }

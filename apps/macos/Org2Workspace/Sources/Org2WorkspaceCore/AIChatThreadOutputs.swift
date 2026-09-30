@@ -103,7 +103,7 @@ struct AIChatThreadOutputs: Equatable, Sendable {
   /// Builds outputs from messages only (no file system access). Call
   /// `resolvingFileStatus()` afterwards to add existence, siblings and staleness.
   static func derive(
-    messages: [OpenClawChatMessage],
+    messages: [AIChatMessage],
     corpusRoot rawCorpusRoot: String?,
     remoteCorpusRoot rawRemoteRoot: String? = nil,
     homeDirectory rawHome: String = NSHomeDirectory()
@@ -113,7 +113,7 @@ struct AIChatThreadOutputs: Equatable, Sendable {
     let home = trimmed(rawHome)
     var files: [String: AIChatThreadOutputFile] = [:]
 
-    func record(_ path: String, message: OpenClawChatMessage, index: Int, update: (inout AIChatThreadOutputFile) -> Void) {
+    func record(_ path: String, message: AIChatMessage, index: Int, update: (inout AIChatThreadOutputFile) -> Void) {
       guard isOutputCandidate(path) else { return }
       var file = files[path] ?? AIChatThreadOutputFile(
         path: path, editCount: 0, linkCount: 0, wasCreated: false, wasDeleted: false,
@@ -298,7 +298,7 @@ struct AIChatThreadOutputs: Equatable, Sendable {
       with: " ",
       options: .regularExpression
     )
-    result.append(contentsOf: OpenClawFileReference.extract(from: withoutURLs, limit: 200).map(\.path))
+    result.append(contentsOf: AIChatFileReference.extract(from: withoutURLs, limit: 200).map(\.path))
     return result
   }
 

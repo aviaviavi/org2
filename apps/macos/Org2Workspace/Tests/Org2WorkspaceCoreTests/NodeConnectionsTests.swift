@@ -14,7 +14,7 @@ final class NodeConnectionsTests: XCTestCase {
     let defaultsName = "org2-connections-swift-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
     defer { defaults.removePersistentDomain(forName: defaultsName) }
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults, openClawTranscriptURL: root.appendingPathComponent("chat.json"))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults, aiChatTranscriptURL: root.appendingPathComponent("chat.json"))
     store.setWorkspaceRealtimeRefreshActive(false)
     store.setCorpusRoot(root, persistsDefault: false)
     let payload: NodeConnectionsPayload = try await store.cli.runJSON([

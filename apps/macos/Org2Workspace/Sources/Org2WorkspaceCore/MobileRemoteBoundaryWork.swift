@@ -26,7 +26,7 @@ public struct MobileRemoteMessagePreview: Equatable, Sendable {
   }
 
   public static func make(
-    from message: OpenClawChatMessage,
+    from message: AIChatMessage,
     characterLimit: Int
   ) -> MobileRemoteMessagePreview? {
     let bounded = unicodeSafePrefix(
@@ -177,7 +177,7 @@ public struct MobileRemoteThreadDetailProjectionContext: Sendable {
   public let activeDestinationName: String?
   public let streamingReply: String
   public let reasoning: String
-  public let activities: [OpenClawRunActivity]
+  public let activities: [AIChatRunActivity]
   public let connectionState: String
   public let connectionDetail: String?
 
@@ -186,7 +186,7 @@ public struct MobileRemoteThreadDetailProjectionContext: Sendable {
     activeDestinationName: String?,
     streamingReply: String,
     reasoning: String,
-    activities: [OpenClawRunActivity],
+    activities: [AIChatRunActivity],
     connectionState: String,
     connectionDetail: String?
   ) {
@@ -202,7 +202,7 @@ public struct MobileRemoteThreadDetailProjectionContext: Sendable {
 
 public enum MobileRemoteThreadProjection {
   public static func list(
-    threads: [OpenClawChatThread],
+    threads: [AIChatThread],
     context: MobileRemoteThreadProjectionContext,
     projects: [MobileRemoteProjectSummary] = []
   ) -> MobileRemoteThreadList {
@@ -213,7 +213,7 @@ public enum MobileRemoteThreadProjection {
   }
 
   public static func detail(
-    thread: OpenClawChatThread,
+    thread: AIChatThread,
     context: MobileRemoteThreadDetailProjectionContext
   ) -> MobileRemoteThreadDetail {
     MobileRemoteThreadDetail(
@@ -259,11 +259,11 @@ public enum MobileRemoteThreadProjection {
   }
 
   public static func summary(
-    thread: OpenClawChatThread,
+    thread: AIChatThread,
     context: MobileRemoteThreadProjectionContext
   ) -> MobileRemoteThreadSummary {
     var latestPreview: MobileRemoteMessagePreview?
-    var latestAssistantMessage: OpenClawChatMessage?
+    var latestAssistantMessage: AIChatMessage?
     var latestAssistantPreview: MobileRemoteMessagePreview?
 
     for message in thread.messages.reversed() {
@@ -307,12 +307,12 @@ public enum MobileRemoteThreadProjection {
 
 public struct MobileRemotePreparedSendMessage: Sendable {
   public let content: String
-  public let attachments: [OpenClawChatAttachment]
+  public let attachments: [AIChatAttachment]
   public let delivery: String?
 
   public init(
     content: String,
-    attachments: [OpenClawChatAttachment],
+    attachments: [AIChatAttachment],
     delivery: String?
   ) {
     self.content = content
@@ -373,7 +373,7 @@ public struct MobileRemoteBackgroundWork: Sendable {
   }
 
   public func threadListResponse(
-    threads: [OpenClawChatThread],
+    threads: [AIChatThread],
     context: MobileRemoteThreadProjectionContext,
     projects: [MobileRemoteProjectSummary] = []
   ) async -> MobileRemoteHTTPResponse {
@@ -394,7 +394,7 @@ public struct MobileRemoteBackgroundWork: Sendable {
   }
 
   public func threadDetailResponse(
-    thread: OpenClawChatThread,
+    thread: AIChatThread,
     context: MobileRemoteThreadDetailProjectionContext
   ) async -> MobileRemoteHTTPResponse {
     let beforeWork = self.beforeWork
@@ -434,7 +434,7 @@ public struct MobileRemoteBackgroundWork: Sendable {
 
   private static func chatAttachments(
     from payloads: [MobileRemoteAttachment]
-  ) throws -> [OpenClawChatAttachment] {
+  ) throws -> [AIChatAttachment] {
     guard payloads.count <= 4 else {
       throw MobileRemoteSendMessagePreparationError.tooManyPhotos
     }
@@ -455,7 +455,7 @@ public struct MobileRemoteBackgroundWork: Sendable {
       guard !fileName.isEmpty else {
         throw MobileRemoteSendMessagePreparationError.unsupportedAttachment("Photo")
       }
-      return OpenClawChatAttachment(
+      return AIChatAttachment(
         fileName: fileName,
         mimeType: mimeType,
         data: payload.data

@@ -92,12 +92,12 @@ final class JSONCanvasTests: XCTestCase {
     let store = WorkspaceStore(
       cli: cli,
       defaults: defaults,
-      openClawTranscriptURL: root.appendingPathComponent(".test-state/chat.json"),
+      aiChatTranscriptURL: root.appendingPathComponent(".test-state/chat.json"),
       legacyDefaultsDomains: []
     )
     store.setWorkspaceRealtimeRefreshActive(false)
     await store.waitForAIChatTranscriptLoadForTesting()
-    store.openClawTranscriptSaverForTesting = {}
+    store.aiChatTranscriptSaverForTesting = {}
     store.setCorpusRoot(alias, persistsDefault: false)
     await store.waitForAIChatTranscriptLoadForTesting()
     XCTAssertEqual(store.corpusRoot?.path, alias.path)

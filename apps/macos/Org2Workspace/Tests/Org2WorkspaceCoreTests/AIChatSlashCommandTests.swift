@@ -3,9 +3,9 @@ import XCTest
 @testable import Org2WorkspaceCore
 
 private actor SlashCommandRequestRecorder {
-  private(set) var messages: [OpenClawChatMessage] = []
+  private(set) var messages: [AIChatMessage] = []
 
-  func record(_ messages: [OpenClawChatMessage]) -> String {
+  func record(_ messages: [AIChatMessage]) -> String {
     self.messages = messages
     return "Done"
   }
@@ -28,9 +28,9 @@ private final class SlashDiscoveryThreadRecorder: @unchecked Sendable {
   }
 }
 
-final class OpenClawSlashCommandTests: XCTestCase {
+final class AIChatSlashCommandTests: XCTestCase {
   func testParsesKnownCommandAndArguments() {
-    guard case .command(let command, let arguments) = OpenClawSlashCommands.parse("/search project atlas") else {
+    guard case .command(let command, let arguments) = AIChatSlashCommands.parse("/search project atlas") else {
       return XCTFail("Expected a command")
     }
     XCTAssertEqual(command.name, "search")
@@ -38,20 +38,20 @@ final class OpenClawSlashCommandTests: XCTestCase {
   }
 
   func testEscapedSlashBecomesOrdinaryMessage() {
-    XCTAssertEqual(OpenClawSlashCommands.parse("//help"), .message("/help"))
+    XCTAssertEqual(AIChatSlashCommands.parse("//help"), .message("/help"))
   }
 
   func testUnknownCommandIsNotOrdinaryMessage() {
-    XCTAssertEqual(OpenClawSlashCommands.parse("/does-not-exist"), .unknown("does-not-exist"))
+    XCTAssertEqual(AIChatSlashCommands.parse("/does-not-exist"), .unknown("does-not-exist"))
   }
 
   func testSuggestionsNarrowByPrefix() {
-    XCTAssertEqual(OpenClawSlashCommands.suggestions(for: "/sp").map(\.name), ["spellcheck"])
-    XCTAssertTrue(OpenClawSlashCommands.suggestions(for: "/search notes").isEmpty)
+    XCTAssertEqual(AIChatSlashCommands.suggestions(for: "/sp").map(\.name), ["spellcheck"])
+    XCTAssertTrue(AIChatSlashCommands.suggestions(for: "/search notes").isEmpty)
   }
 
   func testPublishDocumentCommandOpensTheNativePublishingSurface() {
-    guard case .command(let command, let arguments) = OpenClawSlashCommands.parse("/publish document") else {
+    guard case .command(let command, let arguments) = AIChatSlashCommands.parse("/publish document") else {
       return XCTFail("Expected the publish command")
     }
     XCTAssertEqual(command.name, "publish")
@@ -61,9 +61,9 @@ final class OpenClawSlashCommandTests: XCTestCase {
   }
 
   func testCatalogKeepsAgentContextInternal() {
-    XCTAssertFalse(OpenClawSlashCommands.all.map(\.name).contains("context"))
-    XCTAssertTrue(OpenClawSlashCommands.all.first(where: { $0.name == "brief" })?.isAgentAssisted == true)
-    XCTAssertTrue(OpenClawSlashCommands.all.first(where: { $0.name == "lint" })?.isAgentAssisted == false)
+    XCTAssertFalse(AIChatSlashCommands.all.map(\.name).contains("context"))
+    XCTAssertTrue(AIChatSlashCommands.all.first(where: { $0.name == "brief" })?.isAgentAssisted == true)
+    XCTAssertTrue(AIChatSlashCommands.all.first(where: { $0.name == "lint" })?.isAgentAssisted == false)
   }
 
   @MainActor
@@ -75,19 +75,19 @@ final class OpenClawSlashCommandTests: XCTestCase {
     let recorder = SlashCommandRequestRecorder()
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
-      openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in await recorder.record(messages) }
     )
 
-    store.submitOpenClawComposerInput(text: "/wat")
+    store.submitAIChatComposerInput(text: "/wat")
     let deadline = Date().addingTimeInterval(3)
-    while store.openClawMessages.count < 2, Date() < deadline {
+    while store.aiChatMessages.count < 2, Date() < deadline {
       try await Task.sleep(for: .milliseconds(20))
     }
 
-    XCTAssertEqual(store.openClawMessages.map(\.role), [.user, .assistant])
-    XCTAssertEqual(store.openClawMessages.first?.content, "/wat")
-    XCTAssertEqual(store.openClawMessages.last?.content, "Done")
+    XCTAssertEqual(store.aiChatMessages.map(\.role), [.user, .assistant])
+    XCTAssertEqual(store.aiChatMessages.first?.content, "/wat")
+    XCTAssertEqual(store.aiChatMessages.last?.content, "Done")
     let requestMessages = await recorder.messages
     XCTAssertEqual(requestMessages.first?.content, "/wat")
   }
@@ -120,10 +120,10 @@ final class OpenClawSlashCommandTests: XCTestCase {
     XCTAssertEqual(commands[0].arguments, "<scope> [limit]")
     XCTAssertEqual(commands[0].origin, .openClaw)
     XCTAssertEqual(
-      OpenClawSlashCommands.suggestions(for: "/tr", gatewayCommands: commands).map(\.name),
+      AIChatSlashCommands.suggestions(for: "/tr", gatewayCommands: commands).map(\.name),
       ["triage"]
     )
-    guard case .command(let command, let arguments) = OpenClawSlashCommands.parse(
+    guard case .command(let command, let arguments) = AIChatSlashCommands.parse(
       "/tr all",
       gatewayCommands: commands
     ) else {
@@ -168,7 +168,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
     XCTAssertEqual(skills.first?.arguments, "[ARGS]")
     XCTAssertEqual(skills.first?.summary, "Set up a customer Scarf AI Slack agent channel.")
     XCTAssertEqual(
-      OpenClawSlashCommands.suggestions(
+      AIChatSlashCommands.suggestions(
         for: "/setup",
         gatewayCommands: [],
         corpusSkills: skills
@@ -176,14 +176,14 @@ final class OpenClawSlashCommandTests: XCTestCase {
       ["setup-scarf-slack-agent"]
     )
     XCTAssertTrue(
-      OpenClawSlashCommands.isGatewayCommand(
+      AIChatSlashCommands.isGatewayCommand(
         "/setup-scarf-slack-agent C123 scarf",
         gatewayCommands: [],
         corpusSkills: skills
       )
     )
     XCTAssertTrue(
-      OpenClawSlashCommands.helpText(
+      AIChatSlashCommands.helpText(
         gatewayCommands: [],
         corpusSkills: skills
       ).contains("Agent skills")
@@ -260,7 +260,7 @@ final class OpenClawSlashCommandTests: XCTestCase {
 
     XCTAssertTrue(skills.isEmpty)
     XCTAssertEqual(
-      OpenClawSlashCommands.parse("/org2", gatewayCommands: [], corpusSkills: skills),
+      AIChatSlashCommands.parse("/org2", gatewayCommands: [], corpusSkills: skills),
       .unknown("org2")
     )
   }
@@ -285,33 +285,33 @@ final class OpenClawSlashCommandTests: XCTestCase {
     let recorder = SlashCommandRequestRecorder()
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
-      openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in await recorder.record(messages) }
     )
     store.setCorpusRoot(root, persistsDefault: false)
     await store.waitForCorpusAgentSkillRefreshForTesting()
 
-    store.submitOpenClawComposerInput(text: "/setup-scarf-slack-agent C123 scarf")
+    store.submitAIChatComposerInput(text: "/setup-scarf-slack-agent C123 scarf")
     let deadline = Date().addingTimeInterval(3)
-    while store.openClawMessages.count < 2, Date() < deadline {
+    while store.aiChatMessages.count < 2, Date() < deadline {
       try await Task.sleep(for: .milliseconds(20))
     }
 
     XCTAssertEqual(store.corpusAgentSkillCommands.map(\.name), ["setup-scarf-slack-agent"])
-    XCTAssertEqual(store.openClawMessages.first?.content, "/setup-scarf-slack-agent C123 scarf")
+    XCTAssertEqual(store.aiChatMessages.first?.content, "/setup-scarf-slack-agent C123 scarf")
     let request = await recorder.messages
     XCTAssertTrue(request.first?.content.hasPrefix("/setup-scarf-slack-agent C123 scarf") == true)
     XCTAssertTrue(request.first?.content.contains("<org2-agent-skill name=\"setup-scarf-slack-agent\">") == true)
   }
 
   func testUnknownSlashCommandRequiresTheGatewayButEscapedSlashDoesNot() {
-    XCTAssertTrue(OpenClawSlashCommands.isGatewayCommand("/new-plugin-command", gatewayCommands: []))
-    XCTAssertFalse(OpenClawSlashCommands.isGatewayCommand("//new-plugin-command", gatewayCommands: []))
-    XCTAssertFalse(OpenClawSlashCommands.isGatewayCommand("/agenda", gatewayCommands: []))
+    XCTAssertTrue(AIChatSlashCommands.isGatewayCommand("/new-plugin-command", gatewayCommands: []))
+    XCTAssertFalse(AIChatSlashCommands.isGatewayCommand("//new-plugin-command", gatewayCommands: []))
+    XCTAssertFalse(AIChatSlashCommands.isGatewayCommand("/agenda", gatewayCommands: []))
   }
 
   func testGatewaySlashCommandSkipsWorkspaceContextEnvelope() {
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: "/tmp/org2",
       remoteCorpusRoot: "/workspace/org2",
       selectedSurface: "OpenClaw Chat",
@@ -353,17 +353,17 @@ final class OpenClawSlashCommandTests: XCTestCase {
     let recorder = SlashCommandRequestRecorder()
     let store = WorkspaceStore(
       cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
-      openClawTranscriptURL: root.appendingPathComponent("chat.json"),
-      openClawSendHandler: { messages, _, _, _ in await recorder.record(messages) }
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in await recorder.record(messages) }
     )
 
-    store.submitOpenClawComposerInput(text: "/brief")
+    store.submitAIChatComposerInput(text: "/brief")
     let deadline = Date().addingTimeInterval(3)
-    while store.openClawMessages.count < 2, Date() < deadline {
+    while store.aiChatMessages.count < 2, Date() < deadline {
       try await Task.sleep(for: .milliseconds(20))
     }
 
-    XCTAssertEqual(store.openClawMessages.first?.content, "/brief")
+    XCTAssertEqual(store.aiChatMessages.first?.content, "/brief")
     let request = await recorder.messages
     XCTAssertEqual(request.first?.content.hasPrefix("/brief\n\nCreate a concise, cited brief"), true)
   }

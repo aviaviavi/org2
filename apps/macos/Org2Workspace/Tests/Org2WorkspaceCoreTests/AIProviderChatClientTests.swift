@@ -63,11 +63,11 @@ final class AIProviderChatClientTests: XCTestCase {
 
     let reply = try await client(.openAI, apiKey: "secret").send(
       messages: [
-        OpenClawChatMessage(
+        AIChatMessage(
           role: .user,
           content: "What is this?",
           attachments: [
-            OpenClawChatAttachment(
+            AIChatAttachment(
               fileName: "sample.png",
               mimeType: "image/png",
               data: Data([1, 2, 3])
@@ -100,7 +100,7 @@ final class AIProviderChatClientTests: XCTestCase {
     }
 
     let reply = try await client(.anthropic, apiKey: "anthropic-secret").send(
-      messages: [OpenClawChatMessage(role: .user, content: "Hello")],
+      messages: [AIChatMessage(role: .user, content: "Hello")],
       model: "claude-test",
       workspaceContext: emptyContext,
       destinationName: "Anthropic"
@@ -137,7 +137,7 @@ final class AIProviderChatClientTests: XCTestCase {
     }
 
     let reply = try await client(.openRouter, apiKey: "router-secret").send(
-      messages: [OpenClawChatMessage(role: .user, content: "Hello")],
+      messages: [AIChatMessage(role: .user, content: "Hello")],
       model: "vendor/model",
       workspaceContext: emptyContext,
       destinationName: "OpenRouter"
@@ -171,7 +171,7 @@ final class AIProviderChatClientTests: XCTestCase {
       messages: [.init(role: "user", content: "history only in continuation")],
       org2References: []
     )
-    let context = OpenClawWorkspaceContext(
+    let context = AIChatWorkspaceContext(
       localCorpusRoot: nil,
       remoteCorpusRoot: nil,
       selectedSurface: "AI Chat",
@@ -185,8 +185,8 @@ final class AIProviderChatClientTests: XCTestCase {
     )
     let result = try await client(.openAI, apiKey: "secret").sendResult(
       messages: [
-        OpenClawChatMessage(role: .user, content: "Earlier request"),
-        OpenClawChatMessage(role: .assistant, content: "Earlier reply"),
+        AIChatMessage(role: .user, content: "Earlier request"),
+        AIChatMessage(role: .assistant, content: "Earlier reply"),
       ],
       model: "gpt-test",
       workspaceContext: context,
@@ -215,7 +215,7 @@ final class AIProviderChatClientTests: XCTestCase {
     let client = try client(.ollama, apiKey: nil)
 
     let reply = try await client.send(
-      messages: [OpenClawChatMessage(role: .user, content: "Hello")],
+      messages: [AIChatMessage(role: .user, content: "Hello")],
       model: "gemma:test",
       workspaceContext: emptyContext,
       destinationName: "Ollama"
@@ -241,11 +241,11 @@ final class AIProviderChatClientTests: XCTestCase {
     do {
       _ = try await client.send(
         messages: [
-          OpenClawChatMessage(
+          AIChatMessage(
             role: .user,
             content: "Read this",
             attachments: [
-              OpenClawChatAttachment(
+              AIChatAttachment(
                 fileName: "report.pdf",
                 mimeType: "application/pdf",
                 data: Data([1])
@@ -295,8 +295,8 @@ final class AIProviderChatClientTests: XCTestCase {
     return data
   }
 
-  private var emptyContext: OpenClawWorkspaceContext {
-    OpenClawWorkspaceContext(
+  private var emptyContext: AIChatWorkspaceContext {
+    AIChatWorkspaceContext(
       localCorpusRoot: nil,
       remoteCorpusRoot: nil,
       selectedSurface: "AI Chat",

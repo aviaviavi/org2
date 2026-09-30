@@ -16,7 +16,7 @@ final class AIChatCrossHostTests: XCTestCase {
   private var root: URL!
   private let laptop = AIChatTranscriptWriterIdentity(id: "laptop-writer", label: "AiroPress")
   private let server = AIChatTranscriptWriterIdentity(id: "server-writer", label: "OpenOrg on press")
-  private let settings = OpenClawThreadSettlementSettings()
+  private let settings = AIChatThreadSettlementSettings()
 
   override func setUpWithError() throws {
     root = FileManager.default.temporaryDirectory
@@ -34,18 +34,18 @@ final class AIChatCrossHostTests: XCTestCase {
     let laptopURL = root.appendingPathComponent("laptop.json")
     let serverURL = root.appendingPathComponent("server.json")
     configureWriters(laptopURL: laptopURL, serverURL: serverURL)
-    let thread = OpenClawChatThread(title: "Shared", sessionKey: "shared", messages: [
-      OpenClawChatMessage(role: .user, content: "hello")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [
+      AIChatMessage(role: .user, content: "hello")
     ])
     try flush([thread], to: laptopURL)
     try syncAll(from: laptopURL, to: serverURL)
     let markerBefore = try Data(contentsOf: storeURL(laptopURL).appendingPathComponent("migration-marker.json"))
     for index in 0..<3 {
       try flush([thread.replacingMessages(thread.messages + [
-        OpenClawChatMessage(role: .assistant, content: "laptop \(index)")
+        AIChatMessage(role: .assistant, content: "laptop \(index)")
       ])], to: laptopURL)
       try flush([thread.replacingMessages(thread.messages + [
-        OpenClawChatMessage(role: .assistant, content: "server \(index)")
+        AIChatMessage(role: .assistant, content: "server \(index)")
       ])], to: serverURL)
     }
     let laptopFiles = try mutablePaths(laptopURL)
@@ -68,20 +68,20 @@ final class AIChatCrossHostTests: XCTestCase {
     let serverURL = root.appendingPathComponent("server.json")
     configureWriters(laptopURL: laptopURL, serverURL: serverURL)
     let start = Date(timeIntervalSince1970: 1_800_000_000)
-    let first = OpenClawChatMessage(role: .user, content: "base", createdAt: start)
-    let thread = OpenClawChatThread(
+    let first = AIChatMessage(role: .user, content: "base", createdAt: start)
+    let thread = AIChatThread(
       title: "Shared", createdAt: start, updatedAt: start, sessionKey: "shared", messages: [first]
     )
     try flush([thread], to: laptopURL)
     try syncAll(from: laptopURL, to: serverURL)
 
-    let fromPhone = OpenClawChatMessage(
+    let fromPhone = AIChatMessage(
       role: .user, content: "phone via server", createdAt: start.addingTimeInterval(10)
     )
-    let serverReply = OpenClawChatMessage(
+    let serverReply = AIChatMessage(
       role: .assistant, content: "server reply", createdAt: start.addingTimeInterval(20)
     )
-    let fromLaptop = OpenClawChatMessage(
+    let fromLaptop = AIChatMessage(
       role: .user, content: "typed on the laptop", createdAt: start.addingTimeInterval(15)
     )
     try flush([thread.replacingMessages([first, fromPhone, serverReply])], to: serverURL)
@@ -103,15 +103,15 @@ final class AIChatCrossHostTests: XCTestCase {
     let serverURL = root.appendingPathComponent("server.json")
     configureWriters(laptopURL: laptopURL, serverURL: serverURL)
     let start = Date(timeIntervalSince1970: 1_800_000_000)
-    let question = OpenClawChatMessage(
+    let question = AIChatMessage(
       role: .user, content: "question", createdAt: start, deliveryStatus: .sending
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Remote turn", createdAt: start, updatedAt: start, sessionKey: "remote", messages: [question]
     )
     try flush([thread], to: laptopURL)
     try syncAll(from: laptopURL, to: serverURL)
-    let reply = OpenClawChatMessage(role: .assistant, content: "answer", createdAt: start.addingTimeInterval(5))
+    let reply = AIChatMessage(role: .assistant, content: "answer", createdAt: start.addingTimeInterval(5))
     try flush([thread.replacingMessages([
       question.replacingDeliveryStatus(.sent), reply,
     ])], to: serverURL)
@@ -119,7 +119,7 @@ final class AIChatCrossHostTests: XCTestCase {
 
     // The laptop still holds its original copy (for example because a local
     // edit protected the conversation) and saves an unrelated change.
-    try flush([thread.replacingOpenClawChatMetadata(title: "Renamed on laptop")], to: laptopURL)
+    try flush([thread.replacingAIChatMetadata(title: "Renamed on laptop")], to: laptopURL)
     let loaded = try XCTUnwrap(AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: laptopURL))
     let saved = try XCTUnwrap(loaded.snapshot.threads.first)
     XCTAssertEqual(saved.messages.map(\.content), ["question", "answer"])
@@ -131,17 +131,17 @@ final class AIChatCrossHostTests: XCTestCase {
     let serverURL = root.appendingPathComponent("server.json")
     configureWriters(laptopURL: laptopURL, serverURL: serverURL)
     let start = Date(timeIntervalSince1970: 1_800_000_000)
-    let first = OpenClawChatMessage(role: .user, content: "keep", createdAt: start)
-    let queued = OpenClawChatMessage(
+    let first = AIChatMessage(role: .user, content: "keep", createdAt: start)
+    let queued = AIChatMessage(
       role: .user, content: "queued then removed", createdAt: start.addingTimeInterval(1),
       deliveryStatus: .sending, deliveryKind: .followUp
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Queue", createdAt: start, updatedAt: start, sessionKey: "queue", messages: [first, queued]
     )
     try flush([thread], to: laptopURL)
     try syncAll(from: laptopURL, to: serverURL)
-    let serverNote = OpenClawChatMessage(role: .assistant, content: "server note", createdAt: start.addingTimeInterval(2))
+    let serverNote = AIChatMessage(role: .assistant, content: "server note", createdAt: start.addingTimeInterval(2))
     try flush([thread.replacingMessages([first, queued, serverNote])], to: serverURL)
     try flush([thread.replacingMessages([first])], to: laptopURL)
     try syncAll(from: serverURL, to: laptopURL)
@@ -158,7 +158,7 @@ final class AIChatCrossHostTests: XCTestCase {
   @MainActor
   func testRemoteLiveTurnIsVisibleAsRunningOnAnotherHost() async throws {
     let transcriptURL = root.appendingPathComponent("chat.json")
-    let thread = OpenClawChatThread(title: "Automation: digest", runtime: .codex, sessionKey: "auto")
+    let thread = AIChatThread(title: "Automation: digest", runtime: .codex, sessionKey: "auto")
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(threads: [thread], selectedThreadID: thread.id, settlementSettings: settings),
       legacyURL: transcriptURL
@@ -208,12 +208,12 @@ final class AIChatCrossHostTests: XCTestCase {
     let transcriptURL = root.appendingPathComponent("chat.json")
     let press = AIChatHostIdentity(ref: "press", name: "OpenOrg on press", kind: .server)
     let earlier = Date().addingTimeInterval(-300)
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Server conversation", createdAt: earlier, updatedAt: earlier, runtime: .codex,
       sessionKey: "server-owned",
       messages: [
-        OpenClawChatMessage(role: .user, content: "start", createdAt: earlier),
-        OpenClawChatMessage(
+        AIChatMessage(role: .user, content: "start", createdAt: earlier),
+        AIChatMessage(
           role: .assistant, content: "started on press", createdAt: earlier.addingTimeInterval(1),
           provenance: AIChatMessageProvenance(executionHostRef: press.ref, executionHostName: press.name)
         ),
@@ -235,8 +235,8 @@ final class AIChatCrossHostTests: XCTestCase {
     await store.waitForAIChatTranscriptLoadForTesting()
     await store.refreshAIChatRemoteLiveHosts()
 
-    await store.sendOpenClawMessage(text: "follow up from the laptop")
-    let routed = try XCTUnwrap(store.openClawMessages.last)
+    await store.sendAIChatMessage(text: "follow up from the laptop")
+    let routed = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertEqual(routed.content, "follow up from the laptop")
     XCTAssertEqual(routed.deliveryStatus, .sending)
     XCTAssertEqual(routed.provenance?.executionHostRef, "press")
@@ -254,14 +254,14 @@ final class AIChatCrossHostTests: XCTestCase {
     await store.refreshAIChatRemoteLiveHosts()
     store.processAIChatHandoffs()
     for _ in 0..<300 {
-      if store.openClawMessages.last?.role == .assistant { break }
+      if store.aiChatMessages.last?.role == .assistant { break }
       try await Task.sleep(for: .milliseconds(10))
     }
     let prompts = await counter.prompts
     XCTAssertEqual(prompts.count, 1)
-    XCTAssertEqual(store.openClawMessages.last?.content, "answered here")
-    XCTAssertEqual(store.openClawMessages.last?.provenance?.executionHostRef, store.aiChatHostIdentity.ref)
-    let reclaimed = try XCTUnwrap(store.openClawMessages.first { $0.id == routed.id })
+    XCTAssertEqual(store.aiChatMessages.last?.content, "answered here")
+    XCTAssertEqual(store.aiChatMessages.last?.provenance?.executionHostRef, store.aiChatHostIdentity.ref)
+    let reclaimed = try XCTUnwrap(store.aiChatMessages.first { $0.id == routed.id })
     XCTAssertEqual(reclaimed.deliveryStatus, .sent)
     XCTAssertEqual(reclaimed.provenance?.executionHostRef, store.aiChatHostIdentity.ref)
     XCTAssertNotNil(reclaimed.provenance?.acceptedAt)
@@ -270,7 +270,7 @@ final class AIChatCrossHostTests: XCTestCase {
   @MainActor
   func testHostAcceptsAHandOffExactlyOnce() async throws {
     let transcriptURL = root.appendingPathComponent("chat.json")
-    let handedOff = OpenClawChatMessage(
+    let handedOff = AIChatMessage(
       role: .user, content: "continue on press", deliveryStatus: .sending,
       provenance: AIChatMessageProvenance(
         originClient: .mobile, originDeviceName: "Avi's iPhone",
@@ -278,7 +278,7 @@ final class AIChatCrossHostTests: XCTestCase {
         executionHostRef: "press", executionHostName: "OpenOrg on press"
       )
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Handed off", runtime: .codex, sessionKey: "handoff", messages: [handedOff]
     )
     try AIChatTranscriptStore.shared.flush(
@@ -293,23 +293,23 @@ final class AIChatCrossHostTests: XCTestCase {
     store.configureAIChatHost(AIChatHostIdentity(ref: "press", name: "OpenOrg on press", kind: .server))
     await store.waitForAIChatTranscriptLoadForTesting()
     XCTAssertEqual(
-      store.openClawMessages.first?.deliveryStatus, .sending,
+      store.aiChatMessages.first?.deliveryStatus, .sending,
       "An unstarted hand-off is not an interrupted local send"
     )
     store.processAIChatHandoffs()
     for _ in 0..<300 {
-      if store.openClawMessages.last?.role == .assistant { break }
+      if store.aiChatMessages.last?.role == .assistant { break }
       try await Task.sleep(for: .milliseconds(10))
     }
     store.processAIChatHandoffs()
     try await Task.sleep(for: .milliseconds(50))
     let prompts = await counter.prompts
     XCTAssertEqual(prompts, ["continue on press"])
-    let accepted = try XCTUnwrap(store.openClawMessages.first)
+    let accepted = try XCTUnwrap(store.aiChatMessages.first)
     XCTAssertEqual(accepted.deliveryStatus, .sent)
     XCTAssertNotNil(accepted.provenance?.acceptedAt)
     XCTAssertEqual(accepted.provenance?.originDeviceName, "Avi's iPhone")
-    let reply = try XCTUnwrap(store.openClawMessages.last)
+    let reply = try XCTUnwrap(store.aiChatMessages.last)
     XCTAssertEqual(reply.provenance?.executionHostName, "OpenOrg on press")
     XCTAssertEqual(
       accepted.provenance?.caption(role: .user),
@@ -321,14 +321,14 @@ final class AIChatCrossHostTests: XCTestCase {
   @MainActor
   func testAnotherHostsInFlightTurnIsNotMarkedInterruptedOrRedispatched() async throws {
     let transcriptURL = root.appendingPathComponent("chat.json")
-    let remoteTurn = OpenClawChatMessage(
+    let remoteTurn = AIChatMessage(
       role: .user, content: "running on press", deliveryStatus: .sending,
       provenance: AIChatMessageProvenance(
         receivedByHostRef: "other-host", receivedByHostName: "Other host",
         executionHostRef: "other-host", executionHostName: "Other host", acceptedAt: Date()
       )
     )
-    let thread = OpenClawChatThread(title: "Remote", runtime: .codex, sessionKey: "remote", messages: [remoteTurn])
+    let thread = AIChatThread(title: "Remote", runtime: .codex, sessionKey: "remote", messages: [remoteTurn])
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(threads: [thread], selectedThreadID: thread.id, settlementSettings: settings),
       legacyURL: transcriptURL
@@ -340,7 +340,7 @@ final class AIChatCrossHostTests: XCTestCase {
     }
     store.aiChatRoutesTurnsToThreadHost = false
     await store.waitForAIChatTranscriptLoadForTesting()
-    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+    XCTAssertEqual(store.aiChatMessages.first?.deliveryStatus, .sending)
     XCTAssertTrue(store.isAIChatThreadRunning(thread.id))
 
     // Import it through synchronization, then queue a local follow-up.
@@ -349,7 +349,7 @@ final class AIChatCrossHostTests: XCTestCase {
       legacyURL: transcriptURL
     )
     _ = await store.refreshSyncedAIChatTranscript()
-    await store.sendOpenClawMessage(text: "local follow-up")
+    await store.sendAIChatMessage(text: "local follow-up")
     try await Task.sleep(for: .milliseconds(100))
     let prompts = await counter.prompts
     XCTAssertFalse(prompts.contains("running on press"), "Another host's turn is never dispatched twice")
@@ -371,12 +371,12 @@ final class AIChatCrossHostTests: XCTestCase {
     let json = """
     {"id":"\(UUID().uuidString)","role":"assistant","content":"legacy","createdAt":0}
     """
-    let message = try JSONDecoder().decode(OpenClawChatMessage.self, from: Data(json.utf8))
+    let message = try JSONDecoder().decode(AIChatMessage.self, from: Data(json.utf8))
     XCTAssertNil(message.provenance)
     let encoded = try JSONEncoder().encode(message.replacingProvenance(
       AIChatMessageProvenance(executionHostRef: "press", executionHostName: "press")
     ))
-    let decoded = try JSONDecoder().decode(OpenClawChatMessage.self, from: encoded)
+    let decoded = try JSONDecoder().decode(AIChatMessage.self, from: encoded)
     XCTAssertEqual(decoded.provenance?.executionHostRef, "press")
   }
 
@@ -391,7 +391,7 @@ final class AIChatCrossHostTests: XCTestCase {
     }
   }
 
-  private func flush(_ threads: [OpenClawChatThread], to url: URL) throws {
+  private func flush(_ threads: [AIChatThread], to url: URL) throws {
     try AIChatTranscriptStore.shared.flush(
       AIChatTranscriptSnapshot(
         threads: threads,
@@ -489,14 +489,14 @@ final class AIChatCrossHostTests: XCTestCase {
       adapter: .openCodeRemote,
       endpoint: "press"
     )
-    let reply = OpenClawChatMessage(
+    let reply = AIChatMessage(
       role: .assistant,
       content: "Done.",
       provenance: AIChatMessageProvenance(
         executionHostRef: "laptop", executionHostName: "AiroPress"
       )
     )
-    let thread = OpenClawChatThread(
+    let thread = AIChatThread(
       title: "Remote harness",
       runtime: .openCode,
       destinationID: destination.id,
@@ -519,14 +519,14 @@ final class AIChatCrossHostTests: XCTestCase {
   @MainActor
   private func makeStore(
     transcriptURL: URL,
-    codex: (@Sendable ([OpenClawChatMessage], UUID, OpenClawWorkspaceContext) async throws -> String)? = nil
+    codex: (@Sendable ([AIChatMessage], UUID, AIChatWorkspaceContext) async throws -> String)? = nil
   ) throws -> WorkspaceStore {
     let suite = "cross-host-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
     let store = WorkspaceStore(
       defaults: defaults,
-      openClawTranscriptURL: transcriptURL,
+      aiChatTranscriptURL: transcriptURL,
       codexSendHandlerForTesting: codex ?? { _, _, _ in "ok" },
       legacyDefaultsDomains: []
     )

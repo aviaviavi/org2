@@ -8,14 +8,14 @@ final class BundledAgentWorkspaceTools {
   let turnID: String
   let corpusRoot: URL
   let cli: Org2CLI
-  let broker: OpenClawLocalEditBroker
+  let broker: AIChatLocalEditBroker
   let approve: @MainActor @Sendable (String) async -> Bool
   private var previews: [String: String] = [:]
   private var reads: [String: String] = [:]
   private var editsDeclined = false
 
   init(
-    turnID: String, corpusRoot: URL, cli: Org2CLI, broker: OpenClawLocalEditBroker,
+    turnID: String, corpusRoot: URL, cli: Org2CLI, broker: AIChatLocalEditBroker,
     approve: @escaping @MainActor @Sendable (String) async -> Bool
   ) {
     self.turnID = turnID
@@ -59,9 +59,9 @@ final class BundledAgentWorkspaceTools {
     }
     let command: String
     switch name {
-    case "org2_workspace_read": command = OpenClawLocalEditBroker.readCommand
-    case "org2_workspace_patch_preview": command = OpenClawLocalEditBroker.previewCommand
-    case "org2_workspace_patch_apply": command = OpenClawLocalEditBroker.applyCommand
+    case "org2_workspace_read": command = AIChatLocalEditBroker.readCommand
+    case "org2_workspace_patch_preview": command = AIChatLocalEditBroker.previewCommand
+    case "org2_workspace_patch_apply": command = AIChatLocalEditBroker.applyCommand
     default: return failure("This tool is not available in the bundled agent.")
     }
     args["turnId"] = .string(turnID)

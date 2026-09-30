@@ -8,7 +8,7 @@ final class AIChatReadState {
     let updatedAt: Date
     let messageCount: Int
 
-    func covers(_ thread: OpenClawChatThread) -> Bool {
+    func covers(_ thread: AIChatThread) -> Bool {
       thread.updatedAt <= updatedAt && thread.messageCount <= messageCount
     }
   }
@@ -20,7 +20,7 @@ final class AIChatReadState {
     self.defaults = defaults
   }
 
-  func markRead(_ thread: OpenClawChatThread, transcriptURL: URL) {
+  func markRead(_ thread: AIChatThread, transcriptURL: URL) {
     let path = transcriptURL.standardizedFileURL.path
     var receipts = receipts(for: path)
     let previous = receipts[thread.id]
@@ -34,13 +34,13 @@ final class AIChatReadState {
     defaults.set(data, forKey: storageKey(for: path))
   }
 
-  func applying(to threads: [OpenClawChatThread], transcriptURL: URL) -> [OpenClawChatThread] {
+  func applying(to threads: [AIChatThread], transcriptURL: URL) -> [AIChatThread] {
     let receipts = receipts(for: transcriptURL.standardizedFileURL.path)
     return threads.map { thread in
       guard thread.unreadMessageCount > 0, receipts[thread.id]?.covers(thread) == true else {
         return thread
       }
-      return thread.replacingOpenClawChatMetadata(unreadMessageCount: 0)
+      return thread.replacingAIChatMetadata(unreadMessageCount: 0)
     }
   }
 

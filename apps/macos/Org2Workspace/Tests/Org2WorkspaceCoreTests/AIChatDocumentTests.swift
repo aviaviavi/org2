@@ -42,7 +42,7 @@ final class AIChatDocumentTests: XCTestCase {
     - *=celorga.app= — primary domain.* Natural for downloads.
     - /Use ~celorga run~ from the CLI./
     """
-    let normalized = OpenClawMessageOrgNormalizer.normalized(raw)
+    let normalized = AIChatMessageOrgNormalizer.normalized(raw)
     XCTAssertEqual(normalized, """
     - =celorga.app= *— primary domain.* Natural for downloads.
     - /Use/ ~celorga run~ /from the CLI./
