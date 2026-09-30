@@ -6783,6 +6783,109 @@ final class Org2ModelsTests: XCTestCase {
     await firstSend.value
   }
 
+  @MainActor
+  func testExplicitSteerWaitsForLiveSessionInsteadOfQueueing() async throws {
+    // iOS steers right after a turn starts, before OpenCode reports its
+    // session. The guidance must wait for the session, not become a follow-up.
+    let sendRecorder = AIChatSuspendedSendRecorder()
+    let steerRecorder = AIChatSteerRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-early-steer-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+    store.aiChatSteerHandlerForTesting = { runtime, threadID, content, _ in
+      await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
+    }
+    var sessionReady = false
+    store.aiChatSteerReadinessForTesting = { _ in sessionReady }
+
+    store.aiChatDraft = "first request"
+    let firstSend = Task { await store.sendAIChatMessage() }
+    await sendRecorder.waitUntilStarted()
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+
+    let destination = store.sendAIChatRemoteMessageDestination(
+      "use the other approach",
+      threadID: threadID,
+      delivery: .steer
+    )
+    XCTAssertEqual(destination, threadID)
+    let steerMessage = try XCTUnwrap(store.aiChatMessages.last)
+    XCTAssertEqual(steerMessage.deliveryKind, .steer)
+    XCTAssertFalse(store.isAIChatMessageQueued(steerMessage.id), "not downgraded to a follow-up")
+    try await Task.sleep(for: .milliseconds(300))
+    let earlyContents = await steerRecorder.recordedContents()
+    XCTAssertTrue(earlyContents.isEmpty)
+
+    sessionReady = true
+    try await waitForCondition {
+      store.aiChatMessages.last?.deliveryStatus == .sent
+    }
+    let steeredContents = await steerRecorder.recordedContents()
+    XCTAssertEqual(steeredContents, ["use the other approach"])
+    XCTAssertEqual(store.aiChatMessages.last?.deliveryKind, .steer)
+
+    await sendRecorder.finish(reply: "done")
+    await firstSend.value
+  }
+
+  @MainActor
+  func testExplicitSteerFallsBackToFollowUpWhenSessionNeverBecomesReady() async throws {
+    let sendRecorder = AIChatSuspendedSendRecorder()
+    let steerRecorder = AIChatSteerRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-unready-steer-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+    store.aiChatSteerHandlerForTesting = { runtime, threadID, content, _ in
+      await steerRecorder.record(runtime: runtime, threadID: threadID, content: content)
+    }
+    store.aiChatSteerReadinessForTesting = { _ in false }
+    store.aiChatSteerReadinessTimeout = .milliseconds(300)
+
+    store.aiChatDraft = "first request"
+    let firstSend = Task { await store.sendAIChatMessage() }
+    await sendRecorder.waitUntilStarted()
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+
+    _ = store.sendAIChatRemoteMessageDestination(
+      "use the other approach",
+      threadID: threadID,
+      delivery: .steer
+    )
+    let steerMessage = try XCTUnwrap(store.aiChatMessages.last)
+    try await waitForCondition {
+      store.isAIChatMessageQueued(steerMessage.id)
+    }
+    XCTAssertEqual(store.aiChatMessages.last?.deliveryKind, .followUp)
+    let steeredContents = await steerRecorder.recordedContents()
+    XCTAssertTrue(steeredContents.isEmpty)
+
+    // Finish the first turn, then the follow-up turn the guidance became.
+    for _ in 0..<100 {
+      await sendRecorder.finish(reply: "done")
+      if store.aiChatMessages.filter({ $0.role == .assistant }).count == 2 { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    await firstSend.value
+    XCTAssertEqual(store.aiChatMessages.filter { $0.role == .assistant }.count, 2)
+    XCTAssertEqual(
+      store.aiChatMessages.first { $0.id == steerMessage.id }?.deliveryStatus,
+      .sent,
+      "the guidance was delivered as the next turn"
+    )
+  }
+
   func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() throws {
     let attachment = AIChatAttachment(
       fileName: "reference.txt",

@@ -3174,6 +3174,11 @@ public final class WorkspaceStore {
     _ content: String,
     _ attachments: [AIChatAttachment]
   ) async throws -> Void)?
+  /// Overrides whether a running thread's live session can accept guidance yet.
+  var aiChatSteerReadinessForTesting: ((_ threadID: UUID) -> Bool)?
+  /// How long an explicit steer waits for a just-started turn's live session
+  /// (for example OpenCode's session ID) before falling back to a follow-up.
+  var aiChatSteerReadinessTimeout: Duration = .seconds(45)
 
   func recordCodexActiveTurnForTesting(
     threadID: UUID,
@@ -24487,9 +24492,12 @@ public final class WorkspaceStore {
         origin: origin
       )
     }
+    // An explicit steer (for example from iOS right after the turn started)
+    // can arrive before the runtime reports its live session. Keep it a steer
+    // and let delivery wait for the session instead of silently queueing it.
     let shouldTrySteering = delivery == .steer
       && isAIChatThreadRunning(threadID)
-      && canSteerAIChatThread(threadID)
+      && aiChatThreadSupportsSteering(threadID)
     if shouldTrySteering {
       let userMessage = AIChatMessage(
         role: .user,
@@ -24544,6 +24552,41 @@ public final class WorkspaceStore {
     return result
   }
 
+  /// Whether this thread's runtime can take live guidance at all, regardless of
+  /// whether the current turn's session is ready yet.
+  private func aiChatThreadSupportsSteering(_ threadID: UUID) -> Bool {
+    guard let thread = aiChatThreads.first(where: { $0.id == threadID }),
+          !thread.isSharedRoom,
+          aiChatDestination(id: thread.destinationID)?.adapter.isDirectProvider != true
+    else { return false }
+    switch thread.runtime {
+    case .codex, .openClaw:
+      return true
+    case .openCode:
+      return !openCodeReattachedThreadIDs.contains(threadID)
+    case .claude, .pi:
+      return aiChatSteerHandlerForTesting != nil
+    }
+  }
+
+  /// Waits briefly for a just-started turn to expose a steerable session.
+  private func waitForAIChatSteerReadiness(
+    _ threadID: UUID,
+    context: AIChatCorpusContextToken
+  ) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: aiChatSteerReadinessTimeout)
+    while !canSteerAIChatThread(threadID) {
+      guard isCurrentAIChatCorpusContext(context),
+            isAIChatThreadRunning(threadID),
+            clock.now < deadline,
+            !Task.isCancelled
+      else { return false }
+      try? await Task.sleep(for: .milliseconds(200))
+    }
+    return true
+  }
+
   private func canSteerAIChatThread(_ threadID: UUID) -> Bool {
     guard let thread = aiChatThreads.first(where: { $0.id == threadID }) else {
       return false
@@ -24552,6 +24595,7 @@ public final class WorkspaceStore {
     guard aiChatDestination(id: thread.destinationID)?.adapter.isDirectProvider != true else {
       return false
     }
+    if let aiChatSteerReadinessForTesting { return aiChatSteerReadinessForTesting(threadID) }
     if aiChatSteerHandlerForTesting != nil { return true }
     switch thread.runtime {
     case .codex:
@@ -24579,6 +24623,26 @@ public final class WorkspaceStore {
     context: AIChatCorpusContextToken
   ) async {
     guard isCurrentAIChatCorpusContext(context) else { return }
+    guard aiChatThreads.contains(where: { $0.id == threadID }) else { return }
+    guard await waitForAIChatSteerReadiness(threadID, context: context) else {
+      guard isCurrentAIChatCorpusContext(context),
+            aiChatMessages(for: threadID).contains(where: {
+              $0.id == message.id && $0.deliveryStatus == .sending
+            })
+      else { return }
+      // The turn ended (or never exposed a live session): deliver the
+      // guidance as the next turn rather than dropping it.
+      enqueueExistingAIChatMessageAsFollowUp(message.id, in: threadID)
+      if selectedAIChatThreadID == threadID {
+        aiChatStatusText = isAIChatThreadRunning(threadID)
+          ? "Could not reach the live session; queued as a follow-up"
+          : "The run finished; queued as a follow-up"
+      }
+      if !drainingAIChatThreadIDs.contains(threadID) {
+        await drainAIChatSendQueue(for: threadID)
+      }
+      return
+    }
     guard let thread = aiChatThreads.first(where: { $0.id == threadID }) else { return }
     do {
       let message = try await Task.detached {

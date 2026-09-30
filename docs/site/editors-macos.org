@@ -215,7 +215,7 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 - =Cmd-R= refreshes the workspace when you need a manual reconciliation. Full refreshes of large corpora may take longer than 15 seconds; OpenOrg lets them continue without reporting a timeout error. Press =Cmd-R= again or click the stop control to cancel. Actual refresh errors are still reported.
 - =Cmd-T= opens a tab; =Cmd-Shift-[= and =Cmd-Shift-]= move between tabs.
 
-- In AI Chat, =Return= sends or queues while a turn runs; =Shift-Return= inserts a newline. =Cmd-Return= (also =Cmd-Shift-Return=) steers a running turn, or sends normally when idle. When suggestions are visible, =Up/Down= selects and =Tab= or =Return= accepts a suggestion.
+- In AI Chat, =Return= sends or queues while a turn runs; =Shift-Return= inserts a newline. =Cmd-Return= (also =Cmd-Shift-Return=) steers a running turn, or sends normally when idle. Guidance sent just after a turn starts, including Steer from iOS, waits briefly for the runtime's live session rather than becoming a queued follow-up; it is queued only if the turn ends first. When suggestions are visible, =Up/Down= selects and =Tab= or =Return= accepts a suggestion.
 - =Cmd-N= creates an AI thread.
 - In Agenda, =w= schedules next Monday and =m= schedules the first of next month; uppercase =W= and =M= set the corresponding deadline.
 
