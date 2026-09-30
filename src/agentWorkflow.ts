@@ -435,7 +435,9 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
     ...parsed,
     ...(headingTitle ? { title: headingTitle } : {}),
     description,
-    ...(instructions ? { instructions } : {}),
+    // Older step-based workflows have no prompt. Keep the required wire field
+    // present so native clients can decode the complete workflow list.
+    instructions: instructions ?? parsed.instructions ?? "",
     ...(version ? { version } : {}),
     ...(agentRef ? { agentRef } : {}),
     ...(goalRef ? { goalRef } : {}),

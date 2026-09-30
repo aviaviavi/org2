@@ -57,6 +57,13 @@ for (const description of meaningfulDescriptions) {
 }
 assert.deepEqual(parseWorkflowOrg(`#+begin_src json :org2-workflow\n${JSON.stringify(workflow, null, 2)}\n#+end_src\n`), workflow);
 
+// Built-in step-based workflows predate the instructions field. Listing them
+// must preserve a string field rather than making native list decoding fail.
+const legacy = { ...workflow };
+delete legacy.instructions;
+const legacySource = `#+begin_src json :org2-workflow\n${JSON.stringify(legacy)}\n#+end_src\n`;
+assert.equal(parseWorkflowOrg(legacySource).instructions, "");
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-workflow-serialization-"));
 try {
   saveWorkflow(root, workflow, { expectedRevision: null });
