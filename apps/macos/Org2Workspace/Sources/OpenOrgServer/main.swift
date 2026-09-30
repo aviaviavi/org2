@@ -76,10 +76,23 @@ struct OpenOrgServer {
       )
       WorkspaceStore.configureAIChatTranscriptWriter(defaults: defaults, label: config.name)
       let cli = Org2CLI(repoRoot: URL(fileURLWithPath: config.repoRoot), nodePath: config.nodePath)
+      // Shared thread links listen only on the Tailscale address, like the relay,
+      // and persist beside the private configuration so URLs survive restarts.
+      let bindHost = config.bindHost
+      let publicationHost = LocalDocumentPublicationHost(
+        bindHost: bindHost,
+        advertisedHost: bindHost,
+        preferredAdvertisedHost: { bindHost },
+        storageDirectory: stateDirectory.appendingPathComponent(
+          "publications-\(config.hostRef)",
+          isDirectory: true
+        )
+      )
       let store = WorkspaceStore(
         cli: cli,
         defaults: defaults,
         legacyDefaultsDomains: [],
+        localDocumentPublicationHost: publicationHost,
         openClawDeviceIdentityFileURL: stateDirectory.appendingPathComponent(
           "openclaw-device-identity.key"
         )
@@ -100,6 +113,8 @@ struct OpenOrgServer {
         hostName: config.name,
         destinations: config.destinations
       )
+      // Resume thread links shared before a restart; each keeps its URL.
+      await store.restoreLocalDocumentPublications()
       let remote = MobileRemoteCoordinator(
         defaults: defaults, credentialNamespace: namespace,
         credentialFile: stateDirectory.appendingPathComponent("paired-devices-\(config.hostRef).json"), serverName: config.name,
@@ -139,6 +154,7 @@ struct OpenOrgServer {
                        "online": $0.isFresh(within: 150), "updatedAt": ISO8601DateFormatter().string(from: $0.updatedAt),
                        "runningThreads": $0.turns.count] as [String: Any]
                     },
+                    "sharedThreads": store.localDocumentPublications.filter { $0.chatThreadID != nil }.count,
                     "pushConfigured": remote.pushProviderConfigured,
                     "devices": remote.pairedDevices.map { ["id": $0.id.uuidString, "name": $0.name] }]
         case "pair":

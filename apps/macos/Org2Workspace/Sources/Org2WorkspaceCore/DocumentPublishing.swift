@@ -1366,7 +1366,12 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
   private let startupLock = NSLock()
   private let connectionLock = NSLock()
   private let bindHost: String
+  /// The persisted fallback host, normally this Mac's network name.
   private let advertisedHost: String
+  /// A host that takes precedence while it is available, such as this Mac's
+  /// current Tailscale address. Links keep their token and port, so a link
+  /// copied under either host keeps working while both remain reachable.
+  private let preferredAdvertisedHost: (@Sendable () -> String?)?
   private let storageDirectory: URL?
   private var listener: NWListener?
   private var listenerShutdown: DispatchGroup?
@@ -1379,9 +1384,11 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
   public init(
     bindHost: String = "0.0.0.0",
     advertisedHost: String = ProcessInfo.processInfo.hostName,
+    preferredAdvertisedHost: (@Sendable () -> String?)? = nil,
     storageDirectory: URL? = nil
   ) {
     self.bindHost = bindHost
+    self.preferredAdvertisedHost = preferredAdvertisedHost
     self.storageDirectory = storageDirectory?.standardizedFileURL
     let currentAdvertisedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
     var restoredAdvertisedHost = currentAdvertisedHost
@@ -1414,7 +1421,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     stableKey: String? = nil,
     revision: String? = nil
   ) async throws -> LocalDocumentPublication {
-    guard Self.httpURL(host: advertisedHost, port: 1, path: "/") != nil else {
+    guard Self.httpURL(host: currentAdvertisedHost, port: 1, path: "/") != nil else {
       throw LocalDocumentPublicationHostError.invalidAdvertisedHost
     }
     let port = try await Task.detached(priority: .userInitiated) { [self] in
@@ -1852,11 +1859,12 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     for document: HostedDocument,
     port: UInt16
   ) throws -> LocalDocumentPublication {
-    guard !advertisedHost.isEmpty else {
+    let host = currentAdvertisedHost
+    guard !host.isEmpty else {
       throw LocalDocumentPublicationHostError.invalidAdvertisedHost
     }
     let path = "/a/\(document.id)"
-    guard let url = Self.httpURL(host: advertisedHost, port: port, path: path),
+    guard let url = Self.httpURL(host: host, port: port, path: path),
           let localURL = Self.httpURL(host: "127.0.0.1", port: port, path: path)
     else {
       throw LocalDocumentPublicationHostError.invalidAdvertisedHost
@@ -1872,6 +1880,21 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       createdAt: document.createdAt,
       chatThreadID: LocalDocumentPublication.chatThreadID(fromStableKey: document.stableKey)
     )
+  }
+
+  /// The host new and refreshed links advertise right now.
+  var currentAdvertisedHost: String {
+    if let preferred = preferredAdvertisedHost?()?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !preferred.isEmpty,
+       Self.httpURL(host: preferred, port: 1, path: "/") != nil {
+      return preferred
+    }
+    return advertisedHost
+  }
+
+  /// Advertises this Mac's Tailscale address while Tailscale is connected.
+  public static let tailscaleAdvertisedHost: @Sendable () -> String? = {
+    MobileRemoteCoordinator.tailscaleIPv4Addresses().first
   }
 
   private func uniqueSecretToken() throws -> String {

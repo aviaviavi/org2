@@ -376,6 +376,20 @@ private struct SharingSettingsView: View {
 
   var body: some View {
     Form {
+      OpenOrgServerSettingsSection()
+
+      if !store.openOrgServer.sortedThreadShares.isEmpty {
+        Section {
+          ForEach(store.openOrgServer.sortedThreadShares) { share in
+            serverShareRow(share)
+          }
+        } header: {
+          Label("Links Hosted by \(store.openOrgServer.serverName)", systemImage: "server.rack")
+        } footer: {
+          SettingsFooterText("The server renders these pages from its own synced copy of the corpus, so they stay live while this Mac sleeps.")
+        }
+      }
+
       Section {
         if store.localDocumentPublications.isEmpty {
           ContentUnavailableView(
@@ -392,7 +406,7 @@ private struct SharingSettingsView: View {
       } header: {
         Label("Active Local Links", systemImage: "network")
       } footer: {
-        SettingsFooterText("Document links serve sealed exports. Chat thread links show the conversation and update as new messages arrive. Neither exposes source files or corpus access. Links stop working when OpenOrg quits or when you stop hosting them here.")
+        SettingsFooterText("Document links serve sealed exports. Chat thread links show the conversation and update as new messages arrive. Neither exposes source files or corpus access. Links stop working when OpenOrg quits or when you stop hosting them here. While Tailscale is connected, links use this Mac’s Tailscale address.")
       }
 
       if !store.localDocumentPublications.isEmpty {
@@ -414,6 +428,9 @@ private struct SharingSettingsView: View {
     .padding(8)
     .frame(width: 620)
     .frame(minHeight: 460)
+    .task {
+      await store.refreshLocalDocumentPublicationURLs()
+    }
     .confirmationDialog(
       "Stop hosting every local publication?",
       isPresented: $isConfirmingStopAll
@@ -497,6 +514,60 @@ private struct SharingSettingsView: View {
     .padding(.vertical, 5)
   }
 
+  private func serverShareRow(_ share: OpenOrgServerThreadShare) -> some View {
+    let title = store.aiChatThreads.first(where: { $0.id == share.threadID })?.title ?? "AI Chat Thread"
+    return HStack(alignment: .top, spacing: 12) {
+      Image(systemName: "text.bubble")
+        .font(.title3)
+        .foregroundStyle(.secondary)
+        .frame(width: 24)
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.callout.weight(.semibold))
+          .lineLimit(1)
+        Text(share.url.absoluteString)
+          .font(.caption2.monospaced())
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .textSelection(.enabled)
+        Text("Shared \(share.sharedAt.formatted(date: .abbreviated, time: .shortened))")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+
+      Spacer(minLength: 8)
+
+      HStack(spacing: 8) {
+        Button {
+          NSWorkspace.shared.open(share.url)
+        } label: {
+          Image(systemName: "arrow.up.right.square")
+        }
+        .buttonStyle(.borderless)
+        .help("Open shareable link")
+
+        Button {
+          copyToPasteboard(share.url.absoluteString)
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
+        .buttonStyle(.borderless)
+        .help("Copy link")
+
+        Button(role: .destructive) {
+          Task { await store.stopSharingChatThreadOnServer(share.threadID) }
+        } label: {
+          Image(systemName: "stop.circle")
+        }
+        .buttonStyle(.borderless)
+        .disabled(store.openOrgServer.isBusy(share.threadID))
+        .help("Stop sharing from the server")
+      }
+    }
+    .padding(.vertical, 5)
+  }
+
   private func abbreviatedPath(_ path: String) -> String {
     let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
     guard path == home || path.hasPrefix(home + "/") else { return path }
@@ -506,6 +577,148 @@ private struct SharingSettingsView: View {
   private func copyToPasteboard(_ value: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(value, forType: .string)
+  }
+}
+
+/// Pairs this Mac with a headless OpenOrg server and picks where new thread
+/// links are hosted by default.
+private struct OpenOrgServerSettingsSection: View {
+  @Environment(WorkspaceStore.self) private var store
+  @State private var endpointDraft = ""
+  @State private var codeDraft = ""
+  @State private var pairingError: String?
+  @State private var isConfirmingForget = false
+
+  var body: some View {
+    let server = store.openOrgServer
+    Section {
+      if let pairing = server.pairing {
+        LabeledContent("Server") {
+          Text(server.serverName)
+        }
+        LabeledContent("Address") {
+          Text(pairing.endpoint)
+            .font(.callout.monospaced())
+            .textSelection(.enabled)
+        }
+        LabeledContent("Status") {
+          HStack(spacing: 6) {
+            switch server.reachability {
+            case .checking:
+              ProgressView().controlSize(.small)
+              Text("Checking…")
+            case .online:
+              Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.green)
+              Text(onlineDetail(server))
+            case .offline(let reason):
+              Image(systemName: "circle.fill").font(.caption2).foregroundStyle(.orange)
+              Text(reason).lineLimit(2)
+            case .unknown:
+              Text("Not checked")
+            }
+          }
+          .foregroundStyle(.secondary)
+        }
+        HStack {
+          Button("Check Connection") {
+            Task { await server.refreshStatus() }
+          }
+          .disabled(server.reachability == .checking)
+          Spacer()
+          Button("Forget Server…", role: .destructive) {
+            isConfirmingForget = true
+          }
+        }
+      } else {
+        TextField("Server address or pairing link", text: $endpointDraft, prompt: Text("http://100.x.y.z:48922"))
+          .textFieldStyle(.roundedBorder)
+          .onChange(of: endpointDraft) { _, value in
+            if let input = OpenOrgServerPairingInput.parse(value), let code = input.code {
+              codeDraft = code
+            }
+          }
+        HStack {
+          TextField("Pairing code", text: $codeDraft, prompt: Text("6-digit code"))
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 160)
+            .onSubmit { Task { await pair() } }
+          Spacer()
+          Button {
+            Task { await pair() }
+          } label: {
+            if server.isPairing {
+              HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Pairing")
+              }
+            } else {
+              Text("Pair")
+            }
+          }
+          .disabled(server.isPairing || endpointDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if let pairingError {
+          Text(pairingError)
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
+      }
+
+      Picker("Share new thread links from", selection: Binding(
+        get: { server.effectiveDefaultShareLocation },
+        set: { server.setDefaultShareLocation($0) }
+      )) {
+        Text("This Mac").tag(ChatThreadShareLocation.thisMac)
+        Text(server.isPaired ? server.serverName : "OpenOrg Server")
+          .tag(ChatThreadShareLocation.server)
+          .selectionDisabled(!server.isPaired)
+      }
+    } header: {
+      Label("OpenOrg Server", systemImage: "server.rack")
+    } footer: {
+      SettingsFooterText(server.isPaired
+        ? "The server hosts thread links from its synced copy of the corpus on its Tailscale address. You can still pick a location each time you share."
+        : "Run “org2 server pair” on the server, then paste the pairing link or enter its address and code here. Both machines must be on the same tailnet. The access token is stored in this Mac’s Keychain.")
+    }
+    .task {
+      if server.isPaired, server.reachability == .unknown {
+        await server.refreshStatus()
+      }
+    }
+    .confirmationDialog(
+      "Forget \(server.serverName)?",
+      isPresented: $isConfirmingForget
+    ) {
+      Button("Forget Server", role: .destructive) {
+        Task { await server.unpair() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("OpenOrg stops the thread links this server hosts, revokes this Mac’s access on the server when it is reachable, and removes the pairing.")
+    }
+  }
+
+  private func onlineDetail(_ server: OpenOrgServerConnection) -> String {
+    guard let status = server.serverStatus else { return "Connected" }
+    if status.supportsThreadSharing != true {
+      return "Connected · update the server to host thread links"
+    }
+    return status.corpusName.map { "Connected · \($0)" } ?? "Connected"
+  }
+
+  private func pair() async {
+    pairingError = nil
+    do {
+      try await store.openOrgServer.pair(
+        endpointText: endpointDraft,
+        code: codeDraft,
+        deviceName: Host.current().localizedName ?? "Mac"
+      )
+      endpointDraft = ""
+      codeDraft = ""
+    } catch {
+      pairingError = error.localizedDescription
+    }
   }
 }
 

@@ -32,6 +32,8 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
   /// The host accepts a client-chosen `threadID` when creating a chat, so the
   /// phone can open the new thread before the round trip completes.
   public let supportsClientThreadIDs: Bool?
+  /// The host can publish a live read-only link for a thread it stores.
+  public let supportsThreadSharing: Bool?
 
   public init(
     protocolVersion: Int = MobileRemoteProtocol.version,
@@ -44,9 +46,11 @@ public struct MobileRemoteServerStatus: Codable, Hashable, Sendable {
     aiChatDestinations: [MobileRemoteAIDestination]? = nil,
     pushNotificationsSupported: Bool? = nil,
     pushNotificationsConfigured: Bool? = nil,
-    supportsClientThreadIDs: Bool? = true
+    supportsClientThreadIDs: Bool? = true,
+    supportsThreadSharing: Bool? = true
   ) {
     self.supportsClientThreadIDs = supportsClientThreadIDs
+    self.supportsThreadSharing = supportsThreadSharing
     self.protocolVersion = protocolVersion
     self.serverName = serverName
     self.hostRef = hostRef
@@ -535,6 +539,35 @@ public struct MobileRemoteMutationResponse: Codable, Hashable, Sendable {
   public init(accepted: Bool, threadID: UUID? = nil) {
     self.accepted = accepted
     self.threadID = threadID
+  }
+}
+
+/// Appearance a client asks the host to use for a shared thread page, so a
+/// link hosted elsewhere still looks like the sharer's OpenOrg.
+public struct MobileRemoteThreadShareRequest: Codable, Hashable, Sendable {
+  public let appearanceMode: String?
+  public let lightThemeID: String?
+  public let darkThemeID: String?
+
+  public init(appearanceMode: String? = nil, lightThemeID: String? = nil, darkThemeID: String? = nil) {
+    self.appearanceMode = appearanceMode
+    self.lightThemeID = lightThemeID
+    self.darkThemeID = darkThemeID
+  }
+}
+
+/// The host's live link for one thread. `url` is a bearer secret.
+public struct MobileRemoteThreadShare: Codable, Hashable, Sendable {
+  public let threadID: UUID
+  public let isShared: Bool
+  public let url: String?
+  public let sharedAt: Date?
+
+  public init(threadID: UUID, isShared: Bool, url: String? = nil, sharedAt: Date? = nil) {
+    self.threadID = threadID
+    self.isShared = isShared
+    self.url = url
+    self.sharedAt = sharedAt
   }
 }
 

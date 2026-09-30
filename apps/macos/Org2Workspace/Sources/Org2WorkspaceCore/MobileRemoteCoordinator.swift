@@ -375,6 +375,15 @@ public final class MobileRemoteCoordinator: ObservableObject {
       }
     }
 
+    if request.method == "POST", path == "/v1/device/revoke" {
+      // A client that forgets this host removes its own credential too.
+      guard let device = credentialVault.device(forAccessToken: token) else {
+        return .error("Pair this device with this host again.", statusCode: 401)
+      }
+      revoke(device)
+      return .json(MobileRemoteMutationResponse(accepted: true))
+    }
+
     if request.method == "GET", path == "/v1/threads" {
       // A headless host may receive newer immutable chat commits from another
       // Mac between filesystem callbacks. Reconcile at the request boundary so
@@ -564,6 +573,13 @@ public final class MobileRemoteCoordinator: ObservableObject {
        components[1] == "threads" {
       _ = await store.refreshSyncedAIChatTranscript()
     }
+    if components.count >= 4,
+       components[0] == "v1",
+       components[1] == "threads",
+       components[3] == "share",
+       let threadID = UUID(uuidString: components[2]) {
+      return await handleThreadShare(request, threadID: threadID, components: components, store: store)
+    }
     guard components.count >= 3,
           components[0] == "v1",
           components[1] == "threads",
@@ -694,6 +710,51 @@ public final class MobileRemoteCoordinator: ObservableObject {
         : .error("There is no live turn to stop.", statusCode: 409)
     }
     return .error("Remote action not found.", statusCode: 404)
+  }
+
+  /// `GET|POST /v1/threads/ID/share` and `POST /v1/threads/ID/share/stop`
+  /// manage the live read-only link this host serves for one thread.
+  func handleThreadShare(
+    _ request: MobileRemoteHTTPRequest,
+    threadID: UUID,
+    components: [String],
+    store: WorkspaceStore
+  ) async -> MobileRemoteHTTPResponse {
+    func share(_ publication: LocalDocumentPublication?) -> MobileRemoteThreadShare {
+      MobileRemoteThreadShare(
+        threadID: threadID,
+        isShared: publication != nil,
+        url: publication?.url.absoluteString,
+        sharedAt: publication?.createdAt
+      )
+    }
+    switch (request.method, components.count) {
+    case ("GET", 4):
+      return .json(share(store.chatThreadPublication(for: threadID)))
+    case ("POST", 4):
+      guard store.aiChatThreads.contains(where: { $0.id == threadID }) else {
+        return .error("This host doesn’t have that thread yet. Wait for the corpus to sync, then try again.", statusCode: 404)
+      }
+      let payload = request.body.isEmpty
+        ? MobileRemoteThreadShareRequest()
+        : (try? request.decode(MobileRemoteThreadShareRequest.self)) ?? MobileRemoteThreadShareRequest()
+      do {
+        let publication = try await store.publishChatThread(
+          threadID,
+          appearance: AIChatThreadShareAppearance(payload)
+        )
+        return .json(share(publication), statusCode: 201)
+      } catch AIChatThreadPublishingError.missingThread {
+        return .error("This host couldn’t load that thread for sharing.", statusCode: 404)
+      } catch {
+        return .error(error.localizedDescription, statusCode: 503)
+      }
+    case ("POST", 5) where components[4] == "stop":
+      store.stopSharingChatThreadLocally(threadID)
+      return .json(share(nil))
+    default:
+      return .error("Remote action not found.", statusCode: 404)
+    }
   }
 
   private func handlePair(_ request: MobileRemoteHTTPRequest) -> MobileRemoteHTTPResponse {
@@ -894,13 +955,13 @@ public final class MobileRemoteCoordinator: ObservableObject {
     )
   }
 
-  public static func isTailscaleIPv4(_ address: String) -> Bool {
+  nonisolated public static func isTailscaleIPv4(_ address: String) -> Bool {
     let parts = address.split(separator: ".").compactMap { UInt8($0) }
     guard parts.count == 4 else { return false }
     return parts[0] == 100 && (64...127).contains(parts[1])
   }
 
-  public static func tailscaleIPv4Addresses() -> [String] {
+  nonisolated public static func tailscaleIPv4Addresses() -> [String] {
     var firstAddress: UnsafeMutablePointer<ifaddrs>?
     guard getifaddrs(&firstAddress) == 0, let firstAddress else { return [] }
     defer { freeifaddrs(firstAddress) }

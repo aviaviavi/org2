@@ -3476,7 +3476,7 @@ private struct AIChatSidebarThreadRow: View {
         Label("Copy Share Link", systemImage: "link")
       }
 
-      if store.chatThreadPublication(for: summary.id) != nil {
+      if store.isChatThreadShared(summary.id) {
         Button {
           store.stopSharingChatThread(summary.id)
         } label: {
@@ -3524,7 +3524,7 @@ private struct AIChatSidebarThreadRow: View {
         togglePin: togglePin,
         settle: settle,
         reopen: reopen,
-        isShared: store.chatThreadPublication(for: summary.id) != nil,
+        isShared: store.isChatThreadShared(summary.id),
         copyShareLink: { id in Task { await store.copyChatThreadShareLink(id) } },
         stopSharing: { id in store.stopSharingChatThread(id) },
         projects: store.projectNotes,

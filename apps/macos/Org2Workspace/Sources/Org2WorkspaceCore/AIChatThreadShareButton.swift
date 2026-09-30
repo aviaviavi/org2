@@ -2,20 +2,20 @@ import AppKit
 import SwiftUI
 
 /// Header control that shares the selected AI chat thread as a live,
-/// read-only local link, mirroring Publish → Local Link for documents.
+/// read-only link hosted by this Mac or by a paired OpenOrg server.
 struct AIChatThreadShareButton: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var isPresented = false
 
   var body: some View {
     let threadID = store.selectedAIChatThreadID
-    let isShared = threadID.flatMap(store.chatThreadPublication(for:)) != nil
+    let isShared = threadID.map(store.isChatThreadShared) ?? false
     Button {
       isPresented.toggle()
     } label: {
       Label(isShared ? "Shared" : "Share", systemImage: isShared ? "link.circle.fill" : "square.and.arrow.up")
     }
-    .help(isShared ? "This thread has a live local link" : "Share this thread as a live local link")
+    .help(isShared ? "This thread has a live link" : "Share this thread as a live link")
     .disabled(threadID == nil || store.aiChatMessages.isEmpty && !isShared)
     .accessibilityIdentifier("ai-chat-share-thread")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -28,56 +28,58 @@ struct AIChatThreadShareButton: View {
 
 struct AIChatThreadSharePopover: View {
   @Environment(WorkspaceStore.self) private var store
+  @Environment(\.openSettings) private var openSettings
+  @AppStorage(WorkspaceSettingsNavigation.selectionKey) private var settingsSelection = WorkspaceSettingsNavigation.workspace
   @State private var errorText: String?
-  @State private var copied = false
+  @State private var copiedURL: URL?
+  @State private var location: ChatThreadShareLocation?
   let threadID: UUID
 
   var body: some View {
-    let publication = store.chatThreadPublication(for: threadID)
+    let server = store.openOrgServer
+    let localPublication = store.chatThreadPublication(for: threadID)
+    let serverShare = server.threadShare(for: threadID)
     let isBusy = store.isPublishingChatThread(threadID)
     VStack(alignment: .leading, spacing: 12) {
       Label("Share Thread", systemImage: "link")
         .font(.headline)
 
-      if let publication {
-        Text("Anyone with this link on your network can read this thread. New messages appear automatically.")
+      if serverShare != nil || localPublication != nil {
+        Text("Anyone who can reach this link can read the thread. New messages appear automatically.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
 
-        Text(publication.url.absoluteString)
-          .font(.callout.monospaced())
-          .lineLimit(2)
-          .truncationMode(.middle)
-          .textSelection(.enabled)
-          .padding(8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
-
-        HStack {
-          Button(role: .destructive) {
-            store.stopSharingChatThread(threadID)
-          } label: {
-            Text("Stop Sharing")
+        if let serverShare {
+          shareRow(
+            title: serverShare.serverName,
+            systemImage: "server.rack",
+            detail: "Stays live while this Mac sleeps.",
+            url: serverShare.url
+          ) {
+            Task {
+              await store.stopSharingChatThreadOnServer(threadID)
+              errorText = store.openOrgServer.threadShare(for: threadID) == nil ? nil : store.errorText
+            }
           }
-          Spacer()
-          Button("Open") {
-            NSWorkspace.shared.open(publication.openURL)
+        }
+        if let localPublication {
+          shareRow(
+            title: "This Mac",
+            systemImage: "laptopcomputer",
+            detail: "Works while this Mac is awake and OpenOrg is open.",
+            url: localPublication.url
+          ) {
+            store.stopSharingChatThreadLocally(threadID)
           }
-          Button {
-            AIChatMessageClipboard.write(publication.url.absoluteString)
-            copied = true
-          } label: {
-            Label(copied ? "Copied" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
-          }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut(.defaultAction)
         }
       } else {
-        Text("Create a read-only link that anyone on your local network can open in a browser. It uses your OpenOrg theme and shows new messages as they arrive.")
+        Text("Create a read-only link that anyone who can reach it can open in a browser. It uses your OpenOrg theme and shows new messages as they arrive.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
+
+        locationPicker(server: server)
 
         Text("Attached context, reasoning, and tool activity are not included.")
           .font(.caption)
@@ -85,6 +87,14 @@ struct AIChatThreadSharePopover: View {
           .fixedSize(horizontal: false, vertical: true)
 
         HStack {
+          if !server.isPaired {
+            Button("Set Up Server…") {
+              settingsSelection = WorkspaceSettingsNavigation.sharing
+              openSettings()
+            }
+            .buttonStyle(.link)
+            .help("Pair this Mac with a headless OpenOrg server to host links there")
+          }
           Spacer()
           Button {
             Task { await share() }
@@ -111,21 +121,117 @@ struct AIChatThreadSharePopover: View {
           .fixedSize(horizontal: false, vertical: true)
       }
 
-      Label("Local links use unencrypted HTTP. Share them only on a trusted network.", systemImage: "lock.open")
+      Label("Links use unencrypted HTTP. Share them only on a trusted network or your tailnet.", systemImage: "lock.open")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(16)
-    .frame(width: 360)
+    .frame(width: 380)
+    .task {
+      await store.refreshLocalDocumentPublicationURLs()
+      if store.openOrgServer.isPaired {
+        await store.openOrgServer.refreshShare(threadID: threadID)
+      }
+    }
+  }
+
+  private var selectedLocation: ChatThreadShareLocation {
+    let chosen = location ?? store.openOrgServer.effectiveDefaultShareLocation
+    return chosen == .server && !store.openOrgServer.isPaired ? .thisMac : chosen
+  }
+
+  @ViewBuilder
+  private func locationPicker(server: OpenOrgServerConnection) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Picker("Share from", selection: Binding(
+        get: { selectedLocation },
+        set: { location = $0 }
+      )) {
+        Label("This Mac", systemImage: "laptopcomputer")
+          .tag(ChatThreadShareLocation.thisMac)
+        Label(server.isPaired ? server.serverName : "OpenOrg Server", systemImage: "server.rack")
+          .tag(ChatThreadShareLocation.server)
+          .selectionDisabled(!server.isPaired)
+      }
+      .pickerStyle(.menu)
+      .accessibilityIdentifier("ai-chat-share-location")
+
+      Text(locationDetail(server: server))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func locationDetail(server: OpenOrgServerConnection) -> String {
+    guard server.isPaired else {
+      return "Hosted by this Mac while it is awake. Pair an OpenOrg server in Settings → Sharing to host links that stay live while this Mac sleeps."
+    }
+    switch selectedLocation {
+    case .thisMac:
+      return "Hosted by this Mac while it is awake and OpenOrg is open."
+    case .server:
+      if case .offline(let reason) = server.reachability {
+        return "\(server.serverName) is unreachable right now: \(reason)"
+      }
+      return "Hosted by \(server.serverName) from its synced copy of this thread. Stays live while this Mac sleeps."
+    }
+  }
+
+  private func shareRow(
+    title: String,
+    systemImage: String,
+    detail: String,
+    url: URL,
+    stop: @escaping () -> Void
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 6) {
+        Label(title, systemImage: systemImage)
+          .font(.callout.weight(.semibold))
+        Spacer()
+        Text(detail)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+
+      Text(url.absoluteString)
+        .font(.callout.monospaced())
+        .lineLimit(2)
+        .truncationMode(.middle)
+        .textSelection(.enabled)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+
+      HStack {
+        Button(role: .destructive, action: stop) {
+          Text("Stop Sharing")
+        }
+        .disabled(store.isPublishingChatThread(threadID))
+        Spacer()
+        Button("Open") {
+          NSWorkspace.shared.open(url)
+        }
+        Button {
+          AIChatMessageClipboard.write(url.absoluteString)
+          copiedURL = url
+        } label: {
+          Label(copiedURL == url ? "Copied" : "Copy Link", systemImage: copiedURL == url ? "checkmark" : "doc.on.doc")
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
   }
 
   private func share() async {
     errorText = nil
     do {
-      let publication = try await store.publishChatThread(threadID)
-      AIChatMessageClipboard.write(publication.url.absoluteString)
-      copied = true
+      let url = try await store.shareChatThread(threadID, from: selectedLocation)
+      AIChatMessageClipboard.write(url.absoluteString)
+      copiedURL = url
     } catch {
       errorText = error.localizedDescription
     }

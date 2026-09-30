@@ -3006,16 +3006,11 @@ public final class WorkspaceStore {
   public internal(set) var publishingChatThreadIDs: Set<UUID> = []
   @ObservationIgnored var chatThreadPublicationSignatures: [UUID: AIChatThreadPublicationSignature] = [:]
   @ObservationIgnored var chatThreadPublicationMonitor: Task<Void, Never>?
-  @ObservationIgnored let chatThreadPublicationRenderer = AIChatThreadPublicationRenderer { text in
-    // Embeds stay references so a shared thread cannot pull in other notes.
-    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
-    return try await cli.renderAppHTML(
-      text,
-      sourcePath: FileManager.default.temporaryDirectory
-        .appendingPathComponent("shared-chat-message.org").path,
-      resolveEmbeds: false
-    )
-  }
+  /// Uses this store's CLI so a headless server renders with its configured
+  /// runtime and Node path.
+  @ObservationIgnored let chatThreadPublicationRenderer: AIChatThreadPublicationRenderer
+  /// This Mac's pairing with a headless OpenOrg server, used to host links there.
+  public let openOrgServer: OpenOrgServerConnection
   public private(set) var currentDocumentGoogleDrivePublications: [GoogleDrivePublicationBinding] = []
   public var exportNotice: Org2ExportNotice?
   public var editorSaveConflict: Org2EditorSaveConflict?
@@ -3674,6 +3669,9 @@ public final class WorkspaceStore {
     )
     self.localDocumentPublicationHost = localDocumentPublicationHost
       ?? LocalDocumentPublicationHost(
+        preferredAdvertisedHost: NSClassFromString("XCTestCase") == nil
+          ? LocalDocumentPublicationHost.tailscaleAdvertisedHost
+          : nil,
         storageDirectory: Self.localDocumentPublicationStorageDirectory()
       )
     self.automaticStarterCorpusURL = automaticStarterCorpusURL
@@ -3694,6 +3692,22 @@ public final class WorkspaceStore {
     self.cli = cli
       ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
       ?? Org2CLI(repoRoot: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+    let publicationCLI = self.cli
+    chatThreadPublicationRenderer = AIChatThreadPublicationRenderer { text in
+      // Embeds stay references so a shared thread cannot pull in other notes.
+      try await publicationCLI.renderAppHTML(
+        text,
+        sourcePath: FileManager.default.temporaryDirectory
+          .appendingPathComponent("shared-chat-message.org").path,
+        resolveEmbeds: false
+      )
+    }
+    openOrgServer = OpenOrgServerConnection(
+      defaults: defaults,
+      credentials: NSClassFromString("XCTestCase") == nil
+        ? OpenOrgServerKeychainCredentials()
+        : OpenOrgServerMemoryCredentials()
+    )
     let settings = OpenClawGatewaySettings.resolve()
     let migrationDomains = legacyDefaultsDomains
       ?? (
@@ -14628,7 +14642,7 @@ public final class WorkspaceStore {
     }
   }
 
-  private func restoreLocalDocumentPublications() async {
+  public func restoreLocalDocumentPublications() async {
     do {
       localDocumentPublications = try await localDocumentPublicationHost.restorePublications()
       ensureChatThreadPublicationMonitor()
@@ -14800,6 +14814,28 @@ public final class WorkspaceStore {
       .appendingPathComponent("OpenOrg", isDirectory: true)
       .appendingPathComponent("Publications", isDirectory: true)
       .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+  }
+
+  private static let chatThreadShareAppearanceKey = "Org2Workspace.chatThreadShareAppearance.v1"
+
+  /// Appearance a paired client chose for a thread it shared through this host.
+  var chatThreadShareAppearanceOverrides: [UUID: AIChatThreadShareAppearance] {
+    get {
+      guard let data = defaults.data(forKey: Self.chatThreadShareAppearanceKey),
+            let values = try? JSONDecoder().decode([String: AIChatThreadShareAppearance].self, from: data)
+      else { return [:] }
+      return Dictionary(uniqueKeysWithValues: values.compactMap { key, value in
+        UUID(uuidString: key).map { ($0, value) }
+      })
+    }
+    set {
+      let values = Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.uuidString.lowercased(), $0.value) })
+      if values.isEmpty {
+        defaults.removeObject(forKey: Self.chatThreadShareAppearanceKey)
+      } else if let data = try? JSONEncoder().encode(values) {
+        defaults.set(data, forKey: Self.chatThreadShareAppearanceKey)
+      }
+    }
   }
 
   private static func localDocumentPublicationStorageDirectory() -> URL? {

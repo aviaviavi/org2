@@ -5,6 +5,7 @@ public enum WorkspaceSettingsNavigation {
   public static let selectionKey = "workspaceSettingsSelection"
   public static let workspace = "workspace"
   public static let aiChat = "aiChat"
+  public static let sharing = "sharing"
 }
 
 public struct AIChatSettingsButton: View {

@@ -215,7 +215,7 @@ enum AIChatThreadPublicationPage {
     </section>
     \(empty)\(responding)
     </div>
-    <footer class="page-footer">Shared read-only from OpenOrg. New messages appear automatically while this Mac is sharing the thread.</footer>
+    <footer class="page-footer">Shared read-only from OpenOrg. New messages appear automatically while OpenOrg keeps sharing the thread.</footer>
     \(LocalDocumentPublicationHost.liveUpdateScriptElement)
     </body>
     </html>
@@ -453,6 +453,33 @@ struct AIChatThreadPublicationSignature: Equatable, Sendable {
   let appearance: String
 }
 
+/// The OpenOrg appearance a shared thread page mirrors. A client sharing
+/// through a server sends its own so the page matches the sharer's app.
+public struct AIChatThreadShareAppearance: Codable, Hashable, Sendable {
+  public let appearanceMode: String
+  public let lightThemeID: String
+  public let darkThemeID: String
+
+  public init(appearanceMode: String, lightThemeID: String, darkThemeID: String) {
+    self.appearanceMode = appearanceMode
+    self.lightThemeID = lightThemeID
+    self.darkThemeID = darkThemeID
+  }
+
+  init?(_ request: MobileRemoteThreadShareRequest) {
+    guard let mode = request.appearanceMode.flatMap(WorkspaceAppearanceMode.init(rawValue:)) else {
+      return nil
+    }
+    self.init(
+      appearanceMode: mode.rawValue,
+      lightThemeID: request.lightThemeID ?? WorkspaceThemeCatalog.defaultLightID,
+      darkThemeID: request.darkThemeID ?? WorkspaceThemeCatalog.defaultDarkID
+    )
+  }
+
+  var signature: String { "\(appearanceMode)|\(lightThemeID)|\(darkThemeID)" }
+}
+
 public enum AIChatThreadPublishingError: LocalizedError, Sendable {
   case missingThread
 
@@ -473,27 +500,89 @@ extension WorkspaceStore {
   }
 
   public func isPublishingChatThread(_ threadID: UUID) -> Bool {
-    publishingChatThreadIDs.contains(threadID)
+    publishingChatThreadIDs.contains(threadID) || openOrgServer.isBusy(threadID)
+  }
+
+  /// Whether this thread has a live link on this Mac or the paired server.
+  public func isChatThreadShared(_ threadID: UUID) -> Bool {
+    chatThreadPublication(for: threadID) != nil || openOrgServer.threadShare(for: threadID) != nil
+  }
+
+  /// The link to copy for a shared thread, preferring the server's link
+  /// because it stays live while this Mac sleeps.
+  public func chatThreadShareURL(for threadID: UUID) -> URL? {
+    openOrgServer.threadShare(for: threadID)?.url ?? chatThreadPublication(for: threadID)?.url
+  }
+
+  /// The appearance this Mac's shared pages mirror.
+  public var chatThreadShareAppearance: AIChatThreadShareAppearance {
+    AIChatThreadShareAppearance(
+      appearanceMode: appearanceMode.rawValue,
+      lightThemeID: lightThemeID,
+      darkThemeID: darkThemeID
+    )
   }
 
   /// Creates or refreshes the thread's live link. The URL stays stable until
   /// the user stops sharing it.
+  ///
+  /// `appearance` is set when another client shares through this host; the
+  /// page then mirrors that client's theme instead of this host's.
   @discardableResult
-  public func publishChatThread(_ threadID: UUID) async throws -> LocalDocumentPublication {
+  public func publishChatThread(
+    _ threadID: UUID,
+    appearance: AIChatThreadShareAppearance? = nil
+  ) async throws -> LocalDocumentPublication {
     let wasShared = chatThreadPublication(for: threadID) != nil
-    let publication = try await republishChatThread(threadID, force: true)
+    let previousAppearance = chatThreadShareAppearanceOverrides[threadID]
+    if let appearance {
+      chatThreadShareAppearanceOverrides[threadID] = appearance
+    }
+    let publication: LocalDocumentPublication
+    do {
+      publication = try await republishChatThread(threadID, force: true)
+    } catch {
+      if !wasShared {
+        chatThreadShareAppearanceOverrides[threadID] = previousAppearance
+      }
+      throw error
+    }
     statusText = wasShared ? "Updated the shared thread link" : "Shared the thread on the local network"
     ensureChatThreadPublicationMonitor()
     return publication
   }
 
-  /// Shares the thread if needed, then copies its link.
+  /// Creates a live link at `location` and returns its URL.
+  @discardableResult
+  public func shareChatThread(
+    _ threadID: UUID,
+    from location: ChatThreadShareLocation
+  ) async throws -> URL {
+    switch location {
+    case .thisMac:
+      return try await publishChatThread(threadID).url
+    case .server:
+      let share = try await openOrgServer.share(
+        threadID: threadID,
+        appearance: chatThreadShareAppearance
+      )
+      statusText = "Shared the thread from \(share.serverName)"
+      return share.url
+    }
+  }
+
+  /// Shares the thread from the default location if needed, then copies its link.
   public func copyChatThreadShareLink(_ threadID: UUID) async {
     do {
-      let publication = chatThreadPublication(for: threadID) == nil
-        ? try await publishChatThread(threadID)
-        : try await republishChatThread(threadID, force: false)
-      AIChatMessageClipboard.write(publication.url.absoluteString)
+      let url: URL
+      if let serverShare = openOrgServer.threadShare(for: threadID) {
+        url = serverShare.url
+      } else if chatThreadPublication(for: threadID) != nil {
+        url = try await republishChatThread(threadID, force: false).url
+      } else {
+        url = try await shareChatThread(threadID, from: openOrgServer.effectiveDefaultShareLocation)
+      }
+      AIChatMessageClipboard.write(url.absoluteString)
       statusText = "Copied the shared thread link"
     } catch {
       errorText = error.localizedDescription
@@ -501,13 +590,42 @@ extension WorkspaceStore {
     }
   }
 
+  /// Stops every live link for the thread, on this Mac and on the server.
   public func stopSharingChatThread(_ threadID: UUID) {
+    stopSharingChatThreadLocally(threadID)
+    if openOrgServer.threadShare(for: threadID) != nil {
+      Task { await stopSharingChatThreadOnServer(threadID) }
+    }
+  }
+
+  public func stopSharingChatThreadLocally(_ threadID: UUID) {
+    chatThreadShareAppearanceOverrides[threadID] = nil
     guard let publication = chatThreadPublication(for: threadID) else { return }
     revokeLocalDocumentPublication(publication.id)
     chatThreadPublicationSignatures[threadID] = nil
     let renderer = chatThreadPublicationRenderer
     Task { await renderer.forget(threadID) }
     statusText = "Stopped sharing the thread"
+  }
+
+  public func stopSharingChatThreadOnServer(_ threadID: UUID) async {
+    do {
+      try await openOrgServer.stopSharing(threadID: threadID)
+      statusText = "Stopped sharing the thread from \(openOrgServer.serverName)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not stop sharing the thread from \(openOrgServer.serverName)"
+    }
+  }
+
+  /// Re-advertises existing local links, for example after Tailscale connects
+  /// and links should use its address instead of this Mac's network name.
+  public func refreshLocalDocumentPublicationURLs() async {
+    guard !localDocumentPublications.isEmpty,
+          let refreshed = try? await localDocumentPublicationHost.restorePublications(),
+          refreshed != localDocumentPublications
+    else { return }
+    localDocumentPublications = refreshed
   }
 
   /// Starts the lightweight loop that keeps shared thread pages current. It
@@ -601,13 +719,14 @@ extension WorkspaceStore {
       lastMessageID: thread.messages.last?.id,
       lastMessageLength: thread.messages.last?.content.utf8.count ?? 0,
       respondingStatus: chatThreadRespondingStatus(for: thread.id),
-      appearance: "\(appearanceMode.rawValue)|\(lightThemeID)|\(darkThemeID)"
+      appearance: chatThreadPageAppearance(for: thread.id).signature
     )
   }
 
   private func chatThreadPublicationSnapshot(
     for thread: AIChatThread
   ) -> AIChatThreadPublicationSnapshot {
+    let appearance = chatThreadPageAppearance(for: thread.id)
     let userName = NSFullUserName().trimmingCharacters(in: .whitespacesAndNewlines)
     var queuedMessageIDs = Set<UUID>()
     var assistantTitles: [UUID: String] = [:]
@@ -632,9 +751,13 @@ extension WorkspaceStore {
       title: thread.title,
       messages: messages,
       respondingStatus: chatThreadRespondingStatus(for: thread.id),
-      appearanceMode: appearanceMode,
-      lightTheme: WorkspaceThemeCatalog.theme(id: lightThemeID, for: .light),
-      darkTheme: WorkspaceThemeCatalog.theme(id: darkThemeID, for: .dark)
+      appearanceMode: WorkspaceAppearanceMode(rawValue: appearance.appearanceMode) ?? appearanceMode,
+      lightTheme: WorkspaceThemeCatalog.theme(id: appearance.lightThemeID, for: .light),
+      darkTheme: WorkspaceThemeCatalog.theme(id: appearance.darkThemeID, for: .dark)
     )
+  }
+
+  private func chatThreadPageAppearance(for threadID: UUID) -> AIChatThreadShareAppearance {
+    chatThreadShareAppearanceOverrides[threadID] ?? chatThreadShareAppearance
   }
 }
