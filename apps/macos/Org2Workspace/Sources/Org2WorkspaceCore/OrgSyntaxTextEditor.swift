@@ -2044,6 +2044,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   let onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
   let completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)?
+  /// Present only for Prose mode. It switches the typography and drives the
+  /// reversible-prose presentation over the same native text view.
+  let proseController: OrgProseEditorController?
+
+  var isProse: Bool { proseController != nil }
 
   init(
     text: Binding<String>,
@@ -2085,7 +2090,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     documentSelectionContext: OrgSyntaxTextSelectionContext? = nil,
     onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)? = nil,
     onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)? = nil,
-    completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? = nil
+    completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? = nil,
+    proseController: OrgProseEditorController? = nil
   ) {
     _text = text
     self.monospaced = monospaced
@@ -2127,6 +2133,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.onDeleteDocumentSelection = onDeleteDocumentSelection
     self.onReplaceDocumentSelection = onReplaceDocumentSelection
     self.completionKeyHandler = completionKeyHandler
+    self.proseController = proseController
   }
 
   func makeCoordinator() -> Coordinator {
@@ -2200,6 +2207,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       coordinator?.requestLifecycleCheckpoint(from: textView)
     }
     context.coordinator.attach(to: textView)
+    proseController?.attach(to: textView)
     textView.drawsBackground = false
     textView.isRichText = false
     textView.importsGraphics = false
@@ -2209,8 +2217,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.isAutomaticTextReplacementEnabled = false
     textView.isAutomaticSpellingCorrectionEnabled = false
     Self.configureNativeFind(in: textView)
-    textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced)
-    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced)
+    textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced, prose: isProse)
+    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced, prose: isProse)
     // Configure the empty text view first so NSTextView gives inserted source
     // its base attributes as it creates storage. Applying `font` or resetting
     // attributes after this assignment traverses a multi-megabyte document on
@@ -2276,6 +2284,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
     context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
+    proseController?.textWasReplaced()
     return scrollView
   }
 
@@ -2313,6 +2322,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       coordinator?.requestLifecycleCheckpoint(from: textView)
     }
     context.coordinator.attach(to: textView)
+    proseController?.attach(to: textView)
 
     var currentUTF16Length = textView.textStorage?.length
     var editorText: String?
@@ -2374,6 +2384,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       editorText = text
       appliedProgrammaticText = true
       context.coordinator.resetViewportSourceLinePublishing()
+      proseController?.textWasReplaced()
     }
 
     if let selection {
@@ -2415,6 +2426,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
     guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
     coordinator.prepareForDismantle(textView)
+    coordinator.detachProseController(from: textView)
     textView.delegate = nil
     textView.pasteAsOrgEnabled = nil
     textView.pastePreviewController?.cancel()
@@ -2588,6 +2600,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func updateParent(_ next: OrgSyntaxTextEditor) -> OrgSyntaxTextEditor {
       let previous = parent
       let presentationChanged = parent.monospaced != next.monospaced
+        || parent.isProse != next.isProse
         || parent.concealsSyntax != next.concealsSyntax
         || parent.liveHighlighting != next.liveHighlighting
       let documentChanged = parent.documentIdentity != next.documentIdentity
@@ -3036,11 +3049,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
+    func detachProseController(from textView: NSTextView) {
+      parent.proseController?.detach(from: textView)
+    }
+
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       if isApplyingProgrammaticChange {
         return
       }
+      parent.proseController?.textDidChange()
       let currentUTF16Length = textView.textStorage?.length ?? 0
       synchronizeLineIndexIfNeeded(with: textView)
 
@@ -3076,7 +3094,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       guard parent.liveHighlighting else {
         cancelDeferredHighlighting()
-        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced, prose: parent.isProse)
         recordHighlightedState(text: currentText, utf16Length: currentUTF16Length)
         publishContentHeight(for: textView)
         return
@@ -3133,6 +3151,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return
       }
       let selectedRange = textView.selectedRange()
+      parent.proseController?.selectionDidChange()
       unfoldIfSelectionEntersHiddenText(selectedRange, in: textView)
       scheduleViewportSourceLinePublishing(for: textView)
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
@@ -3151,8 +3170,22 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       shouldChangeTextIn affectedCharRange: NSRange,
       replacementString: String?
     ) -> Bool {
+      if let prose = parent.proseController,
+         !prose.allowsEdit(in: affectedCharRange, replacement: replacementString, textView: textView) {
+        return false
+      }
       unfoldIfEditTouchesHiddenText(affectedCharRange, in: textView)
       return true
+    }
+
+    func textView(
+      _ view: NSTextView,
+      menu: NSMenu,
+      for event: NSEvent,
+      at charIndex: Int
+    ) -> NSMenu? {
+      parent.proseController?.augment(menu: menu)
+      return menu
     }
 
     func textStorage(
@@ -3177,6 +3210,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         location: replacementRange.location,
         length: max(0, replacementRange.length - delta)
       )
+      parent.proseController?.noteStorageEdit(priorRange: priorRange, delta: delta)
       let replacement = textStorage.mutableString.substring(with: replacementRange)
       pendingEditedRange = NSRange(
         location: replacementRange.location,
@@ -4323,7 +4357,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         to: storage,
         characterRange: editedRange,
         monospaced: parent.monospaced,
-        concealsSyntax: parent.concealsSyntax
+        concealsSyntax: parent.concealsSyntax,
+        prose: parent.isProse
       )
       textView.typingAttributes = typingAttributes
       recordHighlightedState(for: textView)
@@ -4400,7 +4435,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         to: storage,
         characterRange: lineRange,
         monospaced: parent.monospaced,
-        concealsSyntax: parent.concealsSyntax
+        concealsSyntax: parent.concealsSyntax,
+        prose: parent.isProse
       )
       return true
     }
@@ -4772,13 +4808,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         ?? currentText.map { ($0 as NSString).length }
         ?? 0
       if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
-        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced, prose: parent.isProse)
         recordHighlightedState(text: currentText, utf16Length: utf16Length)
         return
       }
       let text = currentText ?? snapshotCurrentText(from: textView)
       if !willScheduleDeferredHighlighting {
-        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced, prose: parent.isProse)
         recordHighlightedState(text: text, utf16Length: utf16Length)
         return
       }
@@ -4835,7 +4871,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         ?? currentText.map { ($0 as NSString).length }
         ?? 0
       if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
-        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced, prose: parent.isProse)
         recordHighlightedState(text: currentText, utf16Length: utf16Length)
         return
       }
@@ -5408,7 +5444,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         // main-thread pass. Restyle only laid-out lines now and each newly
         // visible range as the user scrolls.
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(
-          monospaced: parent.monospaced
+          monospaced: parent.monospaced,
+          prose: parent.isProse
         )
         if parent.liveHighlighting {
           highlightVisibleRange(in: textView)
@@ -5422,7 +5459,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       let typingAttributes = OrgSyntaxHighlighter.apply(
         to: storage,
         monospaced: parent.monospaced,
-        concealsSyntax: parent.concealsSyntax
+        concealsSyntax: parent.concealsSyntax,
+        prose: parent.isProse
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
@@ -5547,11 +5585,8 @@ enum OrgSyntaxHighlightKind: String {
 enum OrgSyntaxHighlighter {
   static let liveTokenizationUTF16Limit = 25_000
 
-  static func baseTypingAttributes(monospaced: Bool) -> [NSAttributedString.Key: Any] {
-    let baseFont = monospaced
-      ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-      : NSFont.systemFont(ofSize: NSFont.systemFontSize)
-    return baseAttributes(font: baseFont)
+  static func baseTypingAttributes(monospaced: Bool, prose: Bool = false) -> [NSAttributedString.Key: Any] {
+    baseAttributes(font: baseFont(monospaced: monospaced, prose: prose), prose: prose)
   }
 
   static func tokens(in text: String) -> [OrgSyntaxHighlightToken] {
@@ -5570,10 +5605,11 @@ enum OrgSyntaxHighlighter {
   static func apply(
     to storage: NSTextStorage,
     monospaced: Bool,
-    concealsSyntax: Bool = true
+    concealsSyntax: Bool = true,
+    prose: Bool = false
   ) -> [NSAttributedString.Key: Any] {
-    let baseFont = baseFont(monospaced: monospaced)
-    let baseAttributes = baseAttributes(font: baseFont)
+    let baseFont = baseFont(monospaced: monospaced, prose: prose)
+    let baseAttributes = baseAttributes(font: baseFont, prose: prose)
     let fullRange = NSRange(location: 0, length: storage.length)
 
     storage.beginEditing()
@@ -5582,7 +5618,7 @@ enum OrgSyntaxHighlighter {
       let text = storage.string
       for token in tokens(in: text) where NSMaxRange(token.range) <= storage.length {
         storage.addAttributes(
-          attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax),
+          attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax, prose: prose),
           range: token.range
         )
       }
@@ -5596,10 +5632,11 @@ enum OrgSyntaxHighlighter {
     to storage: NSTextStorage,
     characterRange requestedRange: NSRange,
     monospaced: Bool,
-    concealsSyntax: Bool
+    concealsSyntax: Bool,
+    prose: Bool = false
   ) -> [NSAttributedString.Key: Any] {
-    let baseFont = baseFont(monospaced: monospaced)
-    let baseAttributes = baseAttributes(font: baseFont)
+    let baseFont = baseFont(monospaced: monospaced, prose: prose)
+    let baseAttributes = baseAttributes(font: baseFont, prose: prose)
     guard storage.length > 0 else { return baseAttributes }
     let location = min(max(0, requestedRange.location), storage.length)
     let length = min(max(0, requestedRange.length), storage.length - location)
@@ -5619,7 +5656,7 @@ enum OrgSyntaxHighlighter {
       )
       guard NSMaxRange(range) <= storage.length else { continue }
       storage.addAttributes(
-        attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax),
+        attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax, prose: prose),
         range: range
       )
     }
@@ -5679,8 +5716,18 @@ enum OrgSyntaxHighlighter {
       && !shouldTokenizeLiveText(utf16Length: utf16Length)
   }
 
-  static func baseFont(monospaced: Bool) -> NSFont {
-    monospaced
+  /// A calm serif for Prose mode, drawn from the system's New York design.
+  static func proseFont(size: CGFloat = 17, weight: NSFont.Weight = .regular) -> NSFont {
+    let system = NSFont.systemFont(ofSize: size, weight: weight)
+    guard let descriptor = system.fontDescriptor.withDesign(.serif),
+          let serif = NSFont(descriptor: descriptor, size: size)
+    else { return system }
+    return serif
+  }
+
+  static func baseFont(monospaced: Bool, prose: Bool = false) -> NSFont {
+    if prose { return proseFont() }
+    return monospaced
       ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
       : NSFont.systemFont(ofSize: NSFont.systemFontSize)
   }
@@ -5980,9 +6027,10 @@ enum OrgSyntaxHighlighter {
 
   private static var theme: WorkspaceThemeCenter { WorkspaceThemeCenter.shared }
 
-  private static func baseAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
+  private static func baseAttributes(font: NSFont, prose: Bool = false) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
-    paragraph.lineSpacing = 2
+    paragraph.lineSpacing = prose ? 8 : 2
+    if prose { paragraph.paragraphSpacing = 6 }
     return [
       .font: font,
       .foregroundColor: theme.liveColor(.sourceText),
@@ -5993,8 +6041,12 @@ enum OrgSyntaxHighlighter {
   private static func attributes(
     for kind: OrgSyntaxHighlightKind,
     baseFont: NSFont,
-    concealsSyntax: Bool
+    concealsSyntax: Bool,
+    prose: Bool = false
   ) -> [NSAttributedString.Key: Any] {
+    if prose, let attributes = proseAttributes(for: kind, baseFont: baseFont) {
+      return attributes
+    }
     switch kind {
     case .headingStars:
       return concealsSyntax
@@ -6076,6 +6128,44 @@ enum OrgSyntaxHighlighter {
       return [
         .foregroundColor: theme.liveColor(.comment)
       ]
+    }
+  }
+
+  /// Prose mode shows words, not markup: editing syntax is concealed or muted.
+  /// Returns nil for kinds that keep their ordinary presentation.
+  private static func proseAttributes(
+    for kind: OrgSyntaxHighlightKind,
+    baseFont: NSFont
+  ) -> [NSAttributedString.Key: Any]? {
+    let muted: [NSAttributedString.Key: Any] = [
+      .foregroundColor: NSColor.tertiaryLabelColor,
+      .font: proseFont(size: baseFont.pointSize * 0.8)
+    ]
+    switch kind {
+    case .headingStars, .linkTarget, .syntaxDelimiter:
+      return hiddenSyntaxAttributes(baseFont: baseFont)
+    case .headingTitle:
+      return [
+        .foregroundColor: theme.liveColor(.sourceText),
+        .font: proseFont(size: baseFont.pointSize * 1.35, weight: .semibold)
+      ]
+    case .keyword, .planningKeyword, .propertyKey, .tag, .priority, .comment:
+      return muted
+    case .code:
+      return [
+        .foregroundColor: theme.liveColor(.sourceText),
+        .backgroundColor: theme.liveColor(.code, alpha: 0.12),
+        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.85, weight: .regular)
+      ]
+    case .emphasis:
+      return [
+        .foregroundColor: theme.liveColor(.sourceText),
+        .font: proseFont(size: baseFont.pointSize, weight: .medium)
+      ]
+    case .timestamp:
+      return muted
+    case .todo, .link:
+      return nil
     }
   }
 

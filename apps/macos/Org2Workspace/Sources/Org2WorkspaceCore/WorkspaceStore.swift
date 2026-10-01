@@ -2862,7 +2862,7 @@ public final class WorkspaceStore {
   public var sourceEditorPresentation: SourceEditorPresentation = .source {
     didSet {
       defaults.set(sourceEditorPresentation.rawValue, forKey: sourceEditorPresentationKey)
-      if sourceEditorPresentation == .source {
+      if sourceEditorPresentation != .split {
         cancelSourceEditorPreviewRender(clearStatus: false)
       }
     }
