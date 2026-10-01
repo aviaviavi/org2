@@ -2177,6 +2177,10 @@ public final class WorkspaceStore {
   /// Imported `sending` messages that another host owns. They label the
   /// conversation as busy but are never dispatched by this host's queue.
   @ObservationIgnored private var aiChatForeignPendingMessageIDs: Set<UUID> = []
+  /// Threads whose orphaned managed-remote OpenCode turn this host is reading.
+  @ObservationIgnored private var adoptingOpenCodeTurnThreadIDs: Set<UUID> = []
+  /// Where this machine's managed-remote OpenCode supervisors keep run records.
+  @ObservationIgnored var openCodeLocalRunDirectory = OpenCodeClient.localRunDirectory()
   @ObservationIgnored var aiChatLiveHeartbeatInterval: TimeInterval = 45
   @ObservationIgnored var aiChatLiveFreshnessInterval: TimeInterval = 150
   @ObservationIgnored var aiChatHandoffTimeout: TimeInterval = 120
@@ -25388,11 +25392,27 @@ public final class WorkspaceStore {
         removeFirstPendingAIChatUserMessage(in: threadID)
         continue
       }
-      let dispatchDestinationID = chatThread.isSharedRoom
+      var dispatchDestinationID = chatThread.isSharedRoom
         ? (userMessage.targetDestinationID
             ?? userMessage.targetRuntime.map(AIChatDestinationConfiguration.defaultID(for:))
             ?? chatThread.destinationID)
         : chatThread.destinationID
+      var openCodeSessionDestinationID: String?
+      if aiChatDestination(id: dispatchDestinationID) == nil,
+         let fallback = await localOpenCodeFallback(
+           for: chatThread,
+           missingDestinationID: dispatchDestinationID,
+           corpusRoot: sendOrigin.corpusRoot
+         ) {
+        if let ownerID = chatThread.pendingTurn?.dispatchOwnerID,
+           ownerID != Self.aiChatDispatchOwnerID {
+          // The starting host's turn is still unresolved. It is delivered
+          // (or adopted) first; this message then drains behind it.
+          break
+        }
+        dispatchDestinationID = fallback.destinationID
+        openCodeSessionDestinationID = fallback.sessionDestinationID
+      }
       guard let dispatchDestination = aiChatDestination(id: dispatchDestinationID) else {
         replaceAIChatDeliveryStatus(for: userMessageID, in: threadID, with: .failed)
         insertSharedRoomFailure(
@@ -25512,6 +25532,7 @@ public final class WorkspaceStore {
             messages: requestMessages,
             threadID: threadID,
             destinationID: dispatchDestinationID,
+            sessionDestinationID: openCodeSessionDestinationID,
             sendOrigin: sendOrigin
           )
         case .openAI, .anthropic, .openRouter, .ollama:
@@ -25540,7 +25561,9 @@ public final class WorkspaceStore {
           changeSummary: nil,
           authorRuntime: chatThread.isSharedRoom ? dispatchRuntime : nil,
           authorDestinationID: chatThread.isSharedRoom || usesBundledAgent
-            ? dispatchDestinationID : nil
+            ? dispatchDestinationID : nil,
+          replyID: dispatchDestination.adapter == .openCodeRemote && !chatThread.isSharedRoom
+            ? Self.openCodeRemoteReplyID(for: userMessageID) : nil
         )
         activeAIChatUserMessageIDByThreadID.removeValue(forKey: threadID)
         clearAIChatCompletedRunPresentation(for: threadID)
@@ -25878,7 +25901,9 @@ public final class WorkspaceStore {
           transcriptURL: sendOrigin.transcriptURL,
           changeSummary: nil,
           authorRuntime: thread.isSharedRoom ? .openClaw : nil,
-          authorDestinationID: thread.isSharedRoom ? pendingDestinationID : nil
+          authorDestinationID: thread.isSharedRoom ? pendingDestinationID : nil,
+          replyID: recoversOpenCode
+            ? Self.openCodeRemoteReplyID(for: pendingTurn.userMessageID) : nil
         )
         // Remove exactly the recovered message; never drop a queued follow-up.
         removePendingAIChatUserMessage(pendingTurn.userMessageID, in: threadID)
@@ -26521,12 +26546,37 @@ public final class WorkspaceStore {
     return reply.isEmpty ? "Pi completed the turn without a text response." : reply
   }
 
+  /// When a conversation's OpenCode destination is configured only on the
+  /// host that started it (for example a laptop's "OpenCode on press" SSH
+  /// destination), another host that has to run the turn uses its own local
+  /// OpenCode. If that installation already holds the conversation's session
+  /// (the SSH destination ran on this machine), the session is resumed so
+  /// the agent keeps its full context.
+  private func localOpenCodeFallback(
+    for thread: AIChatThread,
+    missingDestinationID: String,
+    corpusRoot: URL?
+  ) async -> (destinationID: String, sessionDestinationID: String?)? {
+    guard !thread.isSharedRoom, thread.runtime == .openCode,
+          let local = enabledAIChatDestinations.first(where: { $0.adapter == .openCodeLocal })
+    else { return nil }
+    guard let sessionID = thread.runtimeThreadID(forDestinationID: missingDestinationID),
+          let corpusRoot,
+          let client = try? openCodeClient(forDestinationID: local.id),
+          await client.hasSession(sessionID, cwd: corpusRoot)
+    else { return (local.id, nil) }
+    return (local.id, missingDestinationID)
+  }
+
   private func sendOpenCodeRequest(
     messages: [AIChatMessage],
     threadID: UUID,
     destinationID: String,
+    sessionDestinationID: String? = nil,
     sendOrigin: AIChatSendOrigin
   ) async throws -> String {
+    // The destination whose saved session and model this turn continues.
+    let sessionDestinationID = sessionDestinationID ?? destinationID
     guard let corpusRoot = sendOrigin.corpusRoot else {
       throw OpenCodeError.invalidResponse("choose an Org2 corpus before using OpenCode")
     }
@@ -26602,7 +26652,7 @@ public final class WorkspaceStore {
     do {
       result = try await openCodeClient(forDestinationID: destinationID).runTurn(
         openOrgThreadID: threadID,
-        existingSessionID: thread.runtimeThreadID(forDestinationID: destinationID),
+        existingSessionID: thread.runtimeThreadID(forDestinationID: sessionDestinationID),
         message: Self.expandingOpenClawAgentCommand(
           requestUserMessage,
           corpusSkills: corpusAgentSkillCommands
@@ -26614,7 +26664,7 @@ public final class WorkspaceStore {
         ),
         attachments: requestUserMessage.attachments,
         cwd: corpusRoot,
-        model: thread.model(forDestinationID: destinationID) ?? destination.model,
+        model: thread.model(forDestinationID: sessionDestinationID) ?? destination.model,
         reasoningEffort: thread.isSharedRoom ? nil : thread.reasoningEffort,
         sandboxAccess: codexSandboxAccess,
         runToken: pendingTurn?.runID
@@ -26634,7 +26684,7 @@ public final class WorkspaceStore {
     }
     persistRuntimeSessionID(
       result.sessionID,
-      destinationID: destinationID,
+      destinationID: sessionDestinationID,
       thread: thread,
       transcriptURL: sendOrigin.transcriptURL
     )
@@ -29040,10 +29090,25 @@ public final class WorkspaceStore {
     transcriptURL: URL? = nil,
     changeSummary: AIChatCorpusChangeSummary?,
     authorRuntime: AIChatRuntime? = nil,
-    authorDestinationID: String? = nil
+    authorDestinationID: String? = nil,
+    replyID: UUID? = nil
   ) -> UUID {
     let targetTranscriptURL = transcriptURL ?? aiChatTranscriptURL
     var messages = aiChatMessages(for: threadID, transcriptURL: targetTranscriptURL)
+    if let replyID, messages.contains(where: { $0.id == replyID }) {
+      // Another host already delivered this exact turn; only settle it here.
+      if let index = messages.firstIndex(where: { $0.id == userMessageID }) {
+        messages[index] = messages[index].replacingDeliveryStatus(.sent, sendFailure: nil)
+      }
+      updateAIChatThread(
+        threadID,
+        messages: messages,
+        transcriptURL: targetTranscriptURL,
+        shouldPersist: true,
+        pendingTurnUpdate: .replace(nil)
+      )
+      return replyID
+    }
     let roomRoundID = messages.first(where: { $0.id == userMessageID })?.roomRoundID
     let traceDestinationID = authorDestinationID
       ?? aiChatThread(threadID, transcriptURL: targetTranscriptURL)?.destinationID
@@ -29060,6 +29125,7 @@ public final class WorkspaceStore {
       context: aiChatContextByDestinationTurn.removeValue(forKey: telemetryKey)
     )
     let assistantMessage = AIChatMessage(
+      id: replyID ?? UUID(),
       role: .assistant,
       content: reply,
       changeSummary: changeSummary,
@@ -40594,6 +40660,21 @@ public final class WorkspaceStore {
     )
   }
 
+  /// The reply ID for a managed remote OpenCode turn. The turn keeps running
+  /// on its harness host, so more than one OpenOrg host may collect it (the
+  /// host that started it after waking, and a host on the harness machine
+  /// while the first was asleep). A shared ID lets their copies merge.
+  nonisolated static func openCodeRemoteReplyID(for userMessageID: UUID) -> UUID {
+    let digest = SHA256.hash(data: Data("openorg-opencode-remote-reply:\(userMessageID.uuidString.lowercased())".utf8))
+    var bytes = Array(digest.prefix(16))
+    bytes[6] = (bytes[6] & 0x0F) | 0x50
+    bytes[8] = (bytes[8] & 0x3F) | 0x80
+    return UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
+  }
+
   /// The host whose runtime most recently handled the conversation.
   func aiChatExecutionHostRef(for messages: [AIChatMessage]) -> String? {
     messages.last(where: { $0.provenance?.executionHostRef != nil })?.provenance?.executionHostRef
@@ -40695,7 +40776,10 @@ public final class WorkspaceStore {
         while !Task.isCancelled {
           guard let self else { return }
           self.publishAIChatLivePresenceIfNeeded()
-          if tick % 5 == 0 { self.processAIChatHandoffs() }
+          if tick % 5 == 0 {
+            self.processAIChatHandoffs()
+            self.adoptOrphanedOpenCodeTurns()
+          }
           if tick % 15 == 0 { self.scheduleAIChatLiveRefresh() }
           tick &+= 1
           try? await Task.sleep(nanoseconds: self.aiChatLivePresenceTickNanoseconds)
@@ -40833,6 +40917,106 @@ public final class WorkspaceStore {
 
   /// Accept conversations another host handed to this one, and take back
   /// hand-offs whose target went away.
+  /// A managed remote OpenCode turn keeps running on its harness machine when
+  /// the OpenOrg host that started it sleeps or quits, but only that host
+  /// records the reply. When the turn ran on this machine and finished while
+  /// its host is offline, deliver it here so paired phones see the reply
+  /// without waiting for the laptop to wake. The finished record stays for
+  /// the starting host, which writes the same reply ID when it reconnects.
+  func adoptOrphanedOpenCodeTurns(now: Date = Date()) {
+    guard hasAuthoritativeAIChatTranscriptState,
+          !isLoadingAIChatTranscript,
+          !aiChatTranscriptWritesBlocked,
+          !isPreparingForTermination
+    else { return }
+    let directory = openCodeLocalRunDirectory
+    for thread in aiChatThreads where !thread.isSharedRoom {
+      guard let pendingTurn = thread.pendingTurn,
+            let ownerID = pendingTurn.dispatchOwnerID,
+            ownerID != Self.aiChatDispatchOwnerID,
+            !adoptingOpenCodeTurnThreadIDs.contains(thread.id),
+            FileManager.default.fileExists(
+              atPath: directory.appendingPathComponent(
+                "\(thread.id.uuidString.lowercased()).json"
+              ).path
+            )
+      else { continue }
+      if thread.storedMessageCount != nil {
+        if aiChatHandoffHydrationRequests.insert(thread.id).inserted {
+          Task { @MainActor [weak self] in
+            _ = await self?.hydrateAIChatThreadIfNeeded(thread.id)
+          }
+        }
+        continue
+      }
+      guard let user = thread.messages.first(where: {
+              $0.id == pendingTurn.userMessageID && $0.role == .user && $0.deliveryStatus == .sending
+            }),
+            let hostRef = user.provenance?.executionHostRef,
+            hostRef != aiChatHostIdentity.ref,
+            freshAIChatRemoteHost(ref: hostRef, now: now) == nil
+      else { continue }
+      let threadID = thread.id
+      adoptingOpenCodeTurnThreadIDs.insert(threadID)
+      Task { @MainActor [weak self] in
+        let outcome = await OpenCodeClient.finishedLocalRun(
+          threadID: threadID,
+          runToken: pendingTurn.runID,
+          directory: directory
+        )
+        guard let self else { return }
+        defer { self.adoptingOpenCodeTurnThreadIDs.remove(threadID) }
+        guard let outcome else { return }
+        await self.deliverAdoptedOpenCodeTurn(outcome, pendingTurn: pendingTurn, threadID: threadID)
+      }
+    }
+  }
+
+  private func deliverAdoptedOpenCodeTurn(
+    _ outcome: Result<OpenCodeTurnResult, OpenCodeError>,
+    pendingTurn: AIChatPendingTurn,
+    threadID: UUID
+  ) async {
+    // Re-check: the starting host may have delivered it while this was read.
+    guard let thread = aiChatThread(threadID, transcriptURL: aiChatTranscriptURL),
+          thread.pendingTurn?.runID == pendingTurn.runID,
+          thread.messages.contains(where: {
+            $0.id == pendingTurn.userMessageID && $0.deliveryStatus == .sending
+          })
+    else { return }
+    let destinationID = pendingTurn.destinationID ?? thread.destinationID
+    switch outcome {
+    case .success(let result):
+      persistRuntimeSessionID(
+        result.sessionID,
+        destinationID: destinationID,
+        thread: thread,
+        transcriptURL: aiChatTranscriptURL
+      )
+      let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+      _ = insertAIChatReply(
+        reply.isEmpty ? "OpenCode completed the turn without a text response." : reply,
+        after: pendingTurn.userMessageID,
+        in: threadID,
+        changeSummary: nil,
+        replyID: Self.openCodeRemoteReplyID(for: pendingTurn.userMessageID)
+      )
+    case .failure(let error):
+      await failPendingAIChatTurnDefinitively(
+        pendingTurn,
+        in: threadID,
+        failureText: error.localizedDescription
+      )
+    }
+    aiChatForeignPendingMessageIDs.remove(pendingTurn.userMessageID)
+    removePendingAIChatUserMessage(pendingTurn.userMessageID, in: threadID)
+    nudgeAIChatStoreSynchronization()
+    // Messages queued here behind the orphaned turn may run now.
+    if !aiChatPendingUserMessageIDs(for: threadID).isEmpty {
+      await drainAIChatSendQueue(for: threadID)
+    }
+  }
+
   func processAIChatHandoffs(now: Date = Date()) {
     guard hasAuthoritativeAIChatTranscriptState,
           !isLoadingAIChatTranscript,

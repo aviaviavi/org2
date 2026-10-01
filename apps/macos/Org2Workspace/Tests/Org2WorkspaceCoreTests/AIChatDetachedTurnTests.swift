@@ -330,6 +330,195 @@ final class AIChatDetachedTurnTests: XCTestCase {
     XCTAssertEqual(again.status, OpenCodeClient.detachedRunMissingStatus)
   }
 
+  /// A connected client may be asleep rather than gone, so a finished turn
+  /// keeps its record and complete event stream for a later collector even
+  /// when the channel stayed open.
+  func testFinishedTurnKeepsItsRecordForALaterCollector() async throws {
+    let python = try pythonExecutable()
+    let environment = try fakeOpenCodeEnvironment(runScript: """
+      echo '{"type":"step_start","sessionID":"ses_kept","part":{}}'
+      echo '{"type":"text","sessionID":"ses_kept","part":{"text":"Delivered "}}'
+      echo '{"type":"text","sessionID":"ses_kept","part":{"text":"while asleep."}}'
+      """)
+    let threadID = UUID()
+    let run = try runPython(
+      python,
+      source: OpenCodeClient.managedRemotePythonBootstrap,
+      input: runPayload(threadID: threadID.uuidString.lowercased(), token: "turn-kept"),
+      environment: environment
+    )
+    XCTAssertEqual(run.status, 0)
+    XCTAssertTrue(run.output.contains("while asleep."))
+
+    let directory = OpenCodeClient.localRunDirectory(environment: environment)
+    let wrongToken = await OpenCodeClient.finishedLocalRun(
+      threadID: threadID, runToken: "other-turn", directory: directory
+    )
+    XCTAssertNil(wrongToken)
+    let collected = await OpenCodeClient.finishedLocalRun(
+      threadID: threadID, runToken: "turn-kept", directory: directory
+    )
+    guard case .success(let result) = collected else {
+      return XCTFail("expected the finished turn, got \(String(describing: collected))")
+    }
+    XCTAssertEqual(result.sessionID, "ses_kept")
+    XCTAssertEqual(result.reply, "Delivered while asleep.")
+
+    // The starting host can still attach afterwards, which consumes it.
+    let attach = try runPython(
+      python,
+      source: OpenCodeClient.managedRemoteAttachPythonBootstrap,
+      input: #"{"threadID":"\#(threadID.uuidString.lowercased())","runToken":"turn-kept"}"#,
+      environment: environment
+    )
+    XCTAssertEqual(attach.status, 0)
+    XCTAssertTrue(attach.output.contains("while asleep."))
+  }
+
+  /// When the laptop that started a managed remote OpenCode turn is asleep,
+  /// the OpenOrg host on the harness machine delivers the finished turn, and
+  /// the laptop's own delivery on waking merges into the same reply.
+  @MainActor
+  func testHarnessHostDeliversATurnWhoseStartingHostIsOffline() async throws {
+    let transcriptURL = root.appendingPathComponent("chat.json")
+    let runDirectory = root.appendingPathComponent("runs", isDirectory: true)
+    try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+    let user = AIChatMessage(
+      role: .user,
+      content: "Fix it",
+      deliveryStatus: .sending,
+      provenance: AIChatMessageProvenance(
+        originClient: .desktop,
+        receivedByHostRef: "desktop-laptop",
+        receivedByHostName: "Laptop",
+        executionHostRef: "desktop-laptop",
+        executionHostName: "Laptop",
+        acceptedAt: Date()
+      )
+    )
+    let pendingTurn = AIChatPendingTurn(
+      userMessageID: user.id,
+      runID: user.id.uuidString.lowercased(),
+      idempotencyKey: user.id.uuidString.lowercased(),
+      dispatchOwnerID: "laptop.local",
+      agentID: "opencode",
+      destinationID: "laptop-only-opencode-on-press",
+      gatewayMessage: ""
+    )
+    let thread = AIChatThread(
+      title: "Orphaned turn",
+      runtime: .openCode,
+      destinationID: "laptop-only-opencode-on-press",
+      sessionKey: "orphaned-turn",
+      messages: [user],
+      pendingTurn: pendingTurn
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [thread],
+        selectedThreadID: thread.id,
+        settlementSettings: AIChatThreadSettlementSettings()
+      ),
+      legacyURL: transcriptURL
+    )
+    let base = runDirectory.appendingPathComponent(thread.id.uuidString.lowercased())
+    try #"{"version":1,"threadID":"\#(thread.id.uuidString.lowercased())","token":"\#(pendingTurn.runID)","pid":1,"updatedAt":0,"state":"finished","exitCode":0}"#
+      .write(to: base.appendingPathExtension("json"), atomically: true, encoding: .utf8)
+    try """
+      {"type":"step_start","sessionID":"ses_orphan","part":{}}
+      {"type":"text","sessionID":"ses_orphan","part":{"text":"Fixed while the laptop slept."}}
+
+      """.write(to: base.appendingPathExtension("events.jsonl"), atomically: true, encoding: .utf8)
+
+    let store = try makeStore(transcriptURL: transcriptURL)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    store.openCodeLocalRunDirectory = runDirectory
+
+    let replyID = WorkspaceStore.openCodeRemoteReplyID(for: user.id)
+    let deadline = Date().addingTimeInterval(10)
+    var messages: [AIChatMessage] = []
+    while Date() < deadline {
+      store.adoptOrphanedOpenCodeTurns()
+      try await Task.sleep(nanoseconds: 50_000_000)
+      messages = store.aiChatThreads.first(where: { $0.id == thread.id })?.messages ?? []
+      if messages.count == 2 { break }
+    }
+    XCTAssertEqual(messages.map(\.content), ["Fix it", "Fixed while the laptop slept."])
+    XCTAssertEqual(messages.last?.id, replyID)
+    XCTAssertEqual(messages.first?.deliveryStatus, .sent)
+    let adopted = store.aiChatThreads.first(where: { $0.id == thread.id })
+    XCTAssertNil(adopted?.pendingTurn)
+    XCTAssertEqual(adopted?.runtimeThreadID(forDestinationID: "laptop-only-opencode-on-press"), "ses_orphan")
+    // The record stays for the laptop, which collects it when it wakes.
+    XCTAssertTrue(FileManager.default.fileExists(atPath: base.appendingPathExtension("json").path))
+
+    // Running again must not deliver a second copy.
+    store.adoptOrphanedOpenCodeTurns()
+    try await Task.sleep(nanoseconds: 200_000_000)
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == thread.id })?.messages.count, 2)
+  }
+
+  /// A host that recovers a remote OpenCode turn another host already
+  /// delivered settles it instead of adding a duplicate reply.
+  @MainActor
+  func testRecoveredRemoteOpenCodeReplyMergesWithAnAdoptedCopy() async throws {
+    let transcriptURL = root.appendingPathComponent("chat.json")
+    let destination = AIChatDestinationConfiguration(
+      name: "OpenCode",
+      mention: "opencode-press",
+      adapter: .openCodeRemote,
+      endpoint: "press"
+    )
+    let user = AIChatMessage(role: .user, content: "Keep going", deliveryStatus: .sending)
+    let adoptedReply = AIChatMessage(
+      id: WorkspaceStore.openCodeRemoteReplyID(for: user.id),
+      role: .assistant,
+      content: "Finished while the laptop slept"
+    )
+    let pendingTurn = AIChatPendingTurn(
+      userMessageID: user.id,
+      runID: user.id.uuidString.lowercased(),
+      agentID: "opencode",
+      destinationID: destination.id,
+      gatewayMessage: ""
+    )
+    let thread = AIChatThread(
+      title: "Remote turn",
+      runtime: .openCode,
+      destinationID: destination.id,
+      sessionKey: "remote-turn",
+      messages: [user, adoptedReply],
+      pendingTurn: pendingTurn
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [thread],
+        selectedThreadID: thread.id,
+        settlementSettings: AIChatThreadSettlementSettings()
+      ),
+      legacyURL: transcriptURL
+    )
+    let suite = "detached-turn-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      aiChatTranscriptURL: transcriptURL,
+      aiChatRecoveryHandler: { _, _ in "Finished while the laptop slept" },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    await store.waitForAIChatTranscriptLoadForTesting()
+    store.updateAIChatDestination(destination)
+
+    await store.recoverPendingAIChatTurns()
+
+    let recovered = store.aiChatThreads.first(where: { $0.id == thread.id })
+    XCTAssertEqual(recovered?.messages.map(\.content), ["Keep going", "Finished while the laptop slept"])
+    XCTAssertEqual(recovered?.messages.first?.deliveryStatus, .sent)
+    XCTAssertNil(recovered?.pendingTurn)
+  }
+
   func testRemoteStopEndsADetachedTurn() throws {
     let python = try pythonExecutable()
     let environment = try fakeOpenCodeEnvironment(runScript: """

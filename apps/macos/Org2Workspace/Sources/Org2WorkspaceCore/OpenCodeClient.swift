@@ -446,6 +446,30 @@ def openorg_pid_alive(pid):
     except (OSError, TypeError, ValueError):
         return False
 
+def openorg_prune_finished_runs(max_age_seconds=3 * 24 * 3600):
+    # Finished records stay so a later client can still collect the turn;
+    # drop ones nobody collected within a few days.
+    now = time.time()
+    try:
+        names = os.listdir(OPENORG_RUN_DIRECTORY)
+    except OSError:
+        return
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(OPENORG_RUN_DIRECTORY, name)
+        try:
+            with open(path, "r") as handle:
+                record = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if record.get("state") == "finished" and now - float(record.get("updatedAt") or 0) > max_age_seconds:
+            for stale in (path, path[:-len(".json")] + ".events.jsonl"):
+                try:
+                    os.remove(stale)
+                except OSError:
+                    pass
+
 def openorg_stop_previous_run(run):
     record = openorg_read_record(run)
     if record and record.get("state") == "running" and record.get("pid") != os.getpid():
@@ -458,6 +482,7 @@ def openorg_stop_previous_run(run):
 import base64
 import json
 import os
+import queue
 import shutil
 import signal
 import subprocess
@@ -526,6 +551,7 @@ try:
     detached = [False]
     run = openorg_run_files(payload)
     if run is not None:
+        openorg_prune_finished_runs()
         openorg_stop_previous_run(run)
         events = open(run["events"], "wb")
         os.chmod(run["events"], 0o600)
@@ -545,32 +571,47 @@ try:
                 process.send_signal(signum)
     signal.signal(signal.SIGINT, forward)
     signal.signal(signal.SIGTERM, forward)
+    # The durable copy never waits on the client: a sleeping client stops
+    # reading without closing the channel, and a blocked write must not hold
+    # back the rest of the turn's events.
+    outbound = queue.Queue()
     def relay():
         for line in iter(process.stdout.readline, b""):
             if run is not None:
                 events.write(line)
                 events.flush()
-            if not detached[0]:
-                try:
-                    sys.stdout.buffer.write(line)
-                    sys.stdout.buffer.flush()
-                except OSError:
-                    detached[0] = True
+            outbound.put(line)
+        outbound.put(None)
+    def deliver():
+        while True:
+            line = outbound.get()
+            if line is None:
+                return
+            if detached[0]:
+                continue
+            try:
+                sys.stdout.buffer.write(line)
+                sys.stdout.buffer.flush()
+            except OSError:
+                detached[0] = True
     relay_thread = threading.Thread(target=relay, daemon=True)
     relay_thread.start()
+    deliver_thread = threading.Thread(target=deliver, daemon=True)
+    deliver_thread.start()
     status = process.wait()
     # A stray descendant may keep the pipe open after the turn exits.
     relay_thread.join(5)
     if run is not None:
         events.close()
-        # A newer turn in this chat replaces (and stops) this one; never
-        # overwrite its record.
-        if not openorg_owns_run(run):
-            pass
-        elif detached[0]:
+        # Keep the finished record even when a client is connected: it may be
+        # asleep, and a later attach (or another OpenOrg host on this machine)
+        # must still be able to collect the turn. A newer turn in this chat
+        # replaces (and stops) this one; never overwrite its record.
+        if openorg_owns_run(run):
             openorg_write_record(run, {"state": "finished", "exitCode": status})
-        else:
-            openorg_remove_run(run)
+    deliver_thread.join(10)
+    if deliver_thread.is_alive():
+        detached[0] = True
     if detached[0]:
         # stdout is gone; skip interpreter shutdown flushes that would fail.
         server.terminate()
@@ -899,6 +940,74 @@ sys.exit(result.returncode)
       openOrgThreadID: openOrgThreadID,
       mayOutliveConnection: transport != .local
     )
+  }
+
+  /// Directory where this machine's managed-remote supervisors keep their
+  /// durable run records (see ``managedRemoteRunRecordPython``).
+  nonisolated static func localRunDirectory(
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> URL {
+    let stateHome = environment["XDG_STATE_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+      .map { URL(fileURLWithPath: $0, isDirectory: true) }
+      ?? FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".local/state", isDirectory: true)
+    return stateHome
+      .appendingPathComponent("openorg", isDirectory: true)
+      .appendingPathComponent("opencode-runs", isDirectory: true)
+  }
+
+  /// The outcome of a managed-remote turn that ran on *this* machine and has
+  /// finished, read from its durable record without consuming it. Returns nil
+  /// when no such finished turn exists here (it is still running, ran on
+  /// another machine, or was already collected).
+  nonisolated static func finishedLocalRun(
+    threadID: UUID,
+    runToken: String,
+    directory: URL = OpenCodeClient.localRunDirectory()
+  ) async -> Result<OpenCodeTurnResult, OpenCodeError>? {
+    let base = directory.appendingPathComponent(threadID.uuidString.lowercased())
+    guard let recordData = try? Data(contentsOf: base.appendingPathExtension("json")),
+          let record = try? JSONSerialization.jsonObject(with: recordData) as? [String: Any],
+          record["state"] as? String == "finished",
+          let token = record["token"] as? String, !token.isEmpty, token == runToken,
+          let events = try? String(
+            contentsOf: base.appendingPathExtension("events.jsonl"),
+            encoding: .utf8
+          )
+    else { return nil }
+    var decoder = OpenCodeStreamDecoder()
+    for line in events.split(whereSeparator: \.isNewline) {
+      await decoder.consume(String(line)) { _ in }
+    }
+    let decoded = decoder.result
+    let status = (record["exitCode"] as? NSNumber)?.int32Value ?? 0
+    guard status == 0, decoded.succeeded, decoded.errors.isEmpty else {
+      let detail = decoded.errors.joined(separator: "\n")
+      return .failure(.turnFailed(detail.isEmpty ? "OpenCode exited with status \(status)." : detail))
+    }
+    guard let sessionID = decoded.sessionID, !sessionID.isEmpty else {
+      return .failure(.invalidResponse("the response did not include a session ID"))
+    }
+    return .success(OpenCodeTurnResult(sessionID: sessionID, reply: decoded.reply))
+  }
+
+  /// Whether this client's OpenCode installation knows `sessionID`. A local
+  /// client shares its session store with any managed-remote turns that ran
+  /// on this machine, so it can resume them.
+  public func hasSession(_ sessionID: String, cwd: URL) async -> Bool {
+    guard case .local = transport, let executableURL,
+          let sessionID = Self.normalized(sessionID)
+    else { return false }
+    guard let result = try? await Self.runCommand(
+      executableURL: executableURL,
+      arguments: ["api", "session.get", "--param", "sessionID=\(sessionID)"],
+      cwd: cwd.standardizedFileURL,
+      environment: environment
+    ) else { return false }
+    guard let object = try? JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any]
+    else { return false }
+    let session = (object["data"] as? [String: Any]) ?? object
+    return session["id"] as? String == sessionID
   }
 
   /// Follows a turn that a previous OpenOrg process started on a managed
