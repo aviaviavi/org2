@@ -144,12 +144,30 @@ final class OrgProseEditorController: NSObject, ObservableObject, NSMenuItemVali
     snapshot = OrgProseSnapshot.make(for: textView.string)
     applyPresentation()
     updateSelectionState()
+    normalizeTypingAttributes(in: textView)
   }
 
   func selectionDidChange() {
     guard let textView else { return }
     clampCaretOutOfHiddenState(in: textView)
     updateSelectionState()
+    normalizeTypingAttributes(in: textView)
+  }
+
+  /// Keeps the insertion-point size tied to the base Prose face. Without this
+  /// the caret inherits the font of whatever run it sits on, which swings
+  /// from hidden-syntax's near-zero font to enlarged headings.
+  private func normalizeTypingAttributes(in textView: NSTextView) {
+    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: false, prose: true)
+  }
+
+  /// Clicking the prose margin (outside the text column) should collapse the
+  /// selection so its highlight does not stay on screen.
+  func clearSelectionKeepingCaret() {
+    guard let textView else { return }
+    let range = textView.selectedRange()
+    guard range.length > 0 else { return }
+    textView.setSelectedRange(NSRange(location: range.location, length: 0))
   }
 
   private func clampCaretOutOfHiddenState(in textView: NSTextView) {
@@ -464,6 +482,18 @@ final class OrgProseEditorController: NSObject, ObservableObject, NSMenuItemVali
     let parent = NSMenuItem(title: "Prose", action: nil, keyEquivalent: "")
     parent.submenu = submenu
     menu.addItem(parent)
+
+    // Surfaces the cycling shortcuts where users read menus; the buttons in
+    // the toolbar bind the actual keys.
+    for (title, key, action) in [
+      ("Next Alternative", "]", #selector(menuNextAlternative(_:))),
+      ("Previous Alternative", "[", #selector(menuPreviousAlternative(_:)))
+    ] {
+      if let item = submenu.items.first(where: { $0.title == title }) {
+        item.keyEquivalent = key
+        item.keyEquivalentModifierMask = [.control, .option]
+      }
+    }
   }
 
   @objc private func menuAddAlternative(_ sender: Any?) { beginAddAlternative() }

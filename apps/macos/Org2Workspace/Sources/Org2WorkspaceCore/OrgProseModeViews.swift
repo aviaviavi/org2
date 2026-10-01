@@ -51,6 +51,11 @@ struct OrgProseToolbar: View {
       .disabled(selection.alternativeCount < 2)
       .fixedSize()
 
+      Text("⌃⌥[ / ⌃⌥]")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .help("Step through versions with Control-Option-[ and Control-Option-]")
+
       if let index = selection.alternativeIndex {
         Text("\(index + 1) of \(selection.alternativeCount)")
           .font(.caption.monospacedDigit())
@@ -134,6 +139,10 @@ struct OrgProseAlternativeSheet: View {
         .font(.title3.weight(.semibold))
       Text("The new version replaces the text in your document. The current text stays one keystroke away.")
         .font(.callout)
+        .foregroundStyle(.secondary)
+
+      Text("Step between versions later with the toolbar arrows or Control-Option-[ and Control-Option-], or pick one in the side panel.")
+        .font(.caption)
         .foregroundStyle(.secondary)
 
       Text("Current")

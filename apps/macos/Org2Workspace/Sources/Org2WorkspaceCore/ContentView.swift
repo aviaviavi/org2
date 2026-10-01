@@ -13577,10 +13577,18 @@ private struct OrgSourceEditorWithLinkTools: View {
 
   private var proseColumn: some View {
     HStack(spacing: 0) {
-      sourceEditor(prose: true)
-        .frame(maxWidth: OrgProsePresentation.measure)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+      ZStack {
+        // Clicking the empty prose margin collapses the selection so the
+        // highlight never feels stuck; clicks on text stay with the editor.
+        Color.clear
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .contentShape(Rectangle())
+          .onTapGesture { prose.clearSelectionKeepingCaret() }
+        sourceEditor(prose: true)
+          .frame(maxWidth: OrgProsePresentation.measure)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color(nsColor: .textBackgroundColor))
       if showsProseSidebar {
         OrgProseSidebar(controller: prose)
       }

@@ -347,4 +347,22 @@ final class OrgProseEditorTests: XCTestCase {
     mounted.controller.detach(from: mounted.textView)
     XCTAssertNil(layout.delegate)
   }
+
+  func testCaretInheritsProseFaceInsteadOfNearbyRunFonts() throws {
+    let mounted = try mount("Body with a [[https://example.com][link]].\n")
+    mounted.textView.typingAttributes = [.font: NSFont.monospacedSystemFont(ofSize: 0.01, weight: .regular)]
+    mounted.controller.selectionDidChange()
+    let font = try XCTUnwrap(mounted.textView.typingAttributes[.font] as? NSFont)
+    XCTAssertGreaterThanOrEqual(font.pointSize, 17)
+  }
+
+  func testClearSelectionKeepsCaretAndDropsHighlight() throws {
+    let mounted = try mount("One two three.\n")
+    select("two", in: mounted)
+    XCTAssertGreaterThan(mounted.textView.selectedRange().length, 0)
+    mounted.controller.clearSelectionKeepingCaret()
+    let range = mounted.textView.selectedRange()
+    XCTAssertEqual(range.length, 0)
+    XCTAssertLessThanOrEqual(range.location, mounted.textView.string.count)
+  }
 }
