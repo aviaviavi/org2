@@ -58,6 +58,7 @@ public enum RenderedDocumentMargin: String, CaseIterable, Identifiable, Sendable
 public enum SourceEditorPresentation: String, CaseIterable, Identifiable, Sendable {
   case source
   case split
+  case prose
 
   public var id: String { rawValue }
 
@@ -65,6 +66,7 @@ public enum SourceEditorPresentation: String, CaseIterable, Identifiable, Sendab
     switch self {
     case .source: "Source"
     case .split: "Split"
+    case .prose: "Prose"
     }
   }
 
@@ -72,6 +74,7 @@ public enum SourceEditorPresentation: String, CaseIterable, Identifiable, Sendab
     switch self {
     case .source: "doc.plaintext"
     case .split: "rectangle.split.2x1"
+    case .prose: "text.alignleft"
     }
   }
 }

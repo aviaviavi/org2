@@ -13516,6 +13516,10 @@ private struct OrgSourceEditorWithLinkTools: View {
   @State private var sourceSelectionSnapshot: OrgSyntaxTextEditorSelectionSnapshot?
   @State private var sourcePreviewScrollTask: Task<Void, Never>?
   @State private var dateMentionState = WorkspaceDateMentionCompletionState()
+  @StateObject private var prose = OrgProseEditorController()
+  @State private var showsProseSidebar = true
+
+  private var isProse: Bool { store.sourceEditorPresentation == .prose }
 
   var body: some View {
     @Bindable var store = store
@@ -13529,9 +13533,17 @@ private struct OrgSourceEditorWithLinkTools: View {
           sourcePreview
             .frame(minWidth: 320)
         }
+      } else if isProse {
+        proseColumn
       } else {
         sourceColumn
       }
+    }
+    .sheet(item: $prose.alternativeDraft) { draft in
+      OrgProseAlternativeSheet(controller: prose, draft: draft)
+    }
+    .onAppear {
+      prose.onStatus = { [store] status in store.statusText = status }
     }
     .task {
       scheduleSourcePreviewScroll()
@@ -13563,82 +13575,36 @@ private struct OrgSourceEditorWithLinkTools: View {
     }
   }
 
+  private var proseColumn: some View {
+    HStack(spacing: 0) {
+      ZStack {
+        // Clicking the empty prose margin collapses the selection so the
+        // highlight never feels stuck; clicks on text stay with the editor.
+        Color.clear
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .contentShape(Rectangle())
+          .onTapGesture { prose.clearSelectionKeepingCaret() }
+        sourceEditor(prose: true)
+          .frame(maxWidth: OrgProsePresentation.measure)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color(nsColor: .textBackgroundColor))
+      if showsProseSidebar {
+        OrgProseSidebar(controller: prose)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(WorkspaceDesign.hairline)
+    )
+  }
+
   private var sourceColumn: some View {
     @Bindable var store = store
-    let sourceAtMount = store.selectedEntrySource
     return VStack(alignment: .leading, spacing: 8) {
-      OrgSyntaxTextEditor(
-        text: $interaction.text,
-        monospaced: true,
-        showsScrollers: true,
-        textInset: NSSize(width: 12, height: 12),
-        focusOnAppear: true,
-        textPublishing: .deferred(milliseconds: 500),
-        liveHighlighting: true,
-        incrementalHighlighting: true,
-        incrementalHighlightingDelayMilliseconds: 120,
-        concealsSyntax: false,
-        orgWritingCommands: true,
-        pasteAsOrgEnabled: { store.experimentalFeaturesEnabled },
-        textChecking: .spellingAndGrammar,
-        caretPublishingDelayMilliseconds: 180,
-        semanticAnalysisDelayMilliseconds: 900,
-        commandRequest: store.sourceEditorCommandRequest,
-        semanticAnalyzer: { text in
-          await store.analyzeSourceEditorText(text)
-        },
-        diagnostics: $store.sourceEditorDiagnostics,
-        onCommandStatus: { status in
-          store.statusText = status
-        },
-        selection: $interaction.selection,
-        onSelectionSnapshot: { snapshot in
-          sourceSelectionSnapshot = snapshot
-          if sourceCaretLocalLine != snapshot.sourceLine {
-            sourceCaretLocalLine = snapshot.sourceLine
-            scheduleSourcePreviewScroll()
-          }
-        },
-        onViewportSourceLine: { line in
-          guard let source = store.selectedEntrySource else { return }
-          store.recordDocumentViewportSourceLine(
-            source.startLine + line - 1,
-            for: source
-          )
-        },
-        onGutterBacklinks: { line in
-          store.showSourceEditorBacklinks(at: line)
-        },
-        onLocalTextChange: { text in
-          store.noteSourceEditorLocalTextChanged(text)
-          if store.sourceEditorPresentation == .split {
-            store.scheduleSourceEditorPreview(text: text)
-          }
-        },
-        documentIdentity: sourceAtMount?.id,
-        onCheckpointText: { text in
-          if let sourceAtMount {
-            store.persistSourceEditorCheckpoint(text, source: sourceAtMount)
-          }
-        },
-        documentGeneration: { interaction.documentGeneration },
-        bindingGeneration: { interaction.bindingGeneration },
-        onTextPublicationConflict: { text in
-          if let sourceAtMount {
-            store.preserveSourceEditorDraftAfterPublicationConflict(
-              text,
-              source: sourceAtMount
-            )
-          }
-        },
-        onSaveCommand: { context in
-          interaction.text = context.text
-          store.noteSourceEditorLocalTextChanged(context.text)
-          Task { await store.saveEditedEntry() }
-          return true
-        },
-        completionKeyHandler: handleDateMentionKey
-      )
+      sourceEditor(prose: false)
       .frame(minHeight: 320, maxHeight: .infinity)
       .layoutPriority(1)
       .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -13648,7 +13614,7 @@ private struct OrgSourceEditorWithLinkTools: View {
           .stroke(WorkspaceDesign.hairline)
       )
 
-      if hasSelection {
+      if hasSelection && !isProse {
         ParagraphInlineFormatBar(
           text: $interaction.text,
           selectedRange: $interaction.selection,
@@ -13683,6 +13649,89 @@ private struct OrgSourceEditorWithLinkTools: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  @ViewBuilder
+  private func sourceEditor(prose: Bool) -> some View {
+    @Bindable var store = store
+    let sourceAtMount = store.selectedEntrySource
+    let activeProse: OrgProseEditorController? = prose ? self.prose : nil
+    let dateMentionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? =
+      prose ? nil : { key, snapshot in handleDateMentionKey(key, snapshot: snapshot) }
+    let analyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = prose
+      ? nil
+      : { text in await store.analyzeSourceEditorText(text) }
+    OrgSyntaxTextEditor(
+      text: $interaction.text,
+      monospaced: !prose,
+      showsScrollers: true,
+      textInset: prose ? NSSize(width: 28, height: 32) : NSSize(width: 12, height: 12),
+      focusOnAppear: true,
+      textPublishing: .deferred(milliseconds: 500),
+      liveHighlighting: true,
+      incrementalHighlighting: true,
+      incrementalHighlightingDelayMilliseconds: 120,
+      concealsSyntax: prose,
+      orgWritingCommands: !prose,
+      pasteAsOrgEnabled: { store.experimentalFeaturesEnabled },
+      textChecking: .spellingAndGrammar,
+      caretPublishingDelayMilliseconds: 180,
+      semanticAnalysisDelayMilliseconds: 900,
+      commandRequest: store.sourceEditorCommandRequest,
+      semanticAnalyzer: analyzer,
+      diagnostics: $store.sourceEditorDiagnostics,
+      onCommandStatus: { status in
+        store.statusText = status
+      },
+      selection: $interaction.selection,
+      onSelectionSnapshot: { snapshot in
+        sourceSelectionSnapshot = snapshot
+        if sourceCaretLocalLine != snapshot.sourceLine {
+          sourceCaretLocalLine = snapshot.sourceLine
+          scheduleSourcePreviewScroll()
+        }
+      },
+      onViewportSourceLine: { line in
+        guard let source = store.selectedEntrySource else { return }
+        store.recordDocumentViewportSourceLine(
+          source.startLine + line - 1,
+          for: source
+        )
+      },
+      onGutterBacklinks: { line in
+        store.showSourceEditorBacklinks(at: line)
+      },
+      onLocalTextChange: { text in
+        store.noteSourceEditorLocalTextChanged(text)
+        if store.sourceEditorPresentation == .split {
+          store.scheduleSourceEditorPreview(text: text)
+        }
+      },
+      documentIdentity: sourceAtMount?.id,
+      onCheckpointText: { text in
+        if let sourceAtMount {
+          store.persistSourceEditorCheckpoint(text, source: sourceAtMount)
+        }
+      },
+      documentGeneration: { interaction.documentGeneration },
+      bindingGeneration: { interaction.bindingGeneration },
+      onTextPublicationConflict: { text in
+        if let sourceAtMount {
+          store.preserveSourceEditorDraftAfterPublicationConflict(
+            text,
+            source: sourceAtMount
+          )
+        }
+      },
+      onSaveCommand: { context in
+        interaction.text = context.text
+        store.noteSourceEditorLocalTextChanged(context.text)
+        Task { await store.saveEditedEntry() }
+        return true
+      },
+      completionKeyHandler: dateMentionKeyHandler,
+      proseController: activeProse
+    )
   }
 
   private func dateMentionOptions(for match: WorkspaceDateMentionMatch) -> [WorkspaceDateMentionOption] {
@@ -13836,6 +13885,9 @@ private struct OrgSourceEditorWithLinkTools: View {
   private var sourceEditorCommandBar: some View {
     @Bindable var store = store
     return HStack(spacing: 8) {
+      if isProse {
+        OrgProseToolbar(controller: prose, showsSidebar: $showsProseSidebar)
+      } else {
       HStack(spacing: 6) {
         Menu {
           Button("Heading") { store.requestSourceEditorCommand(.insertHeading) }
@@ -13912,6 +13964,7 @@ private struct OrgSourceEditorWithLinkTools: View {
       .menuStyle(.borderlessButton)
       .fixedSize()
       .help("Outline and folding")
+      }
 
       Spacer(minLength: 8)
 
@@ -13939,8 +13992,8 @@ private struct OrgSourceEditorWithLinkTools: View {
       }
       .pickerStyle(.segmented)
       .labelsHidden()
-      .frame(width: 68)
-      .help("Source only or live source and HTML preview")
+      .frame(width: 102)
+      .help("Source, live source and HTML preview, or distraction-free Prose")
     }
     .controlSize(.small)
     .padding(.horizontal, 2)
