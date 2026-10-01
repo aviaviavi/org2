@@ -44,6 +44,52 @@ final class CustomTodoWorkflowTests: XCTestCase {
     XCTAssertNotNil(store.errorText)
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "* Different heading\n")
   }
+
+  @MainActor
+  func testAgendaTodoWithInheritedFileIDCanChangeStatus() async throws {
+    // Agenda items carry inherited properties, so a daily note's file-level
+    // ID arrives as the TODO's ID even though no heading owns it.
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("org2-inherited-id-todo-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("2026-09-30.org")
+    let fileID = "D9BF2202-9C25-40DB-8FF9-0CD2B7E8145A"
+    try """
+    :PROPERTIES:
+    :ID: \(fileID)
+    :END:
+
+    #+TITLE: 2026-09-30
+
+    * Notes
+    - done earlier
+
+    * TODO [#A] AWS credit submission
+    SCHEDULED: <2026-09-30 Wed>
+    :PROPERTIES:
+    :CAPTURED_AT: <2026-09-30 Wed 16:29>
+    :END:
+
+    """.write(to: file, atomically: true, encoding: .utf8)
+    let json: [String: Any] = [
+      "todo": "TODO", "headline": "AWS credit submission", "kind": "SCHEDULED",
+      "file": file.path, "line": 9, "body": "", "level": 1, "tags": [], "priority": "A",
+      "properties": ["ID": fileID, "CAPTURED_AT": "<2026-09-30 Wed 16:29>"]
+    ]
+    let item = try JSONDecoder().decode(AgendaItem.self, from: JSONSerialization.data(withJSONObject: json))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.applyPlanningShortcut(kind: .scheduled, target: .tomorrow, to: .agenda(item))
+    XCTAssertNil(store.errorText)
+    var text = try String(contentsOf: file, encoding: .utf8)
+    XCTAssertFalse(text.contains("SCHEDULED: <2026-09-30 Wed>"), store.errorText ?? text)
+
+    await store.applyTodoShortcut(.done, to: .agenda(item))
+    text = try String(contentsOf: file, encoding: .utf8)
+    XCTAssertTrue(text.contains("* DONE [#A] AWS credit submission\n"), store.errorText ?? text)
+    XCTAssertNil(store.errorText)
+    XCTAssertTrue(text.hasPrefix(":PROPERTIES:\n:ID: \(fileID)\n:END:\n"))
+  }
   @MainActor
   func testCustomWorkflowAndErrorBannerRender() async throws {
     let raw = "#+TODO: TODO missed | DONE SKIPPED\n* missed Follow up with Jacob\n* SKIPPED A terminal task\n"

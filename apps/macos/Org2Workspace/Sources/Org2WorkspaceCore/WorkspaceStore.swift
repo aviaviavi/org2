@@ -35316,22 +35316,25 @@ public final class WorkspaceStore {
       return headingTitle(from: lines[index])
     }
 
+    // Agenda properties include inherited values, so an ID may belong to the
+    // file-level drawer or an ancestor rather than this heading. Only an ID
+    // owned by exactly one heading identifies it; otherwise resolve by the
+    // line and title like any heading without an ID.
     if let idValue = target.idValue {
       let matches = lines.indices.filter { index in
         guard isCandidate(index) else { return false }
         let properties = scanPropertyDrawer(lines: lines, afterHeadingIndex: index)
         return properties["ID"]?.trimmingCharacters(in: .whitespacesAndNewlines) == idValue
       }
-      guard matches.count == 1, let index = matches.first else {
-        throw WorkspaceDocumentMutationError.fileChanged(file: target.file)
+      if matches.count == 1, let index = matches.first {
+        return HeadlineMutationTarget(
+          file: target.file,
+          line: index + 1,
+          title: candidateTitle(index),
+          agendaItemID: target.agendaItemID,
+          idValue: idValue
+        )
       }
-      return HeadlineMutationTarget(
-        file: target.file,
-        line: index + 1,
-        title: candidateTitle(index),
-        agendaItemID: target.agendaItemID,
-        idValue: idValue
-      )
     }
 
     let normalizedTitle = normalizedApprovalActionTitle(target.title)
