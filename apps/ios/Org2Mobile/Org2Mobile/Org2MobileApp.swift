@@ -124,19 +124,8 @@ final class Org2MobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
   }
 
   private nonisolated static func recordDeliveredReply(_ userInfo: [AnyHashable: Any]) {
-    guard let threadID = userInfo["threadID"] as? String,
-          let messageID = userInfo["messageID"] as? String
-    else { return }
-    let defaults = UserDefaults.standard
-    var baseline: [String: String] = [:]
-    if let data = defaults.data(forKey: MobileRemoteNotification.replyBaselineKey),
-       let saved = try? JSONDecoder().decode([String: String].self, from: data) {
-      baseline = saved
-    }
-    baseline[threadID] = messageID
-    if let data = try? JSONEncoder().encode(baseline) {
-      defaults.set(data, forKey: MobileRemoteNotification.replyBaselineKey)
-    }
+    guard let reply = MobileReplyNotificationLedger.Reply(userInfo: userInfo) else { return }
+    MobileReplyNotificationLedger(defaults: .standard).record([reply])
   }
 }
 

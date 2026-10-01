@@ -54,7 +54,6 @@ final class MobileRemoteStore: ObservableObject {
   private static let serverNameKey = "Org2Mobile.remote.serverName.v1"
   private static let deviceIDKey = "Org2Mobile.remote.deviceID.v1"
   private static let threadNotificationsEnabledKey = "Org2Mobile.remote.threadNotificationsEnabled.v1"
-  private static let replyNotificationBaselineKey = MobileRemoteNotification.replyBaselineKey
   private static let tokenService = "org.org2.mobile.remote"
   private static let tokenAccount = "mac-access-token"
 
@@ -324,7 +323,7 @@ final class MobileRemoteStore: ObservableObject {
     defaults.removeObject(forKey: Self.endpointKey)
     defaults.removeObject(forKey: Self.serverNameKey)
     defaults.removeObject(forKey: Self.deviceIDKey)
-    defaults.removeObject(forKey: Self.replyNotificationBaselineKey)
+    replyNotificationLedger.reset()
     defaults.removeObject(forKey: MobileRemoteNotification.pendingReplyThreadIDKey)
   }
 
@@ -553,7 +552,7 @@ final class MobileRemoteStore: ObservableObject {
     if enabled, appIsActive {
       // Establish a fresh baseline before alerting so enabling the option does
       // not replay replies that arrived while notifications were disabled.
-      defaults.removeObject(forKey: Self.replyNotificationBaselineKey)
+      replyNotificationLedger.reset()
       pushNotificationStatusText = "Connecting real-time notifications"
       setAppActive(true)
     } else {
@@ -663,6 +662,23 @@ final class MobileRemoteStore: ObservableObject {
     }
   }
 
+  private var replyNotificationLedger: MobileReplyNotificationLedger {
+    MobileReplyNotificationLedger(defaults: defaults)
+  }
+
+  /// Replies already on screen in an open thread never need an alert.
+  private func recordReplyNotificationBaseline(for detail: MobileRemoteThreadDetail) {
+    let threadID = detail.thread.id
+    var replies = detail.messages
+      .filter { $0.role == "assistant" }
+      .suffix(MobileReplyNotificationLedger.recentRepliesPerThread)
+      .map { MobileReplyNotificationLedger.Reply(threadID: threadID, messageID: $0.id) }
+    if let latest = detail.thread.latestAssistantMessageID {
+      replies.append(MobileReplyNotificationLedger.Reply(threadID: threadID, messageID: latest))
+    }
+    replyNotificationLedger.record(replies)
+  }
+
   private func reconcileReplyNotifications(
     with nextThreads: [MobileRemoteThreadSummary],
     connectionGeneration expectedGeneration: Int? = nil
@@ -670,49 +686,42 @@ final class MobileRemoteStore: ObservableObject {
     activeRequestCount += 1
     defer { activeRequestCount -= 1 }
     if let expectedGeneration, !isCurrentConnection(expectedGeneration) { return }
-    let baseline = replyNotificationBaseline()
-    let hasBaseline = defaults.data(forKey: Self.replyNotificationBaselineKey) != nil
-    let nextBaseline = Dictionary(uniqueKeysWithValues: nextThreads.compactMap { thread in
-      thread.latestAssistantMessageID.map { (thread.id.uuidString, $0.uuidString) }
-    })
-    persistReplyNotificationBaseline(nextBaseline)
-    guard hasBaseline, threadNotificationsEnabled else { return }
+    // A summary without a latest reply (an evicted transcript on the Mac) is
+    // skipped, never forgotten, so its old reply cannot alert again later.
+    let latestReplies = nextThreads.compactMap { thread in
+      thread.latestAssistantMessageID.map {
+        MobileReplyNotificationLedger.Reply(threadID: thread.id, messageID: $0)
+      }
+    }
+    let unseen = Set(replyNotificationLedger.reconcile(latestReplies: latestReplies))
+    guard !unseen.isEmpty, threadNotificationsEnabled else { return }
+    // The Mac already pushes every new reply through APNs. A push that iOS
+    // shows while the app is suspended never reaches this process, so a
+    // polled copy would duplicate it.
+    guard !realTimeNotificationsActive else { return }
 
-    let settings = await UNUserNotificationCenter.current().notificationSettings()
+    let center = UNUserNotificationCenter.current()
+    let settings = await center.notificationSettings()
     if let expectedGeneration, !isCurrentConnection(expectedGeneration) { return }
     guard Self.notificationAuthorizationAllowsAlerts(settings.authorizationStatus) else {
       threadNotificationsUnavailable = true
       return
     }
     threadNotificationsUnavailable = false
+    let alreadyShown = Set(await center.deliveredNotifications().compactMap { notification in
+      MobileReplyNotificationLedger.Reply(userInfo: notification.request.content.userInfo)
+    })
+    if let expectedGeneration, !isCurrentConnection(expectedGeneration) { return }
     let candidates = nextThreads.filter { thread in
       guard pollingThreadID != thread.id,
-            let nextMessageID = thread.latestAssistantMessageID?.uuidString
+            let messageID = thread.latestAssistantMessageID
       else { return false }
-      return baseline[thread.id.uuidString] != nextMessageID
+      let reply = MobileReplyNotificationLedger.Reply(threadID: thread.id, messageID: messageID)
+      return unseen.contains(reply) && !alreadyShown.contains(reply)
     }
     for thread in candidates {
       await scheduleReplyNotification(for: thread)
     }
-  }
-
-  private func recordReplyNotificationBaseline(for thread: MobileRemoteThreadSummary) {
-    guard let messageID = thread.latestAssistantMessageID else { return }
-    var baseline = replyNotificationBaseline()
-    baseline[thread.id.uuidString] = messageID.uuidString
-    persistReplyNotificationBaseline(baseline)
-  }
-
-  private func replyNotificationBaseline() -> [String: String] {
-    guard let data = defaults.data(forKey: Self.replyNotificationBaselineKey),
-          let baseline = try? JSONDecoder().decode([String: String].self, from: data)
-    else { return [:] }
-    return baseline
-  }
-
-  private func persistReplyNotificationBaseline(_ baseline: [String: String]) {
-    guard let data = try? JSONEncoder().encode(baseline) else { return }
-    defaults.set(data, forKey: Self.replyNotificationBaselineKey)
   }
 
   private func scheduleReplyNotification(for thread: MobileRemoteThreadSummary) async {
@@ -1238,7 +1247,7 @@ final class MobileRemoteStore: ObservableObject {
       guard pollingThreadID == threadID,
             expectedLeaseID == nil || pollingLeaseID == expectedLeaseID
       else { return }
-      recordReplyNotificationBaseline(for: detail.thread)
+      recordReplyNotificationBaseline(for: detail)
       cacheThreadDetail(detail)
       if threadDetail != detail {
         threadDetail = detail

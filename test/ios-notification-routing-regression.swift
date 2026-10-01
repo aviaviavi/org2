@@ -35,6 +35,58 @@ struct NotificationRoutingRegression {
     expect(defaults.string(forKey: MobileNotificationInbox.legacyKey) == nil, "Legacy migration only once")
     inbox.enqueue(.agenda)
     expect(inbox.pending()?.destination == .agenda, "Agenda replaces earlier thread tap")
+    try replyLedgerRegressions()
     print("Notification routing regressions passed")
+  }
+
+  static func replyLedgerRegressions() throws {
+    let suite = "org2.reply-ledger-test.\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func expect(_ value: Bool, _ message: String) { precondition(value, message) }
+    typealias Reply = MobileReplyNotificationLedger.Reply
+    let ledger = MobileReplyNotificationLedger(defaults: defaults)
+    let groceries = UUID(), other = UUID()
+    let oldReply = Reply(threadID: groceries, messageID: UUID())
+    let otherReply = Reply(threadID: other, messageID: UUID())
+
+    expect(ledger.reconcile(latestReplies: [oldReply, otherReply]).isEmpty, "First list is only a baseline")
+    expect(ledger.reconcile(latestReplies: [otherReply]).isEmpty, "Evicted transcript has no latest reply")
+    expect(ledger.reconcile(latestReplies: [oldReply, otherReply]).isEmpty, "Rehydrated transcript does not replay its old reply")
+    for _ in 0..<5 {
+      _ = ledger.reconcile(latestReplies: [otherReply])
+      expect(ledger.reconcile(latestReplies: [oldReply, otherReply]).isEmpty, "Repeated eviction never replays")
+    }
+
+    let newReply = Reply(threadID: groceries, messageID: UUID())
+    expect(ledger.reconcile(latestReplies: [newReply, otherReply]) == [newReply], "A new reply alerts")
+    expect(ledger.reconcile(latestReplies: [newReply, otherReply]).isEmpty, "A reply alerts only once")
+    expect(ledger.reconcile(latestReplies: [oldReply, otherReply]).isEmpty, "Latest reply reverting to an older one does not alert")
+
+    let pushed = Reply(userInfo: ["threadID": other.uuidString, "messageID": UUID().uuidString])!
+    MobileReplyNotificationLedger(defaults: defaults).record([pushed])
+    expect(ledger.reconcile(latestReplies: [newReply, pushed]).isEmpty, "Reply already shown by APNs is not polled again")
+    expect(Reply(userInfo: ["threadID": other.uuidString]) == nil, "Reply identity needs a message ID")
+
+    for _ in 0..<(MobileReplyNotificationLedger.recentRepliesPerThread + 5) {
+      ledger.record([Reply(threadID: other, messageID: UUID())])
+    }
+    expect(!ledger.hasSeen(pushed), "Per-thread history is bounded")
+    expect(ledger.hasSeen(newReply), "Bounding one thread keeps others")
+
+    ledger.reset()
+    expect(!ledger.isSeeded, "Reset forgets the baseline")
+    expect(ledger.reconcile(latestReplies: [Reply(threadID: groceries, messageID: UUID())]).isEmpty, "Re-enabling notifications does not replay")
+
+    ledger.reset()
+    let legacyReply = Reply(threadID: groceries, messageID: UUID())
+    defaults.set(
+      try JSONEncoder().encode([groceries.uuidString: legacyReply.messageID.uuidString]),
+      forKey: MobileReplyNotificationLedger.legacyKey
+    )
+    expect(ledger.isSeeded, "Legacy baseline counts as seeded")
+    expect(ledger.reconcile(latestReplies: [legacyReply]).isEmpty, "Legacy baseline migrates without replay")
+    expect(defaults.data(forKey: MobileReplyNotificationLedger.legacyKey) == nil, "Legacy baseline is replaced")
+    expect(ledger.hasSeen(legacyReply), "Migrated reply stays seen")
   }
 }

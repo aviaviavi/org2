@@ -51,3 +51,109 @@ struct MobileNotificationInbox {
     defaults.removeObject(forKey: Self.key)
   }
 }
+
+/// Remembers which assistant replies this phone has already alerted for, so a
+/// reply is announced at most once whether it arrives by APNs or by polling.
+///
+/// The paired Mac evicts idle transcripts to metadata-only placeholders, so a
+/// thread summary can omit its latest reply and later report it again. Absence
+/// is therefore never treated as forgetting: each thread keeps its recently
+/// seen reply IDs, and only a reply ID never seen before is new.
+struct MobileReplyNotificationLedger {
+  struct Reply: Hashable {
+    let threadID: UUID
+    let messageID: UUID
+
+    init(threadID: UUID, messageID: UUID) {
+      self.threadID = threadID
+      self.messageID = messageID
+    }
+
+    /// Reads the reply identity carried by both APNs and local reply alerts.
+    init?(userInfo: [AnyHashable: Any]) {
+      guard let thread = (userInfo["threadID"] as? String).flatMap(UUID.init(uuidString:)),
+            let message = (userInfo["messageID"] as? String).flatMap(UUID.init(uuidString:))
+      else { return nil }
+      self.init(threadID: thread, messageID: message)
+    }
+  }
+
+  private struct Entry: Codable {
+    var messageIDs: [UUID]
+    var updatedAt: Date
+  }
+
+  static let key = "Org2Mobile.remote.replyNotificationLedger.v2"
+  static let legacyKey = "Org2Mobile.remote.replyNotificationBaseline.v1"
+  static let recentRepliesPerThread = 32
+  static let threadLimit = 1_000
+
+  let defaults: UserDefaults
+
+  /// False until the first thread list has been recorded. The first list only
+  /// establishes what already exists and never produces alerts.
+  var isSeeded: Bool {
+    defaults.data(forKey: Self.key) != nil || defaults.data(forKey: Self.legacyKey) != nil
+  }
+
+  func hasSeen(_ reply: Reply) -> Bool {
+    entries()[reply.threadID.uuidString]?.messageIDs.contains(reply.messageID) == true
+  }
+
+  /// Records every latest reply and returns the ones never seen before. An
+  /// unseeded ledger records the list as its baseline and returns nothing.
+  func reconcile(latestReplies: [Reply], now: Date = Date()) -> [Reply] {
+    let wasSeeded = isSeeded
+    let known = entries()
+    let unseen = latestReplies.filter {
+      known[$0.threadID.uuidString]?.messageIDs.contains($0.messageID) != true
+    }
+    record(latestReplies, now: now)
+    return wasSeeded ? unseen : []
+  }
+
+  func record(_ replies: [Reply], now: Date = Date()) {
+    var entries = entries()
+    for reply in replies {
+      let key = reply.threadID.uuidString
+      var entry = entries[key] ?? Entry(messageIDs: [], updatedAt: now)
+      if !entry.messageIDs.contains(reply.messageID) {
+        entry.messageIDs.append(reply.messageID)
+        if entry.messageIDs.count > Self.recentRepliesPerThread {
+          entry.messageIDs.removeFirst(entry.messageIDs.count - Self.recentRepliesPerThread)
+        }
+        entry.updatedAt = now
+      }
+      entries[key] = entry
+    }
+    if entries.count > Self.threadLimit {
+      let retained = entries.sorted { $0.value.updatedAt > $1.value.updatedAt }
+        .prefix(Self.threadLimit)
+      entries = Dictionary(uniqueKeysWithValues: retained.map { ($0.key, $0.value) })
+    }
+    guard let data = try? JSONEncoder().encode(entries) else { return }
+    defaults.set(data, forKey: Self.key)
+    defaults.removeObject(forKey: Self.legacyKey)
+  }
+
+  func reset() {
+    defaults.removeObject(forKey: Self.key)
+    defaults.removeObject(forKey: Self.legacyKey)
+  }
+
+  private func entries() -> [String: Entry] {
+    if let data = defaults.data(forKey: Self.key),
+       let entries = try? JSONDecoder().decode([String: Entry].self, from: data) {
+      return entries
+    }
+    // Earlier builds stored only the latest reply per thread.
+    if let data = defaults.data(forKey: Self.legacyKey),
+       let legacy = try? JSONDecoder().decode([String: String].self, from: data) {
+      return legacy.reduce(into: [:]) { entries, pair in
+        guard let messageID = UUID(uuidString: pair.value) else { return }
+        entries[pair.key] = Entry(messageIDs: [messageID], updatedAt: .distantPast)
+      }
+    }
+    return [:]
+  }
+}
