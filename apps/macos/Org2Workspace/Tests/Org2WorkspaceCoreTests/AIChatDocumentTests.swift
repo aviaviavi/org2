@@ -37,6 +37,41 @@ final class AIChatDocumentTests: XCTestCase {
     XCTAssertTrue((result?["text"] as? String)?.contains("Reduce Motion support.") == true)
   }
 
+  func testChatHeadingsStayCompactAndEmptyHeadingsHaveNoFoldToggle() async throws {
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML(
+      "Intro.\n\n* Tests: 33 passed\n* Details\nSome text.\n** Child\n- a\n",
+      sourcePath: "/tmp/chat-test.org"
+    )
+    let view = try await document(html)
+    let result = try await view.evaluateJavaScript("""
+      (() => {
+        const size = node => parseFloat(getComputedStyle(node).fontSize);
+        const marker = node => getComputedStyle(node.querySelector('.org2-headline-summary'), '::before').content;
+        const empty = document.querySelector('.org2-headline-empty');
+        const folding = [...document.querySelectorAll('details.org2-headline')];
+        return {
+          body: size(document.querySelector('p')),
+          h1: Math.max(...[...document.querySelectorAll('h1')].map(size)),
+          h2: size(document.querySelector('h2')),
+          details: folding.map(node => node.querySelector('h1, h2').textContent),
+          emptyTitle: empty && empty.textContent.trim(),
+          emptyMarker: empty && marker(empty),
+          foldingMarker: marker(folding[0]),
+          text: document.body.innerText
+        };
+      })()
+      """) as? [String: Any]
+    let body = try XCTUnwrap(result?["body"] as? Double)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(result?["h1"] as? Double), body + 2)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(result?["h2"] as? Double), body + 1)
+    XCTAssertEqual(result?["details"] as? [String], ["Details", "Child"])
+    XCTAssertEqual(result?["emptyTitle"] as? String, "Tests: 33 passed")
+    XCTAssertEqual(result?["emptyMarker"] as? String, "none")
+    XCTAssertNotEqual(result?["foldingMarker"] as? String, "none")
+    XCTAssertTrue((result?["text"] as? String)?.contains("Some text.") == true)
+  }
+
   func testChatNormalizerRepairsNestedOrgCodeInsideEmphasis() async throws {
     let raw = """
     - *=celorga.app= — primary domain.* Natural for downloads.

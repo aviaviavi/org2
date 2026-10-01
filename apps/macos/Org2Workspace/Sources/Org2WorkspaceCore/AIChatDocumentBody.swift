@@ -111,6 +111,15 @@ enum AIChatDocumentHTML {
   .chat-copy-code { position:absolute; top:5px; right:6px; font:11px -apple-system; color:inherit; background:transparent; border:0; border-radius:4px; padding:3px 6px; cursor:pointer; -webkit-user-select:none; }
   .chat-copy-code:hover { background:rgba(128,128,128,.16); }
   img { max-width:100%; height:auto; }
+  /* The shared renderer sizes headings for full documents. In a 13px chat
+     bubble they should only step slightly above body text. */
+  main.org2-document h1 { font-size:15px; }
+  main.org2-document h2 { font-size:14px; }
+  main.org2-document h3, main.org2-document h4, main.org2-document h5, main.org2-document h6 { font-size:13px; }
+  main.org2-document .org2-headline-summary { margin:0.7em 0 0.25em; }
+  /* A heading with nothing under it has nothing to fold. */
+  main.org2-document .org2-headline-empty > .org2-headline-summary { cursor:auto; }
+  main.org2-document .org2-headline-empty > .org2-headline-summary::before { content:none; }
   """
 
   static let updateScript = #"""
@@ -133,6 +142,23 @@ enum AIChatDocumentHTML {
       }
       // Message HTML is compiler output. Imported scripts are deliberately not executed.
       next.querySelectorAll('script, .org2-document-header').forEach(s => s.remove());
+      // A heading without a body would still render a fold toggle that hides
+      // nothing. Replace its <details> with a static block of the same shape.
+      for (const details of next.querySelectorAll('details.org2-headline')) {
+        if (details.querySelector(':scope > .org2-headline-body')) continue;
+        const summary = details.querySelector(':scope > summary');
+        if (!summary) continue;
+        const block = next.createElement('div');
+        block.className = details.className + ' org2-headline-empty';
+        for (const attribute of details.attributes) {
+          if (attribute.name !== 'class' && attribute.name !== 'open') block.setAttribute(attribute.name, attribute.value);
+        }
+        const heading = next.createElement('div');
+        heading.className = summary.className;
+        heading.append(...summary.childNodes);
+        block.append(heading, ...[...details.childNodes].filter(node => node !== summary));
+        details.replaceWith(block);
+      }
       for (const pre of next.querySelectorAll('pre')) {
         const wrapper=next.createElement('div'); wrapper.className='chat-code';
         pre.replaceWith(wrapper); wrapper.append(pre);
