@@ -2348,6 +2348,7 @@ private struct MobileRemoteMessageBubble: View {
               }
             }
           }
+          .fixedSize(horizontal: false, vertical: true)
         }
         if !presentation.userText.isEmpty {
           MobileRemoteBoundedMessageText(content: presentation.userText)
@@ -3315,6 +3316,11 @@ private struct MobileRemoteOrgTable: View {
           .stroke(Color.secondary.opacity(0.28), lineWidth: 0.5)
       }
     }
+    // A horizontal ScrollView is vertically flexible, so inside the chat's
+    // vertical stack it could be measured at one height and placed at
+    // another, leaving the next message drawn over the end of this one.
+    // Pin it to the table's natural height.
+    .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Table")
   }
