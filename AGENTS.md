@@ -200,7 +200,7 @@ npm run test:lsp
 npm run test:publish-document
 
 # Native macOS package
-swift test --package-path apps/macos/Org2Workspace
+npm run test:macos
 
 # Documentation and generated-artifact contracts
 npm run docs:check

@@ -83,6 +83,12 @@ const swiftJob = jobs.find((job) => job.key === "swift");
 assert.deepEqual(swiftJob.args.slice(0, 3), ["-arm64", "swift", "test"]);
 assert.equal(swiftJob.args[swiftJob.args.indexOf("--scratch-path") + 1], "/cache/swift-tests-arm64");
 assert.equal(swiftJob.args[swiftJob.args.indexOf("--skip") + 1], SWIFT_TIMING_TESTS);
+assert.ok(swiftJob.args.includes("--parallel"));
+assert.equal(swiftJob.args[swiftJob.args.indexOf("--num-workers") + 1], "2");
+assert.ok(!swiftJob.args.includes("--no-parallel"));
+const smallSwiftJob = validationJobs({ artifactsDir: "/tmp/r", buildCache: "/cache" }, "fp", 2)
+  .find((job) => job.key === "swift");
+assert.equal(smallSwiftJob.args[smallSwiftJob.args.indexOf("--num-workers") + 1], "1");
 assert.deepEqual(failedSwiftTests([
   "Test Case '-[Mod.ATests testFast]' passed (0.1 seconds).",
   "Test Case '-[Mod.BTests testBudget]' failed (0.5 seconds).",
@@ -93,6 +99,8 @@ const retryJob = swiftTimingJob({ buildCache: "/cache" }, ["Mod.BTests/testBudge
 assert.equal(retryJob.args[retryJob.args.indexOf("--filter") + 1], `${SWIFT_TIMING_TESTS}|Mod\\.BTests/testBudget$`);
 const timingJob = swiftTimingJob({ buildCache: "/cache" });
 assert.equal(timingJob.args[timingJob.args.indexOf("--filter") + 1], SWIFT_TIMING_TESTS);
+assert.ok(timingJob.args.includes("--no-parallel"));
+assert.ok(timingJob.args.includes("--skip-build"));
 assert.equal(timingJob.args[timingJob.args.indexOf("--scratch-path") + 1], "/cache/swift-tests-arm64",
   "the timing lane reuses the correctness lane's warm build");
 assert.ok(releaseSource.indexOf("swiftTimingJob(plan, isolatedRetries)", releaseSource.indexOf("async function validate("))

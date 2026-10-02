@@ -27,6 +27,31 @@ npm test -- --jobs 4 --report /tmp/openorg-tests.json
 npm run test:serial
 ```
 
+## Native macOS test runner
+
+`npm run test:macos` builds the shared runtime and Swift test binaries once,
+then uses `run-swift-tests.mjs` to run SwiftPM's discovered correctness tests
+on up to four workers. After the pool drains, the same timing selection runs
+serially with `--skip-build`. These complementary `--skip` and `--filter`
+selections preserve the full discovered suite. Failures remain failures;
+there are no automatic retries. A failed build stops before testing.
+
+```bash
+npm run test:macos -- --jobs 4 --report /tmp/openorg-swift-tests.json
+npm run test:macos:serial
+node tools/run-swift-tests.mjs --skip-build --configuration debug
+```
+
+The JSON report records build and test phase durations separately. SwiftPM
+retains its incremental debug cache; the runner uses native arm64 Swift on
+Apple Silicon even when npm uses Intel Node under Rosetta. `--scratch-path`
+and `--configuration release` select other caches without changing the test
+partition. Add new wall-clock assertions to `SWIFT_TIMING_CASES` or
+`SWIFT_TIMING_CLASSES` in the runner, including budgets hidden in helpers.
+macOS CI uses this runner. Release validation shares its timing policy and
+uses a smaller correctness pool while packaging and Node checks are active;
+its timing phase still waits until concurrent work has finished.
+
 ## Documentation coverage check
 
 `npm run docs:check` builds the CLI, verifies that every top-level help family is represented in `org2 agent capabilities`, and checks that the canonical agent/documentation entry points exist. GitHub Pages CI runs the same check before publishing.

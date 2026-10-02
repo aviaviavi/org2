@@ -86,6 +86,19 @@ npm test -- --jobs 4 --report /tmp/openorg-tests.json
 
 For serial debugging, run the same test list with =npm run test:serial=.
 
+Run the native macOS suite with:
+
+#+begin_src sh
+npm run test:macos -- --report /tmp/openorg-swift-tests.json
+#+end_src
+
+This builds the shared runtime and Swift test binaries once, runs native
+correctness tests on up to four workers, then runs wall-clock budget tests
+serially. Every discovered test remains covered, and failures are not retried.
+The report separates compilation from each test phase. Use =--jobs N= to choose
+the worker count, or =npm run test:macos:serial= to run all native tests serially.
+On Apple Silicon, the runner uses native arm64 Swift even with Intel Node.
+
 Benchmark read-only CLI operations against a representative corpus with:
 
 #+begin_src sh

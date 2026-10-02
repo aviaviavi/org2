@@ -12,6 +12,7 @@ on:
       - "test/test-openorg-performance-corpus.mjs"
       - "tools/openorg-performance-corpus.mjs"
       - "tools/test-macos-performance.mjs"
+      - "tools/run-swift-tests.mjs"
       - "package.json"
       - "package-lock.json"
   push:
@@ -27,6 +28,7 @@ on:
       - "test/test-openorg-performance-corpus.mjs"
       - "tools/openorg-performance-corpus.mjs"
       - "tools/test-macos-performance.mjs"
+      - "tools/run-swift-tests.mjs"
       - "package.json"
       - "package-lock.json"
   workflow_dispatch:
@@ -66,7 +68,7 @@ jobs:
         run: npm run benchmark:openorg-context
 
       - name: Run OpenOrg macOS correctness suite
-        run: swift test --package-path apps/macos/Org2Workspace
+        run: node tools/run-swift-tests.mjs
 
       - name: Run release-mode OpenOrg performance regressions
         # A correctness failure must not leave performance unmeasured.

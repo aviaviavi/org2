@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
+import { SWIFT_TIMING_TESTS } from "./run-swift-tests.mjs";
+export { SWIFT_TIMING_TESTS } from "./run-swift-tests.mjs";
 import { notarizationAuthentication } from "./openorg-notarization.mjs";
 import { createHash, createSign } from "node:crypto";
 import {
@@ -446,16 +448,11 @@ async function buildSharedRuntime(plan, state) {
   await runValidationJob(plan, state, validationFingerprint(), "build", "Build shared runtime", "npm", ["run", "build"]);
 }
 
-// XCTest classes that assert wall-clock budgets. They are excluded from the
-// concurrent Swift lane and rerun afterwards, when validation load has ended.
-export const SWIFT_TIMING_TESTS = "PerformanceGateTests|PerformanceRegressionTests|PerformanceTests";
-
 function swiftTestArgs(plan, selection) {
   return [
     "-arm64", "swift", "test",
     "--package-path", "apps/macos/Org2Workspace",
     "--scratch-path", join(plan.buildCache, "swift-tests-arm64"),
-    "--no-parallel",
     ...selection,
   ];
 }
@@ -475,7 +472,7 @@ function escapeRegExp(value) {
 
 export function swiftTimingJob(plan, isolatedRetries = []) {
   const filter = [SWIFT_TIMING_TESTS, ...isolatedRetries.map((id) => `${escapeRegExp(id)}$`)].join("|");
-  return { key: "swift-timing", name: "Swift timing suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--filter", filter]) };
+  return { key: "swift-timing", name: "Swift timing suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--skip-build", "--no-parallel", "--filter", filter]) };
 }
 
 // Run the concurrent Swift lane. Individual test-case failures (typically
@@ -498,6 +495,7 @@ async function runSwiftCorrectnessLane(plan, state, job) {
 export function validationJobs(plan, fingerprint, cpuCount = availableParallelism()) {
   // Packaging compiles Swift concurrently, so leave it half of the machine.
   const nodeWorkers = String(Math.max(2, Math.floor(cpuCount / 2)));
+  const swiftWorkers = String(Math.max(1, Math.min(4, Math.floor(cpuCount / 4))));
   return [
     { key: "docs", name: "Documentation contract", command: "npm", args: ["run", "docs:check:built"] },
     { key: "node", name: "Node full suite", command: process.execPath, args: [
@@ -511,7 +509,7 @@ export function validationJobs(plan, fingerprint, cpuCount = availableParallelis
     // persistent and private to release validation, which keeps the XCTest
     // runner off the packaging lanes' architecture caches while staying
     // incremental across releases.
-    { key: "swift", name: "Swift suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--skip", SWIFT_TIMING_TESTS]) },
+    { key: "swift", name: "Swift suite", command: "/usr/bin/arch", args: swiftTestArgs(plan, ["--parallel", "--num-workers", swiftWorkers, "--skip", SWIFT_TIMING_TESTS]) },
   ];
 }
 
