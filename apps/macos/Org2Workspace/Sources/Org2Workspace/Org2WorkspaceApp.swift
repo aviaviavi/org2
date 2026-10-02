@@ -128,6 +128,12 @@ struct Org2WorkspaceApp: App {
           store.makeSurfacePrimary(.aiChat)
         }
         .keyboardShortcut("n", modifiers: [.command])
+
+        Button("New File…") {
+          store.presentNewCorpusFileSheet()
+        }
+        .keyboardShortcut("n", modifiers: [.command, .shift])
+        .disabled(store.corpusRoot == nil)
       }
 
       CommandGroup(after: .newItem) {

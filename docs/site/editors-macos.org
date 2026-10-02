@@ -26,7 +26,7 @@ If you already keep dailies under your own names, open *Settings → General →
 #+end_export
 
 - *Agenda* :: see scheduled work and deadlines across one or all open corpora. Filter by date, assignee, status, priority, topic, or text; mark items done, reschedule them, change priority, or open the source note.
-- *Files* :: expand the cached corpus file tree directly in the sidebar, or use the full tree and search surface for Org, Org2, Markdown, CSV, and generated workspace files.
+- *Files* :: expand the cached corpus file tree directly in the sidebar, or use the full tree and search surface for Org, Org2, Markdown, CSV, and generated workspace files. The *+* button beside *Files*, *File → New File…*, or =Cmd-Shift-N= creates a note, draft, or scratch file: enter a name and a corpus-relative folder (default =notes=, or the corpus's =roam.nodesDir=). A name such as =Launch post= becomes =notes/launch-post.org= with =#+TITLE: Launch post=, a stable =:ID:= and a =:CREATED:= timestamp; a name ending in =.org=, =.org2=, =.md= or =.txt= is used verbatim. The sheet previews the path, refuses paths outside the corpus, never overwrites an existing file, and opens the new file.
 - *Agent Work* :: follow delegated runs, inspect outputs and citations, and handle decisions that need you. *Review Queue* and *Automations* also have direct top-level sidebar entries; press =Cmd-Shift-R= or =Cmd-Option-A= to open them immediately.
 - *Meetings* :: record or import audio and keep transcripts, summaries, decisions, and follow-ups together.
 - *Sources* :: connect supported external sources such as Slack and Notion, run a sync, or control its schedule.
@@ -224,7 +224,7 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 - =Cmd-T= opens a tab; =Cmd-Shift-[= and =Cmd-Shift-]= move between tabs.
 
 - In AI Chat, =Return= sends or queues while a turn runs; =Shift-Return= inserts a newline. =Cmd-Return= (also =Cmd-Shift-Return=) steers a running turn, or sends normally when idle. Guidance sent just after a turn starts, including Steer from iOS, waits briefly for the runtime's live session rather than becoming a queued follow-up; it is queued only if the turn ends first. When suggestions are visible, =Up/Down= selects and =Tab= or =Return= accepts a suggestion. Typing a bare =/= lists every command, starting with your workspace's own agent skills, and the list scrolls to keep the selection visible.
-- =Cmd-N= creates an AI thread.
+- =Cmd-N= creates an AI thread; =Cmd-Shift-N= creates a new file.
 - In Agenda, =w= schedules next Monday and =m= schedules the first of next month; uppercase =W= and =M= set the corresponding deadline.
 
 Use *Help → Keyboard Shortcuts…* (=Cmd-/=) for the full reference, including the Source editor commands. Shortcuts depend on the focused pane or editor; bare uppercase letters (such as =J=) in the reference mean Shift.

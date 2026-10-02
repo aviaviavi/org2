@@ -162,6 +162,10 @@ public struct ContentView: View {
         DailyNoteDatePickerSheet()
           .environment(store)
       }
+      .sheet(isPresented: $store.isNewCorpusFileSheetPresented) {
+        NewCorpusFileSheet()
+          .environment(store)
+      }
       .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
         SimilarTodoAssignmentView()
           .environment(store)
@@ -2529,27 +2533,48 @@ private struct SidebarView: View {
         }
 
         Section {
-          Button {
-            showsFileTree.toggle()
-          } label: {
-            HStack(spacing: 7) {
-              Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .rotationEffect(.degrees(showsFileTree ? 90 : 0))
-                .frame(width: 12)
-              Image(systemName: "folder")
-                .foregroundStyle(WorkspaceDesign.structuralAccent)
-              Text("Files")
-                .font(.callout.weight(.medium))
-              Spacer(minLength: 0)
-              Text("\(store.corpusFiles.count)")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
+          HStack(spacing: 6) {
+            Button {
+              showsFileTree.toggle()
+            } label: {
+              HStack(spacing: 7) {
+                Image(systemName: "chevron.right")
+                  .font(.caption2.weight(.semibold))
+                  .rotationEffect(.degrees(showsFileTree ? 90 : 0))
+                  .frame(width: 12)
+                Image(systemName: "folder")
+                  .foregroundStyle(WorkspaceDesign.structuralAccent)
+                Text("Files")
+                  .font(.callout.weight(.medium))
+                Spacer(minLength: 0)
+                if showsCommandShortcuts {
+                  KeyboardShortcutBadge(text: NewCorpusFileCommand.shortcutTitle)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else {
+                  Text("\(store.corpusFiles.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(showsFileTree ? "Hide corpus files" : "Browse the corpus as a collapsible file tree")
+
+            Button {
+              store.presentNewCorpusFileSheet()
+            } label: {
+              Image(systemName: "plus")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.corpusRoot == nil)
+            .help("New File… (\(NewCorpusFileCommand.shortcutTitle))")
+            .accessibilityLabel("New File")
           }
-          .buttonStyle(.plain)
-          .help(showsFileTree ? "Hide corpus files" : "Browse the corpus as a collapsible file tree")
 
           if showsFileTree {
             if store.corpusFileTree.isEmpty {
@@ -4761,6 +4786,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘R", action: "Refresh workspace; press again to cancel"),
             ShortcutHelpItem(keys: "⌘S", action: "Save active edit"),
             ShortcutHelpItem(keys: "⌘P", action: "Quick Open"),
+            ShortcutHelpItem(keys: NewCorpusFileCommand.shortcutTitle, action: "New file"),
             ShortcutHelpItem(keys: "⌘K", action: "Quick Open outside the Source editor"),
             ShortcutHelpItem(keys: "⌘⌃Return", action: "Capture"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts"),

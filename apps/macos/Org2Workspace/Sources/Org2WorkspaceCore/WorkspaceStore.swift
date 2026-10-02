@@ -2409,6 +2409,9 @@ public final class WorkspaceStore {
     )
   }
   public var isDailyNoteDatePickerPresented = false
+  public var isNewCorpusFileSheetPresented = false
+  public var newCorpusFileDefaultFolder = NewCorpusFilePlan.defaultFolder
+  public var newCorpusFileError: String?
   public var dailyNotePickerDate = Date()
   public var isLaunchGuidePresented = false
   public var captureDraft = WorkspaceCaptureDraft()
@@ -47904,6 +47907,87 @@ public final class WorkspaceStore {
     }
   }
 
+  /// Presents the New File sheet. The folder defaults to the corpus notes
+  /// directory (`roam.nodesDir`, then `roam.indexDir`, then `notes`).
+  public func presentNewCorpusFileSheet() {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    newCorpusFileDefaultFolder = Self.newCorpusFileDefaultFolder(corpusRoot: corpusRoot)
+    newCorpusFileError = nil
+    isNewCorpusFileSheetPresented = true
+  }
+
+  /// Existing corpus folders, used to suggest a location in the New File sheet.
+  public var newCorpusFileFolderSuggestions: [String] {
+    var folders = Set(corpusFiles.map(\.directory).filter { !$0.isEmpty && !$0.hasPrefix(".") })
+    folders.insert(newCorpusFileDefaultFolder)
+    return folders.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+  }
+
+  nonisolated static func newCorpusFileDefaultFolder(corpusRoot: URL) -> String {
+    let config = workspaceConfig(corpusRoot: corpusRoot)
+    for candidate in [config?.roam?.nodesDir, config?.roam?.indexDir] {
+      guard let raw = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty,
+            let folder = try? NewCorpusFilePlan.normalizedFolder(raw)
+      else { continue }
+      return folder
+    }
+    return NewCorpusFilePlan.defaultFolder
+  }
+
+  /// Creates a new document from the New File sheet and opens it. Returns the
+  /// created file on success; on failure the sheet stays open with `errorText`.
+  @discardableResult
+  public func createNewCorpusFile(name: String, folder: String) async -> CorpusFile? {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return nil
+    }
+    do {
+      let plan = try NewCorpusFilePlan.plan(name: name, folder: folder, corpusRoot: corpusRoot)
+      guard let context = captureDocumentCorpusContext(forFile: plan.url.path) else {
+        throw WorkspaceDocumentMutationError.outsideCorpus(file: plan.url.path, root: corpusRoot.path)
+      }
+      let parent = plan.url.deletingLastPathComponent()
+      let content = plan.initialContent()
+      try await performDocumentMutation(
+        context: context,
+        files: [plan.url.path, parent.path]
+      ) { execution in
+        let snapshot = try await execution.readSnapshot(at: plan.url, allowMissing: true)
+        guard !snapshot.existed else {
+          throw NewCorpusFilePlan.Failure.alreadyExists(plan.relativePath)
+        }
+        let authorizedParent = try execution.authorizeDescendant(parent, ofDeclaredDirectory: parent)
+        try FileManager.default.createDirectory(at: authorizedParent, withIntermediateDirectories: true)
+        try await execution.commit(content, over: snapshot) { text, url, previous in
+          try Self.commitDocumentText(
+            text,
+            url: url,
+            previousText: previous,
+            operation: "new file creation"
+          )
+        }
+      }
+      let file = await Task.detached(priority: .userInitiated) {
+        Self.corpusFileOffMain(for: plan.url, corpusRoot: corpusRoot)
+      }.value
+      isNewCorpusFileSheetPresented = false
+      newCorpusFileError = nil
+      upsertCorpusFile(file)
+      openSidebarFile(file)
+      statusText = "Created \(plan.relativePath)"
+      return file
+    } catch {
+      newCorpusFileError = error.localizedDescription
+      statusText = "Could not create file"
+      return nil
+    }
+  }
+
   nonisolated public static func selectedText(in text: String, range: NSRange) -> String? {
     trimmedSelection(in: text, range: range)?.text
   }
@@ -48658,6 +48742,7 @@ private struct WorkspaceOrg2Config: Decodable {
 
   struct Roam: Decodable {
     let indexDir: String?
+    let nodesDir: String?
     let dailiesDir: String?
   }
 
