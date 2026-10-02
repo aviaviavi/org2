@@ -50,6 +50,34 @@ final class AIChatSlashCommandTests: XCTestCase {
     XCTAssertTrue(AIChatSlashCommands.suggestions(for: "/search notes").isEmpty)
   }
 
+  func testBareSlashListsCorpusSkillsFirstWithoutTruncation() {
+    let skills = ["fix-openorg-items", "setup-scarf-slack-agent"].map {
+      AIChatSlashCommand(
+        name: $0,
+        arguments: "[ARGS]",
+        summary: "Corpus skill",
+        systemImage: "wand.and.stars",
+        isAgentAssisted: true,
+        origin: .corpusSkill
+      )
+    }
+    let gateway = [AIChatSlashCommand(name: "triage", summary: "Gateway", systemImage: "bolt", origin: .openClaw)]
+
+    let suggestions = AIChatSlashCommands.suggestions(for: "/", gatewayCommands: gateway, corpusSkills: skills)
+
+    // The arrow keys index into this same list, so every command, including
+    // the user's own skills, must be reachable from a bare `/`.
+    XCTAssertEqual(Array(suggestions.prefix(2)).map(\.name), ["fix-openorg-items", "setup-scarf-slack-agent"])
+    XCTAssertEqual(suggestions.count, AIChatSlashCommands.all.count + skills.count + gateway.count)
+    XCTAssertEqual(suggestions.last?.name, "triage")
+    XCTAssertGreaterThan(suggestions.count, AIChatSlashCommandSuggestionsLayout.visibleRowLimit)
+    // Typing still narrows in catalog order.
+    XCTAssertEqual(
+      AIChatSlashCommands.suggestions(for: "/fix", gatewayCommands: gateway, corpusSkills: skills).map(\.name),
+      ["fix-openorg-items"]
+    )
+  }
+
   func testPublishDocumentCommandOpensTheNativePublishingSurface() {
     guard case .command(let command, let arguments) = AIChatSlashCommands.parse("/publish document") else {
       return XCTFail("Expected the publish command")

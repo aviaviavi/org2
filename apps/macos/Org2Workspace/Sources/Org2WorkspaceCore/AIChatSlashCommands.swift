@@ -95,7 +95,11 @@ public enum AIChatSlashCommands {
     return .command(command, arguments: arguments)
   }
 
-  public static func suggestions(for rawValue: String, limit: Int = 7) -> [AIChatSlashCommand] {
+  /// Every matching command is returned by default. The composer popup scrolls
+  /// and keeps the keyboard selection visible, so truncating here would make
+  /// commands past the cutoff (notably the user's corpus skills on a bare
+  /// `/`) unreachable with the arrow keys.
+  public static func suggestions(for rawValue: String, limit: Int? = nil) -> [AIChatSlashCommand] {
     suggestions(for: rawValue, gatewayCommands: [], limit: limit)
   }
 
@@ -103,16 +107,27 @@ public enum AIChatSlashCommands {
     for rawValue: String,
     gatewayCommands: [AIChatSlashCommand],
     corpusSkills: [AIChatSlashCommand] = [],
-    limit: Int = 7
+    limit: Int? = nil
   ) -> [AIChatSlashCommand] {
     guard rawValue.hasPrefix("/"), !rawValue.hasPrefix("//"), !rawValue.contains("\n") else { return [] }
     let fragment = rawValue.dropFirst().split(whereSeparator: { $0.isWhitespace }).first.map(String.init)?.lowercased() ?? ""
     guard !rawValue.dropFirst().contains(where: { $0.isWhitespace }) else { return [] }
-    return Array(merged(with: gatewayCommands, corpusSkills: corpusSkills).filter { command in
-      fragment.isEmpty
-        || command.name.hasPrefix(fragment)
-        || command.aliases.contains(where: { $0.hasPrefix(fragment) })
-    }.prefix(limit))
+    let candidates = merged(with: gatewayCommands, corpusSkills: corpusSkills)
+    let matches: [AIChatSlashCommand]
+    if fragment.isEmpty {
+      // A bare `/` is the discovery entry point. Lead with the user's own
+      // agent skills so they are visible without typing or scrolling past
+      // every built-in command.
+      let isSkill: (AIChatSlashCommand) -> Bool = { $0.origin == .corpusSkill || $0.origin == .builtInSkill }
+      matches = candidates.filter(isSkill) + candidates.filter { !isSkill($0) }
+    } else {
+      matches = candidates.filter { command in
+        command.name.hasPrefix(fragment)
+          || command.aliases.contains(where: { $0.hasPrefix(fragment) })
+      }
+    }
+    guard let limit else { return matches }
+    return Array(matches.prefix(max(0, limit)))
   }
 
   public static var helpText: String {

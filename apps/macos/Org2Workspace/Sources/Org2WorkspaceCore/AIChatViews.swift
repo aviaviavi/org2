@@ -3991,12 +3991,53 @@ private struct AIChatVoiceInputMeterView: View {
   }
 }
 
+enum AIChatSlashCommandSuggestionsLayout {
+  /// Rows shown before the popup scrolls. The suggestion list itself is never
+  /// truncated; the selected row is scrolled into view instead.
+  static let visibleRowLimit = 8
+  static let rowHeight: CGFloat = 30
+  static var scrollHeight: CGFloat { CGFloat(visibleRowLimit) * rowHeight }
+}
+
 private struct AIChatSlashCommandSuggestions: View {
   let commands: [AIChatSlashCommand]
   let selectedCommandID: AIChatSlashCommand.ID?
   let select: (AIChatSlashCommand) -> Void
 
   var body: some View {
+    VStack(spacing: 2) {
+      if commands.count > AIChatSlashCommandSuggestionsLayout.visibleRowLimit {
+        ScrollViewReader { proxy in
+          ScrollView(.vertical) {
+            rows
+          }
+          .frame(height: AIChatSlashCommandSuggestionsLayout.scrollHeight)
+          .onAppear { scrollToSelection(proxy) }
+          .onChange(of: selectedCommandID) { scrollToSelection(proxy) }
+        }
+      } else {
+        rows
+      }
+
+      HStack(spacing: 10) {
+        Label("Navigate", systemImage: "arrow.up.arrow.down")
+        Text("Tab Complete")
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(.tertiary)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 3)
+    }
+    .padding(4)
+    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+    .overlay(
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius)
+        .stroke(WorkspaceDesign.hairline)
+    )
+  }
+
+  private var rows: some View {
     VStack(spacing: 2) {
       ForEach(commands) { command in
         Button {
@@ -4028,24 +4069,14 @@ private struct AIChatSlashCommandSuggestions: View {
           )
         }
         .buttonStyle(.plain)
+        .id(command.id)
       }
-
-      HStack(spacing: 10) {
-        Label("Navigate", systemImage: "arrow.up.arrow.down")
-        Text("Tab Complete")
-      }
-      .font(.caption2.weight(.medium))
-      .foregroundStyle(.tertiary)
-      .frame(maxWidth: .infinity, alignment: .trailing)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 3)
     }
-    .padding(4)
-    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
-    .overlay(
-      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius)
-        .stroke(WorkspaceDesign.hairline)
-    )
+  }
+
+  private func scrollToSelection(_ proxy: ScrollViewProxy) {
+    guard let selectedCommandID else { return }
+    proxy.scrollTo(selectedCommandID)
   }
 
   private func badge(for command: AIChatSlashCommand) -> String? {
