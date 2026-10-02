@@ -39,6 +39,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",
       "Use `org2 thread post THREAD_ID ... --apply` or the MCP tool `org2_thread_post` when an explicitly asynchronous worker must report into a named AI chat without starting or steering a turn; pass the target thread ID and a stable idempotency key into delegated work.",
+      "Use `org2 thread repair --dir CORPUS --json` on macOS to preview deterministic transcript reconciliation through the native OpenOrgServer worker; `--apply` commits a new repair head without changing original writer heads. `--watch --interval SECONDS --apply` runs without an LLM and skips unchanged chat storage. Build the worker with npm run build:server or supply --executable PATH. Desktop Settings and server chat-repair configure the background check interval; 0/off disables it.",
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",

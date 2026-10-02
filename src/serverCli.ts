@@ -45,6 +45,7 @@ export interface ServerConfiguration {
   executable: string;
   destinations: ServerDestination[];
   schedulesEnabled: boolean;
+  chatRepairIntervalSeconds: number;
   localAgentFilesystemAccess: "readOnly" | "workspaceWrite" | "fullAccess";
   mcp: ServerMcpConfiguration;
 }
@@ -66,10 +67,22 @@ function localAgentFilesystemAccess(value: unknown): ServerConfiguration["localA
   return access;
 }
 
+function chatRepairInterval(value: unknown): number {
+  if (value === null || (value !== undefined && typeof value !== "string" && typeof value !== "number")) {
+    throw new Error("Chat repair interval must be off or between 10 and 86400 seconds");
+  }
+  const seconds = value === undefined ? 120 : value === "off" || value === "never" ? 0 : Number(value);
+  if (!Number.isFinite(seconds) || (seconds !== 0 && (seconds < 10 || seconds > 86_400))) {
+    throw new Error("Chat repair interval must be off or between 10 and 86400 seconds");
+  }
+  return seconds;
+}
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const help = `OpenOrg headless server (macOS 14 or later)
 
-  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|pi|opencode|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--mcp-port PORT] [--apply]
+  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|pi|opencode|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--chat-repair-interval off|SECONDS] [--mcp-port PORT] [--apply]
+  org2 server chat-repair --interval off|SECONDS [--config FILE] [--apply]
   org2 server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
   org2 server token create --name NAME [--config FILE] [--apply]
   org2 server token list [--config FILE]
@@ -88,6 +101,8 @@ start runs in the foreground; service installs a launchd agent that runs at logi
 and restarts after failures. pair issues a one-use code valid for ten minutes.
 permissions previews or updates the local-agent filesystem policy; restart the server
 after applying it. Full access disables interactive approval prompts for local agents.
+chat-repair sets the deterministic chat check interval (120 seconds by default;
+off disables it); restart the server after applying a change.
 Creating a token enables a read-only Streamable HTTP MCP endpoint and prints the
 credential once. Only token hashes are stored. Token, MCP, and permission changes
 require a restart. Browser origins are rejected unless explicitly allowed.
@@ -215,7 +230,8 @@ export function validateServerConfiguration(value: unknown, configFile: string):
       throw new Error("Credentials must stay in the runtime's login store or Keychain");
     }
   }
-  return { ...config, localAgentFilesystemAccess: filesystemAccess, mcp };
+  return { ...config, localAgentFilesystemAccess: filesystemAccess,
+    chatRepairIntervalSeconds: chatRepairInterval(config.chatRepairIntervalSeconds), mcp };
 }
 
 function socketPath(configFile: string): string {
@@ -364,7 +380,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     bind: { type: "string" }, name: { type: "string" }, port: { type: "string" },
     executable: { type: "string" }, destination: { type: "string" }, "device-id": { type: "string" },
     id: { type: "string" }, "mcp-port": { type: "string" }, "allow-origin": { type: "string", multiple: true },
-    "filesystem-access": { type: "string" },
+    "filesystem-access": { type: "string" }, "chat-repair-interval": { type: "string" }, interval: { type: "string" },
     "team-id": { type: "string" }, "key-id": { type: "string" }, "key-file": { type: "string" },
     apply: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
   } });
@@ -396,6 +412,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
       repoRoot: packageRoot, nodePath: process.execPath,
       executable: path.resolve(values.executable || path.join(packageRoot, "apps/macos/Org2Workspace/.build/debug/OpenOrgServer")),
       schedulesEnabled: true,
+      chatRepairIntervalSeconds: chatRepairInterval(values["chat-repair-interval"]),
       localAgentFilesystemAccess: localAgentFilesystemAccess(values["filesystem-access"]),
       mcp: {
         enabled: false,
@@ -414,6 +431,17 @@ export async function runServerCommand(args: string[]): Promise<void> {
       guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: null });
     }
     print({ applied: !!values.apply, configFile, config });
+    return;
+  }
+  if (command === "chat-repair") {
+    if (values.interval === undefined) throw new Error("chat-repair requires --interval off|SECONDS");
+    const snapshot = readGuardedFile(configFile);
+    const current = validateServerConfiguration(JSON.parse(snapshot.content), configFile);
+    const config = { ...current, chatRepairIntervalSeconds: chatRepairInterval(values.interval) };
+    if (values.apply) guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, {
+      expectedRevision: snapshot.revision, preserveMode: true });
+    print({ applied: !!values.apply, chatRepairIntervalSeconds: config.chatRepairIntervalSeconds,
+      restartRequired: !!values.apply, configFile });
     return;
   }
   if (command === "permissions") {

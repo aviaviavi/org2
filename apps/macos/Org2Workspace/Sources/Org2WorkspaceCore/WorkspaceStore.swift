@@ -2660,6 +2660,13 @@ public final class WorkspaceStore {
       aiChatIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     }
   }
+  public var aiChatRepairIntervalSeconds: TimeInterval = AIChatTranscriptRepair.defaultIntervalSeconds {
+    didSet {
+      defaults.set(aiChatRepairIntervalSeconds, forKey: aiChatRepairIntervalKey)
+      restartAIChatRepairTimer()
+    }
+  }
+  public private(set) var aiChatRepairError: String?
   public var appearanceMode: WorkspaceAppearanceMode = .system {
     didSet {
       defaults.set(appearanceMode.rawValue, forKey: appearanceModeKey)
@@ -3061,6 +3068,7 @@ public final class WorkspaceStore {
   private let aiChatCustomInstructionsKey = "Org2Workspace.aiChat.customInstructions.v1"
   private let codexSandboxAccessKey = "Org2Workspace.aiChat.codexSandboxAccess.v1"
   private let aiChatMessageSoundKey = "Org2Workspace.aiChat.messageSound.v1"
+  private let aiChatRepairIntervalKey = "Org2Workspace.aiChat.repairIntervalSeconds.v1"
   private let appearanceModeKey = "Org2Workspace.appearance.mode.v1"
   private let lightThemeIDKey = "Org2Workspace.appearance.lightTheme.v1"
   private let darkThemeIDKey = "Org2Workspace.appearance.darkTheme.v1"
@@ -3225,6 +3233,7 @@ public final class WorkspaceStore {
   private var aiChatThreadMessageMutationVersions: [UUID: UInt64] = [:]
   private var aiChatThreadMessageRevisions: [UUID: UInt64] = [:]
   private var syncedAIChatRefreshTask: Task<Void, Never>?
+  private var aiChatRepairTask: Task<Void, Never>?
   private var syncedAIChatRefreshNeeded = false
   // Metadata at the last clean local save or replica import. Message revisions
   // separately protect edits that do not change thread metadata.
@@ -3758,6 +3767,10 @@ public final class WorkspaceStore {
       .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
     aiChatMessageSound = defaults.string(forKey: aiChatMessageSoundKey)
       .flatMap(AIChatMessageSound.init(rawValue:)) ?? .org2
+    let repairInterval = defaults.object(forKey: aiChatRepairIntervalKey) as? Double
+      ?? AIChatTranscriptRepair.defaultIntervalSeconds
+    aiChatRepairIntervalSeconds = repairInterval.isFinite && (repairInterval == 0 || (10...86_400).contains(repairInterval))
+      ? repairInterval : AIChatTranscriptRepair.defaultIntervalSeconds
     aiChatIncomingMessageSoundPlayer = Self.messageSoundPlayer(for: aiChatMessageSound)
     appearanceMode = defaults.string(forKey: appearanceModeKey)
       .flatMap(WorkspaceAppearanceMode.init(rawValue:)) ?? .system
@@ -30059,6 +30072,7 @@ public final class WorkspaceStore {
   public func setWorkspaceRealtimeRefreshActive(_ isActive: Bool) {
     guard isWorkspaceRealtimeRefreshActive != isActive else { return }
     isWorkspaceRealtimeRefreshActive = isActive
+    restartAIChatRepairTimer()
     if isActive {
       workspaceActivationRefreshTask?.cancel()
       workspaceActivationRefreshTask = Task { @MainActor [weak self] in
@@ -40467,6 +40481,32 @@ public final class WorkspaceStore {
       loaded: loaded,
       presentations: presentations
     )
+  }
+
+  private func restartAIChatRepairTimer() {
+    aiChatRepairTask?.cancel()
+    aiChatRepairTask = nil
+    guard isWorkspaceRealtimeRefreshActive, aiChatRepairIntervalSeconds.isFinite,
+          aiChatRepairIntervalSeconds >= 10, aiChatRepairIntervalSeconds <= 86_400 else { return }
+    let interval = aiChatRepairIntervalSeconds
+    aiChatRepairTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .seconds(interval)) } catch { return }
+        guard let self, !Task.isCancelled else { return }
+        let url = self.aiChatTranscriptURL
+        do {
+          let report = try await Task.detached(priority: .utility) {
+            try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, onlyIfChanged: true)
+          }.value
+          guard !Task.isCancelled, url == self.aiChatTranscriptURL else { continue }
+          self.aiChatRepairError = report.warnings.first
+          if report.checked { self.scheduleSyncedAIChatTranscriptRefresh() }
+        } catch {
+          guard !Task.isCancelled, url == self.aiChatTranscriptURL else { continue }
+          self.aiChatRepairError = error.localizedDescription
+        }
+      }
+    }
   }
 
   private func scheduleSyncedAIChatTranscriptRefresh() {

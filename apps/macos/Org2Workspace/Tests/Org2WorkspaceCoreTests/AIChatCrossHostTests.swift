@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -126,6 +127,43 @@ final class AIChatCrossHostTests: XCTestCase {
     XCTAssertEqual(saved.messages.first?.deliveryStatus, .sent, "A finished remote turn is not stuck as sending")
   }
 
+  func testQueuedSnapshotCannotDeleteAReplyAdoptedAfterEnqueue() async throws {
+    let laptopURL = root.appendingPathComponent("laptop.json")
+    let serverURL = root.appendingPathComponent("server.json")
+    configureWriters(laptopURL: laptopURL, serverURL: serverURL)
+    let question = AIChatMessage(role: .user, content: "question")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [question])
+    let transcriptStore = AIChatTranscriptStore.shared
+    try flush([thread], to: laptopURL)
+    transcriptStore.recordAdoptedThreads([thread], legacyURL: laptopURL)
+    try syncAll(from: laptopURL, to: serverURL)
+    let reply = AIChatMessage(role: .assistant, content: "original reply")
+    let completed = thread.replacingMessages([question, reply])
+    try flush([completed], to: serverURL)
+
+    transcriptStore.setWritesSuspendedForTesting(true, legacyURL: laptopURL)
+    defer { transcriptStore.setWritesSuspendedForTesting(false, legacyURL: laptopURL) }
+    let generation = transcriptStore.enqueueDurabilityBarrier(
+      AIChatTranscriptSnapshot(threads: [thread], selectedThreadID: thread.id, settlementSettings: settings),
+      legacyURL: laptopURL
+    )
+    try syncAll(from: serverURL, to: laptopURL, waitForWrites: false)
+    let refreshed = try XCTUnwrap(transcriptStore.loadCommittedIfAvailable(legacyURL: laptopURL))
+    transcriptStore.recordAdoptedThreads(refreshed.snapshot.threads, legacyURL: laptopURL)
+    transcriptStore.setWritesSuspendedForTesting(false, legacyURL: laptopURL)
+    try await transcriptStore.waitUntilPersisted(generation: generation, legacyURL: laptopURL)
+
+    let saved = try XCTUnwrap(transcriptStore.loadCommittedIfAvailable(legacyURL: laptopURL))
+    XCTAssertEqual(saved.snapshot.threads.first?.messages.map(\.id), [question.id, reply.id])
+    XCTAssertEqual(saved.snapshot.threads.first?.messages.last?.content, "original reply")
+    // A subsequent ordinary save must preserve the same original reply too.
+    try flush([completed], to: laptopURL)
+    XCTAssertEqual(
+      transcriptStore.loadCommittedIfAvailable(legacyURL: laptopURL)?.snapshot.threads.first?.messages.map(\.id),
+      [question.id, reply.id]
+    )
+  }
+
   func testLocalDeletionIsNotResurrectedByAReplica() throws {
     let laptopURL = root.appendingPathComponent("laptop.json")
     let serverURL = root.appendingPathComponent("server.json")
@@ -153,7 +191,175 @@ final class AIChatCrossHostTests: XCTestCase {
     )
   }
 
+  func testQueuedExactSavesStillHonorADeletionOfEarlierLocalQueuedText() async throws {
+    let url = root.appendingPathComponent("laptop.json")
+    let question = AIChatMessage(role: .user, content: "question")
+    let queued = AIChatMessage(role: .user, content: "remove this queued follow-up")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [question])
+    try flush([thread], to: url)
+    let store = AIChatTranscriptStore.shared
+    store.setWritesSuspendedForTesting(true, legacyURL: url)
+    defer { store.setWritesSuspendedForTesting(false, legacyURL: url) }
+    _ = store.enqueueDurabilityBarrier(AIChatTranscriptSnapshot(
+      threads: [thread.replacingMessages([question, queued])], selectedThreadID: thread.id,
+      settlementSettings: settings), legacyURL: url)
+    let last = store.enqueueDurabilityBarrier(AIChatTranscriptSnapshot(
+      threads: [thread], selectedThreadID: thread.id, settlementSettings: settings), legacyURL: url)
+    store.setWritesSuspendedForTesting(false, legacyURL: url)
+    try await store.waitUntilPersisted(generation: last, legacyURL: url)
+    XCTAssertEqual(store.loadCommittedIfAvailable(legacyURL: url)?.snapshot.threads.first?.messages.map(\.id), [question.id])
+  }
+
   // MARK: Presence and routing
+
+  func testQueuedCommitsKeepTheLatestLocalDeletionBase() async throws {
+    let url = root.appendingPathComponent("laptop.json")
+    let question = AIChatMessage(role: .user, content: "question")
+    let first = AIChatMessage(role: .user, content: "first follow-up")
+    let second = AIChatMessage(role: .user, content: "second follow-up")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [question])
+    try flush([thread], to: url)
+    let store = AIChatTranscriptStore.shared
+    store.setWritesSuspendedForTesting(true, legacyURL: url)
+    defer { store.setWritesSuspendedForTesting(false, legacyURL: url) }
+    _ = store.enqueueDurabilityBarrier(AIChatTranscriptSnapshot(
+      threads: [thread.replacingMessages([question, first])], selectedThreadID: thread.id,
+      settlementSettings: settings), legacyURL: url)
+    let last = store.enqueueDurabilityBarrier(AIChatTranscriptSnapshot(
+      threads: [thread.replacingMessages([question, first, second])], selectedThreadID: thread.id,
+      settlementSettings: settings), legacyURL: url)
+    store.setWritesSuspendedForTesting(false, legacyURL: url)
+    try await store.waitUntilPersisted(generation: last, legacyURL: url)
+    try flush([thread.replacingMessages([question, first])], to: url)
+    XCTAssertEqual(store.loadCommittedIfAvailable(legacyURL: url)?.snapshot.threads.first?.messages.map(\.id),
+      [question.id, first.id])
+  }
+
+  func testRepairAcceptsAnEmptyCommittedConversationList() throws {
+    let url = root.appendingPathComponent("laptop.json")
+    try flush([], to: url)
+    let before = try storedBytes(url)
+    let report = try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true)
+    XCTAssertFalse(report.changed)
+    XCTAssertEqual(report.threadCount, 0)
+    XCTAssertEqual(try storedBytes(url), before)
+  }
+
+  func testDeterministicRepairPreviewsWithoutWritingAndConvergesAcrossReplicas() throws {
+    let laptopURL = root.appendingPathComponent("laptop.json")
+    let serverURL = root.appendingPathComponent("server.json")
+    configureWriters(laptopURL: laptopURL, serverURL: serverURL)
+    let question = AIChatMessage(role: .user, content: "question")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [question])
+    try flush([thread], to: laptopURL)
+    try syncAll(from: laptopURL, to: serverURL)
+    let laptopReply = AIChatMessage(role: .assistant, content: "laptop reply")
+    let serverReply = AIChatMessage(role: .assistant, content: "server reply")
+    try flush([thread.replacingMessages([question, laptopReply])], to: laptopURL)
+    try flush([thread.replacingMessages([question, serverReply])], to: serverURL)
+    try syncAll(from: serverURL, to: laptopURL)
+
+    let before = try storedBytes(laptopURL)
+    let store = AIChatTranscriptStore.shared
+    let preview = try store.repair(legacyURL: laptopURL, apply: false)
+    XCTAssertTrue(preview.changed)
+    XCTAssertFalse(preview.applied)
+    XCTAssertEqual(try storedBytes(laptopURL), before, "Preview must not even publish a merged shard")
+    let applied = try store.repair(legacyURL: laptopURL, apply: true, expectedRevision: preview.revision)
+    XCTAssertTrue(applied.applied)
+    for (path, bytes) in before {
+      XCTAssertEqual(try storedBytes(laptopURL)[path], bytes, "Original evidence must remain intact: \(path)")
+    }
+    let after = try storedBytes(laptopURL)
+    let verified = try store.repair(legacyURL: laptopURL, apply: true, onlyIfChanged: true)
+    XCTAssertTrue(verified.checked, "Publishing a repair requires one stable follow-up check before caching")
+    XCTAssertFalse(verified.changed)
+    XCTAssertFalse(try store.repair(legacyURL: laptopURL, apply: true, onlyIfChanged: true).checked)
+    XCTAssertEqual(try storedBytes(laptopURL), after, "Repeat repairs do not create commits")
+    try syncAll(from: laptopURL, to: serverURL)
+    try flush([thread.replacingMessages([question, serverReply])], to: serverURL)
+    try syncAll(from: serverURL, to: laptopURL)
+    for url in [laptopURL, serverURL] {
+      let loaded = try XCTUnwrap(store.loadCommittedIfAvailable(legacyURL: url))
+      let messages = try XCTUnwrap(loaded.snapshot.threads.first).messages
+      XCTAssertEqual(Set(messages.map(\.id)), [question.id, laptopReply.id, serverReply.id])
+      XCTAssertEqual(messages.first { $0.id == laptopReply.id }?.content, laptopReply.content)
+      XCTAssertEqual(messages.first { $0.id == serverReply.id }?.createdAt, serverReply.createdAt)
+    }
+  }
+
+  func testRepairRetainsIncompleteTipsUntilTheirShardsArrive() throws {
+    let url = root.appendingPathComponent("laptop.json")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [
+      AIChatMessage(role: .assistant, content: "reply")
+    ])
+    try flush([thread], to: url)
+    let shard = try XCTUnwrap(FileManager.default.contentsOfDirectory(
+      at: storeURL(url).appendingPathComponent("threads"), includingPropertiesForKeys: nil).first)
+    let original = try Data(contentsOf: shard)
+    try FileManager.default.removeItem(at: shard)
+    let before = try storedBytes(url)
+    XCTAssertThrowsError(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true))
+    XCTAssertEqual(try storedBytes(url), before)
+    try original.write(to: shard)
+    XCTAssertNoThrow(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true))
+  }
+
+  func testRepairPreservesUnknownFutureFieldsByRefusingToRewrite() throws {
+    let url = root.appendingPathComponent("laptop.json")
+    try flush([AIChatThread(title: "Future", sessionKey: "future", messages: [])], to: url)
+    let headURL = try XCTUnwrap(FileManager.default.contentsOfDirectory(
+      at: storeURL(url).appendingPathComponent("heads"), includingPropertiesForKeys: nil).first)
+    var head = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: headURL)) as? [String: Any])
+    let manifestURL = storeURL(url).appendingPathComponent("manifests/\(try XCTUnwrap(head["currentManifest"] as? String))")
+    var manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
+    manifest["futureField"] = ["preserve": "these bytes"]
+    let bytes = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+    try bytes.write(to: manifestURL)
+    head["currentDigest"] = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    try JSONSerialization.data(withJSONObject: head, options: [.sortedKeys]).write(to: headURL)
+    let before = try storedBytes(url)
+    XCTAssertThrowsError(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: false))
+    XCTAssertThrowsError(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true))
+    XCTAssertEqual(try storedBytes(url), before)
+  }
+
+  func testUnchangedRepairSkipsShardDecodingAndStalePreviewsFailClosed() throws {
+    let url = root.appendingPathComponent("laptop.json")
+    let thread = AIChatThread(title: "Shared", sessionKey: "shared", messages: [
+      AIChatMessage(role: .assistant, content: "reply")
+    ])
+    try flush([thread], to: url)
+    let first = try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, onlyIfChanged: true)
+    AIChatTranscriptStore.resetThreadShardDecodeCountForTesting()
+    XCTAssertFalse(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, onlyIfChanged: true).checked)
+    XCTAssertEqual(AIChatTranscriptStore.threadShardDecodeCountForTesting(), 0)
+    try flush([thread.replacingMessages(thread.messages + [AIChatMessage(role: .assistant, content: "new")])], to: url)
+    let before = try storedBytes(url)
+    XCTAssertThrowsError(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, expectedRevision: first.revision))
+    XCTAssertEqual(try storedBytes(url), before)
+  }
+
+  @MainActor
+  func testRepairIntervalIsRestoredAndCanBeDisabled() throws {
+    let defaults = UserDefaults(suiteName: "org2-repair-test-\(UUID().uuidString)")!
+    defaults.set(900.0, forKey: "Org2Workspace.aiChat.repairIntervalSeconds.v1")
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: root), defaults: defaults,
+      aiChatTranscriptURL: root.appendingPathComponent("empty.json"))
+    XCTAssertEqual(store.aiChatRepairIntervalSeconds, 900)
+    store.aiChatRepairIntervalSeconds = 0
+    XCTAssertEqual(defaults.double(forKey: "Org2Workspace.aiChat.repairIntervalSeconds.v1"), 0)
+  }
+
+  private func storedBytes(_ url: URL) throws -> [String: Data] {
+    let directory = storeURL(url)
+    let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey])!
+    var result: [String: Data] = [:]
+    for case let file as URL in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+      result[String(file.path.dropFirst(directory.path.count + 1))] = try Data(contentsOf: file)
+    }
+    return result
+  }
 
   @MainActor
   func testRemoteLiveTurnIsVisibleAsRunningOnAnotherHost() async throws {
@@ -410,8 +616,8 @@ final class AIChatCrossHostTests: XCTestCase {
 
   /// Replicate every file the source has that the target lacks, plus the
   /// source writer's head, the way a file synchronizer would.
-  private func syncAll(from source: URL, to target: URL) throws {
-    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+  private func syncAll(from source: URL, to target: URL, waitForWrites: Bool = true) throws {
+    if waitForWrites { AIChatTranscriptStore.shared.waitUntilIdleForTesting() }
     let fileManager = FileManager.default
     let sourceStore = storeURL(source).resolvingSymlinksInPath()
     let targetStore = storeURL(target).resolvingSymlinksInPath()
@@ -430,6 +636,14 @@ final class AIChatCrossHostTests: XCTestCase {
         guard isMutable, relative.hasPrefix("heads/"),
               try Data(contentsOf: destination) != Data(contentsOf: file)
         else { continue }
+        // Replicating an unchanged copy of another writer's old head must
+        // not roll that writer back. Syncthing tracks per-file versions;
+        // this fixture uses the writer's monotonic generation instead.
+        let sourceHead = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+        let targetHead = try JSONSerialization.jsonObject(with: Data(contentsOf: destination)) as? [String: Any]
+        if let sourceGeneration = sourceHead?["currentGeneration"] as? UInt64,
+           let targetGeneration = targetHead?["currentGeneration"] as? UInt64,
+           sourceGeneration <= targetGeneration { continue }
         try fileManager.removeItem(at: destination)
       }
       try fileManager.copyItem(at: file, to: destination)

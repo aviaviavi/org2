@@ -15,6 +15,7 @@ private struct ServerConfiguration: Decodable {
   let nodePath: String
   let destinations: [AIChatDestinationConfiguration]
   let schedulesEnabled: Bool
+  let chatRepairIntervalSeconds: Double?
   let localAgentFilesystemAccess: String?
 }
 
@@ -25,6 +26,10 @@ struct OpenOrgServer {
   @MainActor
   static func main() async {
     do {
+      if CommandLine.arguments.dropFirst().first == "--repair-transcript" {
+        try await repairTranscript()
+        return
+      }
       // A LaunchAgent cannot answer Keychain dialogs. Blocking reads can
       // exhaust Swift's cooperative executor and freeze the entire relay.
       // Keep this policy process-local; the desktop retains interactive access.
@@ -68,6 +73,8 @@ struct OpenOrgServer {
       }
       defaults.set(try JSONEncoder().encode(config.destinations), forKey: "Org2Workspace.aiChat.destinations.v1")
       defaults.set("off", forKey: "Org2Workspace.aiChat.messageSound.v1")
+      defaults.set(config.chatRepairIntervalSeconds ?? AIChatTranscriptRepair.defaultIntervalSeconds,
+        forKey: "Org2Workspace.aiChat.repairIntervalSeconds.v1")
       let filesystemAccess = config.localAgentFilesystemAccess
         .flatMap(CodexSandboxAccess.init(rawValue:)) ?? .workspaceWrite
       defaults.set(
@@ -144,6 +151,8 @@ struct OpenOrgServer {
                     "listening": remote.isListening, "corpusRoot": config.corpusRoot,
                     "scheduler": store.automationSchedulerStatusText,
                     "schedulerError": store.automationSchedulerErrorText ?? "",
+                    "chatRepairIntervalSeconds": store.aiChatRepairIntervalSeconds,
+                    "chatRepairError": store.aiChatRepairError ?? "",
                     "filesystemAccess": store.codexSandboxAccess.rawValue,
                     "threads": store.aiChatThreads.count,
                     "runningThreads": store.aiChatThreads.filter {
@@ -196,6 +205,50 @@ struct OpenOrgServer {
       FileHandle.standardError.write(Data("OpenOrg server: \(error.localizedDescription)\n".utf8))
       Foundation.exit(1)
     }
+  }
+
+  private static func repairTranscript() async throws {
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    guard arguments.count >= 2 else { throw CocoaError(.fileReadInvalidFileName) }
+    let root = URL(fileURLWithPath: arguments[1]).standardizedFileURL
+    var apply = false
+    var interval: Double?
+    var revision: String?
+    var index = 2
+    while index < arguments.count {
+      switch arguments[index] {
+      case "--apply": apply = true
+      case "--interval", "--if-revision":
+        guard index + 1 < arguments.count else { throw CocoaError(.fileReadInvalidFileName) }
+        if arguments[index] == "--interval" {
+          guard let seconds = Double(arguments[index + 1]), seconds.isFinite,
+                seconds >= 10, seconds <= 86_400 else { throw CocoaError(.fileReadInvalidFileName) }
+          interval = seconds
+        } else { revision = arguments[index + 1] }
+        index += 1
+      default: throw CocoaError(.fileReadInvalidFileName)
+      }
+      index += 1
+    }
+    guard interval == nil || revision == nil else { throw CocoaError(.fileReadInvalidFileName) }
+    let shouldApply = apply
+    let expectedRevision = revision
+    let watch = interval != nil
+    repeat {
+      do {
+        let report = try await Task.detached(priority: .utility) {
+          try AIChatTranscriptRepair.run(corpusRoot: root, apply: shouldApply,
+            expectedRevision: expectedRevision, onlyIfChanged: watch && shouldApply)
+        }.value
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        FileHandle.standardOutput.write(try encoder.encode(report) + Data([10]))
+      } catch {
+        guard interval != nil else { throw error }
+        emit(["schema": "org2:ai-chat-repair:v1", "applied": false, "error": error.localizedDescription])
+      }
+      if let interval { try await Task.sleep(for: .seconds(interval)) }
+    } while interval != nil
   }
 
   private static func emit(_ value: [String: Any]) {

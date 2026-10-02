@@ -84,6 +84,7 @@ import {
   settleOpenClawThread,
 } from "./openClawThreadState.js";
 import { queueAIChatInboxMessage } from "./aiChatInbox.js";
+import { runAIChatRepair } from "./aiChatRepairCli.js";
 import { auditAgenticWorkspace, renderAgenticDoctorReport } from "./agenticWorkspaceDoctor.js";
 import {
   WORK_LEDGER_ACCOUNT_STATES,
@@ -175,7 +176,8 @@ const HELP = `Agentic workspace commands:
   org2 workspace agent-state --dir CORPUS --json
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
-  org2 thread list|show|post|settle|reopen|configure|auto-settle [--dir CORPUS] [--apply]
+  org2 thread list|show|post|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
+  org2 thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
   org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
@@ -534,9 +536,15 @@ function corpusCommand(parsed: ParsedArgs): void {
   throw new Error(`unknown corpus action: ${action}`);
 }
 
-function threadCommand(parsed: ParsedArgs): void {
+async function threadCommand(parsed: ParsedArgs): Promise<void> {
   const action = parsed.positional[0] || "list";
   const corpus = root(parsed);
+  if (action === "repair") {
+    await runAIChatRepair({ corpusRoot: corpus, apply: enabled(parsed, "apply"),
+      watch: enabled(parsed, "watch"), interval: flag(parsed, "interval"),
+      expectedRevision: flag(parsed, "if-revision"), executable: flag(parsed, "executable") });
+    return;
+  }
   if (action === "list") {
     const state = loadOpenClawThreadState(corpus);
     const filter = flag(parsed, "state", "all");
@@ -1629,7 +1637,7 @@ export async function runAgenticWorkspaceCommand(args: string[]): Promise<boolea
   else if (family === "ledger") ledgerCommand(parsed);
   else if (family === "corpus") corpusCommand(parsed);
   else if (family === "workspace") await workspaceCommand(parsed);
-  else if (family === "thread") threadCommand(parsed);
+  else if (family === "thread") await threadCommand(parsed);
   else if (family === "project") projectCommand(parsed);
   else if (family === "goal") goalCommand(parsed);
   else if (family === "agent-profile") agentProfileCommand(parsed);

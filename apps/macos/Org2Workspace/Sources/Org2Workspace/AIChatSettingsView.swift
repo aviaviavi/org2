@@ -107,6 +107,23 @@ struct AIChatSettingsView: View {
         Text("Selected, pinned, unread, pending, or currently failed/interrupted threads stay active.")
           .font(.callout)
           .foregroundStyle(.secondary)
+        Picker("Check synced chat history", selection: $store.aiChatRepairIntervalSeconds) {
+          ForEach(AIChatTranscriptRepair.intervalChoices, id: \.self) { seconds in
+            Text(AIChatTranscriptRepair.intervalTitle(seconds)).tag(seconds)
+          }
+          if !AIChatTranscriptRepair.intervalChoices.contains(store.aiChatRepairIntervalSeconds) {
+            Text(AIChatTranscriptRepair.intervalTitle(store.aiChatRepairIntervalSeconds))
+              .tag(store.aiChatRepairIntervalSeconds)
+          }
+        }
+        Text("Checks and reconciles synced chat history without AI. Longer intervals reduce background work.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+        if let error = store.aiChatRepairError {
+          Label(error, systemImage: "exclamationmark.triangle")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
       } header: {
         Label("Conversations", systemImage: "bubble.left.and.bubble.right")
       }

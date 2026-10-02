@@ -19,6 +19,10 @@ org2 agent --help
 
 When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO transition logging, data-source profiles, external-source intent, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
 
+* Deterministic chat recovery
+
+On macOS, =org2 thread repair --dir CORPUS --json= previews native transcript reconciliation without an LLM. Add =--apply= to commit, optionally carrying the preview's =--if-revision= token. =--watch --interval SECONDS --apply= runs a serial worker with a configurable interval and skips unchanged chat storage. Build =OpenOrgServer= with =npm run build:server= first, or pass =--executable PATH=. Desktop AI Chat settings and =org2 server chat-repair --interval off|SECONDS= configure periodic background checks. See [[file:tooling-reference.org][the tooling reference]] for integrity checks and recovery boundaries.
+
 * Native tooling and capability gaps
 
 Use Org2's native CLI by default for Org/Org2 operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Org2 workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with =org2 agent capabilities= and =org2 COMMAND --help= before choosing a workaround. Org2 is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.

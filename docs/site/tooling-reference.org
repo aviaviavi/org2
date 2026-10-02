@@ -580,6 +580,21 @@ The selected Mac chat is identified in Codex, Claude Code, Pi, OpenCode, and Ope
 
 The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement excludes the selected thread, pinned or unread threads, pending turns, and a latest message that is still sending, failed, or interrupted. Empty threads and threads with a historical failure followed by a successful delivery remain eligible once inactive.
 
+** Deterministic chat repair
+
+On macOS, =thread repair= uses OpenOrg's native transcript reconciler without starting an AI turn. It merges complete writer heads by original message ID, honors deletion markers, verifies shards and attachment hashes, and retains original files as recovery evidence. Preview does not write even a merged shard. Apply publishes a new repair head; malformed or incomplete tips and unknown future fields remain untouched and produce an error.
+
+#+begin_src sh
+npm run build:server
+org2 thread repair --dir ~/notes --json
+org2 thread repair --dir ~/notes --if-revision PREVIEW_REVISION --apply --json
+org2 thread repair --dir ~/notes --watch --interval 900 --apply
+org2 server chat-repair --interval 900 --apply
+org2 server chat-repair --interval off --apply
+#+end_src
+
+The native worker defaults to the checkout's built =OpenOrgServer=; =--executable PATH= selects another built worker. A watch interval accepts 10–86400 seconds, defaults to 120, and runs one check at a time. The desktop offers *Settings → AI Chat → Conversations → Check synced chat history* with Off, 2 minutes, 5 minutes, 15 minutes, and 1 hour. The headless server stores =chatRepairIntervalSeconds= in its machine-local configuration; restart it after a configuration change. Existing server configurations default to 120 seconds. Checks inspect only chat storage, use a small fingerprint to skip unchanged stores, and retry incomplete syncs on a later interval. Ordinary note conflicts and intentional message deletions are outside this recovery operation.
+
 * Durable agent runs and review
 
 Goals and named workers are portable corpus records, distinct from the runtime that executes them. =org2 goal create/update/list/show= manages =org2:goal:v1= files under =goals/=. =org2 agent-profile create/update/list/show= manages =org2:agent-profile:v1= files under =agent-profiles/=. Both create and update preview by default and require =--apply= to write.

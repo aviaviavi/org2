@@ -64,6 +64,13 @@ try {
   assert.equal(fs.existsSync(configFile), false);
   const config = init.config;
   assert.equal(config.localAgentFilesystemAccess, "workspaceWrite");
+  assert.equal(config.chatRepairIntervalSeconds, 120);
+  const legacyRepair = { ...config };
+  delete legacyRepair.chatRepairIntervalSeconds;
+  assert.equal(validateServerConfiguration(legacyRepair, configFile).chatRepairIntervalSeconds, 120);
+  for (const seconds of [-1, 9, 86401, "NaN"]) {
+    assert.throws(() => validateServerConfiguration({ ...config, chatRepairIntervalSeconds: seconds }, configFile), /repair interval/);
+  }
   assert.deepEqual(config.mcp, { enabled: false, port: 48923, allowedOrigins: [], accessTokens: [] });
   const fullAccessInit = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2",
     "--filesystem-access", "full-access", "--config", configFile);
@@ -99,6 +106,13 @@ try {
   run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2", "--config", configFile, "--apply");
   assert.equal(fs.statSync(configFile).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.dirname(configFile)).mode & 0o777, 0o700);
+  const repairPreview = run("server", "chat-repair", "--interval", "900", "--config", configFile);
+  assert.equal(repairPreview.applied, false);
+  assert.equal(repairPreview.chatRepairIntervalSeconds, 900);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, "utf8")).chatRepairIntervalSeconds, 120);
+  const repairApplied = run("server", "chat-repair", "--interval", "off", "--config", configFile, "--apply");
+  assert.equal(repairApplied.restartRequired, true);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, "utf8")).chatRepairIntervalSeconds, 0);
   const permissionsPreview = run("server", "permissions", "--filesystem-access", "full-access", "--config", configFile);
   assert.equal(permissionsPreview.applied, false);
   assert.equal(permissionsPreview.previousFilesystemAccess, "workspaceWrite");
