@@ -9817,8 +9817,8 @@ private struct SourceProfileCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Image(systemName: profile.type == "slack" ? "number.square.fill" : "doc.text.fill")
-          .foregroundStyle(profile.type == "slack" ? Color.purple : Color.black.opacity(0.72))
+        ConnectorBrandLogo(type: profile.type)
+          .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
         VStack(alignment: .leading, spacing: 2) {
           Text(profile.id.capitalized)
             .font(.headline)

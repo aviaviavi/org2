@@ -978,6 +978,12 @@ function main() {
       join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", "NewMessage.mp3"),
       join(resourcesDir, "NewMessage.mp3")
     );
+    for (const logo of ["SlackLogo.png", "NotionLogo.png"]) {
+      copyFileSync(
+        join(packageDir, "Sources", "Org2WorkspaceCore", "Resources", logo),
+        join(resourcesDir, logo)
+      );
+    }
     const runtimeNodePath = copyOrg2Runtime(resourcesDir);
     const whisperRuntime = copyWhisperRuntime(resourcesDir);
 
