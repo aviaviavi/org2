@@ -13542,6 +13542,7 @@ private struct OrgSourceEditorWithLinkTools: View {
   @State private var sourceSelectionSnapshot: OrgSyntaxTextEditorSelectionSnapshot?
   @State private var sourcePreviewScrollTask: Task<Void, Never>?
   @State private var dateMentionState = WorkspaceDateMentionCompletionState()
+  @State private var slashCommandState = WorkspaceSlashCommandCompletionState()
   @StateObject private var prose = OrgProseEditorController()
   @State private var showsProseSidebar = true
 
@@ -13660,6 +13661,23 @@ private struct OrgSourceEditorWithLinkTools: View {
             createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
           }
         )
+      } else if let slashMatch = sourceSelectionSnapshot.flatMap(WorkspaceSlashCommands.match(in:)),
+                !slashCommandState.isDismissed(slashMatch) {
+        let options = WorkspaceSlashCommands.options(for: slashMatch)
+        WorkspaceSlashCommandPanel(
+          options: options,
+          selectedIndex: slashCommandState.selectedIndex(for: slashMatch, optionCount: options.count),
+          choose: { command in
+            OrgSyntaxTextEditor.publishPendingTextChanges()
+            let text = interaction.text as NSString
+            guard NSMaxRange(slashMatch.replacementRange) <= text.length else { return }
+            applyInlineEdit(InlineSelectionReplacement(
+              text: text.replacingCharacters(in: slashMatch.replacementRange, with: ""),
+              selectedRange: NSRange(location: slashMatch.replacementRange.location, length: 0)
+            ))
+            runSlashCommand(command)
+          }
+        )
       } else if let dateMentionMatch = sourceSelectionSnapshot.flatMap(WorkspaceDateMentions.match(in:)),
                 !dateMentionState.isDismissed(dateMentionMatch) {
         let options = dateMentionOptions(for: dateMentionMatch)
@@ -13683,7 +13701,13 @@ private struct OrgSourceEditorWithLinkTools: View {
     let sourceAtMount = store.selectedEntrySource
     let activeProse: OrgProseEditorController? = prose ? self.prose : nil
     let dateMentionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? =
-      prose ? nil : { key, snapshot in handleDateMentionKey(key, snapshot: snapshot) }
+      prose ? nil : { key, snapshot in
+        let slashResult = handleSlashCommandKey(key, snapshot: snapshot)
+        if case .ignored = slashResult {
+          return handleDateMentionKey(key, snapshot: snapshot)
+        }
+        return slashResult
+      }
     let analyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = prose
       ? nil
       : { text in await store.analyzeSourceEditorText(text) }
@@ -13776,6 +13800,49 @@ private struct OrgSourceEditorWithLinkTools: View {
       sourceSelectionSnapshot = nil
     }
     return result
+  }
+
+  private func handleSlashCommandKey(
+    _ key: OrgSyntaxTextEditorCompletionKey,
+    snapshot: OrgSyntaxTextEditorSelectionSnapshot
+  ) -> OrgSyntaxTextEditorCompletionKeyResult {
+    guard ParagraphWikiLinkCompletion.match(in: snapshot) == nil,
+          let match = WorkspaceSlashCommands.match(in: snapshot)
+    else { return .ignored }
+    var accepted: WorkspaceSlashCommand?
+    let result = slashCommandState.handle(
+      key,
+      match: match,
+      options: WorkspaceSlashCommands.options(for: match),
+      accepted: &accepted
+    )
+    if case .replace = result {
+      sourceSelectionSnapshot = nil
+    }
+    if let accepted {
+      // Let the editor remove the typed command before the picker opens.
+      Task { @MainActor in runSlashCommand(accepted) }
+    }
+    return result
+  }
+
+  private func runSlashCommand(_ command: WorkspaceSlashCommand) {
+    switch command {
+    case .image:
+      guard let imageURL = WorkspaceSlashCommands.chooseImage() else { return }
+      Task { @MainActor in
+        guard let link = await store.importSourceEditorImage(from: imageURL) else { return }
+        OrgSyntaxTextEditor.publishPendingTextChanges()
+        let text = interaction.text as NSString
+        let selection = interaction.selection
+        let location = min(max(0, selection.location), text.length)
+        let length = min(max(0, selection.length), text.length - location)
+        applyInlineEdit(InlineSelectionReplacement(
+          text: text.replacingCharacters(in: NSRange(location: location, length: length), with: link),
+          selectedRange: NSRange(location: location + (link as NSString).length, length: 0)
+        ))
+      }
+    }
   }
 
   private func completeDateMention(_ match: WorkspaceDateMentionMatch, with option: WorkspaceDateMentionOption) {

@@ -15411,6 +15411,70 @@ public final class WorkspaceStore {
     scheduleSourceEditorPreview(immediate: true)
   }
 
+  /// Makes an image chosen while typing available to the edited note. An image
+  /// outside the corpus is copied into `attachments/`, so the link renders on
+  /// every Mac the corpus syncs to. Returns an Org link relative to the note.
+  public func importSourceEditorImage(from imageURL: URL) async -> String? {
+    guard let corpusRoot, let context = captureDocumentCorpusContext() else {
+      statusText = "No corpus selected"
+      return nil
+    }
+    let resolvedRoot = corpusRoot.standardizedFileURL.resolvingSymlinksInPath()
+    let resolvedImage = imageURL.standardizedFileURL.resolvingSymlinksInPath()
+    let finalURL: URL
+    if resolvedImage.path.hasPrefix(resolvedRoot.path + "/") {
+      finalURL = resolvedImage
+    } else {
+      let attachmentsDirectory = corpusRoot.appendingPathComponent("attachments", isDirectory: true)
+      do {
+        finalURL = try await performDocumentMutation(
+          context: context,
+          files: [attachmentsDirectory.path],
+          priority: .userInitiated
+        ) { execution in
+          try Self.copyEditorImage(imageURL, into: attachmentsDirectory, execution: execution)
+        }.standardizedFileURL.resolvingSymlinksInPath()
+      } catch {
+        statusText = "Could not add image: \(error.localizedDescription)"
+        return nil
+      }
+    }
+    let sourceFile = selectedEntrySource.map {
+      OrgHTMLDocumentView.sourceFileURL($0, corpusRoot: corpusRoot).resolvingSymlinksInPath().path
+    }
+    let target = WorkspaceDateMentions.linkPath(to: finalURL.path, from: sourceFile, corpusRoot: resolvedRoot)
+    statusText = "Added image \(finalURL.lastPathComponent)"
+    return "[[file:\(target.replacingOccurrences(of: "]", with: "%5D"))]]"
+  }
+
+  nonisolated private static func copyEditorImage(
+    _ imageURL: URL,
+    into attachmentsDirectory: URL,
+    execution: WorkspaceDocumentMutationExecution
+  ) throws -> URL {
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(at: attachmentsDirectory, withIntermediateDirectories: true)
+    let ext = imageURL.pathExtension.lowercased()
+    let baseName = slug(imageURL.deletingPathExtension().lastPathComponent)
+    let fileName = ext.isEmpty ? baseName : "\(baseName.isEmpty ? "image" : baseName).\(ext)"
+    let finalURL = try execution.authorizeDescendant(
+      uniqueAttachmentURL(in: attachmentsDirectory, fileName: fileName),
+      ofDeclaredDirectory: attachmentsDirectory
+    )
+    let temporaryURL = try execution.authorizeDescendant(
+      attachmentsDirectory.appendingPathComponent(".openorg-image-\(UUID().uuidString.lowercased()).tmp"),
+      ofDeclaredDirectory: attachmentsDirectory
+    )
+    do {
+      try fileManager.copyItem(at: imageURL, to: temporaryURL)
+      try fileManager.moveItem(at: temporaryURL, to: finalURL)
+    } catch {
+      try? fileManager.removeItem(at: temporaryURL)
+      throw error
+    }
+    return finalURL
+  }
+
   private func insertTextInSourceEditor(_ text: String) {
     guard isEditingEntry, !text.isEmpty else { return }
     let currentText = sourceEditorLocalDraftText ?? sourceEditorInteraction.text

@@ -57,6 +57,8 @@ OpenOrg offers two views of the same document:
 
 While editing, type =@= followed by a date to insert it. =@today=, =@tomorrow=, =@yesterday=, month-day forms such as =@july 10= or =@jul 10 2025=, and numeric forms such as =@7/10= or =@2026-07-10= each offer an Org date stamp such as =<2026-07-10 Fri>= and, when that day's daily note exists, a =file:= link to it relative to the current document. Use the arrow keys to choose, =Tab= or =Return= to insert, and =Esc= to dismiss. Dates without a year use the current year.
 
+Type =/image= at the start of a line or after a space to embed an image while you write. Choosing the command opens a file picker. An image from outside the corpus is copied into the corpus's =attachments/= folder, so it renders on every Mac the corpus syncs to; an image already in the corpus is linked where it is. OpenOrg inserts a =[[file:…]]= link relative to the current note. Paths such as =/Users/…= and words such as =and/or= never open the command panel.
+
 Checked list items, such as =- [X] Ship the fix=, are shown struck through and muted in the source editor and the rendered view. Nested items keep their own state.
 
 An image link without a description, such as =[[file:attachments/chart.png]]= or =[[/Users/me/Desktop/shot.png]]=, renders as the image in the rendered view, including when text surrounds it. A link with a description inside a sentence stays a text link. Relative paths resolve from the note's folder first, then from the corpus root. Notes can show images anywhere on this Mac through an explicit absolute or =~/= path, but such an image appears only on Macs that have that file; use =/image= to keep it with the corpus. AI chat replies show only images inside the corpus.
