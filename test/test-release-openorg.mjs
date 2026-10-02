@@ -252,7 +252,8 @@ try {
 
 const rootPackage = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 assert.equal(rootPackage.scripts.pretest, "npm run build");
-assert.equal(rootPackage.scripts.test, "npm run test:built");
+assert.equal(rootPackage.scripts.test, "node tools/run-tests-parallel.mjs test:built --no-retry");
+assert.equal(rootPackage.scripts["test:serial"], "npm run build && npm run test:built");
 assert.match(rootPackage.scripts["test:built"], /test:prerequisites:built/);
 assert.doesNotMatch(rootPackage.scripts["docs:check:built"], /npm run build/);
 

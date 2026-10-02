@@ -18,10 +18,13 @@ The normal iOS path passes `--skip-testflight-groups`: the orchestrator uploads 
 
 ## Parallel test runner
 
-`run-tests-parallel.mjs` runs the leaves of an npm test script (default `test:built`) on a worker pool. The `&&` chains in `package.json` remain the canonical test list; the runner expands `npm run` references, starts known-slow tests first, then runs the wall-clock performance tests one at a time on an idle machine. A failure is retried once in isolation and reported as `FLAKY` if the retry passes; `--no-retry` disables that. `--report FILE` writes per-test timings.
+`npm test` builds once and uses `run-tests-parallel.mjs` with automatic retries disabled. The runner expands the leaves of `test:built` on a bounded worker pool, starts known-slow tests first, then runs wall-clock performance tests one at a time after the pool drains. The `&&` chains in `package.json` remain the canonical test list; `npm run test:serial` builds and runs that same list sequentially for debugging. `--report FILE` writes per-test timings.
+
+The explicit `test:parallel` command and release validation retain one isolated retry for a failed leaf and report a passing retry as `FLAKY`; `--no-retry` disables that behavior.
 
 ```bash
-npm run build && npm run test:parallel
+npm test -- --jobs 4 --report /tmp/openorg-tests.json
+npm run test:serial
 ```
 
 ## Documentation coverage check

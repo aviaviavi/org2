@@ -76,6 +76,16 @@ Run the full test suite with:
 npm test
 #+end_src
 
+This builds once, runs independent test scripts on a bounded worker pool, then
+runs timing-sensitive checks serially. A failed test fails the command without
+an automatic retry. To choose the worker count and save per-test timings:
+
+#+begin_src sh
+npm test -- --jobs 4 --report /tmp/openorg-tests.json
+#+end_src
+
+For serial debugging, run the same test list with =npm run test:serial=.
+
 Benchmark read-only CLI operations against a representative corpus with:
 
 #+begin_src sh

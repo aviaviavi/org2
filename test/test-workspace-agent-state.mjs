@@ -23,25 +23,28 @@ try {
   saveWorkflow(root, workflowFromRun({ ...run, status: "completed" }, { id: "refresh-workflow" }));
   saveGoal(root, createGoal({ id: "refresh-goal", title: "Refresh goal" }), { expectedRevision: null });
   saveAgentProfile(root, createAgentProfile({ id: "refresh-agent", name: "Refresh agent" }), { expectedRevision: null });
-  const snapshot = query(["workspace", "agent-state"]).value;
-  assert.equal(snapshot.schema, "org2:workspace-agent-state:v1");
-  for (const [key, family] of [["runs", "run"], ["workflows", "workflow"], ["goals", "goal"], ["profiles", "agent-profile"], ["projects", "project"]]) {
-    assert.deepEqual(snapshot[key].value, query([family, "list"]).value);
-    assert.ok(snapshot[key].elapsedMilliseconds >= 0);
-  }
-  const badGoal = path.join(root, "goals", "broken.org2");
-  fs.writeFileSync(badGoal, "This is not a goal record.\n");
-  const partial = workspaceAgentState(root);
-  assert.equal(typeof partial.goals.error, "string");
-  assert.deepEqual(partial.runs.value, snapshot.runs.value);
-  assert.deepEqual(partial.workflows.value, snapshot.workflows.value);
-  assert.deepEqual(partial.profiles.value, snapshot.profiles.value);
-  fs.rmSync(badGoal);
-  const invalidMount = spawnSync(process.execPath, [cli, "workspace", "agent-state", "--mount", root, "--json"], { encoding: "utf8" });
-  assert.notEqual(invalidMount.status, 0);
-  assert.match(invalidMount.stderr, /--mount is not supported/);
-
-  if (process.argv.includes("--performance")) {
+  // The full suite invokes both modes. Keep API parity and failure isolation
+  // in the correctness pass instead of launching the same seven CLIs again.
+  if (!process.argv.includes("--performance")) {
+    const snapshot = query(["workspace", "agent-state"]).value;
+    assert.equal(snapshot.schema, "org2:workspace-agent-state:v1");
+    for (const [key, family] of [["runs", "run"], ["workflows", "workflow"], ["goals", "goal"], ["profiles", "agent-profile"], ["projects", "project"]]) {
+      assert.deepEqual(snapshot[key].value, query([family, "list"]).value);
+      assert.ok(snapshot[key].elapsedMilliseconds >= 0);
+    }
+    const badGoal = path.join(root, "goals", "broken.org2");
+    fs.writeFileSync(badGoal, "This is not a goal record.\n");
+    const partial = workspaceAgentState(root);
+    assert.equal(typeof partial.goals.error, "string");
+    assert.deepEqual(partial.runs.value, snapshot.runs.value);
+    assert.deepEqual(partial.workflows.value, snapshot.workflows.value);
+    assert.deepEqual(partial.profiles.value, snapshot.profiles.value);
+    fs.rmSync(badGoal);
+    const invalidMount = spawnSync(process.execPath, [cli, "workspace", "agent-state", "--mount", root, "--json"], { encoding: "utf8" });
+    assert.notEqual(invalidMount.status, 0);
+    assert.match(invalidMount.stderr, /--mount is not supported/);
+    console.log("OK: workspace agent-state matches list APIs and isolates section failures");
+  } else {
     for (let i = 0; i < 100; i++) {
       saveAgentRun(root, createAgentRun({ id: `perf-${i}`, goal: `Synthetic refresh ${i}`, riskClass: "local-draft" }), { expectedRevision: null });
     }
@@ -56,7 +59,6 @@ try {
     console.log(`Agent-state refresh, 101 runs: four processes ${baseline.toFixed(1)}ms; one batch ${optimized.toFixed(1)}ms (median of 3)`);
     assert.ok(optimized < baseline * 0.85, `Batch refresh must remain materially faster: ${optimized} vs ${baseline}ms`);
   }
-  console.log("OK: workspace agent-state matches list APIs and isolates section failures");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
