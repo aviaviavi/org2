@@ -227,6 +227,17 @@ for (const render of [renderOrgDocumentToAppHtml, renderOrgDocumentToHtml]) {
   assert.match(rendered.html, /<img class="org2-image" src="images\/test image.png" alt="Example &amp; image"/);
   const inline = render(parseOrgToCanonicalAst('See [[file:images/test.png][image]] here.'), { sourcePath: "message.org" });
   assert.doesNotMatch(inline.html, /<img /);
+  // Without a description, an image link inside prose shows the image.
+  const bare = render(
+    parseOrgToCanonicalAst("- [ ] weird rendering [[/Users/me/Shot 9.28.55\u202fAM.png]]\n"),
+    { sourcePath: "daily/2026-10-02.org" },
+  );
+  assert.match(bare.html, /<a class="org2-image-link org2-inline-image-link" href="[^"]+"[^>]*><img class="org2-image" src="\/Users\/me\/Shot 9\.28\.55\u202fAM\.png" alt="Shot 9\.28\.55\u202fAM"/);
+  assert.match(bare.html, /\.org2-inline-image-link \{/);
+  assert.doesNotMatch(
+    render(parseOrgToCanonicalAst("See [[file:notes/plan.org]] here.\n"), { sourcePath: "message.org" }).html,
+    /<img /,
+  );
 }
 
 const publishedIndex = renderOrgExportIndexToHtml({

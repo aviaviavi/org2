@@ -207,13 +207,22 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   private let lock = NSLock()
   private var sourceDirectory: URL?
   private var corpusRoot: URL?
+  private var allowsAbsoluteImagesOutsideCorpus = false
   private var chatAttachments: [String: AIChatAttachment] = [:]
 
-  func configure(source: EntrySource, corpusRoot: URL?) {
+  /// - Parameter allowsAbsoluteImagesOutsideCorpus: Documents the user wrote
+  ///   may show an image linked by an explicit absolute or `~/` path anywhere
+  ///   on this Mac. Agent-written chat replies stay confined to the corpus.
+  func configure(
+    source: EntrySource,
+    corpusRoot: URL?,
+    allowsAbsoluteImagesOutsideCorpus: Bool = false
+  ) {
     let sourceURL = OrgHTMLDocumentView.sourceFileURL(source, corpusRoot: corpusRoot)
     lock.withLock {
       sourceDirectory = sourceURL.deletingLastPathComponent().standardizedFileURL
       self.corpusRoot = corpusRoot?.standardizedFileURL
+      self.allowsAbsoluteImagesOutsideCorpus = allowsAbsoluteImagesOutsideCorpus
     }
   }
 
@@ -363,25 +372,37 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
           !target.isEmpty
     else { return nil }
 
-    let roots = lock.withLock { (sourceDirectory, corpusRoot) }
+    let roots = lock.withLock { (sourceDirectory, corpusRoot, allowsAbsoluteImagesOutsideCorpus) }
     guard let sourceDirectory = roots.0 else { return nil }
     let expandedTarget = NSString(string: target).expandingTildeInPath
-    let candidate: URL
-    if let explicitURL = URL(string: expandedTarget), explicitURL.isFileURL {
-      candidate = explicitURL
-    } else if NSString(string: expandedTarget).isAbsolutePath {
-      candidate = URL(fileURLWithPath: expandedTarget)
-    } else {
-      candidate = sourceDirectory.appendingPathComponent(expandedTarget)
-    }
-
-    let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
     let allowedRoots = [roots.1, roots.0]
       .compactMap { $0?.standardizedFileURL.resolvingSymlinksInPath() }
-    guard allowedRoots.contains(where: { Self.contains(resolved, within: $0) }) else {
-      return nil
+    let explicitCandidate: URL?
+    if let explicitURL = URL(string: expandedTarget), explicitURL.isFileURL {
+      explicitCandidate = explicitURL
+    } else if NSString(string: expandedTarget).isAbsolutePath {
+      explicitCandidate = URL(fileURLWithPath: expandedTarget)
+    } else {
+      explicitCandidate = nil
     }
-    return resolved
+
+    if let explicitCandidate {
+      let resolved = explicitCandidate.standardizedFileURL.resolvingSymlinksInPath()
+      guard roots.2 || allowedRoots.contains(where: { Self.contains(resolved, within: $0) }) else {
+        return nil
+      }
+      return resolved
+    }
+
+    // Relative targets resolve beside the note first, then from the corpus
+    // root, matching the native media view. Capture writes corpus-relative
+    // attachment links into notes that live in subdirectories such as daily/.
+    let candidates = [sourceDirectory, roots.1].compactMap { $0 }.map {
+      $0.appendingPathComponent(expandedTarget).standardizedFileURL.resolvingSymlinksInPath()
+    }.filter { candidate in
+      allowedRoots.contains(where: { Self.contains(candidate, within: $0) })
+    }
+    return candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? candidates.first
   }
 
   private nonisolated static func contains(_ file: URL, within root: URL) -> Bool {
@@ -594,7 +615,11 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.linkResolver = linkResolver
     coordinator.source = source
     coordinator.corpusRoot = corpusRoot
-    coordinator.localResourceHandler.configure(source: source, corpusRoot: corpusRoot)
+    coordinator.localResourceHandler.configure(
+      source: source,
+      corpusRoot: corpusRoot,
+      allowsAbsoluteImagesOutsideCorpus: true
+    )
     coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.performEntryAction = performEntryAction
     coordinator.allowsEntryContextMenu = allowsEntryContextMenu

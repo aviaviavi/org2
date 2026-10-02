@@ -59,6 +59,8 @@ While editing, type =@= followed by a date to insert it. =@today=, =@tomorrow=, 
 
 Checked list items, such as =- [X] Ship the fix=, are shown struck through and muted in the source editor and the rendered view. Nested items keep their own state.
 
+An image link without a description, such as =[[file:attachments/chart.png]]= or =[[/Users/me/Desktop/shot.png]]=, renders as the image in the rendered view, including when text surrounds it. A link with a description inside a sentence stays a text link. Relative paths resolve from the note's folder first, then from the corpus root. Notes can show images anywhere on this Mac through an explicit absolute or =~/= path, but such an image appears only on Macs that have that file; use =/image= to keep it with the corpus. AI chat replies show only images inside the corpus.
+
 *Prose* is a third editor presentation beside *Source* and *Split*. It uses the same native editor and the same Org text, with a proportional serif face, generous line spacing, a readable centered column, and editing syntax concealed. Select a word, sentence, or paragraph, then use the Prose toolbar or the editor's context menu:
 
 - *Add Alternative…* enters another version. The new version replaces the text in the document; the original and any earlier versions stay recoverable. Step through versions with the toolbar arrows or =Control-Option-[= and =Control-Option-]=.

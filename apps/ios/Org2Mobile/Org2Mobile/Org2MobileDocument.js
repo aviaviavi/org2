@@ -3081,7 +3081,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
 .org2-image-figure { max-width: 100%; margin: 0.75rem 0 1rem; }
 .org2-image-link { display: block; border: 0; }
 .org2-image { display: block; width: auto; max-width: 100%; height: auto; border-radius: 0.5rem; }
-li > .org2-image-figure { margin-top: 0.55rem; }`;
+li > .org2-image-figure { margin-top: 0.55rem; }
+.org2-inline-image-link { width: fit-content; max-width: 100%; margin: 0.55rem 0 0.75rem; }`;
   var DOCUMENT_CHART_STYLE = `:root {
   --org2-chart-axis: #475569;
   --org2-chart-grid: #d7dee8;
@@ -3463,6 +3464,7 @@ li:has(> input[type="checkbox"]:checked) > p { color: var(--org2-muted); text-de
   object-fit: contain;
 }
 li > .org2-image-figure { margin-top: 0.65rem; }
+.org2-inline-image-link { width: fit-content; margin: 0.6rem 0 0.8rem; }
 .org2-todo {
   display: inline-block;
   margin-right: 0.35rem;
@@ -4624,9 +4626,16 @@ ${expandedTarget}`;
       href = rewriteOrgInternalHrefForHtml(expandedHrefRaw, context);
     }
     const explicitDescription = String(node.descriptionRaw || "").trim();
+    const tooltip = context.profile === "app" ? ` title="${escapeAttr(appLinkTooltip(hrefRaw, expandedHrefRaw))}"` : "";
+    if (!explicitDescription) {
+      const imageSource = resolveImageLinkSource(hrefRaw, context);
+      if (imageSource) {
+        const imageHref = context.profile === "app" ? href : imageSource;
+        return `<a class="org2-image-link org2-inline-image-link" href="${escapeAttr(imageHref)}"${tooltip}><img class="org2-image" src="${escapeAttr(imageSource)}" alt="${escapeAttr(imageAltText(imageSource))}" loading="lazy" decoding="async" /></a>`;
+      }
+    }
     const defaultInternalText = resolveDefaultInternalLinkText(hrefRaw);
     const text2 = explicitDescription || defaultInternalText || String(node.targetRaw || "").trim() || href;
-    const tooltip = context.profile === "app" ? ` title="${escapeAttr(appLinkTooltip(hrefRaw, expandedHrefRaw))}"` : "";
     return `<a href="${escapeAttr(href)}"${tooltip}>${escapeHtml2(text2)}</a>`;
   }
   function colorBindingStyles(binding, wholeCell) {
@@ -5230,7 +5239,7 @@ ${rows}
       includeDefaultStyle: opts.includeDefaultStyle,
       defaultStyle: [
         DEFAULT_DOCUMENT_STYLE,
-        opts.mainBody.includes('class="org2-image-figure"') ? DOCUMENT_IMAGE_STYLE : "",
+        opts.mainBody.includes('class="org2-image"') ? DOCUMENT_IMAGE_STYLE : "",
         opts.includeToc ? DOCUMENT_TOC_STYLE : ""
       ].filter(Boolean).join("\n")
     });
