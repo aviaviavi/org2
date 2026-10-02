@@ -542,16 +542,22 @@ struct AIChatTranscriptDocument: View {
     let resolvedTitle = displayTitle.isEmpty ? input.runtime.title : displayTitle
     let referenceDate = input.lastEventAt ?? input.startedAt
     let livenessAge = referenceDate.map { max(0, now.timeIntervalSince($0)) } ?? 0
+    let thresholds = AIChatTypingIndicatorView.livenessThresholdPresentation(
+      runtime: input.runtime,
+      displayTitle: resolvedTitle
+    )
     let animates = input.connectionState != .disconnected
       && (input.connectionState != .connected || input.runID == nil
+        || thresholds.stalledAnimates
         || livenessAge < AIChatTypingIndicatorView.stalledRunInterval)
     return AIChatTranscriptHTML.Live(
       title: presentation.statusTitle(now: now),
       detail: presentation.statusDetail(now: now),
-      quietTitle: "Waiting for \(resolvedTitle)",
-      quietDetail: "No new activity for 2m. It may still be working.",
-      stalledTitle: "\(resolvedTitle) may be stalled",
-      stalledDetail: "No new activity for 10m. The run is saved; the connection or agent may be stalled.",
+      quietTitle: thresholds.quietTitle,
+      quietDetail: thresholds.quietDetail,
+      stalledTitle: thresholds.stalledTitle,
+      stalledDetail: thresholds.stalledDetail,
+      stalledAnimates: thresholds.stalledAnimates,
       startedAtMilliseconds: input.startedAt.map { $0.timeIntervalSince1970 * 1_000 },
       lastEventAtMilliseconds: referenceDate.map { $0.timeIntervalSince1970 * 1_000 },
       usesLivenessThresholds: input.connectionState == .connected && input.runID != nil,
@@ -721,6 +727,7 @@ enum AIChatTranscriptHTML {
     let quietDetail: String
     let stalledTitle: String
     let stalledDetail: String
+    let stalledAnimates: Bool
     let startedAtMilliseconds: Double?
     let lastEventAtMilliseconds: Double?
     let usesLivenessThresholds: Bool
@@ -741,6 +748,7 @@ enum AIChatTranscriptHTML {
       quietDetail: String,
       stalledTitle: String,
       stalledDetail: String,
+      stalledAnimates: Bool = false,
       startedAtMilliseconds: Double?,
       lastEventAtMilliseconds: Double?,
       usesLivenessThresholds: Bool,
@@ -760,6 +768,7 @@ enum AIChatTranscriptHTML {
       self.quietDetail = quietDetail
       self.stalledTitle = stalledTitle
       self.stalledDetail = stalledDetail
+      self.stalledAnimates = stalledAnimates
       self.startedAtMilliseconds = startedAtMilliseconds
       self.lastEventAtMilliseconds = lastEventAtMilliseconds
       self.usesLivenessThresholds = usesLivenessThresholds
@@ -1195,7 +1204,7 @@ enum AIChatTranscriptHTML {
       if(!live || root.hidden) return;
       const now=Date.now(), age=live.lastEventAtMilliseconds==null?0:Math.max(0,now-live.lastEventAtMilliseconds);
       let title=live.title, detail=live.detail||'', animates=live.animates;
-      if(live.usesLivenessThresholds && age>=600000) { title=live.stalledTitle; detail=live.stalledDetail; animates=false; }
+      if(live.usesLivenessThresholds && age>=600000) { title=live.stalledTitle; detail=live.stalledDetail; animates=live.stalledAnimates===true; }
       else if(live.usesLivenessThresholds && age>=120000) { title=live.quietTitle; detail=live.quietDetail; }
       root.classList.toggle('animating',animates);
       root.querySelector('.live-title').textContent=title;

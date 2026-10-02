@@ -5081,6 +5081,42 @@ struct AIChatTypingIndicatorView: View {
   static let quietRunInterval: TimeInterval = 2 * 60
   static let stalledRunInterval: TimeInterval = 10 * 60
 
+  /// Copy shown once a connected run has been quiet past each liveness
+  /// threshold. OpenCode streams nothing while a long tool call (a build or
+  /// test run) executes, so a quiet OpenCode run is reported as waiting rather
+  /// than as possibly stalled.
+  struct LivenessThresholdPresentation: Equatable {
+    let quietTitle: String
+    let quietDetail: String
+    let stalledTitle: String
+    let stalledDetail: String
+    let stalledAnimates: Bool
+  }
+
+  static func livenessThresholdPresentation(
+    runtime: AIChatRuntime,
+    displayTitle: String
+  ) -> LivenessThresholdPresentation {
+    let quietTitle = "Waiting for \(displayTitle)"
+    let quietDetail = "No new activity for 2m. It may still be working."
+    if runtime == .openCode {
+      return LivenessThresholdPresentation(
+        quietTitle: quietTitle,
+        quietDetail: quietDetail,
+        stalledTitle: quietTitle,
+        stalledDetail: "No new output for 10m. OpenCode is still running; long tool calls can be quiet.",
+        stalledAnimates: true
+      )
+    }
+    return LivenessThresholdPresentation(
+      quietTitle: quietTitle,
+      quietDetail: quietDetail,
+      stalledTitle: "\(displayTitle) may be stalled",
+      stalledDetail: "No new activity for 10m. The run is saved; the connection or agent may be stalled.",
+      stalledAnimates: false
+    )
+  }
+
   let startedAt: Date?
   let lastEventAt: Date?
   let runtime: AIChatRuntime

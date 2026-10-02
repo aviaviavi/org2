@@ -561,6 +561,49 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertEqual(result?["rows"] as? Int, 1)
   }
 
+  func testQuietOpenCodeRunIsNotLabelledStalledInTheHTMLTranscript() async throws {
+    let openCode = AIChatTypingIndicatorView.livenessThresholdPresentation(
+      runtime: .openCode,
+      displayTitle: "OpenCode on press.local"
+    )
+    XCTAssertEqual(openCode.stalledTitle, "Waiting for OpenCode on press.local")
+    XCTAssertFalse(openCode.stalledTitle.contains("stalled"))
+    XCTAssertTrue(openCode.stalledAnimates)
+    let codex = AIChatTypingIndicatorView.livenessThresholdPresentation(runtime: .codex, displayTitle: "Codex")
+    XCTAssertEqual(codex.stalledTitle, "Codex may be stalled")
+    XCTAssertFalse(codex.stalledAnimates)
+
+    func live(_ thresholds: AIChatTypingIndicatorView.LivenessThresholdPresentation) -> AIChatTranscriptHTML.Live {
+      AIChatTranscriptHTML.Live(
+        title: "Working", detail: nil,
+        quietTitle: thresholds.quietTitle, quietDetail: thresholds.quietDetail,
+        stalledTitle: thresholds.stalledTitle, stalledDetail: thresholds.stalledDetail,
+        stalledAnimates: thresholds.stalledAnimates,
+        startedAtMilliseconds: Date().addingTimeInterval(-30 * 60).timeIntervalSince1970 * 1_000,
+        lastEventAtMilliseconds: Date().addingTimeInterval(-12 * 60).timeIntervalSince1970 * 1_000,
+        usesLivenessThresholds: true, animates: true,
+        text: nil, hasEarlierText: false, textExpanded: false,
+        reasoning: nil, activities: [], activityExpanded: false
+      )
+    }
+    let script = """
+      ({
+        title:document.querySelector('.live-title').textContent,
+        animating:document.getElementById('live').classList.contains('animating')
+      })
+      """
+    let view = try await document()
+    try await update(view, payload([], sending: true, live: live(openCode)))
+    let quietOpenCode = try await view.evaluateJavaScript(script) as? [String: Any]
+    XCTAssertEqual(quietOpenCode?["title"] as? String, "Waiting for OpenCode on press.local")
+    XCTAssertEqual(quietOpenCode?["animating"] as? Bool, true)
+
+    try await update(view, payload([], sending: true, live: live(codex)))
+    let quietCodex = try await view.evaluateJavaScript(script) as? [String: Any]
+    XCTAssertEqual(quietCodex?["title"] as? String, "Codex may be stalled")
+    XCTAssertEqual(quietCodex?["animating"] as? Bool, false)
+  }
+
   func testLiveAndSavedReasoningUseOrgRendering() async throws {
     let commentary = "I’m fixing =main=; see [[https://example.com/docs][the docs]]."
     let reasoning = "Reuse the =Org2= renderer for *reasoning*, too."
