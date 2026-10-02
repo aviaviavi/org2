@@ -886,26 +886,38 @@ enum AIChatTranscriptHTML {
   .insertions { color:#25a244; } .deletions { color:#d6483e; }
   .more-files { margin-top:7px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
   #earlier { display:block; margin:0 auto 12px; }
-  #live { box-sizing:border-box; width:100%; max-width:700px; padding:16px 10px 14px; color:light-dark(#777,#aaa); }
+  /* Live run: one 14px icon gutter plus an 8px gap. Every icon (pulse,
+     activity status, disclosure chevron) centers in the gutter and every
+     label starts at the same text column. */
+  #live { --live-gutter:14px; --live-gap:8px; --live-indent:calc(var(--live-gutter) + var(--live-gap)); box-sizing:border-box; width:100%; max-width:700px; padding:16px 10px 14px; color:light-dark(#777,#aaa); }
   body.compact #live { max-width:430px; padding-left:6px; padding-right:6px; }
-  .live-status-row { display:flex; align-items:center; gap:8px; min-height:22px; font-size:11px; user-select:none; -webkit-user-select:none; }
-  .live-pulse { display:block; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:currentColor; }
-  #live.animating .live-pulse { animation:pulse .85s ease-in-out infinite alternate; }
-  .live-title { min-width:0; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+  .live-status-row { display:flex; align-items:center; gap:var(--live-gap); max-width:calc(640px + var(--live-indent)); min-height:22px; font-size:12px; line-height:16px; user-select:none; -webkit-user-select:none; }
+  .live-pulse { display:grid; place-items:center; flex:0 0 var(--live-gutter); width:var(--live-gutter); height:var(--live-gutter); }
+  .live-pulse::before { content:''; display:block; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  #live.animating .live-pulse::before { animation:pulse .85s ease-in-out infinite alternate; }
+  .live-title { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
   #live.animating .live-title { color:transparent; background:linear-gradient(90deg,light-dark(#777,#aaa) 20%,light-dark(#333,#eee) 50%,light-dark(#777,#aaa) 80%); background-size:220% 100%; background-clip:text; -webkit-background-clip:text; animation:shimmer 1.7s linear infinite; }
-  .live-elapsed { flex:0 0 58px; width:58px; font:10px ui-monospace,SFMono-Regular,Menlo,monospace; color:light-dark(#999,#888); }
-  .live-stop { display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; padding:0; border-radius:50%; background:light-dark(#0000000d,#ffffff12); }
+  .live-elapsed { flex:none; font-size:11px; font-variant-numeric:tabular-nums; color:light-dark(#999,#888); }
+  .live-stop { display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; margin-left:auto; padding:0; border-radius:50%; background:light-dark(#0000000d,#ffffff12); }
   .live-stop .glyph,.live-stop svg { width:8px; height:8px; }
-  .live-detail { max-width:640px; margin-top:2px; font-size:10px; color:light-dark(#999,#888); white-space:pre-wrap; }
-  .live-text { max-width:640px; margin-top:9px; color:light-dark(#202020,#e7e7e7); font-size:13px; line-height:1.5; white-space:pre-wrap; }
+  .live-detail { max-width:640px; margin:2px 0 0 var(--live-indent); font-size:11px; line-height:15px; color:light-dark(#999,#888); white-space:pre-wrap; }
+  .live-text { max-width:640px; margin:6px 0 0 var(--live-indent); color:light-dark(#202020,#e7e7e7); font-size:13px; line-height:1.5; white-space:pre-wrap; }
   .live-text.rendered { white-space:normal; }
-  .live-text-toggle { margin-top:5px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
-  .live-feed { max-width:640px; margin-top:9px; font-size:11px; }
-  .live-feed .reasoning-row,.live-feed .activity-row { margin-top:6px; }
+  .live-feed { max-width:calc(640px + var(--live-indent)); margin-top:8px; font-size:12px; }
+  .live-feed .reasoning-row,.live-feed .activity-row { gap:var(--live-gap); margin-top:4px; }
+  .live-feed > :first-child { margin-top:0; }
+  .live-feed .activity-icon,.live-feed .reasoning-row > .glyph { display:grid; place-items:center; flex:0 0 var(--live-gutter); width:var(--live-gutter); height:18px; }
+  .live-feed .activity-title,.live-feed .reasoning-title { line-height:18px; }
+  .live-feed .activity-detail,.live-feed .reasoning-text { margin-top:0; font-size:11px; line-height:15px; }
   .live-feed.expanded .reasoning-text { -webkit-line-clamp:8; }
   .live-feed.expanded .activity-detail { -webkit-line-clamp:3; }
-  .live-running-dot { display:block; width:7px; height:7px; margin:3px; border-radius:50%; background:currentColor; animation:pulse .85s ease-in-out infinite alternate; }
-  .live-activity-toggle { margin-top:6px; font-size:10px; font-weight:500; color:light-dark(#777,#aaa); }
+  .live-running-dot { display:block; width:6px; height:6px; border-radius:50%; background:currentColor; animation:pulse .85s ease-in-out infinite alternate; }
+  /* Disclosures hang their chevron in the same gutter; the negative margin
+     keeps the hover pill's padding from shifting the chevron right. */
+  .live-text-toggle,.live-activity-toggle { gap:var(--live-gap); margin-left:-6px; padding:2px 6px; font-size:11px; font-weight:500; line-height:16px; color:light-dark(#777,#aaa); }
+  .live-text-toggle { margin-top:4px; }
+  .live-activity-toggle { margin-top:4px; }
+  .live-text-toggle .glyph,.live-activity-toggle .glyph { flex-basis:var(--live-gutter); width:var(--live-gutter); height:16px; }
   #status { display:flex; align-items:center; gap:8px; min-height:22px; padding:16px 0; color:light-dark(#777,#aaa); font-size:11px; }
   #status.working::before { content:''; display:block; flex:0 0 5px; width:5px; height:5px; border-radius:50%; background:currentColor; animation:pulse 1.2s ease-in-out infinite; }
   #status button { display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; line-height:1.25; }
@@ -913,7 +925,7 @@ enum AIChatTranscriptHTML {
   @keyframes placeholder-pulse { from { opacity:.11; } to { opacity:.24; } }
   @keyframes shimmer { from { background-position:100% 0; } to { background-position:-120% 0; } }
   @media (prefers-reduced-motion:reduce) {
-    #live.animating .live-pulse,.live-running-dot,.message-placeholder-pulse,.message-placeholder-line { animation:none; }
+    #live.animating .live-pulse::before,.live-running-dot,.message-placeholder-pulse,.message-placeholder-line { animation:none; }
     #live.animating .live-title { color:inherit; background:none; animation:none; }
   }
   #latest { position:fixed; bottom:12px; right:14px; border:1px solid #8886; border-radius:20px; background:light-dark(#fff,#333); box-shadow:0 2px 6px #0002; }
