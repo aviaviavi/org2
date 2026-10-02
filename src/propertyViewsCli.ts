@@ -13,7 +13,9 @@ Usage:
 All responses are JSON. Writes preview by default. Existing view saves require
 --if-revision; source edits always require the revision returned by query.
 Definitions live in views/ID.org2-view.json and contain scope, columns, filters,
-sort and groupBy. OpenOrg's Saved Views builder needs no SQL. Properties use
+sort and groupBy. Filters support matches (regex), on/before/after (dates) and
+query-time date variables such as {today}, {yesterday} and {today-7d}.
+OpenOrg's Saved Views builder needs no SQL. Properties use
 shared compiler inheritance; edits create a local override in the selected source.
 Identity/built-in fields, ORG2 runtime metadata, raw/ and hidden paths are read-only.
 Use --help for this contract; see the tooling reference for the definition schema.`;

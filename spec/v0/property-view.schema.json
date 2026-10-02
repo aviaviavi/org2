@@ -25,8 +25,8 @@
         "type": "object", "required": ["field", "operator"],
         "properties": {
           "field": { "$ref": "#/$defs/field" },
-          "operator": { "enum": ["is", "isNot", "contains", "exists", "missing", "gt", "lt", "active", "terminal"] },
-          "value": { "type": "string", "maxLength": 4096, "pattern": "^[^\\r\\n\\u0000]*$", "description": "gt/lt require a finite numeric value; active/terminal apply to the todo field." }
+          "operator": { "enum": ["is", "isNot", "contains", "matches", "exists", "missing", "gt", "lt", "on", "before", "after", "active", "terminal"] },
+          "value": { "type": "string", "maxLength": 4096, "pattern": "^[^\\r\\n\\u0000]*$", "description": "gt/lt require a finite numeric value; on/before/after require YYYY-MM-DD or a date variable and compare the first YYYY-MM-DD in the field; matches is a case-insensitive regular expression; active/terminal apply to the todo field. Values may contain date variables ({today}, {yesterday}, {tomorrow}, {today-7d}, {today+1m}, {month}, {year}) that are stored as written and resolved in local time when the view runs." }
         }
       }
     },

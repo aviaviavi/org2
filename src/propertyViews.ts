@@ -10,7 +10,7 @@ import { isPlanningLine } from "./sourceLines.js";
 import { isTerminalTodoKeyword } from "./todo.js";
 
 export const PROPERTY_VIEW_SCHEMA = "org2:property-view:v1" as const;
-export type PropertyViewFilter = { field: string; operator: "is" | "isNot" | "contains" | "exists" | "missing" | "gt" | "lt" | "active" | "terminal"; value?: string };
+export type PropertyViewFilter = { field: string; operator: "is" | "isNot" | "contains" | "matches" | "exists" | "missing" | "gt" | "lt" | "on" | "before" | "after" | "active" | "terminal"; value?: string };
 export interface PropertyViewDefinition {
   schema: typeof PROPERTY_VIEW_SCHEMA;
   id: string;
@@ -31,7 +31,80 @@ export interface PropertyViewSuggestion {
   definition: PropertyViewDefinition;
 }
 const builtins = ["title", "document", "file", "kind", "todo", "tags", "id"];
-const operators = ["is", "isNot", "contains", "exists", "missing", "gt", "lt", "active", "terminal"];
+const operators = ["is", "isNot", "contains", "matches", "exists", "missing", "gt", "lt", "on", "before", "after", "active", "terminal"];
+const dateOperators = ["on", "before", "after"];
+/** Options that make query-time variable expansion deterministic in tests. */
+export interface PropertyViewQueryOptions { now?: Date }
+
+const isoDatePattern = /(\d{4})-(\d{2})-(\d{2})/;
+const dateVariablePattern = /\{(today|yesterday|tomorrow|month|year)(?:([+-])(\d{1,4})([dwmy]))?\}/gi;
+function localISODate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+/** Expand dynamic date variables in a saved filter value at query time.
+ *
+ * Saved views keep the template (for example `{today}`), so a view such as
+ * "files from today" keeps working tomorrow without editing. Supported tokens,
+ * resolved in the local time zone:
+ *
+ * - `{today}`, `{yesterday}`, `{tomorrow}` → `YYYY-MM-DD`
+ * - `{today-7d}`, `{today+2w}`, `{today-1m}`, `{today-1y}` → offset `YYYY-MM-DD`
+ * - `{month}` → `YYYY-MM`, `{year}` → `YYYY` (offsets also apply)
+ *
+ * Any other brace text is left untouched. */
+export function expandPropertyViewVariables(value: string, now: Date = new Date()): string {
+  return value.replace(dateVariablePattern, (_token, base: string, sign?: string, amount?: string, unit?: string) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const name = base.toLowerCase();
+    if (name === "yesterday") date.setDate(date.getDate() - 1);
+    if (name === "tomorrow") date.setDate(date.getDate() + 1);
+    if (sign && amount && unit) {
+      const n = Number(amount) * (sign === "-" ? -1 : 1);
+      switch (unit.toLowerCase()) {
+        case "d": date.setDate(date.getDate() + n); break;
+        case "w": date.setDate(date.getDate() + n * 7); break;
+        case "m": {
+          // Clamp to the last day of the target month (Jan 31 - 1m → Dec 31, Mar 31 - 1m → Feb 28/29).
+          const day = date.getDate();
+          date.setDate(1); date.setMonth(date.getMonth() + n);
+          date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()));
+          break;
+        }
+        case "y": {
+          const day = date.getDate(), month = date.getMonth();
+          date.setDate(1); date.setFullYear(date.getFullYear() + n);
+          date.setDate(Math.min(day, new Date(date.getFullYear(), month + 1, 0).getDate()));
+          break;
+        }
+      }
+    }
+    const iso = localISODate(date);
+    return name === "month" ? iso.slice(0, 7) : name === "year" ? iso.slice(0, 4) : iso;
+  });
+}
+/** The first `YYYY-MM-DD` in a value: plain dates, Org timestamps such as
+ * `<2026-10-01 Thu>` or `[2026-10-01 Thu 09:00]`, ISO date-times, and dated
+ * file names all compare by their calendar date. */
+function firstISODate(value: string): string | null {
+  const match = isoDatePattern.exec(value);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  const month = Number(m), day = Number(d);
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? `${y}-${m}-${d}` : null;
+}
+const regExpCache = new Map<string, RegExp>();
+/** Case-insensitive JavaScript regular expression for the `matches` operator. */
+function filterRegExp(pattern: string): RegExp {
+  const cached = regExpCache.get(pattern);
+  if (cached) return cached;
+  let compiled: RegExp;
+  try { compiled = new RegExp(pattern, "i"); }
+  catch (error) { throw new Error(`Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`); }
+  if (regExpCache.size >= 64) regExpCache.clear();
+  regExpCache.set(pattern, compiled);
+  return compiled;
+}
 const suffix = ".org2-view.json";
 function record(value: unknown): value is Record<string, unknown> { return Boolean(value && typeof value === "object" && !Array.isArray(value)); }
 function oneLine(value: unknown, label: string): string {
@@ -67,6 +140,8 @@ export function parsePropertyView(value: unknown): PropertyViewDefinition {
     const field = propertyViewField(f.field);
     const filterValue = f.value === undefined ? "" : oneLine(f.value, "Filter value");
     if (["gt", "lt"].includes(operator) && (!filterValue.trim() || !Number.isFinite(Number(filterValue)))) throw new Error("Numeric comparisons require a finite number");
+    if (dateOperators.includes(operator) && !firstISODate(expandPropertyViewVariables(filterValue))) throw new Error("Date comparisons require YYYY-MM-DD or a date variable such as {today} or {today-7d}");
+    if (operator === "matches") filterRegExp(expandPropertyViewVariables(filterValue));
     if (["active", "terminal"].includes(operator) && field !== "todo") throw new Error("Active and terminal filters apply only to the todo field");
     return { field, operator, value: filterValue };
   });
@@ -146,6 +221,31 @@ export function suggestPropertyView(promptValue: unknown): PropertyViewSuggestio
   let groupBy: string | undefined;
   let summary = "Notes in your notes folder, sorted by title.";
 
+  // Relative dates become saved variables, never today's literal date, so the
+  // view keeps meaning "today" (or "the past week") on every later day.
+  const days = /\b(?:last|past)\s+(\d{1,3})\s+days?\b/.exec(lower)?.[1]
+    ?? (/\b(?:this|past|last)\s+week\b/.test(lower) ? "7" : undefined);
+  const day = /\b(today|yesterday|tomorrow)\b/.exec(lower)?.[1];
+  const dateFilter = day
+    ? { operator: "on" as const, value: `{${day}}`, label: day }
+    : days ? { operator: "after" as const, value: `{today-${Number(days)}d}`, label: `the past ${Number(days)} days` } : undefined;
+
+  if (dateFilter && !mentionsWork) {
+    title = day ? `Files from ${day}` : `Files from ${dateFilter.label}`;
+    scope = { kind: "file", ...(mentionsProjects ? { filePrefix: "notes/projects/" } : {}) };
+    columns = ["title", "file", "CREATED"];
+    filters = [
+      { field: "file", operator: dateFilter.operator, value: dateFilter.value },
+      { field: "CREATED", operator: dateFilter.operator, value: dateFilter.value },
+    ];
+    sort = [{ field: "file", direction: "desc" }];
+    summary = `Files whose dated path or CREATED property falls ${day ? "on" : "within"} ${dateFilter.label}. The ${dateFilter.value} variable is resolved each time the view runs.`;
+    return { schema: "org2:property-view-suggestion:v1", prompt, summary, definition: {
+      schema: PROPERTY_VIEW_SCHEMA, id: `view-${randomUUID()}`, title, layout: wantsCards ? "cards" : "table",
+      scope, columns, match: "any", filters, sort, limit: 500,
+    } };
+  }
+
   if (mentionsProjects && mentionsWork) {
     title = wantsCompleted ? "Completed project actions" : "Open project actions";
     scope = { kind: "heading", filePrefix: "notes/projects/" };
@@ -213,13 +313,19 @@ export function propertyViewValue(node: PropertyViewNode, field: string): string
     default: return node.effectiveProperties[field] ?? "";
   }
 }
-export function matchesPropertyViewFilter(node: PropertyViewNode, filter: PropertyViewFilter): boolean {
+export function matchesPropertyViewFilter(node: PropertyViewNode, filter: PropertyViewFilter, options: PropertyViewQueryOptions = {}): boolean {
   const actual = propertyViewValue(node, filter.field);
-  const wanted = filter.value ?? "";
+  const wanted = expandPropertyViewVariables(filter.value ?? "", options.now);
   switch (filter.operator) {
     case "is": return actual.toLowerCase() === wanted.toLowerCase();
     case "isNot": return actual.toLowerCase() !== wanted.toLowerCase();
     case "contains": return actual.toLowerCase().includes(wanted.toLowerCase());
+    case "matches": return filterRegExp(wanted).test(actual);
+    case "on": case "before": case "after": {
+      const left = firstISODate(actual), right = firstISODate(wanted);
+      if (!left || !right) return false;
+      return filter.operator === "on" ? left === right : filter.operator === "before" ? left < right : left > right;
+    }
     case "exists": return actual !== "";
     case "missing": return actual === "";
     case "gt": return actual.trim() !== "" && Number.isFinite(Number(actual)) && Number(actual) > Number(wanted);
@@ -278,7 +384,7 @@ function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): P
   return result;
 }
 
-export function queryPropertyView(root: string, value: unknown) {
+export function queryPropertyView(root: string, value: unknown, options: PropertyViewQueryOptions = {}) {
   const definition = parsePropertyView(value);
   const base = fs.realpathSync(root);
   const configFile = path.join(base, "org2.json");
@@ -307,11 +413,14 @@ export function queryPropertyView(root: string, value: unknown) {
     try { nodes.push(...canonicalPropertyViewNodes(nodesByFile.get(file.file) ?? [], snapshot.content)); }
     catch (error) { diagnostics.push({ file: file.file, message: error instanceof Error ? error.message : String(error) }); }
   }
+  // Resolve date variables once per query so every row sees the same "today".
+  const now = options.now ?? new Date();
+  const filters = definition.filters.map(f => ({ ...f, value: expandPropertyViewVariables(f.value ?? "", now) }));
   const matches = nodes.filter(node => {
     if (definition.scope.kind !== "all" && node.kind !== definition.scope.kind) return false;
     if (definition.scope.filePrefix && !node.file.startsWith(definition.scope.filePrefix)) return false;
-    if (!definition.filters.length) return true;
-    return definition.match === "all" ? definition.filters.every(f => matchesPropertyViewFilter(node, f)) : definition.filters.some(f => matchesPropertyViewFilter(node, f));
+    if (!filters.length) return true;
+    return definition.match === "all" ? filters.every(f => matchesPropertyViewFilter(node, f, { now })) : filters.some(f => matchesPropertyViewFilter(node, f, { now }));
   }).sort((a, b) => {
     for (const sort of definition.sort) {
       const order = compare(propertyViewValue(a, sort.field), propertyViewValue(b, sort.field));

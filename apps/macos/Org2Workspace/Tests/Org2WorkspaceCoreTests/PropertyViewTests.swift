@@ -92,6 +92,32 @@ final class PropertyViewTests: XCTestCase {
     } catch { XCTAssertTrue(error.localizedDescription.contains("changed")) }
   }
 
+  func testNativeCLIResolvesDateVariablesAndRegexFromBuilderFilters() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("org2-property-view-vars-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("daily"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    try "#+title: Today\n".write(to: root.appendingPathComponent("daily/\(today).org"), atomically: true, encoding: .utf8)
+    try "#+title: Old\n".write(to: root.appendingPathComponent("daily/2001-01-01.org"), atomically: true, encoding: .utf8)
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    var definition = PropertyViewDefinition()
+    definition.scope = .init(kind: "file")
+    definition.columns = ["title", "file"]
+    definition.filters = [.init(field: "file", operator: "on", value: "{today}")]
+    let saved: PropertyViewSaveResult = try await cli.runJSON(["property-view", "save", "--dir", root.path, "--definition", definition.json(), "--apply"])
+    XCTAssertEqual(saved.definition.filters.first?.value, "{today}", "Views store the variable, not the date")
+    let onToday: PropertyViewResult = try await cli.runJSON(["property-view", "query", "--dir", root.path, "--view", definition.id])
+    XCTAssertEqual(onToday.rows.map(\.file), ["daily/\(today).org"])
+
+    definition.filters = [.init(field: "file", operator: "matches", value: "^daily/20\\d\\d-01-01")]
+    let regex: PropertyViewResult = try await cli.runJSON(["property-view", "query", "--dir", root.path, "--definition", definition.json()])
+    XCTAssertTrue(regex.rows.map(\.file).contains("daily/2001-01-01.org"))
+    XCTAssertEqual(PropertyViewDefinition.valuePrompt(for: "after"), "{today}, {today-7d}, or YYYY-MM-DD")
+  }
+
   private func fixtureResult() throws -> PropertyViewResult {
     let definition = PropertyViewDefinition()
     let rows: [[String: Any]] = [("first", "Team B"), ("second", "Team A"), ("third", "Team B")].map { key, group in

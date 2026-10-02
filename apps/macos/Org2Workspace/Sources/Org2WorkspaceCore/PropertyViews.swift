@@ -22,6 +22,16 @@ struct PropertyViewDefinition: Codable, Equatable, Sendable, Identifiable {
   var limit = 500
 
   func json() throws -> String { String(decoding: try JSONEncoder().encode(self), as: UTF8.self) }
+
+  /// Placeholder for a filter value. Date and regex conditions show the
+  /// dynamic syntax the shared runtime resolves at query time.
+  static func valuePrompt(for operator: String) -> String {
+    switch `operator` {
+    case "on", "before", "after": "{today}, {today-7d}, or YYYY-MM-DD"
+    case "matches": "Regular expression, e.g. ^daily/{today}"
+    default: "Value, e.g. {today}"
+    }
+  }
 }
 struct SavedPropertyView: Decodable, Identifiable, Sendable {
   let definition: PropertyViewDefinition
@@ -434,7 +444,7 @@ struct SavedViewsView: View {
         Button("Add Filter", systemImage: "line.3.horizontal.decrease.circle") { draft.filters.append(.init()) }
           .disabled(draft.filters.count >= 30)
         Spacer()
-        Text("Fields: title, file, todo, tags, or a property name").font(.caption).foregroundStyle(.secondary)
+        Text("Fields: title, file, todo, tags, or a property name. Values accept {today}, {today-7d}, …").font(.caption).foregroundStyle(.secondary)
       }
       ScrollView {
         VStack(spacing: 6) {
@@ -443,11 +453,14 @@ struct SavedViewsView: View {
               fieldInput("Property", text: $draft.filters[index].field)
               Picker("Condition", selection: $draft.filters[index].operator) {
                 Text("equals").tag("is"); Text("does not equal").tag("isNot"); Text("contains").tag("contains")
+                Text("matches regex").tag("matches")
                 Text("is present").tag("exists"); Text("is missing").tag("missing")
                 Text("greater than").tag("gt"); Text("less than").tag("lt")
+                Text("date is on").tag("on"); Text("date is before").tag("before"); Text("date is after").tag("after")
                 Text("is unfinished TODO").tag("active"); Text("is finished TODO").tag("terminal")
               }.labelsHidden().frame(width: 175)
-              TextField("Value", text: $draft.filters[index].value)
+              TextField(PropertyViewDefinition.valuePrompt(for: draft.filters[index].operator), text: $draft.filters[index].value)
+                .help("Date variables: {today}, {yesterday}, {tomorrow}, {today-7d}, {today+1m}, {month}, {year}. They are saved as written and resolved whenever the view runs.")
                 .disabled(["exists", "missing", "active", "terminal"].contains(draft.filters[index].operator))
               Button("Remove Filter", systemImage: "minus.circle") { draft.filters.remove(at: index) }.labelStyle(.iconOnly)
             }
