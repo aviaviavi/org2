@@ -524,6 +524,51 @@ final class MobileRemoteHTTPServerTests: XCTestCase {
     XCTAssertFalse(presented.contains(where: { $0.title == "Agent started" }))
   }
 
+  /// iPhone builds keyed reply alerts on the summary's latest assistant ID
+  /// and forgot a thread whose ID went missing. An evicted transcript must
+  /// keep reporting the same ID, or the old reply is announced again each
+  /// time the conversation is loaded back into memory.
+  func testEvictedThreadSummaryKeepsItsLatestReplyIdentity() throws {
+    let reply = AIChatMessage(role: .assistant, content: "Milk, eggs, and bread.")
+    let thread = AIChatThread(
+      title: "Groceries today",
+      sessionKey: "groceries",
+      messages: [
+        AIChatMessage(role: .user, content: "What do I need?"),
+        reply,
+        AIChatMessage(role: .assistant, content: "  \n"),
+        AIChatMessage(role: .user, content: "Thanks"),
+      ],
+      isArchived: true
+    )
+    let context = MobileRemoteThreadProjectionContext(destinationNamesByID: [:], runningThreadIDs: [])
+    let loaded = MobileRemoteThreadProjection.summary(thread: thread, context: context)
+    XCTAssertEqual(loaded.latestAssistantMessageID, reply.id)
+
+    let evicted = thread.metadataOnly()
+    XCTAssertTrue(evicted.messages.isEmpty)
+    XCTAssertEqual(
+      MobileRemoteThreadProjection.summary(thread: evicted, context: context).latestAssistantMessageID,
+      reply.id
+    )
+    // Placeholders round-trip through the transcript manifest and survive
+    // metadata-only edits such as settling or renaming.
+    let decoded = try JSONDecoder().decode(AIChatThread.self, from: JSONEncoder().encode(evicted))
+    XCTAssertEqual(decoded.latestAssistantMessageID, reply.id)
+    XCTAssertEqual(
+      decoded.replacingAIChatMetadata(title: "Renamed").metadataOnly().latestAssistantMessageID,
+      reply.id
+    )
+    // Rehydrated messages are authoritative again.
+    let newer = AIChatMessage(role: .assistant, content: "Also coffee.")
+    let rehydrated = decoded.hydrating(messages: thread.messages + [newer])
+    XCTAssertNil(rehydrated.storedLatestAssistantMessageID)
+    XCTAssertEqual(
+      MobileRemoteThreadProjection.summary(thread: rehydrated, context: context).latestAssistantMessageID,
+      newer.id
+    )
+  }
+
   @MainActor
   func testRemoteThreadCreationDoesNotChangeTheMacSelection() throws {
     let suiteName = "MobileRemoteHTTPServerTests.\(UUID().uuidString)"

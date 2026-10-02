@@ -3713,6 +3713,10 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
   public let storedMessageCount: Int?
   public let storedHasUnresolvedLatestDelivery: Bool?
   public let storedLatestDeliveryNeedsAttention: Bool?
+  /// The latest visible assistant reply of a metadata-only placeholder.
+  /// Remote clients key reply notifications on it, so evicting a transcript
+  /// must not make its latest reply look absent and then new again.
+  public let storedLatestAssistantMessageID: UUID?
   public let isPinned: Bool
   public let isArchived: Bool
   public let settledAt: Date?
@@ -3741,6 +3745,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     storedMessageCount: Int? = nil,
     storedHasUnresolvedLatestDelivery: Bool? = nil,
     storedLatestDeliveryNeedsAttention: Bool? = nil,
+    storedLatestAssistantMessageID: UUID? = nil,
     isPinned: Bool = false,
     isArchived: Bool = false,
     settledAt: Date? = nil,
@@ -3770,6 +3775,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     self.storedMessageCount = storedMessageCount.map { max(0, $0) }
     self.storedHasUnresolvedLatestDelivery = storedHasUnresolvedLatestDelivery
     self.storedLatestDeliveryNeedsAttention = storedLatestDeliveryNeedsAttention
+    self.storedLatestAssistantMessageID = storedLatestAssistantMessageID
     self.isPinned = isPinned
     self.isArchived = isArchived
     self.settledAt = settledAt ?? (isArchived ? updatedAt : nil)
@@ -3814,6 +3820,15 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       || latestMessage.sendFailure != nil
   }
 
+  /// The newest assistant message with visible text, as projected to remote
+  /// clients. Placeholders report the value captured when they were evicted.
+  public var latestAssistantMessageID: UUID? {
+    if let storedLatestAssistantMessageID { return storedLatestAssistantMessageID }
+    return messages.last(where: { message in
+      message.role == .assistant && message.content.contains(where: { !$0.isWhitespace })
+    })?.id
+  }
+
   enum CodingKeys: String, CodingKey {
     case agentRef
     case id
@@ -3831,6 +3846,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     case storedMessageCount
     case storedHasUnresolvedLatestDelivery
     case storedLatestDeliveryNeedsAttention
+    case storedLatestAssistantMessageID
     case isPinned
     case isArchived
     case settledAt
@@ -3879,6 +3895,10 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     storedLatestDeliveryNeedsAttention = try container.decodeIfPresent(
       Bool.self,
       forKey: .storedLatestDeliveryNeedsAttention
+    )
+    storedLatestAssistantMessageID = try container.decodeIfPresent(
+      UUID.self,
+      forKey: .storedLatestAssistantMessageID
     )
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
@@ -3975,6 +3995,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: storedMessageCount,
       storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
       storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
+      storedLatestAssistantMessageID: storedLatestAssistantMessageID,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: archived,
       settledAt: settlement,
@@ -4007,6 +4028,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: nil,
       storedHasUnresolvedLatestDelivery: nil,
       storedLatestDeliveryNeedsAttention: nil,
+      storedLatestAssistantMessageID: nil,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -4039,6 +4061,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: storedMessageCount,
       storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
       storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
+      storedLatestAssistantMessageID: storedLatestAssistantMessageID,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -4084,6 +4107,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: messageCount,
       storedHasUnresolvedLatestDelivery: hasUnresolvedLatestDelivery,
       storedLatestDeliveryNeedsAttention: latestDeliveryNeedsAttention,
+      storedLatestAssistantMessageID: latestAssistantMessageID,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -4116,6 +4140,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: nil,
       storedHasUnresolvedLatestDelivery: nil,
       storedLatestDeliveryNeedsAttention: nil,
+      storedLatestAssistantMessageID: nil,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,
@@ -4149,6 +4174,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: storedMessageCount,
       storedHasUnresolvedLatestDelivery: storedHasUnresolvedLatestDelivery,
       storedLatestDeliveryNeedsAttention: storedLatestDeliveryNeedsAttention,
+      storedLatestAssistantMessageID: storedLatestAssistantMessageID,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,

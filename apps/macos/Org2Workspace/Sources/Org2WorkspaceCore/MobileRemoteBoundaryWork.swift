@@ -296,7 +296,11 @@ public enum MobileRemoteThreadProjection {
       isRunning: context.runningThreadIDs.contains(thread.id),
       unreadMessageCount: thread.unreadMessageCount,
       preview: latestPreview?.text,
-      latestAssistantMessageID: latestAssistantMessage?.id,
+      // An evicted transcript keeps its latest reply's identity. Clients
+      // that saw the ID vanish would otherwise announce it again once the
+      // conversation is loaded back into memory.
+      latestAssistantMessageID: latestAssistantMessage?.id
+        ?? (thread.messages.isEmpty ? thread.storedLatestAssistantMessageID : nil),
       latestAssistantPreview: latestAssistantPreview?.text,
       executionHostName: context.executionHostNamesByThreadID[thread.id]
         ?? thread.messages.last(where: { $0.provenance?.executionHostName != nil })?
