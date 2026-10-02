@@ -6,6 +6,8 @@ import { renderOrgDocumentToAppHtml } from "./export.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { renderPluginSourceBlocks } from "./pluginRuntime.js";
 import { createLiveEmbedResolver } from "./liveEmbeds.js";
+import { codeLanguageForPath } from "./codeHighlight.js";
+import type { DocumentNode, SrcBlockNode } from "./ast.js";
 
 export interface AppHTMLRenderOptions {
   sourcePath?: string;
@@ -16,8 +18,37 @@ export interface AppHTMLRenderOptions {
   stylesheetPath?: string;
 }
 
+/**
+ * Render a non-Org code or text file (for example a Python script linked from
+ * chat) as one highlighted, line-addressable source block instead of parsing
+ * it as Org markup.
+ */
+export function renderCodeFileAppHTML(input: string, language: string, options: AppHTMLRenderOptions): string {
+  const sourcePath = options.sourcePath;
+  const text = input.replace(/\r\n/g, "\n");
+  const lineCount = Math.max(1, text.replace(/\n$/, "").split("\n").length);
+  const startLine = 1 + (options.sourceLineOffset ?? 0);
+  const block: SrcBlockNode & { sourceRange: { startLine: number; endLine: number } } = {
+    type: "SrcBlock",
+    terminated: true,
+    begin: { indent: "", keywordRaw: "#+begin_src", afterKeywordRaw: ` ${language}` },
+    bodyRaw: text,
+    end: { indent: "", keywordRaw: "#+end_src", afterKeywordRaw: "" },
+    sourceRange: { startLine, endLine: startLine + lineCount - 1 },
+  };
+  const document: DocumentNode = { type: "Document", version: "0", children: [block] };
+  return renderOrgDocumentToAppHtml(document, {
+    title: options.title ?? (sourcePath ? path.basename(sourcePath) : undefined),
+    sourcePath,
+    customCss: options.stylesheetPath ? fs.readFileSync(options.stylesheetPath, "utf8") : undefined,
+    codeFile: true,
+  }).html;
+}
+
 export function renderAppHTML(input: string, options: AppHTMLRenderOptions): string {
   const sourcePath = options.sourcePath;
+  const codeLanguage = codeLanguageForPath(sourcePath);
+  if (codeLanguage) return renderCodeFileAppHTML(input, codeLanguage, options);
   const sourceLineOffset = options.sourceLineOffset ?? 0;
   const normalizedInput = input.replace(/\r\n/g, "\n");
   let renderInput = normalizedInput;

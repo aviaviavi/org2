@@ -35,6 +35,7 @@ import { isPresentationDocument } from "./presentation.js";
 import { evaluateTableNode } from "./tableFormula.js";
 import type { Org2PluginRender } from "./pluginRuntime.js";
 import type { LiveEmbedResolver } from "./liveEmbeds.js";
+import { highlightCodeLinesToHtml, highlightCodeToHtml, normalizeCodeLanguage } from "./codeHighlight.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -111,6 +112,29 @@ const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35)
 .org2-toc li.org2-toc-level-4 { margin-left: 2.25rem; }
 .org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
 .org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
+
+/** Token colors for the app view's native code highlighting (app profile only). */
+const APP_CODE_HIGHLIGHT_STYLE = `.org2-code-file { margin-top: 0.4rem; }
+.org2-tok-comment { color: #6b7570; font-style: italic; }
+.org2-tok-string { color: #1f7a3d; }
+.org2-tok-keyword { color: #8a3fb8; font-weight: 600; }
+.org2-tok-number, .org2-tok-literal { color: #b0561b; }
+.org2-tok-type { color: #1d6f9e; }
+.org2-tok-function { color: #2854d7; }
+.org2-tok-property, .org2-tok-attr { color: #9a4a12; }
+.org2-tok-meta, .org2-tok-variable { color: #a33a6e; }
+.org2-tok-tag { color: #8a3fb8; }
+@media (prefers-color-scheme: dark) {
+  .org2-tok-comment { color: #87918c; }
+  .org2-tok-string { color: #8fd19e; }
+  .org2-tok-keyword { color: #d3a4f5; }
+  .org2-tok-number, .org2-tok-literal { color: #f0a673; }
+  .org2-tok-type { color: #79c5ec; }
+  .org2-tok-function { color: #9db4ff; }
+  .org2-tok-property, .org2-tok-attr { color: #f2c27d; }
+  .org2-tok-meta, .org2-tok-variable { color: #f29bc5; }
+  .org2-tok-tag { color: #d3a4f5; }
+}`;
 
 const APP_DOCUMENT_STYLE = `.org2-live-embed { margin: 1rem 0; border: 1px solid var(--org2-rule); border-radius: 8px; overflow: hidden; }
 .org2-live-embed > header { padding: 9px 12px; font-size: 0.84rem; background: var(--org2-faint); }
@@ -1102,6 +1126,8 @@ type RenderContext = {
   embedBudget?: { remaining: number; bytes: number };
   embedded?: boolean;
   embeddedAnchorLines?: Map<string, number>;
+  /** The document is a single code file shown as one highlighted source block. */
+  codeFile?: boolean;
 };
 
 export type OrgEmbeddedChart = {
@@ -1936,7 +1962,21 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
   const languageClass = language ? ` language-${language}` : "";
   const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
   const raw = node.bodyRaw.replace(/\n$/, "");
-  const body = escapeHtml(raw);
+  if (context.codeFile && context.profile === "app") {
+    // A code file view keeps every line addressable so chat links such as
+    // `file:script.py::27` scroll to the exact line; it is never collapsed.
+    const startLine = sourceRange?.startLine ?? 1;
+    const lines = highlightCodeLinesToHtml(raw, language, (line) => {
+      const sourceLine = startLine + line - 1;
+      return ` data-org2-start-line="${sourceLine}" data-org2-end-line="${sourceLine}"`;
+    });
+    return `<pre class="org2-src org2-code-file${languageClass}"><code${codeClassAttr}>${lines}</code></pre>`;
+  }
+  // The app view highlights known languages natively (no script in the
+  // document); published HTML keeps plain code for its configured highlighter.
+  const body = context.profile === "app" && normalizeCodeLanguage(language)
+    ? highlightCodeToHtml(raw, language)
+    : escapeHtml(raw);
   const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
   const pre = `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
   // Large audit payloads can dwarf the readable document. A closed native
@@ -2396,6 +2436,7 @@ function buildDocumentRenderContext(
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
     embedResolver?: LiveEmbedResolver;
+    codeFile?: boolean;
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
@@ -2411,6 +2452,7 @@ function buildDocumentRenderContext(
     profile: opts.profile,
     embedResolver: opts.embedResolver,
     sourcePath: opts.sourcePath,
+    codeFile: opts.codeFile,
     // Reference-only clients (including the mobile JavaScriptCore bundle) have
     // no filesystem. Only a supplied resolver needs a canonical cycle key.
     embedStack: opts.embedResolver && opts.sourcePath ? [opts.embedResolver.sourceKey ?? `${path.resolve(opts.sourcePath)}:1`] : [],
@@ -2551,6 +2593,7 @@ export function renderOrgDocumentToHtml(
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
     embedResolver?: LiveEmbedResolver;
+    codeFile?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -2570,6 +2613,7 @@ export function renderOrgDocumentToHtml(
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,
     embedResolver: opts.embedResolver,
+    codeFile: opts.codeFile,
   });
 
   const mainBody = renderMainBody({
@@ -2620,6 +2664,7 @@ export function renderOrgDocumentToAppHtml(
     charts?: OrgEmbeddedChart[];
     pluginRenders?: Org2PluginRender[];
     embedResolver?: LiveEmbedResolver;
+    codeFile?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const customCss = String(opts.customCss || "").trim();
@@ -2637,6 +2682,7 @@ export function renderOrgDocumentToAppHtml(
     headIncludes: [
       `<meta name="org2-document-kind" content="${isPresentationDocument(doc) ? "slides" : "document"}" />`,
       `<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`,
+      `<style id="org2-app-code-style">\n${APP_CODE_HIGHLIGHT_STYLE}\n</style>`,
       `<script id="org2-app-document-script">\n${APP_DOCUMENT_SCRIPT}\n</script>`,
       customStyle,
     ].filter(Boolean),
@@ -2647,6 +2693,7 @@ export function renderOrgDocumentToAppHtml(
     charts: opts.charts,
     pluginRenders: opts.pluginRenders,
     embedResolver: opts.embedResolver,
+    codeFile: opts.codeFile,
   });
 }
 

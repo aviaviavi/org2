@@ -1373,6 +1373,15 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
 enum OrgHTMLDocumentLinkRouting {
   private static let workspaceExtensions = Set(["org", "org2", "md", "csv", "pdf"])
+  /// Code and plain-text files open in the workspace, where the shared
+  /// renderer (`src/codeHighlight.ts`) shows them as highlighted,
+  /// line-addressable source instead of handing them to another app.
+  static let codeFileExtensions: Set<String> = [
+    "py", "js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "cts", "swift", "go", "rs", "java", "kt", "kts",
+    "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "m", "mm", "cs", "rb", "php", "sh", "bash", "zsh", "fish",
+    "json", "jsonl", "yaml", "yml", "toml", "ini", "conf", "sql", "html", "htm", "xml", "css", "scss",
+    "hs", "scala", "lua", "r", "ex", "exs", "el", "clj", "nix", "txt", "log",
+  ]
 
   static func externalURL(
     for rawTarget: String,
@@ -1390,6 +1399,7 @@ enum OrgHTMLDocumentLinkRouting {
 
   static func opensInWorkspace(_ url: URL) -> Bool {
     workspaceExtensions.contains(url.pathExtension.lowercased())
+      || codeFileExtensions.contains(url.pathExtension.lowercased())
       || WorkspaceStore.isMediaFile(url.path)
   }
 }

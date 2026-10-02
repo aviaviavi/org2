@@ -29,7 +29,9 @@ for (const { body, collapsed, lines } of [
     assert.ok(html.includes(`<details class="org2-large-source" data-org2-start-line="21" data-org2-end-line="${lines + 22}"><summary>json source · ${lines} lines</summary><pre`));
     assert.ok(!html.includes('<details class="org2-large-source" open'));
   }
-  const code = /<code class="language-json">([\s\S]*?)<\/code>/.exec(html)?.[1];
+  // The app view highlights known languages; stripping token spans must
+  // leave every escaped byte of the source.
+  const code = /<code class="language-json">([\s\S]*?)<\/code>/.exec(html)?.[1]?.replace(/<\/?span[^>]*>/g, "");
   assert.equal(code, body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"));
   for (const profile of [undefined, "publish"]) {
     assert.ok(!renderOrgDocumentToHtml(doc, { profile }).html.includes('<details class="org2-large-source"'));

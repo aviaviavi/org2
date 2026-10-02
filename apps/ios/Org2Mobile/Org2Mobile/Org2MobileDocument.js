@@ -2443,12 +2443,615 @@ var Org2MobileDocument = (() => {
     return { ok: true, table, changes, diagnostics, formulaIndex };
   }
 
-  // src/export.ts
+  // src/codeHighlight.ts
+  var words = (value) => value.split(/\s+/).filter(Boolean);
+  var cLike = {
+    lineComments: ["//"],
+    blockComments: [["/*", "*/"]],
+    strings: ['"', "'"]
+  };
+  var SPECS = {
+    python: {
+      lineComments: ["#"],
+      strings: ['"""', "'''", '"', "'"],
+      multilineStrings: ['"""', "'''"],
+      keywords: words("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case type"),
+      literals: words("True False None self cls"),
+      types: words("int float str bool list dict set tuple bytes object Exception"),
+      decorators: true,
+      capitalizedTypes: true
+    },
+    javascript: {
+      ...cLike,
+      strings: ["`", '"', "'"],
+      multilineStrings: ["`"],
+      keywords: words("async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while with yield"),
+      literals: words("true false null undefined NaN Infinity"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    typescript: {
+      ...cLike,
+      strings: ["`", '"', "'"],
+      multilineStrings: ["`"],
+      keywords: words("abstract as asserts async await break case catch class const continue declare default delete do else enum export extends finally for from function get if implements import in infer instanceof interface is keyof let namespace new of private protected public readonly return satisfies set static super switch this throw try type typeof var void while with yield"),
+      literals: words("true false null undefined NaN Infinity"),
+      types: words("any unknown never string number boolean bigint symbol object void"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    swift: {
+      ...cLike,
+      strings: ['"""', '"'],
+      multilineStrings: ['"""'],
+      keywords: words("actor associatedtype async await break case catch class continue default defer deinit do else enum extension fallthrough fileprivate for func guard if import in init inout internal is let mutating nonisolated open operator private protocol public repeat rethrows return some any static struct subscript super switch throw throws try typealias var where while"),
+      literals: words("true false nil self Self"),
+      capitalizedTypes: true,
+      decorators: true,
+      preprocessor: true
+    },
+    go: {
+      ...cLike,
+      strings: ["`", '"', "'"],
+      multilineStrings: ["`"],
+      rawStrings: ["`"],
+      keywords: words("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var"),
+      literals: words("true false nil iota"),
+      types: words("bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr any"),
+      capitalizedTypes: true
+    },
+    rust: {
+      ...cLike,
+      strings: ['"'],
+      keywords: words("as async await break const continue crate dyn else enum extern fn for if impl in let loop match mod move mut pub ref return static struct super trait type unsafe use where while"),
+      literals: words("true false self Self None Some Ok Err"),
+      types: words("i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize f32 f64 bool char str String Vec Option Result Box"),
+      capitalizedTypes: true,
+      preprocessor: true
+    },
+    java: {
+      ...cLike,
+      strings: ['"""', '"', "'"],
+      multilineStrings: ['"""'],
+      keywords: words("abstract assert break case catch class const continue default do else enum extends final finally for goto if implements import instanceof interface native new package private protected public record return sealed static strictfp super switch synchronized this throw throws transient try var void volatile while yield"),
+      literals: words("true false null"),
+      types: words("boolean byte char double float int long short String Object"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    kotlin: {
+      ...cLike,
+      strings: ['"""', '"', "'"],
+      multilineStrings: ['"""'],
+      keywords: words("as break class companion continue data do else enum fun for if import in interface is internal lateinit object open override package private protected public return sealed super suspend this throw try typealias val var when while"),
+      literals: words("true false null"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    c: {
+      ...cLike,
+      keywords: words("auto break case const continue default do else enum extern for goto if inline register restrict return sizeof static struct switch typedef union volatile while"),
+      literals: words("NULL true false"),
+      types: words("char double float int long short signed unsigned void bool size_t"),
+      preprocessor: true
+    },
+    cpp: {
+      ...cLike,
+      keywords: words("alignas alignof auto break case catch class const constexpr const_cast continue decltype default delete do dynamic_cast else enum explicit export extern for friend goto if inline mutable namespace new noexcept operator private protected public register reinterpret_cast return sizeof static static_assert static_cast struct switch template this throw try typedef typeid typename union using virtual volatile while"),
+      literals: words("true false nullptr NULL"),
+      types: words("bool char double float int long short signed unsigned void wchar_t size_t std string vector"),
+      capitalizedTypes: true,
+      preprocessor: true
+    },
+    csharp: {
+      ...cLike,
+      keywords: words("abstract as async await base break case catch checked class const continue default delegate do else enum event explicit extern finally fixed for foreach goto if implicit in interface internal is lock namespace new operator out override params private protected public readonly record ref return sealed sizeof static struct switch this throw try typeof unchecked unsafe using var virtual void volatile while"),
+      literals: words("true false null"),
+      types: words("bool byte char decimal double float int long object sbyte short string uint ulong ushort"),
+      capitalizedTypes: true,
+      preprocessor: true
+    },
+    ruby: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      keywords: words("alias and begin break case class def defined? do else elsif end ensure for if in module next not or redo rescue retry return super then undef unless until when while yield require require_relative attr_accessor attr_reader"),
+      literals: words("true false nil self"),
+      capitalizedTypes: true
+    },
+    php: {
+      lineComments: ["//", "#"],
+      blockComments: [["/*", "*/"]],
+      strings: ['"', "'"],
+      keywords: words("abstract and array as break case catch class clone const continue declare default do echo else elseif empty enum extends final finally fn for foreach function global if implements include interface isset list match namespace new or print private protected public readonly require return static switch throw trait try unset use var while yield"),
+      literals: words("true false null TRUE FALSE NULL"),
+      capitalizedTypes: true,
+      shellVariables: true
+    },
+    shell: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      rawStrings: ["'"],
+      multilineStrings: ['"', "'"],
+      keywords: words("if then else elif fi case esac for select while until do done in function time return exit break continue local export readonly declare set unset shift source alias trap eval exec"),
+      literals: words("true false"),
+      shellVariables: true,
+      identifierChars: /[A-Za-z0-9_-]/
+    },
+    json: {
+      strings: ['"'],
+      literals: words("true false null"),
+      keysBeforeColon: true
+    },
+    yaml: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      literals: words("true false null yes no on off ~"),
+      keysBeforeColon: true,
+      identifierChars: /[A-Za-z0-9_.-]/
+    },
+    toml: {
+      lineComments: ["#"],
+      strings: ['"""', "'''", '"', "'"],
+      multilineStrings: ['"""', "'''"],
+      rawStrings: ["'''", "'"],
+      literals: words("true false"),
+      keysBeforeColon: false,
+      identifierChars: /[A-Za-z0-9_.-]/
+    },
+    sql: {
+      lineComments: ["--"],
+      blockComments: [["/*", "*/"]],
+      strings: ["'", '"'],
+      caseInsensitive: true,
+      keywords: words("add all alter and as asc begin between by case check column commit constraint create cross database default delete desc distinct drop else end exists foreign from full group having if in index inner insert into is join key left like limit not null offset on or order outer primary references returning right rollback select set table then transaction union unique update using values view when where with"),
+      literals: words("true false null"),
+      types: words("int integer bigint smallint text varchar char boolean date timestamp timestamptz numeric decimal real float double json jsonb uuid serial")
+    },
+    css: {
+      blockComments: [["/*", "*/"]],
+      strings: ['"', "'"],
+      keywords: words("important media supports keyframes import font-face"),
+      keysBeforeColon: true,
+      identifierChars: /[A-Za-z0-9_-]/
+    },
+    haskell: {
+      lineComments: ["--"],
+      blockComments: [["{-", "-}"]],
+      strings: ['"'],
+      keywords: words("case class data default deriving do else foreign if import in infix infixl infixr instance let module newtype of then type where forall qualified as hiding"),
+      literals: words("True False Nothing Just"),
+      capitalizedTypes: true,
+      identifierChars: /[A-Za-z0-9_']/
+    },
+    scala: {
+      ...cLike,
+      strings: ['"""', '"', "'"],
+      multilineStrings: ['"""'],
+      keywords: words("abstract case catch class def do else enum extends final finally for given if implicit import lazy match new object override package private protected return sealed super then throw trait try type using val var while with yield"),
+      literals: words("true false null this"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    lua: {
+      lineComments: ["--"],
+      blockComments: [["--[[", "]]"]],
+      strings: ['"', "'"],
+      keywords: words("and break do else elseif end for function goto if in local not or repeat return then until while"),
+      literals: words("true false nil self")
+    },
+    r: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      keywords: words("if else repeat while function for in next break return library require"),
+      literals: words("TRUE FALSE NULL NA NaN Inf T F")
+    },
+    elixir: {
+      lineComments: ["#"],
+      strings: ['"""', '"', "'"],
+      multilineStrings: ['"""'],
+      keywords: words("after alias and case catch cond def defmacro defmodule defp defstruct do else end fn for if import in not or quote raise receive require rescue try unless use when with"),
+      literals: words("true false nil"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    lisp: {
+      lineComments: [";"],
+      strings: ['"'],
+      keywords: words("defun defmacro defvar defcustom defconst let let* lambda if when unless cond progn setq setf require provide interactive ns def defn fn loop recur"),
+      literals: words("t nil true false"),
+      identifierChars: /[A-Za-z0-9_*+!?<>=/-]/
+    },
+    dockerfile: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      caseInsensitive: false,
+      keywords: words("FROM RUN CMD LABEL EXPOSE ENV ADD COPY ENTRYPOINT VOLUME USER WORKDIR ARG ONBUILD STOPSIGNAL HEALTHCHECK SHELL AS"),
+      shellVariables: true
+    },
+    makefile: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      keywords: words("ifeq ifneq ifdef ifndef else endif include define endef export override"),
+      shellVariables: true,
+      keysBeforeColon: true,
+      identifierChars: /[A-Za-z0-9_.-]/
+    },
+    nix: {
+      lineComments: ["#"],
+      blockComments: [["/*", "*/"]],
+      strings: ["''", '"'],
+      multilineStrings: ["''"],
+      keywords: words("let in with rec inherit if then else assert import"),
+      literals: words("true false null"),
+      shellVariables: true
+    },
+    markup: { markup: true },
+    plaintext: {}
+  };
+  var ALIASES = {
+    py: "python",
+    python3: "python",
+    python: "python",
+    ipython: "python",
+    js: "javascript",
+    javascript: "javascript",
+    node: "javascript",
+    jsx: "javascript",
+    mjs: "javascript",
+    cjs: "javascript",
+    ts: "typescript",
+    typescript: "typescript",
+    tsx: "typescript",
+    mts: "typescript",
+    cts: "typescript",
+    swift: "swift",
+    go: "go",
+    golang: "go",
+    rs: "rust",
+    rust: "rust",
+    java: "java",
+    kt: "kotlin",
+    kts: "kotlin",
+    kotlin: "kotlin",
+    c: "c",
+    h: "c",
+    cpp: "cpp",
+    "c++": "cpp",
+    cc: "cpp",
+    cxx: "cpp",
+    hpp: "cpp",
+    hh: "cpp",
+    hxx: "cpp",
+    objc: "cpp",
+    m: "cpp",
+    mm: "cpp",
+    cs: "csharp",
+    csharp: "csharp",
+    rb: "ruby",
+    ruby: "ruby",
+    php: "php",
+    sh: "shell",
+    bash: "shell",
+    zsh: "shell",
+    shell: "shell",
+    fish: "shell",
+    ksh: "shell",
+    console: "shell",
+    json: "json",
+    jsonc: "json",
+    json5: "json",
+    jsonl: "json",
+    ndjson: "json",
+    "ipynb": "json",
+    yaml: "yaml",
+    yml: "yaml",
+    toml: "toml",
+    ini: "toml",
+    cfg: "toml",
+    conf: "toml",
+    properties: "toml",
+    env: "shell",
+    sql: "sql",
+    psql: "sql",
+    sqlite: "sql",
+    postgresql: "sql",
+    mysql: "sql",
+    html: "markup",
+    htm: "markup",
+    xml: "markup",
+    svg: "markup",
+    plist: "markup",
+    xhtml: "markup",
+    vue: "markup",
+    css: "css",
+    scss: "css",
+    less: "css",
+    sass: "css",
+    hs: "haskell",
+    haskell: "haskell",
+    scala: "scala",
+    sc: "scala",
+    sbt: "scala",
+    lua: "lua",
+    r: "r",
+    ex: "elixir",
+    exs: "elixir",
+    elixir: "elixir",
+    el: "lisp",
+    "emacs-lisp": "lisp",
+    elisp: "lisp",
+    lisp: "lisp",
+    clj: "lisp",
+    cljs: "lisp",
+    clojure: "lisp",
+    scm: "lisp",
+    scheme: "lisp",
+    dockerfile: "dockerfile",
+    docker: "dockerfile",
+    containerfile: "dockerfile",
+    makefile: "makefile",
+    make: "makefile",
+    mk: "makefile",
+    nix: "nix",
+    txt: "plaintext",
+    text: "plaintext",
+    log: "plaintext",
+    plaintext: "plaintext",
+    csv: "plaintext",
+    tsv: "plaintext"
+  };
+  function normalizeCodeLanguage(language) {
+    const key = String(language ?? "").trim().toLowerCase();
+    if (!key) return null;
+    return ALIASES[key] ?? (SPECS[key] ? key : null);
+  }
+  var HIGHLIGHT_LIMIT = 1e6;
+  function tokenizeCode(source, language) {
+    const canonical = normalizeCodeLanguage(language);
+    const spec = canonical ? SPECS[canonical] : void 0;
+    if (!spec || canonical === "plaintext" || source.length > HIGHLIGHT_LIMIT) return source ? [{ text: source }] : [];
+    return spec.markup ? tokenizeMarkup(source) : tokenizeWithSpec(source, spec);
+  }
+  function tokenizeWithSpec(source, spec) {
+    const tokens = [];
+    const push = (text2, kind) => {
+      if (!text2) return;
+      const last = tokens[tokens.length - 1];
+      if (last && last.kind === kind) last.text += text2;
+      else tokens.push(kind ? { text: text2, kind } : { text: text2 });
+    };
+    const fold = (value) => spec.caseInsensitive ? value.toLowerCase() : value;
+    const keywords = new Set((spec.keywords ?? []).map(fold));
+    const literals = new Set((spec.literals ?? []).map(fold));
+    const types = new Set((spec.types ?? []).map(fold));
+    const strings = [...spec.strings ?? []].sort((a, b) => b.length - a.length);
+    const multiline = new Set(spec.multilineStrings ?? []);
+    const raw = new Set(spec.rawStrings ?? []);
+    const identStart = /[A-Za-z_$]/;
+    const identChar = spec.identifierChars ?? /[A-Za-z0-9_$]/;
+    const length = source.length;
+    let lineStart = true;
+    let i = 0;
+    const nextNonSpace = (from) => {
+      let j = from;
+      while (j < length && (source[j] === " " || source[j] === "	")) j++;
+      return source[j];
+    };
+    const isKeyColon = (from) => {
+      let j = from;
+      while (j < length && (source[j] === " " || source[j] === "	")) j++;
+      return source[j] === ":" && source[j + 1] !== ":";
+    };
+    while (i < length) {
+      const ch = source[i];
+      if (ch === "\n") {
+        push(ch);
+        lineStart = true;
+        i++;
+        continue;
+      }
+      if (ch === " " || ch === "	" || ch === "\r") {
+        push(ch);
+        i++;
+        continue;
+      }
+      const atLineStart = lineStart;
+      lineStart = false;
+      const block = spec.blockComments?.find(([open]) => source.startsWith(open, i));
+      if (block) {
+        const end = source.indexOf(block[1], i + block[0].length);
+        const stop = end < 0 ? length : end + block[1].length;
+        push(source.slice(i, stop), "comment");
+        i = stop;
+        continue;
+      }
+      const line = spec.lineComments?.find((marker) => source.startsWith(marker, i) && !(marker === "#" && spec.shellVariables && i > 0 && source[i - 1] === "$"));
+      if (line) {
+        const end = source.indexOf("\n", i);
+        const stop = end < 0 ? length : end;
+        push(source.slice(i, stop), "comment");
+        i = stop;
+        continue;
+      }
+      if (spec.preprocessor && atLineStart && ch === "#") {
+        const end = source.indexOf("\n", i);
+        const stop = end < 0 ? length : end;
+        push(source.slice(i, stop), "meta");
+        i = stop;
+        continue;
+      }
+      const delimiter = strings.find((open) => source.startsWith(open, i));
+      if (delimiter) {
+        const allowsNewline = multiline.has(delimiter);
+        const escapes = !raw.has(delimiter);
+        let j = i + delimiter.length;
+        while (j < length) {
+          if (escapes && source[j] === "\\") {
+            j += 2;
+            continue;
+          }
+          if (source.startsWith(delimiter, j)) {
+            j += delimiter.length;
+            break;
+          }
+          if (source[j] === "\n" && !allowsNewline) break;
+          j++;
+        }
+        const stop = Math.min(j, length);
+        const text2 = source.slice(i, stop);
+        const isKey = spec.keysBeforeColon && isKeyColon(stop);
+        push(text2, isKey ? "property" : "string");
+        i = stop;
+        continue;
+      }
+      if (spec.shellVariables && ch === "$") {
+        if (source[i + 1] === "{") {
+          const end = source.indexOf("}", i + 2);
+          const stop = end < 0 || source.slice(i, end).includes("\n") ? i + 1 : end + 1;
+          push(source.slice(i, stop), stop > i + 1 ? "variable" : void 0);
+          i = stop;
+          continue;
+        }
+        let j = i + 1;
+        while (j < length && /[A-Za-z0-9_@#?*!$-]/.test(source[j]) && (j === i + 1 || /[A-Za-z0-9_]/.test(source[j]))) j++;
+        push(source.slice(i, j), j > i + 1 ? "variable" : void 0);
+        i = j;
+        continue;
+      }
+      if (spec.decorators && ch === "@" && i + 1 < length && identStart.test(source[i + 1])) {
+        let j = i + 1;
+        while (j < length && /[A-Za-z0-9_.]/.test(source[j])) j++;
+        push(source.slice(i, j), "meta");
+        i = j;
+        continue;
+      }
+      const previous = i > 0 ? source[i - 1] : "";
+      if (/[0-9]/.test(ch) || ch === "." && /[0-9]/.test(source[i + 1] ?? "") && !identChar.test(previous)) {
+        if (!identChar.test(previous)) {
+          const match = /^(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:\d[\d_]*)?\.?\d[\d_]*(?:[eE][+-]?\d+)?)[A-Za-z%]*/.exec(source.slice(i, i + 64));
+          if (match && match[0]) {
+            push(match[0], "number");
+            i += match[0].length;
+            continue;
+          }
+        }
+      }
+      if (identStart.test(ch)) {
+        let j = i + 1;
+        while (j < length && identChar.test(source[j])) j++;
+        if (source[j] === "?" && keywords.has(fold(source.slice(i, j + 1)))) j++;
+        const word = source.slice(i, j);
+        const key = fold(word);
+        let kind;
+        if (spec.keysBeforeColon && isKeyColon(j)) kind = "property";
+        else if (keywords.has(key)) kind = "keyword";
+        else if (literals.has(key)) kind = "literal";
+        else if (types.has(key)) kind = "type";
+        else if (spec.capitalizedTypes && /^[A-Z][A-Za-z0-9_]*[a-z][A-Za-z0-9_]*$/.test(word)) kind = "type";
+        else if (nextNonSpace(j) === "(") kind = "function";
+        push(word, kind);
+        i = j;
+        continue;
+      }
+      push(ch);
+      i++;
+    }
+    return tokens;
+  }
+  function tokenizeMarkup(source) {
+    const tokens = [];
+    const push = (text2, kind) => {
+      if (text2) tokens.push(kind ? { text: text2, kind } : { text: text2 });
+    };
+    const length = source.length;
+    let i = 0;
+    while (i < length) {
+      if (source.startsWith("<!--", i)) {
+        const end = source.indexOf("-->", i + 4);
+        const stop = end < 0 ? length : end + 3;
+        push(source.slice(i, stop), "comment");
+        i = stop;
+        continue;
+      }
+      if (source.startsWith("<![CDATA[", i)) {
+        const end = source.indexOf("]]>", i);
+        const stop = end < 0 ? length : end + 3;
+        push(source.slice(i, stop), "string");
+        i = stop;
+        continue;
+      }
+      if (source[i] === "<" && /[A-Za-z/!?]/.test(source[i + 1] ?? "")) {
+        const name = /^<[/!?]?[A-Za-z][\w:.-]*/.exec(source.slice(i, i + 256));
+        if (name) {
+          push(name[0], "tag");
+          i += name[0].length;
+          while (i < length && source[i] !== ">" && !(source[i] === "/" && source[i + 1] === ">") && !(source[i] === "?" && source[i + 1] === ">")) {
+            const ch = source[i];
+            if (ch === '"' || ch === "'") {
+              const end = source.indexOf(ch, i + 1);
+              const stop = end < 0 ? length : end + 1;
+              push(source.slice(i, stop), "string");
+              i = stop;
+            } else if (/[A-Za-z_:@]/.test(ch)) {
+              const attr = /^[A-Za-z_:@][\w:.-]*/.exec(source.slice(i, i + 256))[0];
+              push(attr, "attr");
+              i += attr.length;
+            } else {
+              push(ch);
+              i++;
+            }
+          }
+          const close = source.startsWith("/>", i) || source.startsWith("?>", i) ? 2 : source[i] === ">" ? 1 : 0;
+          push(source.slice(i, i + close), "tag");
+          i += close;
+          continue;
+        }
+      }
+      if (source[i] === "&") {
+        const entity = /^&(?:#\d+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);/.exec(source.slice(i, i + 32));
+        if (entity) {
+          push(entity[0], "literal");
+          i += entity[0].length;
+          continue;
+        }
+      }
+      let j = i + 1;
+      while (j < length && source[j] !== "<" && source[j] !== "&") j++;
+      push(source.slice(i, j));
+      i = j;
+    }
+    return tokens;
+  }
   function escapeHtml(value) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function highlightCodeToHtml(source, language) {
+    return tokenizeCode(source, language).map((token) => token.kind ? `<span class="org2-tok-${token.kind}">${escapeHtml(token.text)}</span>` : escapeHtml(token.text)).join("");
+  }
+  function highlightCodeLinesToHtml(source, language, lineAttributes = () => "") {
+    const lines = [];
+    let current = "";
+    for (const token of tokenizeCode(source, language)) {
+      const parts = token.text.split("\n");
+      parts.forEach((part, index) => {
+        if (index > 0) {
+          lines.push(current);
+          current = "";
+        }
+        if (part) current += token.kind ? `<span class="org2-tok-${token.kind}">${escapeHtml(part)}</span>` : escapeHtml(part);
+      });
+    }
+    lines.push(current);
+    if (lines.length > 1 && lines[lines.length - 1] === "" && source.endsWith("\n")) lines.pop();
+    return lines.map((line, index) => `<span class="org2-code-line"${lineAttributes(index + 1)}>${line}</span>`).join("\n");
+  }
+
+  // src/export.ts
+  function escapeHtml2(value) {
     return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
   }
   function escapeAttr(value) {
-    return escapeHtml(value).replace(/`/g, "&#96;");
+    return escapeHtml2(value).replace(/`/g, "&#96;");
   }
   function normalizeStylesheets(stylesheets) {
     if (!Array.isArray(stylesheets)) return [];
@@ -2509,6 +3112,27 @@ li > .org2-image-figure { margin-top: 0.55rem; }`;
 .org2-toc li.org2-toc-level-4 { margin-left: 2.25rem; }
 .org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
 .org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
+  var APP_CODE_HIGHLIGHT_STYLE = `.org2-code-file { margin-top: 0.4rem; }
+.org2-tok-comment { color: #6b7570; font-style: italic; }
+.org2-tok-string { color: #1f7a3d; }
+.org2-tok-keyword { color: #8a3fb8; font-weight: 600; }
+.org2-tok-number, .org2-tok-literal { color: #b0561b; }
+.org2-tok-type { color: #1d6f9e; }
+.org2-tok-function { color: #2854d7; }
+.org2-tok-property, .org2-tok-attr { color: #9a4a12; }
+.org2-tok-meta, .org2-tok-variable { color: #a33a6e; }
+.org2-tok-tag { color: #8a3fb8; }
+@media (prefers-color-scheme: dark) {
+  .org2-tok-comment { color: #87918c; }
+  .org2-tok-string { color: #8fd19e; }
+  .org2-tok-keyword { color: #d3a4f5; }
+  .org2-tok-number, .org2-tok-literal { color: #f0a673; }
+  .org2-tok-type { color: #79c5ec; }
+  .org2-tok-function { color: #9db4ff; }
+  .org2-tok-property, .org2-tok-attr { color: #f2c27d; }
+  .org2-tok-meta, .org2-tok-variable { color: #f29bc5; }
+  .org2-tok-tag { color: #d3a4f5; }
+}`;
   var APP_DOCUMENT_STYLE = `.org2-live-embed { margin: 1rem 0; border: 1px solid var(--org2-rule); border-radius: 8px; overflow: hidden; }
 .org2-live-embed > header { padding: 9px 12px; font-size: 0.84rem; background: var(--org2-faint); }
 .org2-live-embed > p { padding: 0 12px; }
@@ -3719,8 +4343,8 @@ ${defaultStyleBlock}
     if (!Array.isArray(items) || items.length === 0) return "";
     const rows = items.map((item) => {
       const level = Math.max(1, Math.min(6, item.level));
-      const numberPrefix = item.number ? `${escapeHtml(item.number)} ` : "";
-      return `<li class="org2-toc-level-${level}"><a href="#${escapeAttr(item.id)}">${numberPrefix}${escapeHtml(item.title)}</a></li>`;
+      const numberPrefix = item.number ? `${escapeHtml2(item.number)} ` : "";
+      return `<li class="org2-toc-level-${level}"><a href="#${escapeAttr(item.id)}">${numberPrefix}${escapeHtml2(item.title)}</a></li>`;
     }).join("\n");
     return `<nav class="org2-toc" aria-label="Table of contents">
 <h2>Contents</h2>
@@ -3896,14 +4520,14 @@ ${rows}
   };
   function renderTimestamp(node) {
     const klass = node.active ? "org2-timestamp active" : "org2-timestamp inactive";
-    return `<time class="${klass}">${escapeHtml(node.raw)}</time>`;
+    return `<time class="${klass}">${escapeHtml2(node.raw)}</time>`;
   }
   function renderTimestampRange(node) {
     const klass = node.start.active ? "org2-timestamp-range active" : "org2-timestamp-range inactive";
-    return `<time class="${klass}">${escapeHtml(node.start.raw + node.separatorRaw + node.end.raw)}</time>`;
+    return `<time class="${klass}">${escapeHtml2(node.start.raw + node.separatorRaw + node.end.raw)}</time>`;
   }
   function renderEmphasis(node) {
-    const content = escapeHtml(node.content);
+    const content = escapeHtml2(node.content);
     if (node.kind === "bold") return `<strong>${content}</strong>`;
     if (node.kind === "italic") return `<em>${content}</em>`;
     if (node.kind === "underline") return `<span class="org2-underline">${content}</span>`;
@@ -4002,7 +4626,7 @@ ${expandedTarget}`;
     const defaultInternalText = resolveDefaultInternalLinkText(hrefRaw);
     const text2 = explicitDescription || defaultInternalText || String(node.targetRaw || "").trim() || href;
     const tooltip = context.profile === "app" ? ` title="${escapeAttr(appLinkTooltip(hrefRaw, expandedHrefRaw))}"` : "";
-    return `<a href="${escapeAttr(href)}"${tooltip}>${escapeHtml(text2)}</a>`;
+    return `<a href="${escapeAttr(href)}"${tooltip}>${escapeHtml2(text2)}</a>`;
   }
   function colorBindingStyles(binding, wholeCell) {
     const styles = [];
@@ -4015,8 +4639,8 @@ ${expandedTarget}`;
   }
   function renderColorBinding(label, binding, wholeCell) {
     const style = escapeAttr(colorBindingStyles(binding, wholeCell));
-    if (wholeCell) return escapeHtml(label);
-    return `<span class="org2-color-binding" style="${style}">${escapeHtml(label)}</span>`;
+    if (wholeCell) return escapeHtml2(label);
+    return `<span class="org2-color-binding" style="${style}">${escapeHtml2(label)}</span>`;
   }
   var IMAGE_LINK_EXTENSION = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
   function resolveImageLinkSource(rawTarget, context) {
@@ -4068,35 +4692,35 @@ ${expandedTarget}`;
     return `<figure class="org2-image-figure"${sourceAttributes}><a class="org2-image-link" href="${escapeAttr(href)}"><img class="org2-image" src="${escapeAttr(source)}" alt="${escapeAttr(description || imageAltText(source))}" loading="lazy" decoding="async" /></a></figure>`;
   }
   function renderInline(node, context) {
-    if (node.type === "Text") return escapeHtml(node.value);
+    if (node.type === "Text") return escapeHtml2(node.value);
     if (node.type === "Timestamp") return renderTimestamp(node);
     if (node.type === "TimestampRange") return renderTimestampRange(node);
     if (node.type === "Emphasis") return renderEmphasis(node);
     if (node.type === "Link") return renderLink(node, context);
-    if (node.type === "ProgressCookie") return `<span class="org2-progress-cookie">${escapeHtml(node.raw)}</span>`;
-    if (node.type === "Entity") return `<span class="org2-entity" title="${escapeAttr(node.raw)}">${escapeHtml(HTML_ENTITY_VALUES[node.nameRaw] || node.raw)}</span>`;
+    if (node.type === "ProgressCookie") return `<span class="org2-progress-cookie">${escapeHtml2(node.raw)}</span>`;
+    if (node.type === "Entity") return `<span class="org2-entity" title="${escapeAttr(node.raw)}">${escapeHtml2(HTML_ENTITY_VALUES[node.nameRaw] || node.raw)}</span>`;
     if (node.type === "LatexFragment") {
       const displayClass = node.display ? " display" : "";
-      return `<span class="org2-latex-fragment${displayClass}">${escapeHtml(node.raw)}</span>`;
+      return `<span class="org2-latex-fragment${displayClass}">${escapeHtml2(node.raw)}</span>`;
     }
     if (node.type === "ExportSnippet") {
       if (node.backendRaw.toLowerCase() !== "html") return "";
-      return context.profile === "app" ? `<span class="org2-export-snippet">${escapeHtml(node.valueRaw)}</span>` : node.valueRaw;
+      return context.profile === "app" ? `<span class="org2-export-snippet">${escapeHtml2(node.valueRaw)}</span>` : node.valueRaw;
     }
     if (node.type === "FootnoteReference") {
       const label = node.labelRaw || "*";
       if (node.definitionRaw !== void 0) {
-        return `<sup class="org2-footnote-reference inline" title="${escapeAttr(node.definitionRaw)}">${escapeHtml(label)}</sup>`;
+        return `<sup class="org2-footnote-reference inline" title="${escapeAttr(node.definitionRaw)}">${escapeHtml2(label)}</sup>`;
       }
       const id = normalizeAnchorId(`fn-${label}`) || "fn-inline";
-      return `<sup class="org2-footnote-reference"><a href="#${escapeAttr(id)}">${escapeHtml(label)}</a></sup>`;
+      return `<sup class="org2-footnote-reference"><a href="#${escapeAttr(id)}">${escapeHtml2(label)}</a></sup>`;
     }
     if (node.type === "Citation") {
       const references = node.references.map(
         (reference) => [reference.prefixRaw, `@${reference.keyRaw}`, reference.suffixRaw].filter(Boolean).join(" ")
       ).join("; ");
       const content = [node.prefixRaw, references, node.suffixRaw].filter(Boolean).join(" ");
-      return `<cite class="org2-citation" data-org2-citation-style="${escapeAttr(node.styleRaw || "")}">${escapeHtml(content)}</cite>`;
+      return `<cite class="org2-citation" data-org2-citation-style="${escapeAttr(node.styleRaw || "")}">${escapeHtml2(content)}</cite>`;
     }
     if (node.type === "Target") {
       const id = normalizeAnchorId(node.valueRaw) || "target";
@@ -4104,7 +4728,7 @@ ${expandedTarget}`;
     }
     if (node.type === "Script") {
       const tag = node.kind === "subscript" ? "sub" : "sup";
-      return `<${tag}>${escapeHtml(node.valueRaw)}</${tag}>`;
+      return `<${tag}>${escapeHtml2(node.valueRaw)}</${tag}>`;
     }
     if (node.type === "LineBreak") return "<br />";
     return "";
@@ -4131,11 +4755,11 @@ ${expandedTarget}`;
   }
   function renderPlanning(node, context) {
     const raw = node.timestamp ? node.timestamp.type === "Timestamp" ? node.timestamp.raw : node.timestamp.start.raw + node.timestamp.separatorRaw + node.timestamp.end.raw : node.raw;
-    return `<p class="org2-planning"${renderSourceAttributes(node, context)}><span class="org2-planning-kind">${escapeHtml(node.kind)}</span> ${escapeHtml(raw)}</p>`;
+    return `<p class="org2-planning"${renderSourceAttributes(node, context)}><span class="org2-planning-kind">${escapeHtml2(node.kind)}</span> ${escapeHtml2(raw)}</p>`;
   }
   function renderPropertyDrawer(node, context) {
     if (!node.properties.length) return "";
-    const rows = node.properties.map((property2) => `<dt>${escapeHtml(property2.key)}</dt><dd>${escapeHtml(property2.value)}</dd>`).join("\n");
+    const rows = node.properties.map((property2) => `<dt>${escapeHtml2(property2.key)}</dt><dd>${escapeHtml2(property2.value)}</dd>`).join("\n");
     if (context.profile === "app") {
       return `<details class="org2-properties-drawer" open${renderSourceAttributes(node, context)}>
 <summary>Properties</summary>
@@ -4159,19 +4783,27 @@ ${rows}
     const languageClass = language ? ` language-${language}` : "";
     const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
     const raw = node.bodyRaw.replace(/\n$/, "");
-    const body = escapeHtml(raw);
+    if (context.codeFile && context.profile === "app") {
+      const startLine = sourceRange?.startLine ?? 1;
+      const lines = highlightCodeLinesToHtml(raw, language, (line) => {
+        const sourceLine = startLine + line - 1;
+        return ` data-org2-start-line="${sourceLine}" data-org2-end-line="${sourceLine}"`;
+      });
+      return `<pre class="org2-src org2-code-file${languageClass}"><code${codeClassAttr}>${lines}</code></pre>`;
+    }
+    const body = context.profile === "app" && normalizeCodeLanguage(language) ? highlightCodeToHtml(raw, language) : escapeHtml2(raw);
     const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
     const pre = `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
     const lineCount = raw.split("\n").length;
     if (context.profile === "app" && (raw.length > 32768 || lineCount > 200)) {
-      return `<details class="org2-large-source"${renderSourceAttributes(node, context)}><summary>${language ? `${escapeHtml(language)} source` : "Source"} \xB7 ${lineCount} lines</summary>${pre}</details>`;
+      return `<details class="org2-large-source"${renderSourceAttributes(node, context)}><summary>${language ? `${escapeHtml2(language)} source` : "Source"} \xB7 ${lineCount} lines</summary>${pre}</details>`;
     }
     return pre;
   }
   function renderPluginFrame(render, sourceAttributes = "") {
     const identity = `${render.pluginId}:${render.rendererId}`;
     if (render.error) {
-      return `<aside class="org2-plugin-render-error" data-org2-plugin="${escapeAttr(identity)}"${sourceAttributes}><strong>Plugin renderer unavailable</strong><span>${escapeHtml(render.error)}</span></aside>`;
+      return `<aside class="org2-plugin-render-error" data-org2-plugin="${escapeAttr(identity)}"${sourceAttributes}><strong>Plugin renderer unavailable</strong><span>${escapeHtml2(render.error)}</span></aside>`;
     }
     const csp = "default-src 'none'; base-uri 'none'; connect-src 'none'; font-src data:; form-action 'none'; frame-src 'none'; img-src data: blob:; media-src data: blob:; navigate-to 'none'; object-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; worker-src 'none'";
     const css = String(render.css || "").replace(/<\/style/gi, "<\\/style");
@@ -4190,7 +4822,7 @@ ${chart.svg.trim()}
   }
   function renderBlock(node, context) {
     const bodyRaw = node.bodyRaw.replace(/\n$/, "");
-    const body = escapeHtml(node.kind === "quote" ? dedentBlockBody(bodyRaw, node.begin.indent) : bodyRaw);
+    const body = escapeHtml2(node.kind === "quote" ? dedentBlockBody(bodyRaw, node.begin.indent) : bodyRaw);
     if (node.kind === "quote") {
       const appClass = context.profile === "app" ? ' class="org2-quote"' : "";
       return `<blockquote${appClass}${renderSourceAttributes(node, context)}>${body}</blockquote>`;
@@ -4249,7 +4881,7 @@ ${[renderedHead, renderedBody].filter(Boolean).join("\n")}
     const tableHtml = context.profile === "app" || context.profile === "publish" ? `<div class="org2-table-scroll">
 ${table}
 </div>` : table;
-    const formulaStatus = formulaResult ? `<small class="org2-table-formula-status${formulaResult.ok ? "" : " org2-table-formula-error"}">${formulaResult.ok ? `Calculated from TBLFM${(node.formulas?.length ?? 0) > 1 ? ` line 1 of ${node.formulas?.length}` : ""}` : `Formula not evaluated: ${escapeHtml(formulaResult.diagnostics[0]?.message ?? "unsupported formula")}`}</small>` : "";
+    const formulaStatus = formulaResult ? `<small class="org2-table-formula-status${formulaResult.ok ? "" : " org2-table-formula-error"}">${formulaResult.ok ? `Calculated from TBLFM${(node.formulas?.length ?? 0) > 1 ? ` line 1 of ${node.formulas?.length}` : ""}` : `Formula not evaluated: ${escapeHtml2(formulaResult.diagnostics[0]?.message ?? "unsupported formula")}`}</small>` : "";
     const sourceRange = node.sourceRange;
     const chart = sourceRange ? context.chartsByTableLine?.get(sourceRange.startLine) : void 0;
     const output = `${tableHtml}${formulaStatus ? `
@@ -4294,13 +4926,13 @@ ${items}
     const headingTag = `h${headingLevel}`;
     const title = renderInlineChildren(node.title, context);
     const headingNumberRaw = context.headlineNumbers?.get(node);
-    const headingNumber = headingNumberRaw ? `<span class="org2-headline-number">${escapeHtml(headingNumberRaw)}</span> ` : "";
+    const headingNumber = headingNumberRaw ? `<span class="org2-headline-number">${escapeHtml2(headingNumberRaw)}</span> ` : "";
     const todoClass = String(node.todo || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
     const appTodoClass = context.profile === "app" && todoClass ? ` todo-${escapeAttr(todoClass)}` : "";
-    const todo = node.todo ? `<span class="org2-todo${appTodoClass}">${escapeHtml(node.todo)}</span> ` : "";
-    const priority = node.priority ? `<span class="org2-priority">[#${escapeHtml(node.priority)}]</span> ` : "";
+    const todo = node.todo ? `<span class="org2-todo${appTodoClass}">${escapeHtml2(node.todo)}</span> ` : "";
+    const priority = node.priority ? `<span class="org2-priority">[#${escapeHtml2(node.priority)}]</span> ` : "";
     const comment = node.commented ? '<span class="org2-comment-keyword">COMMENT</span> ' : "";
-    const tags = node.tags && node.tags.length > 0 ? ` <span class="org2-tags">${node.tags.map((tag) => `<span class="org2-tag">${escapeHtml(tag)}</span>`).join(" ")}</span>` : "";
+    const tags = node.tags && node.tags.length > 0 ? ` <span class="org2-tags">${node.tags.map((tag) => `<span class="org2-tag">${escapeHtml2(tag)}</span>`).join(" ")}</span>` : "";
     const headingId = context.headlineIds?.get(node);
     const headingIdAttr = headingId ? ` id="${escapeAttr(headingId)}"` : "";
     const childrenHtml = renderNodes(node.children, context);
@@ -4324,14 +4956,14 @@ ${childrenHtml}
 </section>`;
   }
   function renderLiveEmbed(target, context) {
-    const reference = context.profile === "app" ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source \xB7 ${escapeHtml(target)}</a>` : `<span>Live embed reference: ${escapeHtml(target)} (content not exported)</span>`;
+    const reference = context.profile === "app" ? `<a href="org2-workspace://open-link?target=${encodeURIComponent(context.embedded && context.sourcePath ? embeddedFileLinkTarget(target, context.sourcePath) : target)}">Open source \xB7 ${escapeHtml2(target)}</a>` : `<span>Live embed reference: ${escapeHtml2(target)} (content not exported)</span>`;
     const shell = (body2) => `<aside class="org2-live-embed" data-org2-live-embed="true"><header>${reference}</header>${body2}</aside>`;
     if (context.profile !== "app") return shell("");
     if (!context.embedResolver) return shell('<p role="status">Live content is not included in this rendering. Open the source to read it.</p>');
     const budget = context.embedBudget;
     if ((context.embedStack?.length ?? 0) > 4 || budget.remaining-- <= 0) return shell('<p role="status">Embed limit reached (4 levels / 32 references).</p>');
     const result = context.embedResolver(target, context.sourcePath);
-    if (!result.ok) return shell(`<p role="status">${escapeHtml(result.message)}</p>`);
+    if (!result.ok) return shell(`<p role="status">${escapeHtml2(result.message)}</p>`);
     if (context.embedStack?.includes(result.key)) return shell('<p role="status">Embed cycle stopped.</p>');
     if ((budget.bytes -= result.bytes) < 0) return shell('<p role="status">Embed content limit reached (1 MiB per render).</p>');
     const childContext = {
@@ -4367,42 +4999,42 @@ ${childrenHtml}
     if (node.type === "SrcBlock") return renderSrcBlock(node, context);
     if (node.type === "Block") return renderBlock(node, context);
     if (node.type === "DynamicBlock") {
-      const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
-      return `<section class="org2-dynamic-block" data-org2-dynamic-block="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}><header>${escapeHtml(node.nameRaw)}</header><pre>${body}</pre></section>`;
+      const body = escapeHtml2(node.bodyRaw.replace(/\n$/, ""));
+      return `<section class="org2-dynamic-block" data-org2-dynamic-block="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}><header>${escapeHtml2(node.nameRaw)}</header><pre>${body}</pre></section>`;
     }
     if (node.type === "FixedWidth") {
       const body = node.lines.map((line) => line.valueRaw).join("\n");
-      return `<pre class="org2-fixed-width"${renderSourceAttributes(node, context)}>${escapeHtml(body)}</pre>`;
+      return `<pre class="org2-fixed-width"${renderSourceAttributes(node, context)}>${escapeHtml2(body)}</pre>`;
     }
     if (node.type === "HorizontalRule") return `<hr${renderSourceAttributes(node, context)} />`;
     if (node.type === "LatexEnvironment") {
       const raw = [node.beginRaw, node.bodyRaw, node.endRaw].filter(Boolean).join("\n");
-      return `<pre class="org2-latex-environment" data-org2-latex-environment="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}>${escapeHtml(raw)}</pre>`;
+      return `<pre class="org2-latex-environment" data-org2-latex-environment="${escapeAttr(node.nameRaw)}"${renderSourceAttributes(node, context)}>${escapeHtml2(raw)}</pre>`;
     }
-    if (node.type === "DiarySexp") return `<code class="org2-diary-sexp"${renderSourceAttributes(node, context)}>${escapeHtml(node.raw)}</code>`;
+    if (node.type === "DiarySexp") return `<code class="org2-diary-sexp"${renderSourceAttributes(node, context)}>${escapeHtml2(node.raw)}</code>`;
     if (node.type === "FootnoteDefinition") {
       const id = normalizeAnchorId(`fn-${node.labelRaw}`) || "fn";
-      return `<aside class="org2-footnote-definition" id="${escapeAttr(id)}"${renderSourceAttributes(node, context)}><sup>${escapeHtml(node.labelRaw)}</sup> ${renderInlineChildren(node.children, context)}</aside>`;
+      return `<aside class="org2-footnote-definition" id="${escapeAttr(id)}"${renderSourceAttributes(node, context)}><sup>${escapeHtml2(node.labelRaw)}</sup> ${renderInlineChildren(node.children, context)}</aside>`;
     }
     if (node.type === "Table") return renderTable(node, context);
     if (node.type === "Drawer") {
-      const name = escapeHtml(node.nameRaw);
-      const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
+      const name = escapeHtml2(node.nameRaw);
+      const body = escapeHtml2(node.bodyRaw.replace(/\n$/, ""));
       return `<details class="org2-drawer"${renderSourceAttributes(node, context)}><summary>${name}</summary><pre>${body}</pre></details>`;
     }
     if (node.type === "KeywordLine") {
       const key = String(node.keyRaw || "").trim().toUpperCase();
       if (key === "EMBED") return renderLiveEmbed(node.valueRaw.trim(), context);
       if (HIDDEN_DOCUMENT_KEYWORDS.has(key)) return "";
-      return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw.trim())}</p>`;
+      return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml2(node.keyRaw)}</span>: ${escapeHtml2(node.valueRaw.trim())}</p>`;
     }
     if (node.type === "DirectiveLine") {
-      return `<pre class="org2-directive">${escapeHtml(node.raw)}</pre>`;
+      return `<pre class="org2-directive">${escapeHtml2(node.raw)}</pre>`;
     }
     if (node.type === "CommentLine") return "";
     if (node.type === "Text") {
       const text2 = String(node.value || "");
-      return text2.trim().length > 0 ? `<p>${escapeHtml(text2)}</p>` : "";
+      return text2.trim().length > 0 ? `<p>${escapeHtml2(text2)}</p>` : "";
     }
     return "";
   }
@@ -4459,7 +5091,7 @@ ${childrenHtml}
   }
   function renderAppFileProperties(properties) {
     if (properties.length === 0) return "";
-    const rows = properties.map((property2) => `<dt>${escapeHtml(property2.key)}</dt><dd>${escapeHtml(property2.value)}</dd>`).join("\n");
+    const rows = properties.map((property2) => `<dt>${escapeHtml2(property2.key)}</dt><dd>${escapeHtml2(property2.value)}</dd>`).join("\n");
     return `<details class="org2-file-properties">
 <summary>File properties <span class="org2-file-properties-count">${properties.length}</span></summary>
 <div class="org2-file-properties-body">
@@ -4510,9 +5142,9 @@ ${rows}
     if (!title) return "";
     const subtitle = String(opts.subtitle || "").trim();
     const subtitleHtml = subtitle ? `
-<p class="org2-document-subtitle" role="doc-subtitle">${escapeHtml(subtitle)}</p>` : "";
+<p class="org2-document-subtitle" role="doc-subtitle">${escapeHtml2(subtitle)}</p>` : "";
     return `<header class="org2-document-header">
-<h1 class="org2-document-title">${escapeHtml(title)}</h1>${subtitleHtml}
+<h1 class="org2-document-title">${escapeHtml2(title)}</h1>${subtitleHtml}
 </header>`;
   }
   function resolveDocumentRenderOptions(doc, opts) {
@@ -4543,6 +5175,7 @@ ${rows}
       profile: opts.profile,
       embedResolver: opts.embedResolver,
       sourcePath: opts.sourcePath,
+      codeFile: opts.codeFile,
       // Reference-only clients (including the mobile JavaScriptCore bundle) have
       // no filesystem. Only a supplied resolver needs a canonical cycle key.
       embedStack: opts.embedResolver && opts.sourcePath ? [opts.embedResolver.sourceKey ?? `${node_path_default.resolve(opts.sourcePath)}:1`] : [],
@@ -4612,7 +5245,7 @@ ${rows}
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(opts.title)}</title>
+<title>${escapeHtml2(opts.title)}</title>
 ${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>
 <body>
 ${compatOpen}<main class="org2-document">
@@ -4639,7 +5272,8 @@ ${compatClose}${postambleSection}</body>
       sourcePath: opts.sourcePath,
       charts: opts.charts,
       pluginRenders: opts.pluginRenders,
-      embedResolver: opts.embedResolver
+      embedResolver: opts.embedResolver,
+      codeFile: opts.codeFile
     });
     const mainBody = renderMainBody({
       doc,
@@ -4693,6 +5327,9 @@ ${customCss.replace(/<\/style/gi, "<\\/style")}
         `<style id="org2-app-document-style">
 ${APP_DOCUMENT_STYLE}
 </style>`,
+        `<style id="org2-app-code-style">
+${APP_CODE_HIGHLIGHT_STYLE}
+</style>`,
         `<script id="org2-app-document-script">
 ${APP_DOCUMENT_SCRIPT}
 <\/script>`,
@@ -4704,7 +5341,8 @@ ${APP_DOCUMENT_SCRIPT}
       profile: "app",
       charts: opts.charts,
       pluginRenders: opts.pluginRenders,
-      embedResolver: opts.embedResolver
+      embedResolver: opts.embedResolver,
+      codeFile: opts.codeFile
     });
   }
 
