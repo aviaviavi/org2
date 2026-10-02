@@ -57,6 +57,8 @@ OpenOrg offers two views of the same document:
 
 While editing, type =@= followed by a date to insert it. =@today=, =@tomorrow=, =@yesterday=, month-day forms such as =@july 10= or =@jul 10 2025=, and numeric forms such as =@7/10= or =@2026-07-10= each offer an Org date stamp such as =<2026-07-10 Fri>= and, when that day's daily note exists, a =file:= link to it relative to the current document. Use the arrow keys to choose, =Tab= or =Return= to insert, and =Esc= to dismiss. Dates without a year use the current year.
 
+Checked list items, such as =- [X] Ship the fix=, are shown struck through and muted in the source editor and the rendered view. Nested items keep their own state.
+
 *Prose* is a third editor presentation beside *Source* and *Split*. It uses the same native editor and the same Org text, with a proportional serif face, generous line spacing, a readable centered column, and editing syntax concealed. Select a word, sentence, or paragraph, then use the Prose toolbar or the editor's context menu:
 
 - *Add Alternative…* enters another version. The new version replaces the text in the document; the original and any earlier versions stay recoverable. Step through versions with the toolbar arrows or =Control-Option-[= and =Control-Option-]=.

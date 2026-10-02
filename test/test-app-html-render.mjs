@@ -38,6 +38,14 @@ for (const { body, collapsed, lines } of [
   }
 }
 
+// A checked list item's own text is struck through; its nested items are not.
+{
+  const doc = parseOrgToCanonicalAst("- [X] shipped\n  - [ ] follow-up\n- [ ] open\n", { sourceRanges: true });
+  const html = renderOrgDocumentToAppHtml(doc).html;
+  assert.ok(html.includes('li:has(> input[type="checkbox"]:checked) > p { color: var(--org2-muted); text-decoration: line-through; }'));
+  assert.match(html, /<input type="checkbox" checked disabled \/> \s*<p>shipped<\/p>/);
+}
+
 const source = `#+TITLE: App rendering
 #+HTML_HEAD: <script>globalThis.documentHeadRan = true</script>
 * TODO Review the renderer :mac:

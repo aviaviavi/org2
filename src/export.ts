@@ -435,6 +435,7 @@ ul, ol { margin: 0.55rem 0 0.9rem; padding-left: 1.55rem; }
 li { min-width: 0; margin: 0.24rem 0; padding-left: 0.12rem; overflow-wrap: anywhere; }
 li > p { display: inline; }
 input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; accent-color: var(--org2-accent); vertical-align: -0.11rem; }
+li:has(> input[type="checkbox"]:checked) > p { color: var(--org2-muted); text-decoration: line-through; }
 .org2-checkbox-mixed { display: inline-grid; width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; place-items: center; border: 1px solid var(--org2-muted); border-radius: 3px; color: var(--org2-muted); font-size: 0.8rem; line-height: 1; vertical-align: -0.11rem; }
 .org2-priority { color: var(--org2-danger); font-family: var(--org2-font-mono); font-size: 0.72em; font-weight: 750; }
 .org2-comment-keyword { color: var(--org2-muted); font-family: var(--org2-font-mono); font-size: 0.72em; font-weight: 700; }

@@ -8492,6 +8492,33 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }
 
+  func testOrgSyntaxHighlighterStrikesThroughCheckedListItemText() {
+    let raw = """
+    * [X] heading is not a list item
+    - [X] shipped the fix
+    - [ ] still open
+      + [x] nested done
+    1. [X] ordered done
+      * [X] indented star item
+    - [-] partially done
+    """
+    let tokens = OrgSyntaxHighlighter.tokens(in: raw)
+    let checked = tokens.filter { $0.kind == .checkedListItem }
+      .map { (raw as NSString).substring(with: $0.range) }
+    XCTAssertEqual(checked, ["shipped the fix", "nested done", "ordered done", "indented star item"])
+
+    let storage = NSTextStorage(string: raw)
+    OrgSyntaxHighlighter.apply(to: storage, monospaced: false)
+    let doneRange = (raw as NSString).range(of: "shipped the fix")
+    let openRange = (raw as NSString).range(of: "still open")
+    XCTAssertEqual(
+      storage.attribute(.strikethroughStyle, at: doneRange.location, effectiveRange: nil) as? Int,
+      NSUnderlineStyle.single.rawValue
+    )
+    XCTAssertNil(storage.attribute(.strikethroughStyle, at: openRange.location, effectiveRange: nil))
+    XCTAssertNil(storage.attribute(.strikethroughStyle, at: 0, effectiveRange: nil))
+  }
+
   func testOrgSyntaxHighlighterSkipsPlainBlockLines() {
     XCTAssertFalse(OrgSyntaxHighlighter.lineMayContainBlockSyntax("plain paragraph line"[...]))
     XCTAssertFalse(OrgSyntaxHighlighter.lineMayContainBlockSyntax("  plain indented content"[...]))

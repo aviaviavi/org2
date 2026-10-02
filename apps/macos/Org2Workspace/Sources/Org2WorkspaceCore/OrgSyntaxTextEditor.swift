@@ -1047,7 +1047,7 @@ enum OrgSourceTextChecking {
         if let raw = substring(in: lineText, range: token.range), isBareLink(raw) {
           return true
         }
-      case .headingTitle, .emphasis:
+      case .headingTitle, .emphasis, .checkedListItem:
         break
       }
     }
@@ -5578,6 +5578,8 @@ enum OrgSyntaxHighlightKind: String {
   case timestamp
   case syntaxDelimiter
   case comment
+  /// The text of a list item whose checkbox is checked (`- [X] text`).
+  case checkedListItem
 }
 
 /// Presentation-only tokenization for the native editor. Semantic org2 structure
@@ -5747,6 +5749,16 @@ enum OrgSyntaxHighlighter {
         collectLineRegex(regex: propertyLineRegex, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
         collectLineRegex(regex: commentLineRegex, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
       }
+      if lineMayContainCheckedCheckbox(lineSlice) {
+        collectLineRegex(
+          regex: checkedListItemRegex,
+          kind: .checkedListItem,
+          line: String(lineSlice),
+          lineOffset: lineOffset,
+          capture: 1,
+          into: &tokens
+        )
+      }
       lineOffset += lineLength
       if index < lines.count - 1 {
         lineOffset += 1
@@ -5778,6 +5790,11 @@ enum OrgSyntaxHighlighter {
     default:
       return false
     }
+  }
+
+  /// Cheap pre-check for `[X]`/`[x]` before running the checked-item regex.
+  static func lineMayContainCheckedCheckbox(_ line: Substring) -> Bool {
+    line.contains("[X]") || line.contains("[x]")
   }
 
   private static func collectHeadingTokens(line: String, lineOffset: Int, into tokens: inout [OrgSyntaxHighlightToken]) {
@@ -5873,7 +5890,8 @@ enum OrgSyntaxHighlighter {
     switch kind {
     case .link, .code, .emphasis, .timestamp:
       return true
-    case .headingStars, .headingTitle, .keyword, .planningKeyword, .propertyKey, .todo, .priority, .tag, .linkTarget, .syntaxDelimiter, .comment:
+    case .headingStars, .headingTitle, .keyword, .planningKeyword, .propertyKey, .todo, .priority, .tag, .linkTarget,
+         .syntaxDelimiter, .comment, .checkedListItem:
       return false
     }
   }
@@ -5995,6 +6013,10 @@ enum OrgSyntaxHighlighter {
   private static let planningLineRegex = regex(#"^\s*(SCHEDULED|DEADLINE|CLOSED):"#)
   private static let propertyLineRegex = regex(#"^\s*:([^:\s]+):"#)
   private static let commentLineRegex = regex(#"^\s*#(?!\+).*$"#)
+  // A star bullet needs indentation; a star in column 0 starts a heading.
+  private static let checkedListItemRegex = regex(
+    #"^(?:\s*(?:[-+]|\d+[.)])|\s+\*)\s+\[[Xx]\]\s+(\S.*?)\s*$"#
+  )
   private static let orgLinkRegex = regex(#"\[\[[^\n\]]+(?:\]\[[^\n\]]+)?\]\]"#)
   private static let markdownLinkRegex = regex(#"\[[^\n\]]+\]\([^\n\)]+\)"#)
   private static let urlRegex = regex(#"https?://[^\s\]\)"'`<>]+"#)
@@ -6128,7 +6150,16 @@ enum OrgSyntaxHighlighter {
       return [
         .foregroundColor: theme.liveColor(.comment)
       ]
+    case .checkedListItem:
+      return checkedListItemAttributes
     }
+  }
+
+  private static var checkedListItemAttributes: [NSAttributedString.Key: Any] {
+    [
+      .foregroundColor: NSColor.secondaryLabelColor,
+      .strikethroughStyle: NSUnderlineStyle.single.rawValue
+    ]
   }
 
   /// Prose mode shows words, not markup: editing syntax is concealed or muted.
@@ -6164,6 +6195,8 @@ enum OrgSyntaxHighlighter {
       ]
     case .timestamp:
       return muted
+    case .checkedListItem:
+      return checkedListItemAttributes
     case .todo, .link:
       return nil
     }
