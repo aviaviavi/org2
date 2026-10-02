@@ -26625,11 +26625,35 @@ public final class WorkspaceStore {
 
     openClawGatewayStateByThreadID[threadID] = .connecting
     openClawGatewayDetailByThreadID[threadID] = destination.name
+    let existingSessionID = thread.runtimeThreadID(forDestinationID: sessionDestinationID)
     var workspaceContext = sendOrigin.workspaceContext.threadContinuation == nil
       ? sendOrigin.workspaceContext.replacingThreadContinuation(
           aiChatThreadContinuation(for: thread, excludingMessageID: userMessage.id)
         )
       : sendOrigin.workspaceContext
+    var turnMessage = Self.expandingOpenClawAgentCommand(
+      requestUserMessage,
+      corpusSkills: corpusAgentSkillCommands
+    ).content
+    // A resumed session already holds its conversation. Re-sending the recent
+    // transcript in the system prompt changed that prompt on every turn and
+    // defeated the provider's prompt cache, so each turn re-processed the
+    // whole session. Send only what the session has not seen, with the turn.
+    if existingSessionID != nil, !thread.isSharedRoom,
+       let continuation = workspaceContext.threadContinuation,
+       let updates = Self.openCodeResumedSessionUpdates(
+         in: thread.messages,
+         destinationID: sessionDestinationID,
+         excludingMessageID: userMessage.id
+       ) {
+      workspaceContext = workspaceContext.replacingThreadContinuation(AIChatThreadContinuation(
+        id: continuation.id,
+        title: continuation.title,
+        messages: [],
+        org2References: continuation.org2References
+      ))
+      turnMessage = Self.openCodeTurnMessage(turnMessage, prefixing: updates)
+    }
     if destination.adapter == .openCodeRemote {
       workspaceContext = workspaceContext.replacingRuntimeCorpusRoot(destination.workspaceRoot)
     }
@@ -26668,11 +26692,8 @@ public final class WorkspaceStore {
     do {
       result = try await openCodeClient(forDestinationID: destinationID).runTurn(
         openOrgThreadID: threadID,
-        existingSessionID: thread.runtimeThreadID(forDestinationID: sessionDestinationID),
-        message: Self.expandingOpenClawAgentCommand(
-          requestUserMessage,
-          corpusSkills: corpusAgentSkillCommands
-        ).content,
+        existingSessionID: existingSessionID,
+        message: turnMessage,
         systemPrompt: workspaceContext.localAgentSystemPrompt(
           runtime: "opencode",
           runtimeTitle: "OpenCode",
@@ -26708,6 +26729,64 @@ public final class WorkspaceStore {
     openClawGatewayDetailByThreadID[threadID] = destination.name
     let reply = result.reply.trimmingCharacters(in: .whitespacesAndNewlines)
     return reply.isEmpty ? "OpenCode completed the turn without a text response." : reply
+  }
+
+  /// Thread messages that a resumed OpenCode session has not seen, such as a
+  /// background job's report posted after its last reply. Returns nil when
+  /// OpenOrg cannot tell what the session holds (no earlier reply from this
+  /// destination, a failed turn, or another agent answering in between); the
+  /// caller then sends the full recent transcript excerpt instead.
+  nonisolated static func openCodeResumedSessionUpdates(
+    in messages: [AIChatMessage],
+    destinationID: String,
+    excludingMessageID: UUID
+  ) -> [AIChatMessage]? {
+    guard let lastReply = messages.lastIndex(where: {
+      $0.role == .assistant && $0.authorDestinationID == destinationID
+    }) else { return nil }
+    var updates: [AIChatMessage] = []
+    for message in messages[messages.index(after: lastReply)...] where message.id != excludingMessageID {
+      if message.authorDestinationID == destinationID { return nil }
+      if message.role == .user {
+        // Prompts addressed to this destination are already in its session.
+        if message.targetDestinationID == nil || message.targetDestinationID == destinationID { continue }
+        updates.append(message)
+        continue
+      }
+      // Another agent answered prompts this session never received.
+      if message.authorDestinationID != nil || (message.authorRuntime != nil && message.authorLabel == nil) {
+        return nil
+      }
+      updates.append(message)
+    }
+    return updates
+  }
+
+  /// Puts unseen thread updates ahead of the user's text, so the system prompt
+  /// stays identical across turns and the provider's prompt cache is reused.
+  nonisolated static func openCodeTurnMessage(_ message: String, prefixing updates: [AIChatMessage]) -> String {
+    guard !updates.isEmpty else { return message }
+    var remainingCharacters = 24_000
+    var lines = ["Thread updates since your last reply in this session (oldest to newest):"]
+    for update in updates.suffix(24) where remainingCharacters > 0 {
+      var content = update.content.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !update.attachments.isEmpty {
+        let names = update.attachments.map { "[Attachment: \($0.fileName)]" }.joined(separator: "\n")
+        content = content.isEmpty ? names : "\(content)\n\(names)"
+      }
+      guard !content.isEmpty else { continue }
+      let allowed = min(4_000, remainingCharacters)
+      if content.count > allowed { content = String(content.prefix(allowed)) + "…" }
+      remainingCharacters -= content.count
+      lines.append("<message role=\"\(update.role.rawValue)\">")
+      if let authorLabel = update.authorLabel {
+        lines.append("[Authored by another participant: \(authorLabel)]")
+      }
+      lines.append(content)
+      lines.append("</message>")
+    }
+    guard lines.count > 1 else { return message }
+    return lines.joined(separator: "\n") + "\n\n" + message
   }
 
   private func persistRuntimeSessionID(
