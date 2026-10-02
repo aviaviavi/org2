@@ -599,6 +599,7 @@ struct AIChatTranscriptDocument: View {
     case "edit": store.editQueuedAIChatMessage(uuid)
     case "delete": store.deleteQueuedAIChatMessage(uuid)
     case "steer": Task { await store.steerQueuedAIChatMessage(uuid) }
+    case "reply": store.beginAIChatReply(to: uuid)
     default: break
     }
   }
@@ -846,6 +847,7 @@ enum AIChatTranscriptHTML {
   .glyph { display:inline-grid; place-items:center; flex:0 0 14px; width:14px; height:14px; line-height:0; }
   .glyph svg,.icon-button svg,.detail-icon svg,.activity-icon svg,.change-icon svg { width:14px; height:14px; }
   .context-pills { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:6px; }
+  .context-pill.reply-pill { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:light-dark(#555,#bbb); background:light-dark(#f2f2f2,#2c2c2e); border-color:light-dark(#ddd,#444); }
   .context-pill { padding:3px 7px; border-radius:999px; font-size:10px; color:light-dark(#2773bd,#83bafa); background:light-dark(#eaf3fc,#27394b); border:1px solid light-dark(#bdd8f0,#34516b); }
   .message-placeholder { display:flex; align-items:center; gap:9px; min-width:215px; height:23px; padding:4px 0; color:light-dark(#777,#aaa); }
   .message-placeholder-pulse { flex:0 0 6px; width:6px; height:6px; border-radius:50%; background:currentColor; animation:pulse .85s ease-in-out infinite alternate; }
@@ -974,6 +976,7 @@ enum AIChatTranscriptHTML {
       const paths={
         copy:'<rect x="8" y="7" width="11" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3"/>',
         check:'<path d="m5 12 4 4L19 6"/>',
+        reply:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
         sparkle:'<path d="M12 2c.7 4.7 2.9 6.9 7.5 7.5C14.9 10.1 12.7 12.3 12 17c-.7-4.7-2.9-6.9-7.5-7.5C9.1 8.9 11.3 6.7 12 2Z"/><path d="M19 15c.3 2.1 1.3 3.1 3 3.5-1.7.3-2.7 1.3-3 3.5-.3-2.2-1.3-3.2-3-3.5 1.7-.4 2.7-1.4 3-3.5Z"/>',
         person:'<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>',
         gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6l-.3-2.6h-4L10.4 6A8 8 0 0 0 8.8 7L6.5 6l-2 3.4 2 1.5a7 7 0 0 0 0 2.1l-2 1.5 2 3.4 2.3-1a8 8 0 0 0 1.6 1l.3 2.6h4L15 18a8 8 0 0 0 1.6-1l2.3 1 2-3.4-2-1.5a7 7 0 0 0 .1-1Z"/>',
@@ -1063,10 +1066,11 @@ enum AIChatTranscriptHTML {
       if(e.role==='system') { const badge=document.createElement('span'); badge.className='system-badge'; badge.textContent='System'; header.append(badge); }
       if(e.queued) { const q=document.createElement('span'); q.className='queued-badge'; q.textContent='Queued'; header.append(q); }
       header.append(time,iconButton(e.copied?'check':'copy',e.copied?'Copied':'Copy message','copy',e.id,e.copied));
+      if(!e.queued && !e.preparing && e.role!=='system') header.append(iconButton('reply','Reply to this message','reply',e.id));
       card.append(header);
       if(e.contexts.length) {
         const pills=document.createElement('div'); pills.className='context-pills';
-        for(const context of e.contexts) { const pill=document.createElement('span'); pill.className='context-pill'; pill.textContent=(context.isAutomatic?'✦ ':'')+context.title; pills.append(pill); }
+        for(const context of e.contexts) { const pill=document.createElement('span'); const reply=context.kind==='reply to message'; pill.className='context-pill'+(reply?' reply-pill':''); pill.textContent=(reply?'↩ ':context.isAutomatic?'✦ ':'')+context.title; pills.append(pill); }
         card.append(pills);
       }
       if(e.preparing) {

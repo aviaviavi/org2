@@ -87,7 +87,12 @@ struct AIChatPresentedContext: Identifiable, Hashable, Sendable {
     return ["page", "file", "entry", "heading", "block", "selection", "context"].contains(normalized)
   }
 
+  var isReply: Bool {
+    kind == AIChatContextPresentation.replyKind
+  }
+
   var systemImage: String {
+    if isReply { return "arrowshape.turn.up.left" }
     if automaticPrompt != nil { return "sparkles" }
     switch kind.lowercased() {
     case let value where value.contains("block"):
@@ -166,6 +171,57 @@ struct AIChatContextPresentation: Equatable, Sendable {
     \(automaticContextEnd)
     """
     return normalizedUserText.isEmpty ? context : "\(context)\n\n\(normalizedUserText)"
+  }
+
+  static let replyKind = "reply to message"
+  static let replyTitleLimit = 64
+  static let replyExcerptLimit = 1_500
+
+  /// A context that quotes an earlier chat message. The composer shows it as a
+  /// removable pill, the transcript as a reply pill, and the agent receives
+  /// the quoted excerpt with the user's text.
+  static func replyContext(author: String, messageID: UUID, content: String) -> String {
+    let text = AIChatContextPresentation(content).userText
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+    let snippet = truncated(firstLine.trimmingCharacters(in: .whitespaces), limit: replyTitleLimit)
+    let title = snippet.isEmpty ? author : "\(author): \(snippet)"
+    let excerpt = truncated(text, limit: replyExcerptLimit)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { line -> String in
+        // Escape Org block syntax so the quote cannot close its container.
+        let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+        return trimmed.hasPrefix("#+") || trimmed.hasPrefix(",#+") || trimmed.hasPrefix("*")
+          ? ",\(line)"
+          : String(line)
+      }
+      .joined(separator: "\n")
+    let speaker = author == "You" ? "their own earlier message" : "this earlier message from \(author)"
+    let prompt = [
+      "The user is replying to \(speaker):",
+      "#+begin_quote",
+      excerpt.isEmpty ? "(no text)" : excerpt,
+      "#+end_quote",
+    ].joined(separator: "\n")
+    return automaticContext(
+      kind: replyKind,
+      title: title,
+      reference: "ai-chat-message:\(messageID.uuidString.lowercased())",
+      prompt: prompt
+    )
+  }
+
+  /// Puts `replyContext` first in `draft`, replacing any earlier reply.
+  static func draft(_ draft: String, replyingWith replyContext: String) -> String {
+    let presentation = AIChatContextPresentation(draft)
+    let kept = presentation.contexts.filter { !$0.isReply }
+    let rest = serialize(contexts: kept, userText: presentation.userText)
+    return rest.isEmpty ? replyContext : replyContext + "\n\n" + rest
+  }
+
+  private static func truncated(_ text: String, limit: Int) -> String {
+    guard text.count > limit else { return text }
+    return String(text.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
   }
 
   private static func consumeContext(
@@ -3184,6 +3240,9 @@ struct AIChatComposerView: View {
         }
       }
     }
+    .onChange(of: store.aiChatComposerFocusRequest) {
+      moveComposerCursorToEndRequest &+= 1
+    }
     .onChange(of: store.aiChatDraft) { _, newValue in
       let mergedDraft = AIChatComposerDraftSync.localDraftAfterStoreChange(
         localDraft: localDraft,
@@ -4661,6 +4720,9 @@ struct AIChatComposerTextView: NSViewRepresentable {
         textView.setSelectedRange(nextRange)
         textView.scrollRangeToVisible(nextRange)
       }
+    }
+    if movesCursorToEnd, let window = textView.window, window.firstResponder !== textView {
+      window.makeFirstResponder(textView)
     }
     context.coordinator.lastMoveCursorToEndRequest = moveCursorToEndRequest
   }

@@ -2550,6 +2550,8 @@ public final class WorkspaceStore {
   public var workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
   public var isCapturingSystemAudio = false
   public var meetingSystemAudioStatusText = "System audio not recording"
+  /// Incremented to move keyboard focus to the end of the chat composer.
+  public var aiChatComposerFocusRequest = 0
   public var aiChatMessages: [AIChatMessage] = [] {
     didSet {
       guard !isApplyingAIChatThreadMessages else { return }
@@ -29508,6 +29510,37 @@ public final class WorkspaceStore {
   public func deleteQueuedAIChatMessage(_ messageID: UUID) {
     guard dequeueAIChatMessage(messageID) != nil else { return }
     aiChatStatusText = "Removed queued message"
+  }
+
+  /// Starts a reply to one message in the selected thread: the composer gains
+  /// a removable reply pill and the sent prompt quotes that message.
+  public func beginAIChatReply(to messageID: UUID) {
+    guard let threadID = selectedAIChatThreadID,
+          aiChatThreadID(containing: messageID) == threadID,
+          let message = aiChatMessages.first(where: { $0.id == messageID })
+    else { return }
+    let author = aiChatReplyAuthor(for: message)
+    let replyContext = AIChatContextPresentation.replyContext(
+      author: author,
+      messageID: message.id,
+      content: message.content
+    )
+    let previousDraft = currentAIChatDraftForSelectedThread()
+    let nextDraft = AIChatContextPresentation.draft(previousDraft, replyingWith: replyContext)
+    if nextDraft != previousDraft {
+      publishAIChatComposerDraft(nextDraft)
+      recordWorkspaceUndo(.aiChatDraft(previous: previousDraft, next: nextDraft))
+    }
+    aiChatComposerFocusRequest &+= 1
+    aiChatStatusText = "Replying to \(author)"
+  }
+
+  func aiChatReplyAuthor(for message: AIChatMessage) -> String {
+    if message.role == .user { return "You" }
+    return message.authorLabel
+      ?? message.authorDestinationID.map(aiChatDestinationTitle)
+      ?? message.authorRuntime?.title
+      ?? (message.role == .system ? "Org2" : selectedAIChatRuntime.title)
   }
 
   public func editQueuedAIChatMessage(_ messageID: UUID) {

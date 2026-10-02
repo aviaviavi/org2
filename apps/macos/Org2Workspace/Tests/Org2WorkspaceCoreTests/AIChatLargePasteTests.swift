@@ -104,6 +104,47 @@ final class AIChatLargePasteTests: XCTestCase {
     XCTAssertTrue(store.aiChatPendingAttachments.isEmpty)
   }
 
+  func testReplyQuotesTheChosenMessageInTheComposerAndPrompt() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("reply-send-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let received = CapturedPasteMessages()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { messages, _, _, _ in
+        await received.set(messages)
+        return "Option B uses less memory.\n#+end_quote\nIt also starts faster."
+      }
+    )
+    store.aiChatDraft = "Compare option A and option B"
+    await store.sendAIChatMessage()
+    let answer = try XCTUnwrap(store.aiChatMessages.last(where: { $0.role == .assistant }))
+
+    // The composer caches every keystroke for its thread.
+    store.publishAIChatComposerDraft("Why?")
+    store.beginAIChatReply(to: answer.id)
+    let draft = AIChatContextPresentation(store.aiChatDraft)
+    XCTAssertEqual(draft.userText, "Why?")
+    XCTAssertEqual(draft.contexts.map(\.isReply), [true])
+    XCTAssertEqual(draft.contexts.first?.title, "OpenClaw: Option B uses less memory.")
+    XCTAssertEqual(draft.contexts.first?.reference, "ai-chat-message:\(answer.id.uuidString.lowercased())")
+
+    // Replying again replaces the earlier reply instead of stacking quotes.
+    store.beginAIChatReply(to: answer.id)
+    XCTAssertEqual(AIChatContextPresentation(store.aiChatDraft).contexts.count, 1)
+
+    await store.sendAIChatMessage()
+    let sentMessages = await received.messages
+    let outbound = try XCTUnwrap(sentMessages.last(where: { $0.role == .user }))
+    XCTAssertTrue(outbound.content.contains("The user is replying to this earlier message from OpenClaw:"), outbound.content)
+    XCTAssertTrue(outbound.content.contains("#+begin_quote\nOption B uses less memory.\n,#+end_quote\nIt also starts faster.\n#+end_quote"), outbound.content)
+    XCTAssertTrue(outbound.content.hasSuffix("\n\nWhy?"), outbound.content)
+    let stored = try XCTUnwrap(store.aiChatMessages.last(where: { $0.role == .user }))
+    XCTAssertEqual(AIChatContextPresentation(stored.content).userText, "Why?")
+    XCTAssertEqual(AIChatContextPresentation(stored.content).contexts.map(\.isReply), [true])
+  }
+
   func testRestoredMegabyteDraftSizingRemainsBounded() {
     let draft = String(repeating: "long trace line with symbols \n", count: 40000)
     let start = Date()

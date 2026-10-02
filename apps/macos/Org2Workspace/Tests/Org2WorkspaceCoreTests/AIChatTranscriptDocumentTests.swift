@@ -221,6 +221,34 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertTrue(result.contains { $0["code"] as? String == "first line\nsecond line" })
   }
 
+  func testReplyButtonFollowsCopyAndRepliesShowAsReplyPills() async throws {
+    let reply = AIChatContextPresentation(AIChatContextPresentation.replyContext(
+      author: "Codex", messageID: UUID(), content: "The build is green."
+    ) + "\n\nShip it")
+    let replyEntry = AIChatTranscriptHTML.Entry(
+      id: "user-reply", role: "user", title: "You", timestamp: "Today",
+      html: "<main><p>Ship it</p></main>", plainText: nil, preparing: false,
+      contexts: reply.contexts.map(AIChatTranscriptHTML.Context.init), attachments: [], failure: nil,
+      queued: false, canSteer: false, isRoomResponse: false, copied: false, isTruncated: false,
+      responseTrace: nil, changeSummary: nil
+    )
+    let view = try await document()
+    try await update(view, payload([entry("answer", "<main><p>The build is green.</p></main>"), replyEntry]))
+    let result = try await view.evaluateJavaScript("""
+      (()=>{
+        const buttons=[...document.querySelectorAll('#message-answer .message-header button')];
+        buttons[1].click();
+        const pill=document.querySelector('#message-user-reply .context-pill');
+        return {labels:buttons.map(b=>b.getAttribute('aria-label')), pill:pill.textContent, reply:pill.classList.contains('reply-pill')};
+      })()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["labels"] as? [String], ["Copy message", "Reply to this message"])
+    XCTAssertEqual(result?["pill"] as? String, "↩ Codex: The build is green.")
+    XCTAssertEqual(result?["reply"] as? Bool, true)
+    let events = try await view.evaluateJavaScript("events") as? [[String: Any]] ?? []
+    XCTAssertTrue(events.contains { $0["action"] as? String == "reply" && $0["id"] as? String == "answer" })
+  }
+
   func testImageAttachmentsRenderInlinePreviews() async throws {
     let bitmap = try XCTUnwrap(NSBitmapImageRep(
       bitmapDataPlanes: nil,
