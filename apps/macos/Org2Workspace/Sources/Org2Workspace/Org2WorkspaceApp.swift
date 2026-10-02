@@ -504,7 +504,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     // Finder-launched apps get a minimal PATH; learn the user's login-shell
     // PATH once so npm/nvm-installed agent CLIs such as Codex are found.
     LocalAgentExecutableLocator.warmUp()
-    #if !DEBUG
+    // Daily local-fast builds also use DEBUG. Telemetry checks the bundle's
+    // production identity and runtime opt-outs, so Preview remains excluded.
     let os = ProcessInfo.processInfo.operatingSystemVersion
     #if arch(arm64)
     let architecture = "arm64"
@@ -517,7 +518,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
       osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
       architecture: architecture
     )
-    #endif
     // AppKit defers its default quit Apple event while a sheet is open.
     // Route it directly so build --restart and a second external Quit work.
     NSAppleEventManager.shared().setEventHandler(

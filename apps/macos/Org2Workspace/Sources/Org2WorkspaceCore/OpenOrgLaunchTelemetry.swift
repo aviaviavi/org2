@@ -61,7 +61,7 @@ public final class OpenOrgLaunchTelemetry: ObservableObject {
     request.setValue("OpenOrg/\(version)", forHTTPHeaderField: "User-Agent")
     request.httpBody = try? JSONSerialization.data(withJSONObject: [
       "event": "app_launch",
-      "$version": version,
+      "version": version,
       "platform": "macos",
       "os_version": osVersion,
       "architecture": architecture,

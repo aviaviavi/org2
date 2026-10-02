@@ -12,7 +12,8 @@ final class OpenOrgLaunchTelemetryTests: XCTestCase {
     XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "OpenOrg/0.9.0")
     XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: String])
-    XCTAssertEqual(body, ["event": "app_launch", "$version": "0.9.0", "platform": "macos",
+    // Gateway uses "version"; "$version" is reserved for bulk event imports.
+    XCTAssertEqual(body, ["event": "app_launch", "version": "0.9.0", "platform": "macos",
                           "os_version": "26.0.1", "architecture": "arm64", "schema_version": "1"])
   }
 
