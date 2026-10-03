@@ -238,7 +238,13 @@ final class OrgProseEditorController: NSObject, ObservableObject, NSMenuItemVali
     else { return }
     clearPresentation(in: layoutManager)
 
-    let newHidden = snapshot.blockRange.map { clamp($0, length: length) }
+    // Matching directly avoids a Swift 6.2 release optimizer lifetime error
+    // when the blockRange getter is inlined from the @Published snapshot.
+    let newHidden: NSRange?
+    switch snapshot.status {
+    case .valid(let range): newHidden = clamp(range, length: length)
+    case .absent, .invalid: newHidden = nil
+    }
     if newHidden != glyphHider.hiddenRange {
       let old = glyphHider.hiddenRange
       glyphHider.hiddenRange = newHidden
