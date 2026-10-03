@@ -162,6 +162,12 @@
         });
       });
 
+      // On small screens the field is always visible, so focusing it opens search.
+      input.addEventListener('focus', function () {
+        form.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+      });
+
       toggle.addEventListener('click', function () {
         if (form.classList.contains('is-open')) {
           closeSearch();
@@ -299,15 +305,67 @@
     });
   }
 
+  // On small screens, tables with a header row render as one card per row.
+  // Each cell carries its column header as a label, and explicit roles keep
+  // table semantics when CSS changes the cells' display.
+  function setupTables() {
+    document.querySelectorAll('#content table').forEach(function (table) {
+      if (table.dataset.stackReady === '1') return;
+      table.dataset.stackReady = '1';
+      var headerRow = table.querySelector(':scope > thead > tr');
+      var body = table.querySelector(':scope > tbody');
+      if (!headerRow || !body) return;
+      var labels = Array.prototype.map.call(headerRow.children, function (cell) {
+        return (cell.textContent || '').trim();
+      });
+      if (!labels.some(Boolean)) return;
+
+      table.setAttribute('role', 'table');
+      Array.prototype.forEach.call(table.querySelectorAll(':scope > thead, :scope > tbody'), function (group) {
+        group.setAttribute('role', 'rowgroup');
+      });
+      Array.prototype.forEach.call(headerRow.children, function (cell) {
+        cell.setAttribute('role', 'columnheader');
+      });
+      headerRow.setAttribute('role', 'row');
+      Array.prototype.forEach.call(body.children, function (row) {
+        row.setAttribute('role', 'row');
+        Array.prototype.forEach.call(row.children, function (cell, index) {
+          cell.setAttribute('role', 'cell');
+          if (labels[index]) cell.setAttribute('data-label', labels[index]);
+        });
+      });
+      table.classList.add('org2-table-stacked');
+    });
+  }
+
+  // Keep short inline tokens such as Cmd-Shift-K or file names on one line
+  // instead of breaking after a hyphen or slash on narrow screens.
+  function setupInlineCode() {
+    document.querySelectorAll('#content :not(pre) > code').forEach(function (code) {
+      var text = code.textContent || '';
+      if (text.length <= 22 && /[-/]/.test(text)) code.style.whiteSpace = 'nowrap';
+    });
+  }
+
   function init() {
     setup();
     setupHoverDropdowns();
     setupSearch();
     setupCurrentPage();
     setupHeadingAnchors();
+    setupTables();
+    setupInlineCode();
   }
 
-  window.addEventListener('resize', setup);
+  // Mobile browsers fire resize while the toolbar collapses during scrolling;
+  // only reset the menu when the layout actually crosses the breakpoint.
+  var layoutQuery = window.matchMedia('(max-width: 759px)');
+  if (typeof layoutQuery.addEventListener === 'function') {
+    layoutQuery.addEventListener('change', setup);
+  } else if (typeof layoutQuery.addListener === 'function') {
+    layoutQuery.addListener(setup);
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

@@ -450,7 +450,7 @@ pre.org2-shiki-block {
 
   .org2-sample-file pre {
     padding: 0.45rem 0.5rem !important;
-    font-size: 0.56rem !important;
+    font-size: 0.66rem !important;
     line-height: 1.23 !important;
   }
 
@@ -2952,6 +2952,9 @@ body > .org2-footer .org2-footer-tagline {
     justify-self: start;
   }
 
+  /* Fallback for tables nav.js cannot stack (no header row or no JS): a
+     horizontal scroller. The head and body row groups stay inside one
+     anonymous table box, so header cells remain aligned with their columns. */
   #content table {
     display: block;
     width: 100%;
@@ -2962,23 +2965,82 @@ body > .org2-footer .org2-footer-tagline {
     -webkit-overflow-scrolling: touch;
   }
 
-  #content table > tbody {
-    display: table;
-    width: max-content;
-    min-width: 100%;
-    table-layout: auto;
-  }
-
   #content table th,
   #content table td {
-    min-width: 12rem;
-    overflow-wrap: normal;
+    min-width: 9.5rem;
+    max-width: 20rem;
+    overflow-wrap: break-word;
     word-break: normal;
   }
 
   #content table th:first-child,
   #content table td:first-child {
     min-width: 7.5rem;
+  }
+
+  /* Tables with a header row become one labeled card per row. */
+  #content table.org2-table-stacked {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  #content table.org2-table-stacked > thead {
+    display: none;
+  }
+
+  #content table.org2-table-stacked > tbody {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  #content table.org2-table-stacked tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg);
+    box-shadow: var(--shadow-small);
+  }
+
+  #content table.org2-table-stacked td,
+  #content table.org2-table-stacked td:first-child {
+    display: block;
+    min-width: 0;
+    max-width: none;
+    padding: 0.48rem 0.8rem;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #content table.org2-table-stacked td:first-child {
+    font-weight: 600;
+  }
+
+  #content table.org2-table-stacked td:last-child {
+    border-bottom: 0;
+  }
+
+  #content table.org2-table-stacked td:empty {
+    display: none;
+  }
+
+  #content table.org2-table-stacked td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.12rem;
+    color: var(--link-strong);
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+  }
+
+  #content .org2-home-hero {
+    padding: 0;
   }
 
   #content .org2-shot-grid figure,
@@ -3002,7 +3064,7 @@ body > .org2-footer .org2-footer-tagline {
   }
 
   #content .org2-sample-file pre {
-    font-size: 0.56rem !important;
+    font-size: 0.66rem !important;
   }
 }
 
@@ -3330,4 +3392,59 @@ body > .org2-footer .org2-footer-tagline {
   font-size: 0.9rem;
   letter-spacing: -0.01em;
   text-transform: none;
+}
+
+/* Small-screen pass: keep long tokens inside the column, stop iOS from
+   inflating text on rotation or zooming into the search field, and keep the
+   open mobile menu usable. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+#content {
+  overflow-wrap: break-word;
+}
+
+#content .org2-sample-intro h2 + p {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 759px) {
+  #content .org2-nav-menu[open] {
+    max-height: calc(100vh - 1.75rem);
+    max-height: calc(100dvh - 1.75rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  #content .org2-site-search {
+    display: block;
+    margin-top: 0.3rem;
+  }
+
+  #content .org2-site-search-toggle {
+    display: none;
+  }
+
+  #content .org2-site-search input {
+    position: static;
+    width: 100%;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    padding: 0.5rem 0.75rem;
+    font-size: 16px;
+  }
+
+  #content .org2-site-search-results {
+    position: static;
+    width: 100%;
+    max-height: none;
+    margin-top: 0.35rem;
+  }
+
+  #content .org2-hero-actions {
+    margin-top: 0.5rem;
+  }
 }

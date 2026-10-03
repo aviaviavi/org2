@@ -38,6 +38,7 @@ Use =org2 roam graph --format report= for an inspectable local maintenance view,
 The Org2 repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:
 
 | Path | Source-controlled? | Why |
+|---+---+---|
 | =dist/= | yes | TypeScript build output used by the package =bin= entrypoints and npm distribution. |
 | =site/= | yes | Published HTML docs generated from =docs/site/*.org= for static hosting. |
 | =spec/v0/tests/*.json= | yes | Expected canonical AST fixtures paired with sibling =*.org= inputs. |

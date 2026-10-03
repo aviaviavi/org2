@@ -7,7 +7,7 @@ The practical question is how much behavior the files need to carry.
 * At a glance
 
 | Concern | Markdown | Org2 |
-|---|---|---|
+|---+---+---|
 | Natural starting point | Documents, messages, READMEs, and web content | Notes, tasks, sources, and workflows that form a corpus |
 | Plain-text storage | Yes | Yes |
 | Structure | Headings, links, lists, code, and implementation-specific extensions | Org-shaped headings plus TODOs, planning lines, properties, IDs, blocks, tables, and artifact metadata |

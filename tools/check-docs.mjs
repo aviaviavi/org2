@@ -146,15 +146,39 @@ if (!siteStyles.includes(".org2-heading-anchor") || !siteStyles.includes("scroll
 if (!siteStyles.includes(".org2-features-page h2::before") || !siteStyles.includes('content: "**"')) {
   fail("features page level-two headings are missing Org2 '**' styling");
 }
-const mobileStylesStart = siteStyles.lastIndexOf("@media (max-width: 759px)");
-const mobileStylesEnd = siteStyles.indexOf("@media (max-width: 520px)", mobileStylesStart);
-const mobileStyles = siteStyles.slice(mobileStylesStart, mobileStylesEnd);
+function mediaBlocks(styles, query) {
+  const blocks = [];
+  for (let start = styles.indexOf(query); start !== -1; start = styles.indexOf(query, start + query.length)) {
+    const open = styles.indexOf("{", start);
+    let depth = 0;
+    let end = open;
+    for (; end < styles.length; end += 1) {
+      if (styles[end] === "{") depth += 1;
+      else if (styles[end] === "}" && --depth === 0) break;
+    }
+    blocks.push(styles.slice(start, end + 1));
+  }
+  return blocks;
+}
+const mobileStyles = mediaBlocks(siteStyles, "@media (max-width: 759px)").join("\n");
 if (
-  !mobileStyles.includes("#content table > tbody") ||
   !mobileStyles.includes("overflow-x: auto") ||
-  !mobileStyles.includes("#content table td:first-child")
+  !mobileStyles.includes("#content table td:first-child") ||
+  !mobileStyles.includes("#content table.org2-table-stacked") ||
+  !mobileStyles.includes("content: attr(data-label)") ||
+  !siteNavigation.includes("org2-table-stacked") ||
+  !siteNavigation.includes("data-label")
 ) {
-  fail("mobile documentation tables must retain readable columns inside a horizontal scroller");
+  fail("mobile documentation tables must stack labeled rows, with an aligned horizontal-scroll fallback");
+}
+if (/#content table > tbody\s*\{[^}]*display:\s*table/.test(mobileStyles)) {
+  fail("mobile documentation tables must keep thead and tbody in one table box so columns stay aligned");
+}
+for (const page of fs.readdirSync(path.join(repoRoot, "docs/site")).filter((name) => name.endsWith(".org"))) {
+  const source = fs.readFileSync(path.join(repoRoot, "docs/site", page), "utf8");
+  if (/^\s*\|-+(?:\|-+)+\|\s*$/m.test(source)) {
+    fail(`docs/site/${page} uses a Markdown table delimiter; use an Org hline such as |---+---|`);
+  }
 }
 if (
   !mobileStyles.includes("#content .org2-compiler-flow article::after") ||

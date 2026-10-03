@@ -7,7 +7,7 @@ Both can support serious knowledge work. The main difference is where each syste
 * At a glance
 
 | Concern | Obsidian | Org2 |
-|---|---|---|
+|---+---+---|
 | Primary experience | Polished Markdown knowledge application | Shared knowledge runtime with Mac, VS Code, CLI, and other clients |
 | Source files | Local Markdown, properties, Bases files, and open JSON Canvas files | Local =.org= and =.org2= files, JSON Canvas files, portable property-view JSON definitions, and explicit generated artifacts |
 | Runtime and license | Proprietary desktop/mobile app with public plugin APIs | Apache-2.0 parser, CLI, compiler, clients, and integrations |

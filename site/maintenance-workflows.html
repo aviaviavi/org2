@@ -92,8 +92,10 @@ org2 publish docs-site --config org2.json --preview</code></pre>
 <h1 id="repository-generated-artifact-hygiene">Repository generated artifact hygiene</h1>
 <p>The Org2 repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:</p>
 <table>
+<thead>
+<tr><th>Path</th><th>Source-controlled?</th><th>Why</th></tr>
+</thead>
 <tbody>
-<tr><td>Path</td><td>Source-controlled?</td><td>Why</td></tr>
 <tr><td><code>dist/</code></td><td>yes</td><td>TypeScript build output used by the package <code>bin</code> entrypoints and npm distribution.</td></tr>
 <tr><td><code>site/</code></td><td>yes</td><td>Published HTML docs generated from <code>docs/site/*.org</code> for static hosting.</td></tr>
 <tr><td><code>spec/v0/tests/*.json</code></td><td>yes</td><td>Expected canonical AST fixtures paired with sibling <code>*.org</code> inputs.</td></tr>
