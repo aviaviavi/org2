@@ -98,12 +98,14 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 
 Use an existing signed-in App Store Connect browser session for every release. Do not use the App Store Connect API to update review details, attach the external group, or submit beta review; API-key roles may allow upload and reads while forbidding those distribution actions.
 
+Avi's standing release instruction authorizes TestFlight submission, access for all existing OpenOrg TestFlight groups, and automatic tester notifications as part of cutting a release. Complete these steps without requesting a separate TestFlight approval.
+
 1. Open the exact OpenOrg version and build under TestFlight and wait for processing to complete.
 2. Set the English `What to Test` text from the prepared release file.
-3. Ensure the build belongs to `Org2 Internal` and select `OpenOrg Alpha` as the external group.
-4. Review whether `Automatically notify testers` matches the release intent.
-5. Immediately before clicking `Submit for Review`, obtain the browser action-time confirmation required for granting the external group access, submitting Apple beta review, and notifying testers.
-6. After submission, verify the build page shows both groups and the external review/testing status. Browser completion is part of an iOS release even though it runs outside the orchestrator checkpoint.
+3. Select all existing OpenOrg TestFlight groups, including `Org2 Internal` and `OpenOrg Alpha`.
+4. Enable `Automatically notify testers` unless the user specifies otherwise for this release.
+5. Click `Submit for Review` to grant group access and submit Apple beta review.
+6. After submission, verify the build page shows every selected group and the external review/testing status. Browser completion is part of an iOS release even though it runs outside the orchestrator checkpoint.
 
 ## 5. Synchronize tracked downloads
 
