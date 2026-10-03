@@ -4,6 +4,26 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.7 - 2026-10-03
+
+## Highlights
+
+- Write in the new macOS Prose mode: keep alternate wording, ghost and revive text, and park fragments in Overflow while retaining ordinary Org source.
+- Reply to a specific AI chat message, share threads as live local links, and use server-hosted shared chats.
+- Improve chat recovery and synchronization across Mac, iPhone, and remote agents, including queued replies, early steers, and notification deduplication.
+- Create files from the sidebar or File menu with Command-Shift-N, and use configured daily-note paths.
+- Render linked images inline, insert image links with the source editor's /image command, and highlight code in rendered documents.
+- Extend saved views with date variables, date comparisons, and regular expressions; expose experimental Canvases navigation.
+- Improve agenda edits, checked-list rendering, chat layout, and settings navigation.
+
+## Installation
+
+macOS 14 or later. Choose OpenOrg.dmg for Apple Silicon or OpenOrg-Intel.dmg for Intel. Both installers are Developer ID signed, notarized by Apple, and stapled. The iOS client is distributed separately through TestFlight as version 0.8.7, build 43.
+
+## Validation
+
+The coordinated release validates the shared runtime, documentation, Node suite, VS Code extension, and macOS Swift suite before publication. Artifact checksums and the complete changelog are included below.
+
 ## 0.8.6 - 2026-09-30
 
 ## Highlights
