@@ -4,35 +4,34 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.6</title>
-            <pubDate>Tue, 29 Sep 2026 20:34:34 -0700</pubDate>
+            <title>0.8.7</title>
+            <pubDate>Fri, 02 Oct 2026 23:49:56 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.6</sparkle:version>
-            <sparkle:shortVersionString>0.8.6</sparkle:shortVersionString>
+            <sparkle:version>0.8.7</sparkle:version>
+            <sparkle:shortVersionString>0.8.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[## Highlights
 
-- Choose light and dark themes inspired by familiar editors; rendered notes and AI chat follow the active theme.
-- Complete date mentions such as `@today` and `@july 10` in chat and editors.
-- Preview images and videos in the native file view, and open a thread’s outputs directly from its chat header.
-- Improve tab switching, document link cues, file properties, and background refresh stability.
-- Keep remote OpenCode turns controllable across restarts and handle prompts beginning with dashes correctly.
-- Fix Google Drive republishing with guarded ETags and improve inline DOCX styling.
-- Find agent CLIs from Finder-launched OpenOrg and refresh Codex model options.
-- Route automatic update downloads through Scarf and add minimal, opt-out desktop launch telemetry.
+- Write in the new macOS Prose mode: keep alternate wording, ghost and revive text, and park fragments in Overflow while retaining ordinary Org source.
+- Reply to a specific AI chat message, share threads as live local links, and use server-hosted shared chats.
+- Improve chat recovery and synchronization across Mac, iPhone, and remote agents, including queued replies, early steers, and notification deduplication.
+- Create files from the sidebar or File menu with Command-Shift-N, and use configured daily-note paths.
+- Render linked images inline, insert image links with the source editor's /image command, and highlight code in rendered documents.
+- Extend saved views with date variables, date comparisons, and regular expressions; expose experimental Canvases navigation.
+- Improve agenda edits, checked-list rendering, chat layout, and settings navigation.
 
 ## Installation
 
-The Apple Silicon and Intel Mac installers are Developer ID signed and notarized. Download the installer matching your Mac. iOS version 0.8.6 is distributed separately through TestFlight.
+macOS 14 or later. Choose OpenOrg.dmg for Apple Silicon or OpenOrg-Intel.dmg for Intel. Both installers are Developer ID signed, notarized by Apple, and stapled. The iOS client is distributed separately through TestFlight as version 0.8.7, build 43.
 
 ## Validation
 
-The release pipeline validates the shared runtime, documentation, Node integration suite, VS Code extension, and macOS Swift suite before publication.
+The coordinated release validates the shared runtime, documentation, Node suite, VS Code extension, and macOS Swift suite before publication. Artifact checksums and the complete changelog are included below.
 ]]></description>
-            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.6/OpenOrg-Intel.dmg" length="241395942" type="application/octet-stream" sparkle:edSignature="7n7OnjULEbcdUIfJ7zKSYryPMM9Jurw0qFw9NuphPDNq3MYupCF7XoAxFnyIAu3ga3xFRMFDmgd6nLhLGyZWCg=="></enclosure>
+            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.7/OpenOrg-Intel.dmg" length="242179664" type="application/octet-stream" sparkle:edSignature="kkQkwMjRgOrYPMKlgq7N5BE0BDPYqW7lkno6q9fLoMlUkadrN3nFzisy3K6a7tmRyAZABLoBoLn57cO9hba8Bw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: l1Al/o1JE+jWCUafMMMYP27gEsRZtXdPdHoYoH9RYAg1sNm1G1MAzAvpPpiU6YJwvDDopIRr/cKe1KYTiCRbBA==
-length: 2329
+edSignature: ogCm8DdWXyKLJGfgFCngnH7Dw4Az/fDOvazaIruOrDKPrNbaHVxtgDt3KboPnRctn6FU7bKAQRDvWbhHxucyDA==
+length: 2539
 -->
