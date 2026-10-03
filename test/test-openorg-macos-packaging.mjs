@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -97,5 +98,70 @@ const missingProfile = spawnSync(
 );
 assert.equal(missingProfile.status, 1);
 assert.match(missingProfile.stderr, /needs --notary-profile/);
+
+// Exercise the production range getter across the @Published ownership
+// boundary with the release optimizer. Debug Swift tests cannot catch the
+// Swift 6.2 CopyPropagation crash this small compilation reproduces.
+if (process.platform === "darwin") {
+  const compilerProbe = spawnSync("xcrun", ["--find", "swiftc"], { encoding: "utf8" });
+  if (compilerProbe.status === 0) {
+    const core = join(repoRoot, "apps", "macos", "Org2Workspace", "Sources", "Org2WorkspaceCore");
+    const status = readFileSync(join(core, "OrgProseState.swift"), "utf8")
+      .match(/enum OrgProseBlockStatus:[\s\S]*?\n\}/)?.[0];
+    const getter = readFileSync(join(core, "OrgProseEngine.swift"), "utf8")
+      .match(/  var blockRange: NSRange\? \{[\s\S]*?\n  \}/)?.[0];
+    assert.ok(status && getter, "Production Prose range declarations must be found");
+    const scratch = mkdtempSync(join(tmpdir(), "openorg-prose-release-regression-"));
+    try {
+      const source = join(scratch, "ProseReleaseRegression.swift");
+      writeFileSync(source, `import AppKit
+import Combine
+${status}
+struct OrgProseSnapshot {
+  var status: OrgProseBlockStatus = .absent
+${getter}
+}
+@MainActor
+public final class ProseReleaseRegression: ObservableObject {
+  @Published var snapshot = OrgProseSnapshot()
+  public var textView: NSTextView?
+  public var hiddenRange: NSRange?
+  public func applyPresentation() {
+    guard let textView, let layoutManager = textView.layoutManager,
+          let length = textView.textStorage?.length else { return }
+    let newHidden = snapshot.blockRange.map { clamp($0, length: length) }
+    if newHidden != hiddenRange {
+      let old = hiddenRange
+      hiddenRange = newHidden
+      for range in [old, newHidden].compactMap({ $0 }) {
+        let valid = clamp(range, length: length)
+        guard valid.length > 0 else { continue }
+        layoutManager.invalidateGlyphs(forCharacterRange: valid, changeInLength: 0, actualCharacterRange: nil)
+        layoutManager.invalidateLayout(forCharacterRange: valid, actualCharacterRange: nil)
+      }
+    }
+  }
+  private func clamp(_ range: NSRange, length: Int) -> NSRange {
+    let start = max(0, min(range.location, length))
+    return NSRange(location: start, length: max(0, min(range.length, length - start)))
+  }
+}
+`);
+      for (const architecture of ["arm64", "x86_64"]) {
+        const nativeArm = defaultPlan.architecture === "arm64";
+        const result = spawnSync(nativeArm ? "/usr/bin/arch" : "xcrun", [
+          ...(nativeArm ? ["-arm64", "xcrun"] : []), "swiftc", "-swift-version", "6",
+          "-target", `${architecture}-apple-macosx14.0`, "-O", "-whole-module-optimization",
+          "-emit-library", "-o", join(scratch, `${architecture}.dylib`), source,
+        ], { encoding: "utf8", timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+        assert.equal(result.status, 0, `${architecture} optimized Prose getter failed: ${result.stderr}`);
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  } else {
+    console.log("Skipping optimized Prose compilation: Swift compiler unavailable");
+  }
+}
 
 console.log("OpenOrg macOS packaging tests passed");

@@ -246,8 +246,12 @@ struct OrgProseSnapshot: Equatable {
   var resolutions: [String: OrgProseResolution] = [:]
 
   var blockRange: NSRange? {
-    if case .valid(let range) = status { return range }
-    return nil
+    // Swift 6.2's release optimizer can end the @Published snapshot borrow
+    // before matching this enum when the getter is inlined into a caller.
+    @inline(never) get {
+      if case .valid(let range) = status { return range }
+      return nil
+    }
   }
 
   var invalidReason: String? {
