@@ -7195,23 +7195,59 @@ public final class WorkspaceStore {
     }
     projectMutationIDs.insert(project.id)
     defer { projectMutationIDs.remove(project.id) }
-    do {
-      var args = ["project", "update", project.id, "--dir", root.path, "--json", "--if-revision", project.revision]
-      if let threadID {
-        args += ["--thread", threadID.uuidString.lowercased()]
-        if project.contains(threadID) { args += ["--remove"] }
+    // Fix the intended membership from the state the caller acted on, so a
+    // retry against a newer revision cannot invert a toggle.
+    let addsThread = threadID.map { !project.contains($0) }
+    var current = project
+    for attempt in 0..<2 {
+      do {
+        var args = ["project", "update", current.id, "--dir", root.path, "--json", "--if-revision", current.revision]
+        if let threadID, let addsThread {
+          args += ["--thread", threadID.uuidString.lowercased()]
+          if !addsThread { args += ["--remove"] }
+        }
+        if let color { args += ["--color", color] }
+        let _: WorkspaceProjectEdit = try await cli.runJSON(args)
+        guard corpusRoot == root, !Task.isCancelled else { return false }
+        let _: WorkspaceProjectEdit = try await cli.runJSON(args + ["--apply"])
+        guard corpusRoot == root else { return false }
+        await refreshProjects()
+        return corpusRoot == root && !Task.isCancelled
+      } catch {
+        guard corpusRoot == root else { return false }
+        guard attempt == 0, !Task.isCancelled, Self.isStaleProjectRevisionError(error) else {
+          projectStatus = error.localizedDescription
+          return false
+        }
+        // The note changed on disk after the cached project list was read:
+        // another device, a sync, or a manual edit. A headless OpenOrg server
+        // has no project sidebar to refresh that list, so its cached revision
+        // can stay stale indefinitely. Membership and color edits are
+        // idempotent set operations, so reapply them to the current revision.
+        await refreshProjects()
+        guard corpusRoot == root, !Task.isCancelled else { return false }
+        guard let fresh = projectNotes.first(where: { $0.id == project.id }) else {
+          projectStatus = "That project is no longer available."
+          return false
+        }
+        current = fresh
       }
-      if let color { args += ["--color", color] }
-      let _: WorkspaceProjectEdit = try await cli.runJSON(args)
-      guard corpusRoot == root, !Task.isCancelled else { return false }
-      let _: WorkspaceProjectEdit = try await cli.runJSON(args + ["--apply"])
-      guard corpusRoot == root else { return false }
-      await refreshProjects()
-      return corpusRoot == root && !Task.isCancelled
-    } catch {
-      if corpusRoot == root { projectStatus = error.localizedDescription }
-      return false
     }
+    return false
+  }
+
+  nonisolated static func isStaleProjectRevisionError(_ error: Error) -> Bool {
+    let text = "\(error.localizedDescription) \(String(describing: error))"
+    return text.contains("changed after it was read")
+  }
+
+  /// Resolves a project by ID, reloading the list once when the cached copy
+  /// predates the project (for example, a note created on another device
+  /// while a headless host was running).
+  func currentProject(id: String) async -> WorkspaceProjectNote? {
+    if let project = projectNotes.first(where: { $0.id == id }) { return project }
+    await refreshProjects()
+    return projectNotes.first(where: { $0.id == id })
   }
 
   func setProjectMembership(
@@ -7220,7 +7256,7 @@ public final class WorkspaceStore {
     threadID: UUID
   ) async -> Bool {
     guard aiChatThreads.contains(where: { $0.id == threadID }),
-          let project = projectNotes.first(where: { $0.id == projectID })
+          let project = await currentProject(id: projectID)
     else {
       projectStatus = "That project or chat is no longer available."
       return false
@@ -31173,7 +31209,7 @@ public final class WorkspaceStore {
     projectID: String,
     id: UUID = UUID()
   ) async -> UUID? {
-    guard let project = projectNotes.first(where: { $0.id == projectID }) else {
+    guard let project = await currentProject(id: projectID) else {
       projectStatus = "That project is no longer available."
       return nil
     }

@@ -441,4 +441,68 @@ final class WorkspaceProjectTests: XCTestCase {
     let persisted = try String(contentsOf: projectURL, encoding: .utf8)
     XCTAssertTrue(persisted.contains(threadID.uuidString.lowercased()))
   }
+
+  @MainActor
+  func testRemoteProjectThreadSurvivesProjectNoteEditedAfterListing() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-project-stale-revision-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "WorkspaceProjectTests.StaleRevision.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      cli: Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let projectID = UUID().uuidString.lowercased()
+    let projectURL = root.appendingPathComponent("stale.org")
+    try """
+    #+ORG2_KIND: project
+    #+TITLE: Stale
+    :PROPERTIES:
+    :ID: \(projectID)
+    :END:
+
+    Original brief.
+    """.write(to: projectURL, atomically: true, encoding: .utf8)
+    await store.refreshProjects()
+    let staleRevision = try XCTUnwrap(store.projectNotes.first(where: { $0.id == projectID })).revision
+
+    // A headless host has no project sidebar to notice this edit, so its
+    // cached revision is stale when the phone creates a chat in the project.
+    let edited = try String(contentsOf: projectURL, encoding: .utf8) + "\nEdited on another device.\n"
+    try edited.write(to: projectURL, atomically: true, encoding: .utf8)
+    XCTAssertEqual(store.projectNotes.first(where: { $0.id == projectID })?.revision, staleRevision)
+
+    let createdThreadID = await store.createAIChatRemoteThread(
+      destinationID: AIChatDestinationConfiguration.localCodexID,
+      projectID: projectID
+    )
+    let threadID = try XCTUnwrap(createdThreadID, store.projectStatus)
+    let persisted = try String(contentsOf: projectURL, encoding: .utf8)
+    XCTAssertTrue(persisted.contains(threadID.uuidString.lowercased()))
+    XCTAssertTrue(persisted.contains("Edited on another device."))
+    XCTAssertTrue(try XCTUnwrap(store.projectNotes.first(where: { $0.id == projectID })).contains(threadID))
+
+    // A project created after the last listing is found without a restart.
+    let laterID = UUID().uuidString.lowercased()
+    let laterURL = root.appendingPathComponent("later.org")
+    try """
+    #+ORG2_KIND: project
+    #+TITLE: Later
+    :PROPERTIES:
+    :ID: \(laterID)
+    :END:
+    """.write(to: laterURL, atomically: true, encoding: .utf8)
+    let laterThreadID = await store.createAIChatRemoteThread(
+      destinationID: AIChatDestinationConfiguration.localCodexID,
+      projectID: laterID
+    )
+    let laterThread = try XCTUnwrap(laterThreadID, store.projectStatus)
+    XCTAssertTrue(try String(contentsOf: laterURL, encoding: .utf8).contains(laterThread.uuidString.lowercased()))
+  }
 }
