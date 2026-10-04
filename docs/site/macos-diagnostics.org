@@ -12,12 +12,12 @@ Build and start the helper from the repository root:
 npm run diagnostics:macos
 #+end_src
 
-By default it follows the daily app with bundle identifier =org.org2.workspace= and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in =org2.json=. Pass an explicit corpus or monitor the isolated Codex app when needed:
+By default it follows the daily app with bundle identifier =org.org.workspace= and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in =org2.json=. Pass an explicit corpus or monitor the isolated Codex app when needed:
 
 #+begin_src sh
 npm run diagnostics:macos -- --corpus /path/to/corpus
 npm run diagnostics:macos -- \
-  --bundle-id org.org2.workspace.codex \
+  --bundle-id org.org.workspace.codex \
   --corpus /path/to/disposable-corpus
 #+end_src
 
@@ -42,7 +42,7 @@ The stack capture lasts 5 seconds at a 10-millisecond sampling interval. Thresho
 
 The app separately instruments ordinary UI responsiveness at frame scale. It
 records pointer-event-to-window-update, source-editor-key-to-draw, and AI
-composer-key-to-draw intervals in the =org.org2.workspace/InteractionLatency=
+composer-key-to-draw intervals in the =org.org.workspace/InteractionLatency=
 unified-log category and as Instruments points of interest. A sample over the
 60 Hz frame budget (16.7 ms) is logged immediately; every 120 samples the app
 also reports rolling p95. This is deliberately distinct from the watchdog:
@@ -65,7 +65,7 @@ architecture.
 
 Every CLI and bundled renderer process launched by Org2 Workspace emits one
 structured completion record in the
-=org.org2.workspace/CLILatency= unified-log category. Records include a
+=org.org.workspace/CLILatency= unified-log category. Records include a
 sanitized command identity, elapsed milliseconds, outcome, exit status, and
 standard-input, standard-output, and standard-error byte counts. They never
 include command data arguments, corpus paths, search queries, environment
@@ -75,7 +75,7 @@ Recent records can be inspected during development with:
 
 #+begin_src sh
 log show --last 10m \
-  --predicate 'subsystem == "org.org2.workspace" && category == "CLILatency"'
+  --predicate 'subsystem == "org.org.workspace" && category == "CLILatency"'
 #+end_src
 
 The record is emitted once, after the process and its output collectors settle,
@@ -106,9 +106,9 @@ The first version is capture-only. It deliberately does not kill or relaunch a f
 
 * Full workspace refresh timings
 
-The =org.org2.workspace/WorkspaceRefresh= unified-log category records each awaited full-refresh stage and total wall time as =stage= and =elapsed_ms=. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing =CLILatency= category separates command execution costs; =workspace agent-state= also returns timings for its individual list sections.
+The =org.org.workspace/WorkspaceRefresh= unified-log category records each awaited full-refresh stage and total wall time as =stage= and =elapsed_ms=. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing =CLILatency= category separates command execution costs; =workspace agent-state= also returns timings for its individual list sections.
 
 #+begin_src sh
 /usr/bin/log show --last 10m --info --style compact \
-  --predicate 'subsystem == "org.org2.workspace" && (category == "WorkspaceRefresh" || category == "CLILatency")'
+  --predicate 'subsystem == "org.org.workspace" && (category == "WorkspaceRefresh" || category == "CLILatency")'
 #+end_src

@@ -7,7 +7,7 @@ AI commands write into generated zones first. The goal is to make model output u
 
 #+begin_src sh
 org2 ai run --job jobs/team-sync.org2-ai.json --apply
-org2 ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply
+org2 ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org --apply
 #+end_src
 
 Without =--apply=, the command prints a safe preview and writes nothing.
@@ -19,12 +19,12 @@ Without =--apply=, the command prints a safe preview and writes nothing.
 #+begin_src sh
 org2 ai run \
   --task summarize-meeting \
-  --file raw/meeting.org2 \
-  --out views/meeting-summary.org2
+  --file raw/meeting.org \
+  --out views/meeting-summary.org
 
 org2 ai run \
   --job examples/jobs/meeting-summary.org2-ai.json \
-  --out views/meeting-summary.org2
+  --out views/meeting-summary.org
 #+end_src
 
 The generated draft is safe-by-default: preview-only unless =--apply= is passed, stored as a generated =view= artifact, and marked =ORG2_REVIEW_STATUS: review-required=. The body includes:
@@ -44,10 +44,10 @@ A generated draft starts with an Org2 property drawer:
 
 #+begin_src org
 :PROPERTIES:
-:ID: team-sync-summary-team-sync-summary.org2
+:ID: team-sync-summary-team-sync-summary.org
 :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
 :ORG2_ARTIFACT_ROLE: view
-:ORG2_PROVENANCE: file:raw/team-sync.org2
+:ORG2_PROVENANCE: file:raw/team-sync.org
 :ORG2_GENERATOR: org2 ai run team-sync-summary adapter=local-default model=fixture-model
 :ORG2_GENERATED_AT: 2026-05-20T01:00:00.000Z
 :ORG2_AI_JOB_ID: team-sync-summary
@@ -55,7 +55,7 @@ A generated draft starts with an Org2 property drawer:
 :ORG2_PROMPT_TEMPLATE: meeting-summary@v1
 :ORG2_AI_ADAPTER: local-default
 :ORG2_AI_MODEL: fixture-model
-:ORG2_SOURCE_HASHES: file:raw/team-sync.org2=sha256:...
+:ORG2_SOURCE_HASHES: file:raw/team-sync.org=sha256:...
 :ORG2_REVIEW_STATUS: review-required
 :END:
 #+end_src
@@ -73,8 +73,8 @@ Promotion is explicit:
 
 #+begin_src sh
 org2 ai promote \
-  --file views/team-sync-summary.org2 \
-  --to-file notes/team-sync.org2 \
+  --file views/team-sync-summary.org \
+  --to-file notes/team-sync.org \
   --apply
 #+end_src
 

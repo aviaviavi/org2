@@ -76,19 +76,19 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <tr><th>Zone</th><th>Example paths</th><th>Owner</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><code>raw/</code></td><td><code>raw/meetings/2026-05-20-team-sync.transcript.org2</code>, <code>raw/imports/slack/2026-05-20.json</code></td><td>capture/import tools</td><td>Source material and append-only observations. Prefer minimal rewriting.</td></tr>
-<tr><td><code>notes/</code> and <code>daily/</code></td><td><code>daily/2026-05-20.org2</code>, <code>notes/people/alex.org2</code>, <code>notes/projects/openclaw.org2</code></td><td>humans plus safe agent edits</td><td>Canonical working notes, TODOs, durable memory, and curated entities.</td></tr>
+<tr><td><code>raw/</code></td><td><code>raw/meetings/2026-05-20-team-sync.transcript.org</code>, <code>raw/imports/slack/2026-05-20.json</code></td><td>capture/import tools</td><td>Source material and append-only observations. Prefer minimal rewriting.</td></tr>
+<tr><td><code>notes/</code> and <code>daily/</code></td><td><code>daily/2026-05-20.org</code>, <code>notes/people/alex.org</code>, <code>notes/projects/openclaw.org</code></td><td>humans plus safe agent edits</td><td>Canonical working notes, TODOs, durable memory, and curated entities.</td></tr>
 <tr><td><code>compiled/</code></td><td><code>compiled/corpus.json</code>, <code>compiled/team-sync-context.json</code></td><td>deterministic Org2 commands</td><td>Machine artifacts derived from <code>raw/</code> and <code>notes/</code>. Safe to regenerate.</td></tr>
-<tr><td><code>views/</code></td><td><code>views/meeting-summaries/2026-05-20-team-sync.org2</code>, <code>views/link-suggestions.org2</code></td><td>deterministic reports or generated drafts</td><td>Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical.</td></tr>
+<tr><td><code>views/</code></td><td><code>views/meeting-summaries/2026-05-20-team-sync.org</code>, <code>views/link-suggestions.org</code></td><td>deterministic reports or generated drafts</td><td>Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical.</td></tr>
 <tr><td><code>publish/</code></td><td><code>publish/team-handbook/</code>, <code>publish/openclaw-memory.html</code></td><td>publish/export jobs</td><td>Shareable output created from reviewed source material.</td></tr>
 </tbody>
 </table>
 <p>Recommended placement:</p>
 <ul>
-<li><p>Daily notes: <code>daily/YYYY-MM-DD.org2</code></p></li>
-<li><p>Imported transcripts and logs: <code>raw/&lt;source&gt;/YYYY-MM-DD-&lt;slug&gt;.&lt;kind&gt;.org2</code> or original machine format under <code>raw/imports/</code></p></li>
-<li><p>Generated summaries: <code>views/&lt;workflow&gt;/&lt;slug&gt;.org2</code> with <code>ORG2_REVIEW_STATUS: review-required</code></p></li>
-<li><p>Review artifacts and suggestion reports: <code>views/review/&lt;slug&gt;.org2</code> or <code>views/link-suggestions.org2</code></p></li>
+<li><p>Daily notes: <code>daily/YYYY-MM-DD.org</code></p></li>
+<li><p>Imported transcripts and logs: <code>raw/&lt;source&gt;/YYYY-MM-DD-&lt;slug&gt;.&lt;kind&gt;.org</code> or original machine format under <code>raw/imports/</code></p></li>
+<li><p>Generated summaries: <code>views/&lt;workflow&gt;/&lt;slug&gt;.org</code> with <code>ORG2_REVIEW_STATUS: review-required</code></p></li>
+<li><p>Review artifacts and suggestion reports: <code>views/review/&lt;slug&gt;.org</code> or <code>views/link-suggestions.org</code></p></li>
 <li><p>Compiled query/context packets: <code>compiled/&lt;slug&gt;.json</code></p></li>
 <li><p>Published outputs: <code>publish/&lt;audience-or-project&gt;/</code> or the configured publish output directory</p></li>
 </ul>
@@ -129,7 +129,7 @@ Fran needs her heartworm medication refill checked this week.</code></pre>
 SCHEDULED: &lt;2026-05-21 Thu&gt;
 :PROPERTIES:
 :ID: todo-2026-05-20-launch-followup-dana
-:ORG2_SOURCE: file:raw/meetings/2026-05-20-launch.transcript.org2::128-135
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-launch.transcript.org::128-135
 :ORG2_REVIEW_STATUS: review-required
 :END:
 Candidate from meeting transcript. Verify owner/date before acting externally.</code></pre>
@@ -142,28 +142,28 @@ Candidate from meeting transcript. Verify owner/date before acting externally.</
 :ID: view-2026-05-20-team-sync-summary
 :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
 :ORG2_ARTIFACT_ROLE: view
-:ORG2_PROVENANCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2
+:ORG2_PROVENANCE: file:raw/meetings/2026-05-20-team-sync.transcript.org
 :ORG2_GENERATOR: openclaw meeting-summary adapter=work-summary model=example-model
 :ORG2_GENERATED_AT: 2026-05-20T23:00:00Z
-:ORG2_SOURCE_HASHES: file:raw/meetings/2026-05-20-team-sync.transcript.org2=sha256:...
+:ORG2_SOURCE_HASHES: file:raw/meetings/2026-05-20-team-sync.transcript.org=sha256:...
 :ORG2_REVIEW_STATUS: review-required
 :END:
 
 * Summary
-- The team agreed to defer billing launch until the migration checklist is complete. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]
+- The team agreed to defer billing launch until the migration checklist is complete. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org::88-94]
 
 * Candidate TODOs
 ** TODO Confirm migration owner
 :PROPERTIES:
-:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::101-106
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org::101-106
 :ORG2_REVIEW_STATUS: review-required
 :END:</code></pre>
 <p>After human review, promote only accepted content into <code>notes/</code> and mark it curated:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Billing launch migration
 :PROPERTIES:
 :ID: mem-billing-launch-migration
-:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-106
-:ORG2_PROMOTED_FROM: file:views/meeting-summaries/2026-05-20-team-sync.org2
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org::88-106
+:ORG2_PROMOTED_FROM: file:views/meeting-summaries/2026-05-20-team-sync.org
 :ORG2_REVIEW_STATUS: reviewed
 :ORG2_CURATED: true
 :END:
@@ -177,7 +177,7 @@ The team deferred billing launch until the migration checklist is complete.
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 roam linkify --dir notes --recursive --dry-run
 org2 roam linkify --dir notes --recursive --apply
 org2 lint --dir . --recursive</code></pre>
-<p>Generated link suggestions from AI should be written to <code>views/link-suggestions.org2</code> with citations and <code>review-required</code> status. Apply only reviewed links to <code>notes/</code>.</p>
+<p>Generated link suggestions from AI should be written to <code>views/link-suggestions.org</code> with citations and <code>review-required</code> status. Apply only reviewed links to <code>notes/</code>.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="avoid-duplicate-ids">Avoid duplicate IDs</h2>
@@ -237,7 +237,7 @@ org2 lint --dir . --recursive</code></pre>
 <section class="org2-headline level-2">
 <h2 id="4-generated-claims-cite-source-material">4. Generated claims cite source material</h2>
 <p>Acceptable generated claim:</p>
-<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The billing launch was deferred until migration checklist completion. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]</code></pre>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The billing launch was deferred until migration checklist completion. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org::88-94]</code></pre>
 <p>Unsafe claim:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The billing launch is delayed because the payments provider failed certification.</code></pre>
 <p>If the source does not support the reason, the generated artifact should say <code>Evidence missing</code> or leave a review question.</p>
@@ -295,7 +295,7 @@ org2 lint --dir . --recursive</code></pre>
 <p>Example flow from transcript to curated note:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># 1. Capture raw transcript.
 mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
-cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org2
+cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org
 
 # 2. Build cited local context deterministically.
 org2 query &quot;team sync&quot; \
@@ -310,7 +310,7 @@ org2 query &quot;team sync&quot; \
 org2 ai run \
   --task summarize-meeting \
   --context compiled/2026-05-20-team-sync-context.json \
-  --out views/meeting-summaries/2026-05-20-team-sync.org2 \
+  --out views/meeting-summaries/2026-05-20-team-sync.org \
   --apply
 
 # 4. Check generated artifact metadata and graph health.
@@ -318,13 +318,13 @@ org2 lint --dir . --recursive
 
 # 5. After review, promote accepted content.
 org2 ai promote \
-  --file views/meeting-summaries/2026-05-20-team-sync.org2 \
-  --to-file notes/meetings/team-sync.org2 \
+  --file views/meeting-summaries/2026-05-20-team-sync.org \
+  --to-file notes/meetings/team-sync.org \
   --apply
 
 # 6. Re-check canonical corpus.
 org2 lint --dir . --recursive</code></pre>
-<p>Before promotion, the draft is a <code>view</code> artifact with <code>review-required</code> status. After promotion, the accepted note in <code>notes/meetings/team-sync.org2</code> carries source/provenance properties and the draft can be marked <code>promoted</code>.</p>
+<p>Before promotion, the draft is a <code>view</code> artifact with <code>review-required</code> status. After promotion, the accepted note in <code>notes/meetings/team-sync.org</code> carries source/provenance properties and the draft can be marked <code>promoted</code>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="integration-checklist">Integration checklist</h1>

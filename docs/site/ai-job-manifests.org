@@ -38,7 +38,7 @@ Validation checks the manifest shape, corpus selection, task type, symbolic adap
   },
   "output": {
     "target": "views",
-    "path": "views/weekly-summary.org2"
+    "path": "views/weekly-summary.org"
   },
   "provenance": {
     "requireSourceRefs": true,

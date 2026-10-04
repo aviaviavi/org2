@@ -66,7 +66,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">Agent quickstart</h1>
 <p class="org2-document-subtitle" role="doc-subtitle">Discover and use Org2 safely in a few commands</p>
 </header>
-<p>This page is the shortest path for any local, remote, hosted, or self-hosted agent or model to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary <code>.org2</code> and <code>.org</code> files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.</p>
+<p>This page is the shortest path for any local, remote, hosted, or self-hosted agent or model to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary <code>.org</code> files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.</p>
 <p>Every client can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces. Optional runtime adapters add native chat, lifecycle, scheduling, and gateway behavior without making a particular agent, provider, or model the owner of the workspace. The currently shipped adapters are documented below as implementations, not requirements.</p>
 <section class="org2-headline level-1">
 <h1 id="first-minute">First minute</h1>
@@ -174,10 +174,10 @@ org2 agent bundle --query &quot;billing migration&quot; --scope project:billing 
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --title &quot;Prepare a cited launch briefing&quot; \
   --goal &quot;Prepare the briefing with source citations and a reviewed PDF&quot; \
   --accept &quot;A reviewed briefing and PDF exist&quot; \
-  --context notes/launch.org2 --capability agent-context --capability publish \
+  --context notes/launch.org --capability agent-context --capability publish \
   --owner avi --dir ~/notes --json
 org2 run start RUN_ID --dir ~/notes
-org2 run artifact RUN_ID --path views/launch-brief.org2 --role view \
+org2 run artifact RUN_ID --path views/launch-brief.org --role view \
   --review-status review-required --dir ~/notes
 org2 review list --status pending --dir ~/notes --json
 org2 run complete RUN_ID \
@@ -188,14 +188,14 @@ org2 workflow save RUN_ID --id launch-briefing --dir ~/notes</code></pre>
 <p>Install and execute the built-in flagship recipe with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
 org2 workflow run meeting-to-controlled-execution \
-  --input meeting=raw/meetings/2026-07-14.org2 \
+  --input meeting=raw/meetings/2026-07-14.org \
   --input output=views/meetings/2026-07-14 --dir ~/notes</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="write-examples">Write examples</h1>
 <p>Preview a planning change, then apply the same operation after review:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --format diff
-org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 plan set --file projects.org --line 42 --kind scheduled --date 2026-07-20 --format diff
+org2 plan set --file projects.org --line 42 --kind scheduled --date 2026-07-20 --apply</code></pre>
 <p>Create a cited generated view without silently rewriting canonical notes:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 context &quot;launch risks&quot; --dir ~/notes --recursive --format json &gt; compiled/launch-context.json
 org2 lint --dir ~/notes --recursive --format json</code></pre>

@@ -269,7 +269,7 @@ const x = 1
 #+end_src
 #+end_example
 
-New =.org= documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to =#+begin_src= / =#+end_src= and backtick inline code to ordinary Org inline markup whenever edited =.org= source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax. Existing =.org2= files and the default lossless parser/printer preserve their original spelling.
+New =.org= documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to =#+begin_src= / =#+end_src= and backtick inline code to ordinary Org inline markup whenever edited =.org= source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax.
 
 File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:
 

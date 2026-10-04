@@ -129,7 +129,7 @@ org2 server token revoke --id TOKEN_ID --apply</code></pre>
 <tr><th>MCP capability</th><th>Current Org2 surface</th></tr>
 </thead>
 <tbody>
-<tr><td>Resources</td><td>Every canonical, non-hidden, non-archived <code>.org</code> and <code>.org2</code> file beneath the selected corpus, addressed as <code>org2://corpus/PATH</code></td></tr>
+<tr><td>Resources</td><td>Every canonical, non-hidden, non-archived <code>.org</code> file beneath the selected corpus, addressed as <code>org2://corpus/PATH</code></td></tr>
 <tr><td>Prompts</td><td>Authored Org2 workflows, including their declared inputs</td></tr>
 <tr><td>Tools</td><td>Three cited retrieval tools plus five coordination and durable-work operations; remote HTTP exposes only the five read-only tools</td></tr>
 </tbody>
@@ -151,7 +151,7 @@ org2 server token revoke --id TOKEN_ID --apply</code></pre>
 <h1 id="corpus-and-safety-boundaries">Corpus and safety boundaries</h1>
 <ul>
 <li><p><code>--dir</code> selects the only corpus exposed by that server process.</p></li>
-<li><p>Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical <code>.org</code> and <code>.org2</code> source.</p></li>
+<li><p>Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical <code>.org</code> source.</p></li>
 <li><p>Workflow prompts and resource listing are read-only.</p></li>
 <li><p>The headless HTTP endpoint exposes only <code>org2_search</code>, <code>org2_fetch</code>, <code>org2_context</code>, <code>org2_agent_profile_resolve</code>, and <code>org2_run_list</code>. Every HTTP token currently has only the <code>corpus:read</code> scope.</p></li>
 <li><p>Trusted stdio additionally exposes run creation, run transition, and thread posting. Those are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second <code>--apply</code> preview inside those tools.</p></li>

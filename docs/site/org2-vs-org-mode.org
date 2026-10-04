@@ -11,7 +11,7 @@ Two names matter here. *OpenOrg* is the application. *Org2* is the independently
 |----------+----------+----------------|
 | What is it? | A major mode and extensive toolset for GNU Emacs | A native workspace built on a standalone parser/runtime, CLI, and semantic profile |
 | Natural home | Emacs | OpenOrg for Mac, VS Code, the CLI, and lightweight iOS workflows |
-| Source files | =.org= | Uses =.org= by default; continues to read and preserve existing =.org2= files |
+| Source files | =.org= | =.org= |
 | Editing | Deep structural editing, folding, capture, refile, tables, and keyboard workflows | Native rendered/source views and a VS Code extension; less editing depth than Org Mode |
 | Planning | Highly configurable TODOs, agendas, clocks, habits, repeaters, reports, and logs | Common TODO and planning semantics shared by the Mac app, VS Code, CLI, and agenda TUI |
 | Tables and code | Spreadsheet-like tables and the mature Babel ecosystem | Safe =#+TBLFM:= evaluation, structured tables, preserved source blocks, SQL-backed data notes, and charts; not a Babel replacement |
@@ -68,7 +68,7 @@ None of that requires AI. Parsing, agenda, links, graph checks, data materializa
 * Compatibility in practice
 
 - Existing =.org= files are normal Org2 compiler input.
-- OpenOrg creates human-facing documents as =.org=. Existing =.org2= files remain supported and can be opened in =org-mode= with a simple file association.
+- OpenOrg creates documents as ordinary =.org= files, which open in =org-mode= without extra configuration.
 - Common headings, TODOs, planning lines, properties, tags, links, blocks, lists, tables, and timestamps should be unsurprising in either editor.
 - Org2-specific declarations remain readable text in Emacs, but Emacs does not automatically give them Org2 behavior.
 - Custom Emacs Lisp, complex Babel graphs, specialized export backends, and heavily customized agenda rules do not port merely because the underlying file parses.
@@ -88,7 +88,7 @@ OpenOrg is worth a look if you like Org's plain-text model but want:
 - local data and meeting workflows beside your notes,
 - review and approval machinery for work delegated to agents.
 
-Using both is reasonable. Org Mode can remain the editor for =.org= and =.org2= files while Org2 supplies additional views and automation. Just treat the documented compatibility boundary as real rather than assuming that every Emacs customization has a portable equivalent.
+Using both is reasonable. Org Mode can remain the editor for =.org= files while Org2 supplies additional views and automation. Just treat the documented compatibility boundary as real rather than assuming that every Emacs customization has a portable equivalent.
 
 * Related
 

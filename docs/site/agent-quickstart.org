@@ -1,7 +1,7 @@
 #+TITLE: Agent quickstart
 #+SUBTITLE: Discover and use Org2 safely in a few commands
 
-This page is the shortest path for any local, remote, hosted, or self-hosted agent or model to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org2= and =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
+This page is the shortest path for any local, remote, hosted, or self-hosted agent or model to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
 
 Every client can use the same cited retrieval, run/workflow files, CLI JSON, and MCP interfaces. Optional runtime adapters add native chat, lifecycle, scheduling, and gateway behavior without making a particular agent, provider, or model the owner of the workspace. The currently shipped adapters are documented below as implementations, not requirements.
 
@@ -130,10 +130,10 @@ The OpenClaw integration also fails closed on direct =gog gmail drafts create|up
 org2 run create --title "Prepare a cited launch briefing" \
   --goal "Prepare the briefing with source citations and a reviewed PDF" \
   --accept "A reviewed briefing and PDF exist" \
-  --context notes/launch.org2 --capability agent-context --capability publish \
+  --context notes/launch.org --capability agent-context --capability publish \
   --owner avi --dir ~/notes --json
 org2 run start RUN_ID --dir ~/notes
-org2 run artifact RUN_ID --path views/launch-brief.org2 --role view \
+org2 run artifact RUN_ID --path views/launch-brief.org --role view \
   --review-status review-required --dir ~/notes
 org2 review list --status pending --dir ~/notes --json
 org2 run complete RUN_ID \
@@ -149,7 +149,7 @@ Install and execute the built-in flagship recipe with:
 #+begin_src sh
 org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
 org2 workflow run meeting-to-controlled-execution \
-  --input meeting=raw/meetings/2026-07-14.org2 \
+  --input meeting=raw/meetings/2026-07-14.org \
   --input output=views/meetings/2026-07-14 --dir ~/notes
 #+end_src
 
@@ -158,8 +158,8 @@ org2 workflow run meeting-to-controlled-execution \
 Preview a planning change, then apply the same operation after review:
 
 #+begin_src sh
-org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --format diff
-org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --apply
+org2 plan set --file projects.org --line 42 --kind scheduled --date 2026-07-20 --format diff
+org2 plan set --file projects.org --line 42 --kind scheduled --date 2026-07-20 --apply
 #+end_src
 
 Create a cited generated view without silently rewriting canonical notes:

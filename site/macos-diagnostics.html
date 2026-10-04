@@ -70,10 +70,10 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="run-the-watchdog">Run the watchdog</h1>
 <p>Build and start the helper from the repository root:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run diagnostics:macos</code></pre>
-<p>By default it follows the daily app with bundle identifier <code>org.org2.workspace</code> and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in <code>org2.json</code>. Pass an explicit corpus or monitor the isolated Codex app when needed:</p>
+<p>By default it follows the daily app with bundle identifier <code>org.org.workspace</code> and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in <code>org2.json</code>. Pass an explicit corpus or monitor the isolated Codex app when needed:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run diagnostics:macos -- --corpus /path/to/corpus
 npm run diagnostics:macos -- \
-  --bundle-id org.org2.workspace.codex \
+  --bundle-id org.org.workspace.codex \
   --corpus /path/to/disposable-corpus</code></pre>
 <p>Press <code>Control-C</code> to stop. Run <code>npm run diagnostics:macos -- --help</code> for every threshold and override.</p>
 <p>The installed app must include the matching heartbeat responder for direct main-thread hang detection. When monitoring an older build, the helper reports that the responder is unavailable and continues with CPU and memory monitoring instead of treating the missing responder as a hang.</p>
@@ -94,7 +94,7 @@ npm run diagnostics:macos -- \
 <h1 id="interaction-latency">Interaction latency</h1>
 <p>The app separately instruments ordinary UI responsiveness at frame scale. It
 records pointer-event-to-window-update, source-editor-key-to-draw, and AI
-composer-key-to-draw intervals in the <code>org.org2.workspace/InteractionLatency</code>
+composer-key-to-draw intervals in the <code>org.org.workspace/InteractionLatency</code>
 unified-log category and as Instruments points of interest. A sample over the
 60 Hz frame budget (16.7 ms) is logged immediately; every 120 samples the app
 also reports rolling p95. This is deliberately distinct from the watchdog:
@@ -111,14 +111,14 @@ architecture.</p>
 <h1 id="cli-latency">CLI latency</h1>
 <p>Every CLI and bundled renderer process launched by Org2 Workspace emits one
 structured completion record in the
-<code>org.org2.workspace/CLILatency</code> unified-log category. Records include a
+<code>org.org.workspace/CLILatency</code> unified-log category. Records include a
 sanitized command identity, elapsed milliseconds, outcome, exit status, and
 standard-input, standard-output, and standard-error byte counts. They never
 include command data arguments, corpus paths, search queries, environment
 values, or output contents.</p>
 <p>Recent records can be inspected during development with:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">log show --last 10m \
-  --predicate 'subsystem == &quot;org.org2.workspace&quot; &amp;&amp; category == &quot;CLILatency&quot;'</code></pre>
+  --predicate 'subsystem == &quot;org.org.workspace&quot; &amp;&amp; category == &quot;CLILatency&quot;'</code></pre>
 <p>The record is emitted once, after the process and its output collectors settle,
 so it does not add polling or per-byte work to a CLI invocation. The Swift CLI
 wrapper also accepts an injected structured metric sink for focused tests and
@@ -141,9 +141,9 @@ in-process diagnostics consumers.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="full-workspace-refresh-timings">Full workspace refresh timings</h1>
-<p>The <code>org.org2.workspace/WorkspaceRefresh</code> unified-log category records each awaited full-refresh stage and total wall time as <code>stage</code> and <code>elapsed_ms</code>. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing <code>CLILatency</code> category separates command execution costs; <code>workspace agent-state</code> also returns timings for its individual list sections.</p>
+<p>The <code>org.org.workspace/WorkspaceRefresh</code> unified-log category records each awaited full-refresh stage and total wall time as <code>stage</code> and <code>elapsed_ms</code>. Stage names contain no corpus paths or document text. Independent stages overlap, so their durations do not sum to total wall time. Background health and indexing tasks may finish later. The existing <code>CLILatency</code> category separates command execution costs; <code>workspace agent-state</code> also returns timings for its individual list sections.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">/usr/bin/log show --last 10m --info --style compact \
-  --predicate 'subsystem == &quot;org.org2.workspace&quot; &amp;&amp; (category == &quot;WorkspaceRefresh&quot; || category == &quot;CLILatency&quot;)'</code></pre>
+  --predicate 'subsystem == &quot;org.org.workspace&quot; &amp;&amp; (category == &quot;WorkspaceRefresh&quot; || category == &quot;CLILatency&quot;)'</code></pre>
 </section>
 </main>
 </div>

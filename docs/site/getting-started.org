@@ -74,7 +74,7 @@ Open *Agenda* to see actionable items collected across the entire corpus. Mark a
 
 * When you're ready: the mental model
 
-OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus* (the ordinary folder of =.org=, =.org2=, and related files) is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
+OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus* (the ordinary folder of =.org= and related files) is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
 
 The agent harness you connect is a *runtime*: the engine that actually reasons and acts. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.
 
@@ -247,12 +247,6 @@ Point the Mac app at the existing folder with *Open an existing corpus*, or try 
 
 #+begin_src sh
 org2 agenda --dir /path/to/your/org-directory --recursive
-#+end_src
-
-New documents created by OpenOrg use =.org=. Existing =.org2= files remain fully supported and are never renamed automatically. If you also want Emacs to recognize those existing =.org2= files, add this association:
-
-#+begin_src emacs-lisp
-(add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))
 #+end_src
 
 Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.

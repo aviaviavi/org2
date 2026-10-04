@@ -32,7 +32,6 @@ Then read =:help org2=.
 
 * Current features
 
-- =*.org2= filetype detection
 - syntax highlighting for headings, TODO states, planning lines, drawers, links, blocks, tables, and comments
 - folding by heading level
 - list/property folding helpers

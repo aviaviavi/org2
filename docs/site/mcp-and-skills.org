@@ -92,7 +92,7 @@ org2 server token revoke --id TOKEN_ID --apply
 
 | MCP capability | Current Org2 surface |
 |----------------+----------------------|
-| Resources | Every canonical, non-hidden, non-archived =.org= and =.org2= file beneath the selected corpus, addressed as =org2://corpus/PATH= |
+| Resources | Every canonical, non-hidden, non-archived =.org= file beneath the selected corpus, addressed as =org2://corpus/PATH= |
 | Prompts | Authored Org2 workflows, including their declared inputs |
 | Tools | Three cited retrieval tools plus five coordination and durable-work operations; remote HTTP exposes only the five read-only tools |
 
@@ -112,7 +112,7 @@ The read-only retrieval tools share the same incremental compiler and cited cont
 * Corpus and safety boundaries
 
 - =--dir= selects the only corpus exposed by that server process.
-- Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical =.org= and =.org2= source.
+- Resource reads stay beneath the canonical corpus root, reject symlinked files, hidden runtime state, archives, and ignored sync artifacts, and expose only canonical =.org= source.
 - Workflow prompts and resource listing are read-only.
 - The headless HTTP endpoint exposes only =org2_search=, =org2_fetch=, =org2_context=, =org2_agent_profile_resolve=, and =org2_run_list=. Every HTTP token currently has only the =corpus:read= scope.
 - Trusted stdio additionally exposes run creation, run transition, and thread posting. Those are writes. They use the same guarded Org2 records and lifecycle rules as the CLI, but the MCP call itself is the requested action; there is no second =--apply= preview inside those tools.

@@ -135,7 +135,7 @@ node dist/cli.js server service
 node dist/cli.js server service --apply
 #+end_src
 
-The preview shows the complete launchd agent and the exact =launchctl bootstrap= command. Applying writes =~/Library/LaunchAgents/org.org2.server.HOST.plist=; run the returned command to load it. The service starts at user login and restarts after failures. This is a user service, so the Mac must remain logged in. A deliberate =server stop= exits successfully and stays stopped until explicitly started again. After a reboot, sign in to make runtime logins and Keychain available.
+The preview shows the complete launchd agent and the exact =launchctl bootstrap= command. Applying writes =~/Library/LaunchAgents/org.org.server.HOST.plist=; run the returned command to load it. The service starts at user login and restarts after failures. This is a user service, so the Mac must remain logged in. A deliberate =server stop= exits successfully and stays stopped until explicitly started again. After a reboot, sign in to make runtime logins and Keychain available.
 
 Logs live beside the server configuration as =server.log= and =server-error.log=. Pairing codes are returned through the private control socket, not written to service logs. Use stable checkout and executable paths for a persistent installation; do not remove the installed build directory.
 

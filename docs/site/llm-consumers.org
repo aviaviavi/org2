@@ -84,7 +84,7 @@ Agent conversations that matter should be represented as durable Org2 headings i
 :SESSION: openclaw:session:abc123
 :STATUS: active
 :CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
-:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:TRANSCRIPT: file:threads/thread-1.transcript.org
 :STORAGE: summary
 :END:
 
@@ -194,7 +194,7 @@ Data-backed reports should keep executable details and materialized artifacts as
 :BACKFILL_STATUS: complete
 :FRESHNESS: live
 :REFRESH_REF: query-data:package_fetches_by_company
-:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org2 --results package_fetches_by_company --out views/package_fetches_by_company.org2
+:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
 :REFRESH_STATUS: ready
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-06-13T12:30:00-07:00
@@ -260,8 +260,8 @@ Event-backed records use the same =dataLink= envelope, but emphasize timeline pr
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:
 
-- =views/project-alpha-brief.org2= for a cited briefing
-- =views/weekly-digest.org2= for a generated report
+- =views/project-alpha-brief.org= for a cited briefing
+- =views/weekly-digest.org= for a generated report
 - =compiled/retrieval-index.json= for a derived machine artifact
 - patch files or draft notes for proposed canonical changes
 

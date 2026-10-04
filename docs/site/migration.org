@@ -10,9 +10,8 @@ This page keeps migration simple: keep existing notes working while you adopt Or
 
 * New files
 
-- Prefer =.org= for new notes and other human-facing documents.
+- Use =.org= for notes and other documents.
 - OpenOrg, the CLI, LSP, and editor integrations save accepted shorthand in ordinary Org syntax when the target file ends in =.org=.
-- Keep existing =.org2= files in place unless you deliberately choose to migrate them; they remain fully supported and retain lossless spelling.
 
 * Roam link migration
 

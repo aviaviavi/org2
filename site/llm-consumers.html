@@ -135,7 +135,7 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 :SESSION: openclaw:session:abc123
 :STATUS: active
 :CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
-:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:TRANSCRIPT: file:threads/thread-1.transcript.org
 :STORAGE: summary
 :END:
 
@@ -233,7 +233,7 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 :BACKFILL_STATUS: complete
 :FRESHNESS: live
 :REFRESH_REF: query-data:package_fetches_by_company
-:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org2 --results package_fetches_by_company --out views/package_fetches_by_company.org2
+:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
 :REFRESH_STATUS: ready
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-06-13T12:30:00-07:00
@@ -288,8 +288,8 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 <h1 id="what-to-save-back">What to save back</h1>
 <p>Good generated outputs are inspectable artifacts, not silent canonical edits:</p>
 <ul>
-<li><p><code>views/project-alpha-brief.org2</code> for a cited briefing</p></li>
-<li><p><code>views/weekly-digest.org2</code> for a generated report</p></li>
+<li><p><code>views/project-alpha-brief.org</code> for a cited briefing</p></li>
+<li><p><code>views/weekly-digest.org</code> for a generated report</p></li>
 <li><p><code>compiled/retrieval-index.json</code> for a derived machine artifact</p></li>
 <li><p>patch files or draft notes for proposed canonical changes</p></li>
 </ul>

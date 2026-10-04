@@ -4,11 +4,7 @@ OpenOrg uses ordinary Org files for new human-facing documents, so Emacs can edi
 
 * Use org-mode for editing
 
-Ordinary =.org= files already open in Org Mode. To edit an existing =.org2= file there too, add this association:
-
-#+begin_src emacs-lisp
-(add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))
-#+end_src
+OpenOrg documents are ordinary =.org= files, so they open in Org Mode without extra configuration.
 
 That gives you mature Org editing, outline navigation, folding, timestamps, TODO keywords, and tables while Org2 continues to own the standalone parser, CLI, publishing, and compiler semantics.
 
@@ -27,9 +23,9 @@ Mutating commands preview by default and require =--apply= to write files, which
 
 * Coexistence notes
 
-- Existing =.org= files can remain in place; Org2 can scan =.org= and =.org2= files.
+- Existing =.org= files can remain in place; Org2 scans them directly.
 - Org2 is not a bug-for-bug Org Mode clone. It keeps common Org-shaped constructs but chooses clearer behavior where portability needs it.
-- OpenOrg and its writers canonicalize accepted source-block sugar before saving =.org=. Existing =.org2= files may retain shorthand that Org Mode treats as ordinary text; compiler/provenance properties remain readable even when Emacs does not assign them Org2 semantics.
+- OpenOrg and its writers canonicalize accepted source-block sugar before saving =.org=. Compiler/provenance properties remain readable even when Emacs does not assign them Org2 semantics.
 - If you rely on advanced Org Mode packages, keep using them; Org2 can act as a parallel compiler/runtime over the same text where the semantics overlap.
 
 * Current status

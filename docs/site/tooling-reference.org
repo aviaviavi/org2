@@ -116,7 +116,7 @@ dependency-install step.
 }
 #+end_src
 
-The =engines.org2= field accepts exact versions, comparison sets, =^= and =~=
+The =engines.org= field accepts exact versions, comparison sets, =^= and =~=
 ranges, and =||= alternatives. An incompatible package is rejected before it
 enters the store. Environment variables are absent by default apart from a
 small process baseline; a manifest must name each additional variable it wants
@@ -354,11 +354,11 @@ org2 archive --file notes.org --pos 120:0 --apply
 org2 refile --file notes.org --pos 120:0 --to-file projects.org --to-pos 40:0 --apply
 #+end_src
 
-Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= and =.org2= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
+Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
 
 * Formatter
 
-Deterministic formatting for Org and Org2 files. File-based formatting automatically rewrites accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax when the target ends in =.org=. Mixed directory operations choose the profile independently for each file. Existing =.org2= files retain lossless spelling unless =--canonical-org= is explicitly supplied. Use that flag for stdin, which has no filename, or to force the canonical profile for another target. OpenOrg, the LSP, and VS Code follow the same extension-aware rule. Syntax canonicalization remains independent of optional general format-on-save settings.
+Deterministic formatting for Org and Org2 files. File-based formatting automatically rewrites accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax when the target ends in =.org=. Mixed directory operations choose the profile independently for each file. Use =--canonical-org= for stdin, which has no filename, or to force the canonical profile for another target. OpenOrg, the LSP, and VS Code follow the same extension-aware rule. Syntax canonicalization remains independent of optional general format-on-save settings.
 
 #+begin_src sh
 org2 fmt --dir ~/notes --recursive --check
@@ -881,7 +881,7 @@ For repeated whole-corpus reads, =--incremental= stores compiled semantics plus 
 
 * Search + cited query
 
-Use =search= for literal, case-insensitive full-text lookup over =.org= and =.org2= files, and =query= when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless =--recursive= is set. The [[file:llm-consumers.org][External LLM consumer pattern]] page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.
+Use =search= for literal, case-insensitive full-text lookup over =.org= files, and =query= when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless =--recursive= is set. The [[file:llm-consumers.org][External LLM consumer pattern]] page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.
 
 #+begin_src sh
 org2 search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
