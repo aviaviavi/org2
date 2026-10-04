@@ -24700,10 +24700,20 @@ public final class WorkspaceStore {
   ) async -> Bool {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: aiChatSteerReadinessTimeout)
+    // OpenCode reports its session only once its private server, providers,
+    // and MCP servers are up; a managed remote turn first saves durably and
+    // connects over SSH. That routinely takes longer than the deadline, and
+    // turning the guidance into a queued follow-up then surprises the user.
+    // Its session always arrives while this host drives the turn, so wait for
+    // that turn. (`isAIChatThreadRunning` alone would also count the pending
+    // steer itself and could wait forever.)
+    let waitsForWholeTurn = aiChatThreads.first(where: { $0.id == threadID })?.runtime == .openCode
     while !canSteerAIChatThread(threadID) {
       guard isCurrentAIChatCorpusContext(context),
             isAIChatThreadRunning(threadID),
-            clock.now < deadline,
+            waitsForWholeTurn
+              ? drainingAIChatThreadIDs.contains(threadID)
+              : clock.now < deadline,
             !Task.isCancelled
       else { return false }
       try? await Task.sleep(for: .milliseconds(200))
@@ -26899,6 +26909,10 @@ public final class WorkspaceStore {
     thread: AIChatThread,
     transcriptURL: URL
   ) {
+    // Callers often captured `thread` before a long turn. Writing that copy
+    // back would drop steers and replies added meanwhile, so only its ID is
+    // trusted here.
+    let thread = aiChatThread(thread.id, transcriptURL: transcriptURL) ?? thread
     guard sessionID != thread.runtimeThreadID(forDestinationID: destinationID) else { return }
     var runtimeThreadIDs = thread.runtimeThreadIDsByDestination
     runtimeThreadIDs[destinationID] = sessionID
@@ -31831,7 +31845,9 @@ public final class WorkspaceStore {
         }
         return
       }
-      let hydrated = self.aiChatThreads[index].hydrating(messages: loaded.messages)
+      let hydrated = self.aiChatThreads[index].hydrating(
+        messages: Self.settlingAnsweredOpenCodeRemoteTurns(in: [loaded]).threads[0].messages
+      )
       AIChatTranscriptStore.shared.recordAdoptedThreads([hydrated], legacyURL: transcriptURL)
       self.unloadedAIChatThreadIDs.remove(id)
       let cachedMessageCount = (hydrated.isSettled
@@ -40804,7 +40820,9 @@ public final class WorkspaceStore {
       loaded.snapshot.threads.filter { !protectedIDs.contains($0.id) }
     )
     let imported = aiChatReadState.applying(
-      to: Self.interruptUnresolvedAIChatSteers(in: importedCandidates).threads,
+      to: Self.interruptUnresolvedAIChatSteers(
+        in: Self.settlingAnsweredOpenCodeRemoteTurns(in: importedCandidates).threads
+      ).threads,
       transcriptURL: target
     )
     let preserved = aiChatThreads.filter { protectedIDs.contains($0.id) }
@@ -41837,7 +41855,10 @@ public final class WorkspaceStore {
     hasAuthoritativeAIChatTranscriptState = true
     aiChatThreadSettlementSettings = transcript.settlementSettings
     let migratedThreads = migrateAIChatThreadDestinations(transcript.threads)
-    let unresolvedSteerRecovery = Self.interruptUnresolvedAIChatSteers(in: migratedThreads)
+    let answeredTurnRecovery = Self.settlingAnsweredOpenCodeRemoteTurns(in: migratedThreads)
+    let unresolvedSteerRecovery = Self.interruptUnresolvedAIChatSteers(
+      in: answeredTurnRecovery.threads
+    )
     let restoredThreads = unresolvedSteerRecovery.threads
     let migratedThreadMetadata = zip(transcript.threads, migratedThreads).contains { pair in
       pair.0.sessionKey != pair.1.sessionKey
@@ -41903,10 +41924,46 @@ public final class WorkspaceStore {
     if shouldPersist || (allowsMaintenanceWrites && (
       migratedThreadMetadata
         || unresolvedSteerRecovery.changed
+        || answeredTurnRecovery.changed
         || !autoSettledIDs.isEmpty
     )) {
       persistAIChatTranscript()
     }
+  }
+
+  /// A managed remote OpenCode reply carries an ID derived from the prompt it
+  /// answers, so its presence proves that prompt was delivered. A replica
+  /// that reverted the prompt to `sending` (an older revision written by
+  /// another host) otherwise leaves the chat "working" forever, with every
+  /// later message queued behind a turn that already finished.
+  nonisolated static func settlingAnsweredOpenCodeRemoteTurns(
+    in threads: [AIChatThread]
+  ) -> (threads: [AIChatThread], changed: Bool) {
+    var changed = false
+    let settled = threads.map { thread -> AIChatThread in
+      guard thread.messages.contains(where: {
+        $0.role == .user && $0.deliveryStatus == .sending
+      }) else { return thread }
+      let assistantIDs = Set(thread.messages.lazy.filter { $0.role == .assistant }.map(\.id))
+      guard !assistantIDs.isEmpty else { return thread }
+      var settledIDs = Set<UUID>()
+      let messages = thread.messages.map { message -> AIChatMessage in
+        guard message.role == .user,
+              message.deliveryStatus == .sending,
+              assistantIDs.contains(openCodeRemoteReplyID(for: message.id))
+        else { return message }
+        settledIDs.insert(message.id)
+        return message.replacingDeliveryStatus(.sent, sendFailure: nil)
+      }
+      guard !settledIDs.isEmpty else { return thread }
+      changed = true
+      var repaired = thread.replacingMessages(messages)
+      if let pendingTurn = repaired.pendingTurn, settledIDs.contains(pendingTurn.userMessageID) {
+        repaired = repaired.replacingPendingTurn(nil)
+      }
+      return repaired
+    }
+    return (settled, changed)
   }
 
   nonisolated private static func interruptUnresolvedAIChatSteers(

@@ -1262,7 +1262,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       if tombstones.contains(local.message.id) { return nil }
       guard let remote = remoteByID[local.message.id], remote != local else { return local }
       if let base = baseByID[local.message.id] {
-        if matches(local, base) { return remote }
+        if matches(local, base) { return keepingSettledSend(local, over: remote) }
         if matches(remote, base) { return local }
       }
       return deliveryRank(remote.message) > deliveryRank(local.message) ? remote : local
@@ -1309,6 +1309,38 @@ final class AIChatTranscriptStore: @unchecked Sendable {
         .map { $0 + 1 } ?? 0
       result.insert(addition, at: index)
     }
+  }
+
+  /// The other replica may descend from an older revision than this copy's
+  /// base (another host wrote while it had not yet seen this copy's reply).
+  /// A sent user message is terminal (only failed sends are retried), so such
+  /// a replica must never reopen it: the turn would look "working" forever,
+  /// and later messages would queue behind it.
+  private static func keepingSettledSend(
+    _ local: StoredMessage,
+    over remote: StoredMessage
+  ) -> StoredMessage {
+    guard local.message.role == .user,
+          local.message.deliveryStatus == .sent,
+          remote.message.deliveryStatus != .sent
+    else { return remote }
+    return local
+  }
+
+  static func threeWayMergeForTesting(
+    local: [AIChatMessage],
+    remote: [AIChatMessage],
+    base: [AIChatMessage]?
+  ) -> [AIChatMessage] {
+    func stored(_ messages: [AIChatMessage]) -> [StoredMessage] {
+      messages.map { StoredMessage(message: $0.replacingAttachments([]), attachments: []) }
+    }
+    return threeWayMerge(
+      local: stored(local),
+      remote: stored(remote),
+      base: base,
+      tombstones: []
+    ).map(\.message)
   }
 
   private static func deliveryRank(_ message: AIChatMessage) -> Int {
