@@ -4096,7 +4096,9 @@ public final class WorkspaceStore {
         return file.relativePath.lowercased().contains(target)
           || file.name.lowercased().contains(target)
       }) {
-        selectCorpusFile(file)
+        // Match the shipped flow: opening a file from the sidebar tree hides
+        // the Files list pane and shows the document beside the sidebar.
+        openSidebarFile(file)
       }
     default:
       openHome()

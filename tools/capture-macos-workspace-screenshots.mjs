@@ -30,17 +30,20 @@ const scenarios = [
   {
     mode: "files",
     target: "notes/projects/beacon-launch",
+    scale: 2,
     fileName: "macos-workspace-files.png",
   },
   {
     mode: "files",
     target: "notes/projects/beacon-launch",
     contextTab: "brief",
+    scale: 2,
     fileName: "macos-workspace-context.png",
   },
   {
     mode: "files",
     target: "views/launch-readiness-data",
+    scale: 2,
     fileName: "macos-workspace-data.png",
   },
   {
@@ -84,11 +87,11 @@ const scenarios = [
   {
     mode: "files",
     target: "views/launch-readiness-data",
-    width: 1400,
+    width: 900,
     height: 1150,
     scale: 2,
     settleMs: 6000,
-    crop: { x: 790, y: 190, width: 610, height: 750 },
+    crop: { x: 236, y: 148, width: 644, height: 772 },
     fileName: "home-data-notebook.png",
   },
   {

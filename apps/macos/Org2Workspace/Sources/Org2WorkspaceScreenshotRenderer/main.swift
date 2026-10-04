@@ -209,8 +209,15 @@ struct Org2WorkspaceScreenshotRenderer {
       backing: .buffered,
       defer: false
     )
-    window.setFrame(bounds, display: false)
+    let isPlainCapture = verificationTabIDs.isEmpty && !verifiesCodeCopy
+    window.setFrame(
+      isPlainCapture ? pointerFreeFrame(size: bounds.size) : bounds,
+      display: false
+    )
     window.contentView = hostingView
+    // Plain captures must not pick up hover state from wherever the real
+    // pointer happens to be; interaction checks keep normal event delivery.
+    window.ignoresMouseEvents = isPlainCapture
     window.makeKeyAndOrderFront(nil)
     // HTML-backed document panes are created only after the SwiftUI hierarchy is
     // attached to a window. Give WKWebView enough time to finish its first paint
@@ -226,6 +233,7 @@ struct Org2WorkspaceScreenshotRenderer {
     try? await Task.sleep(nanoseconds: renderSettleNanoseconds)
     window.layoutIfNeeded()
     hostingView.layoutSubtreeIfNeeded()
+    await waitForVisibleContent(in: hostingView, store: store)
     hostingView.displayIfNeeded()
 
     if verifiesCodeCopy {
@@ -493,6 +501,71 @@ struct Org2WorkspaceScreenshotRenderer {
   @MainActor
   private static func settleTabEvents(durationNanoseconds: UInt64 = 100_000_000) async {
     try? await Task.sleep(nanoseconds: durationNanoseconds)
+  }
+
+  // SwiftUI hover tracking follows the live pointer even when the window
+  // ignores mouse events, so keep the capture window out from under it. Prefer
+  // the origin; otherwise sit just beside the pointer on whichever side leaves
+  // the most of the window on screen (so web content keeps rendering).
+  @MainActor
+  private static func pointerFreeFrame(size: NSSize) -> NSRect {
+    let pointer = NSEvent.mouseLocation
+    let origin = NSRect(origin: .zero, size: size)
+    guard origin.insetBy(dx: -8, dy: -8).contains(pointer) else { return origin }
+    let candidates = [
+      NSRect(x: pointer.x + 8, y: 0, width: size.width, height: size.height),
+      NSRect(x: pointer.x - 8 - size.width, y: 0, width: size.width, height: size.height),
+      NSRect(x: 0, y: pointer.y + 8, width: size.width, height: size.height),
+      NSRect(x: 0, y: pointer.y - 8 - size.height, width: size.width, height: size.height),
+    ]
+    func visibleArea(_ frame: NSRect) -> CGFloat {
+      NSScreen.screens.reduce(0) { total, screen in
+        let overlap = screen.frame.intersection(frame)
+        return total + (overlap.isNull ? 0 : overlap.width * overlap.height)
+      }
+    }
+    return candidates.max { visibleArea($0) < visibleArea($1) } ?? origin
+  }
+
+  // A fixed settle delay can still capture a blank document pane or a
+  // spinning Action items panel when a scene opens extra panes. Poll (up to
+  // ten seconds) until async panels have loaded and every visible web view has
+  // painted a non-empty body.
+  @MainActor
+  private static func waitForVisibleContent(in hostingView: NSView, store: WorkspaceStore) async {
+    for _ in 0..<100 {
+      hostingView.layoutSubtreeIfNeeded()
+      var ready = !store.isLoadingEntityActionItems
+      if ready {
+        for webView in visibleWebViews(in: hostingView) {
+          let length = try? await webView.evaluateJavaScript(
+            "document.readyState === 'complete' && document.body ? document.body.innerText.trim().length : 0"
+          ) as? Int
+          if webView.isLoading || (length ?? 0) == 0 {
+            ready = false
+            break
+          }
+        }
+      }
+      if ready { break }
+      try? await Task.sleep(for: .milliseconds(100))
+    }
+    // Let the final layout paint once more before the bitmap is cached.
+    try? await Task.sleep(for: .milliseconds(500))
+    hostingView.layoutSubtreeIfNeeded()
+  }
+
+  @MainActor
+  private static func visibleWebViews(in view: NSView) -> [WKWebView] {
+    if view.isHidden || view.alphaValue == 0 { return [] }
+    if let webView = view as? WKWebView {
+      return webView.bounds.width > 0 && webView.bounds.height > 0 ? [webView] : []
+    }
+    var webViews: [WKWebView] = []
+    for subview in view.subviews {
+      webViews.append(contentsOf: visibleWebViews(in: subview))
+    }
+    return webViews
   }
 
   @MainActor
