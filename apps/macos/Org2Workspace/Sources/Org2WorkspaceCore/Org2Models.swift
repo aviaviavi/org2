@@ -4091,6 +4091,12 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   func metadataOnly() -> AIChatThread {
+    metadataOnly(latestAssistantMessageID: latestAssistantMessageID)
+  }
+
+  /// A metadata-only copy that reports `latestAssistantMessageID` as its
+  /// latest reply, for placeholders whose stored metadata predates that field.
+  func metadataOnly(latestAssistantMessageID storedLatestAssistantMessageID: UUID?) -> AIChatThread {
     AIChatThread(
       id: id,
       title: title,
@@ -4107,7 +4113,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       storedMessageCount: messageCount,
       storedHasUnresolvedLatestDelivery: hasUnresolvedLatestDelivery,
       storedLatestDeliveryNeedsAttention: latestDeliveryNeedsAttention,
-      storedLatestAssistantMessageID: latestAssistantMessageID,
+      storedLatestAssistantMessageID: storedLatestAssistantMessageID,
       isPinned: isPinned,
       isArchived: isArchived,
       settledAt: settledAt,

@@ -839,6 +839,11 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       selectedThreadID: manifest.selectedThreadID
     )
     var unloaded = Set<UUID>()
+    let storeURL = storeDirectory(for: legacyURL)
+    let entriesByID = Dictionary(
+      manifest.threads.map { ($0.metadata.id, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
     let threads = metadata.map { thread -> AIChatThread in
       guard eagerIDs.contains(thread.id),
             let loaded = loadThread(
@@ -849,7 +854,11 @@ final class AIChatTranscriptStore: @unchecked Sendable {
             )
       else {
         if thread.storedMessageCount != nil { unloaded.insert(thread.id) }
-        return thread
+        return backfillingLatestAssistantMessageID(
+          thread,
+          entry: entriesByID[thread.id],
+          storeURL: storeURL
+        )
       }
       return loaded
     }
@@ -862,6 +871,57 @@ final class AIChatTranscriptStore: @unchecked Sendable {
       unloadedThreadIDs: unloaded,
       recoveryStatus: state.recoveryStatus
     )
+  }
+
+  /// Shard names are content digests, so the latest reply derived from a
+  /// shard never changes. Caching by digest keeps repeated synced loads from
+  /// decoding the same legacy shards again before the backfill is persisted.
+  private final class LatestAssistantReplyCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: UUID?] = [:]
+
+    func value(for digest: String) -> UUID?? {
+      lock.lock()
+      defer { lock.unlock() }
+      return values[digest]
+    }
+
+    func set(_ value: UUID?, for digest: String) {
+      lock.lock()
+      values[digest] = value
+      lock.unlock()
+    }
+  }
+
+  private static let latestAssistantReplyCache = LatestAssistantReplyCache()
+
+  /// Remote clients key reply notifications on a thread's latest assistant
+  /// reply. Placeholders written before that ID was stored would report no
+  /// reply until loaded, then announce the old reply as new. Derive the ID
+  /// once from the shard; the next manifest write persists it.
+  private static func backfillingLatestAssistantMessageID(
+    _ thread: AIChatThread,
+    entry: ManifestThread?,
+    storeURL: URL
+  ) -> AIChatThread {
+    guard thread.messages.isEmpty,
+          thread.storedLatestAssistantMessageID == nil,
+          (thread.storedMessageCount ?? 0) > 0,
+          let entry
+    else { return thread }
+    let latest: UUID?
+    if let cached = latestAssistantReplyCache.value(for: entry.shardDigest) {
+      latest = cached
+    } else {
+      guard let shard = loadThreadShard(entry, storeURL: storeURL) else { return thread }
+      latest = shard.messages.last(where: { stored in
+        stored.message.role == .assistant
+          && stored.message.content.contains(where: { !$0.isWhitespace })
+      })?.message.id
+      latestAssistantReplyCache.set(latest, for: entry.shardDigest)
+    }
+    guard let latest else { return thread }
+    return thread.metadataOnly(latestAssistantMessageID: latest)
   }
 
   private static func eagerThreadIDs(

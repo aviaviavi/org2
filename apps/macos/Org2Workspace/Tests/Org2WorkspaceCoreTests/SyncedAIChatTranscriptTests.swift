@@ -21,6 +21,63 @@ private actor SyncedChatSendGate {
 }
 
 final class SyncedAIChatTranscriptTests: XCTestCase {
+  /// Manifests written before placeholders stored their latest reply ID load
+  /// settled threads without messages. Their thread summaries must still
+  /// report the reply, or an iPhone announces it as new once it is loaded.
+  func testLegacyPlaceholderLoadsWithItsLatestReplyIdentity() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("server.json")
+    let reply = AIChatMessage(role: .assistant, content: "Milk, eggs, and bread.")
+    let groceries = AIChatThread(
+      title: "Groceries today",
+      sessionKey: "groceries",
+      messages: [AIChatMessage(role: .user, content: "What do I need?"), reply],
+      isArchived: true
+    )
+    let unanswered = AIChatThread(
+      title: "Unanswered",
+      sessionKey: "unanswered",
+      messages: [AIChatMessage(role: .user, content: "Hello?")],
+      isArchived: true
+    )
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [groceries, unanswered],
+      selectedThreadID: nil,
+      settlementSettings: AIChatThreadSettlementSettings()
+    ), legacyURL: url)
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+
+    // Rewrite the placeholder the way pre-0.8.7 writers left it: a message
+    // count and no latest reply ID.
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [groceries.metadataOnly(latestAssistantMessageID: nil), unanswered.metadataOnly()],
+      selectedThreadID: nil,
+      settlementSettings: AIChatThreadSettlementSettings()
+    ), legacyURL: url)
+    AIChatTranscriptStore.shared.waitUntilIdleForTesting()
+    let manifests = try FileManager.default.contentsOfDirectory(
+      at: AIChatTranscriptStore.storeDirectory(for: url).appendingPathComponent("manifests"),
+      includingPropertiesForKeys: nil
+    ).map { try String(contentsOf: $0, encoding: .utf8) }
+    XCTAssertTrue(manifests.contains { !$0.contains(reply.id.uuidString) })
+
+    let loaded = try XCTUnwrap(AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: url))
+    let placeholder = try XCTUnwrap(loaded.snapshot.threads.first(where: { $0.id == groceries.id }))
+    XCTAssertTrue(placeholder.messages.isEmpty)
+    XCTAssertTrue(loaded.unloadedThreadIDs.contains(groceries.id))
+    let context = MobileRemoteThreadProjectionContext(destinationNamesByID: [:], runningThreadIDs: [])
+    XCTAssertEqual(
+      MobileRemoteThreadProjection.summary(thread: placeholder, context: context).latestAssistantMessageID,
+      reply.id
+    )
+    XCTAssertEqual(placeholder.metadataOnly().storedLatestAssistantMessageID, reply.id)
+    let unansweredPlaceholder = try XCTUnwrap(loaded.snapshot.threads.first(where: { $0.id == unanswered.id }))
+    XCTAssertNil(unansweredPlaceholder.latestAssistantMessageID)
+    XCTAssertEqual(unansweredPlaceholder.storedMessageCount, 1)
+  }
+
   func testValidMarkerReconcilesDivergentImmutableSyncthingBranches() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
