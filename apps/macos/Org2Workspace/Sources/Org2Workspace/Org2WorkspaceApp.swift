@@ -145,6 +145,20 @@ struct Org2WorkspaceApp: App {
 
         Divider()
 
+        Button("Back") {
+          store.navigateBack()
+        }
+        .keyboardShortcut("[", modifiers: [.command])
+        .disabled(!store.canNavigateBack)
+
+        Button("Forward") {
+          store.navigateForward()
+        }
+        .keyboardShortcut("]", modifiers: [.command])
+        .disabled(!store.canNavigateForward)
+
+        Divider()
+
         Button("Show Previous Tab") {
           store.selectPreviousWorkspaceTab()
         }

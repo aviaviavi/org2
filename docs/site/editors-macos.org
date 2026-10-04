@@ -21,12 +21,15 @@ If you already keep dailies under your own names, open *Settings → General →
 
 *Settings → General → Send launch telemetry*, the last setting on that page below *Experimental features*, controls one background event sent to Scarf each time the production Mac app starts. It is enabled by default and applies to all workspaces on this Mac. The event contains only the event name, app version, macOS version, CPU architecture, and telemetry schema version. It includes no notes, chats, file paths, or installation identifier. Scarf receives the request's network address for processing and network-level analytics. Disable the switch to stop future launch events, or set =DO_NOT_TRACK= to =1= or =SCARF_ANALYTICS= to =false= in the launch environment. Telemetry failures do not interrupt startup or retry; Preview, smoke-test, and headless server processes do not send launch events. Daily OpenOrg builds send launch events in both debug (=local-fast=) and release configurations; telemetry eligibility depends on the production bundle identifier, not compiler optimization. This measures launches, not clicks, editing, or chat activity.
 
+*Settings → General → Usage Log* is a separate, local-only switch, off by default. When on, OpenOrg appends interaction events to =usage-events.jsonl= in its Application Support folder: how documents are opened (Quick Open, links, sidebar, backlinks, back and forward), how long they take to appear, Quick Open rank and query length, Start Work, chat turn start and finish times, and Activity view use. Events carry counts, durations, labels, and salted per-install hashes of file paths, never note text, chat text, titles, search queries, or file names. Nothing is uploaded. *Show Log in Finder* reveals the file so you can read it or share it yourself, and *Clear Log* deletes it. The file rotates at 5 MB, keeping one previous file.
+
 #+begin_export html
 <figure class="org2-section-shot"><img src="assets/screenshots/macos-workspace-agenda.png" alt="OpenOrg Agenda showing scheduled tasks and linked note context" loading="eager" /><figcaption>Agenda keeps commitments connected to the notes and decisions behind them.</figcaption></figure>
 #+end_export
 
 - *Agenda* :: see scheduled work and deadlines across one or all open corpora. Filter by date, assignee, status, priority, topic, or text; mark items done, reschedule them, change priority, or open the source note.
 - *Files* :: expand the cached corpus file tree directly in the sidebar, or use the full tree and search surface for Org, Org2, Markdown, CSV, and generated workspace files. The *+* button beside *Files*, *File → New File…*, or =Cmd-Shift-N= creates a note, draft, or scratch file: enter a name and a corpus-relative folder (default =notes=, or the corpus's =roam.nodesDir=). A name such as =Launch post= becomes =notes/launch-post.org= with =#+TITLE: Launch post=, a stable =:ID:= and a =:CREATED:= timestamp; a name ending in =.org=, =.md= or =.txt= is used verbatim. The sheet previews the path, refuses paths outside the corpus, never overwrites an existing file, and opens the new file.
+- *Activity* :: see what is happening across the corpus at a glance (=Cmd-Option-N=). *Now* lists what needs you (approvals, blocked runs, agents waiting on your reply), what agents are working on and where, scheduled automations, files changed today, and the files you were recently in. *Map* lays the same signals over the corpus as a folder treemap: tiles are sized by files and activity and badged for attention, live agent work, schedules, and today's edits. Click a folder to zoom in and a file to open it.
 - *Agent Work* :: follow delegated runs, inspect outputs and citations, and handle decisions that need you. *Review Queue* and *Automations* also have direct top-level sidebar entries; press =Cmd-Shift-R= or =Cmd-Option-A= to open them immediately.
 - *Meetings* :: record or import audio and keep transcripts, summaries, decisions, and follow-ups together.
 - *Sources* :: connect supported external sources such as Slack and Notion, run a sync, or control its schedule.
@@ -43,6 +46,16 @@ Use tabs to keep several documents or workspace views open without mixing their 
 Open *Skills* from the sidebar or press =Cmd-Shift-K=. Skills are ordinary =SKILL.md= files under =.agents/skills/=. Select a workspace-authored skill to edit it in the normal document pane, use *New Skill* for a safe starter file, and use the row menu to reveal it or move its whole folder to the Trash. Invalid skill files remain visible with a repair message instead of disappearing from the manager.
 
 OpenOrg supplies its core Org2 operating guidance ambiently to every AI chat, so the reserved =org2= infrastructure skill is not shown as a user workflow or slash command. Its corpus copy remains available to external skill-aware agents. The Skills surface is for additional procedures authored for this workspace.
+
+* From a TODO to agent work
+
+Every open TODO heading in the rendered document shows *▶ Start work* on hover, and *Start Work with AI* is in the heading's right-click menu and in Agenda's row menu. Starting work:
+
+1. creates and starts a durable =org2 run= that cites the heading,
+2. adds =:ORG2_RUN_ID:= to the heading (and an =:ID:= if it has none) and moves a =TODO= to in progress,
+3. opens the heading's own chat thread with your current AI destination and sends it the task, the source reference, and the run ID.
+
+The heading then carries a live badge: /Working/ while the agent replies, /Your turn/ when it has replied and the run is still open, /Needs you/ when the run is blocked or waiting for approval, /Failed/, or /Done/. Agenda rows show the same badge. Click it to return to the conversation. Starting work on a heading whose run is still open reopens that thread instead of creating a second run. Agents that can use the Org2 CLI are asked to record an outcome under the heading and close the run with =org2 run complete=.
 
 * Write and read
 
@@ -227,7 +240,9 @@ Back up or sync the corpus with a file-oriented tool you understand, such as Git
 * Keyboard essentials
 
 - =Cmd-1= through =Cmd-6= open the main workspace surfaces. Every other Workspace sidebar entry has one too: =Cmd-0= Sources, =Cmd-Shift-K= Skills, =Cmd-Shift-R= Review Queue, =Cmd-Option-A= Automations, =Cmd-Option-E= External Threads, =Cmd-Option-V= Saved Views, and =Cmd-Option-C= Canvases (with Experimental Features on). Saved Views and Canvases are listed last in the Workspace section.
-- =Cmd-P= opens Quick Open. =Cmd-K= also opens Quick Open outside the Source editor; inside it, =Cmd-K= inserts a link.
+- =Cmd-P= opens Quick Open. =Cmd-K= also opens Quick Open outside the Source editor; inside it, =Cmd-K= inserts a link. With an empty query, files you open often and recently are listed first; while searching, they win close matches. =Cmd-Return= opens the selection in a new tab. Recent-file history is kept per corpus on this Mac and is never written to the corpus.
+- =Cmd-[= and =Cmd-]= go back and forward through the documents and views you visited in the current tab.
+- Hover a link in a rendered document to preview the target heading or file; =Cmd=-click a link to open it in a new tab.
 - =Cmd-Ctrl-Return= opens global capture.
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= open today's, yesterday's, and tomorrow's daily notes in the document pane. The Daily sidebar links and *Choose Date…* (=Cmd-Shift-7=) use the same behavior: they preserve the current first pane, including the selected AI chat and its draft, and do not open the Files list. If the document pane is closed, it reopens; an already closed first pane stays closed. With automatic daily note creation disabled for the workspace, a missing target shows an explicit creation button instead of writing a file.
 - =Cmd-A= selects visible items in Agenda, Files, Runs, or Review; =Shift-Up/Down= extends the selection.

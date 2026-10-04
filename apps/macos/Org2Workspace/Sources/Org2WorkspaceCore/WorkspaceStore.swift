@@ -1184,6 +1184,7 @@ private struct WorkspaceNavigationSnapshot: Hashable {
 private struct WorkspaceTabState {
   let navigation: WorkspaceNavigationSnapshot
   let backStack: [WorkspaceNavigationSnapshot]
+  var forwardStack: [WorkspaceNavigationSnapshot] = []
   let surface: WorkspaceTabSurfaceState
   let editor: WorkspaceTabEditorState
   let documentViewportSourceLines: [String: Int]
@@ -1815,6 +1816,10 @@ public struct SimilarTodoCandidate: Identifiable, Hashable, Sendable {
 private struct WorkspaceCapturePasteboardContent {
   var text: String = ""
   var attachments: [WorkspaceCaptureAttachmentDraft] = []
+}
+
+private struct StartWorkRunCreatePayload: Decodable, Sendable {
+  let run: AgentRunItem
 }
 
 private struct HeadlineMutationTarget: Sendable {
@@ -3037,6 +3042,7 @@ public final class WorkspaceStore {
   public var statusText = ""
   public var errorText: String?
   public private(set) var canNavigateBack = false
+  public private(set) var canNavigateForward = false
 
   public var meetingCaptureSourceText: String {
     Self.meetingCaptureSourceSummary
@@ -3044,6 +3050,17 @@ public final class WorkspaceStore {
 
   public let cli: Org2CLI
   private let defaults: UserDefaults
+  /// Opt-in local usage log (see OpenOrgUsageLog). Disabled unless the user
+  /// turns it on in Settings.
+  public let usageLog: OpenOrgUsageLog
+  /// Pending attribution for the next document activation, e.g. "quick_open".
+  private var pendingNavigationSource: String?
+  private var chatTurnStartTimes: [UUID: CFAbsoluteTime] = [:]
+  private var pendingDocumentReadyMeasurement: (path: String, startedAt: CFAbsoluteTime, source: String)?
+  private var fileFrecencyCache: (root: String, value: WorkspaceFileFrecency)?
+  /// Bumps whenever a file visit is recorded so views ranked by frecency refresh.
+  public private(set) var fileFrecencyRevision = 0
+  private let fileFrecencyByCorpusKey = "org2.workspace.file-frecency-by-corpus.v1"
   private let aiChatReadState: AIChatReadState
   private let automaticStarterCorpusURL: URL?
   private let sourceScheduleStateStore: WorkspaceSourceScheduleStateStore
@@ -3524,6 +3541,11 @@ public final class WorkspaceStore {
       canNavigateBack = !workspaceNavigationBackStack.isEmpty
     }
   }
+  private var workspaceNavigationForwardStack: [WorkspaceNavigationSnapshot] = [] {
+    didSet {
+      canNavigateForward = !workspaceNavigationForwardStack.isEmpty
+    }
+  }
   private var workspaceTabStates: [WorkspaceTab.ID: WorkspaceTabState] = [:]
   private var workspaceTabEditorRestoreTask: Task<Void, Never>?
   private var workspaceTabEditorRestoreGeneration = 0
@@ -3677,7 +3699,8 @@ public final class WorkspaceStore {
     legacyDefaultsDomains: [String]? = nil,
     automaticStarterCorpusURL: URL? = nil,
     localDocumentPublicationHost: LocalDocumentPublicationHost? = nil,
-    openClawDeviceIdentityFileURL: URL? = nil
+    openClawDeviceIdentityFileURL: URL? = nil,
+    usageLogURL: URL? = nil
   ) {
     let initialWorkspaceTab = WorkspaceTab(
       title: WorkspaceSurface.home.title,
@@ -3686,6 +3709,8 @@ public final class WorkspaceStore {
     workspaceTabs = [initialWorkspaceTab]
     selectedWorkspaceTabID = initialWorkspaceTab.id
     self.defaults = defaults
+    self.usageLog = OpenOrgUsageLog(defaults: defaults, fileURL: usageLogURL)
+    usageLog.record(.sessionStart, ["reason": "launch"])
     self.aiChatReadState = AIChatReadState(defaults: defaults)
     AIChatLocalHostRegistry.shared.register(
       AIChatHostIdentity.desktop(writer: AIChatTranscriptStore.shared.writerIdentity).ref
@@ -3983,6 +4008,10 @@ public final class WorkspaceStore {
     switch mode {
     case "home":
       openHome()
+    case "activity", "activity-map":
+      UserDefaults.standard.set(mode == "activity-map" ? "Map" : "Now", forKey: "workspaceActivityMode")
+      await refreshActivitySources()
+      selectedSurface = .activity
     case "agenda":
       selectedSurface = .agenda
       agendaMode = .focus
@@ -4740,6 +4769,7 @@ public final class WorkspaceStore {
     isCreatingMissingDailyNote = false
     cancelSourceEditorPreviewRender(clearStatus: true)
     workspaceNavigationBackStack = []
+    workspaceNavigationForwardStack = []
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
@@ -11247,6 +11277,9 @@ public final class WorkspaceStore {
       beginEditingSource(for: block)
     case .askAI:
       askAIChatAboutBlock(block)
+    case .startWork:
+      guard let location = renderedHeadingLocation(for: block) else { return }
+      Task { await startWork(on: location, origin: "document_menu") }
     case .refile:
       presentRenderedEntryRefile(block)
     case .schedule(let target):
@@ -11275,6 +11308,275 @@ public final class WorkspaceStore {
     case .delete:
       confirmAndDeleteRenderedEntry(block)
     }
+  }
+
+  // MARK: Start work on a TODO heading
+
+  /// Headings currently being started, keyed by "file:line", so a double
+  /// click cannot create two runs for one task.
+  private var startingWorkHeadingKeys: Set<String> = []
+  private var headingWorkLinksCache: (file: String, startLine: Int, text: String, links: [HeadingWorkLink])?
+
+  /// The rendered document's "Start work" heading button.
+  public func startWork(onHeadingAt line: Int) {
+    guard let block = renderedHeadingBlock(at: line),
+          let location = renderedHeadingLocation(for: block)
+    else {
+      statusText = "Could not resolve that heading"
+      return
+    }
+    Task { await startWork(on: location, origin: "document_button") }
+  }
+
+  /// Opens the chat thread (or run) already attached to the heading at `line`.
+  public func openWork(onHeadingAt line: Int) {
+    guard let source = selectedEntrySource,
+          let badge = headingWorkBadges(for: source).first(where: { $0.line == line })
+    else { return }
+    openHeadingWork(threadID: badge.threadID, runID: badge.runID)
+  }
+
+  func openHeadingWork(threadID: UUID?, runID: String?) {
+    if let threadID, aiChatThreads.contains(where: { $0.id == threadID }) {
+      if aiChatThreads.first(where: { $0.id == threadID })?.isSettled == true {
+        reopenAIChatThread(threadID)
+      }
+      navigateToSurface(.aiChat)
+      selectAIChatThread(threadID)
+      return
+    }
+    if let runID, let run = agentRunsByID[runID] {
+      runsAndReviewPage = .runs
+      makeSurfacePrimary(.approvals)
+      selectAgentRun(run)
+    }
+  }
+
+  /// Badges for headings in `source` that have agent work attached.
+  public func headingWorkBadges(for source: EntrySource) -> [HeadingWorkBadge] {
+    let links: [HeadingWorkLink]
+    if let cache = headingWorkLinksCache,
+       cache.file == source.file,
+       cache.startLine == source.startLine,
+       cache.text == source.text {
+      links = cache.links
+    } else {
+      links = HeadingWorkStatus.links(in: source.text, baseLine: source.startLine)
+      headingWorkLinksCache = (source.file, source.startLine, source.text, links)
+    }
+    guard links.contains(where: { $0.runID != nil || $0.idValue != nil }) else { return [] }
+    return HeadingWorkStatus.badges(
+      links: links,
+      runsByID: agentRunsByID,
+      resourceThreadIDsByKey: resourceThreadIDsByKey(),
+      isThreadRunning: { self.isAIChatThreadRunning($0) }
+    )
+  }
+
+  /// The work state for an agenda row, from its ORG2_RUN_ID and ID properties.
+  public func headingWorkState(properties: [String: String]) -> HeadingWorkBadge? {
+    let runID = properties["ORG2_RUN_ID"]?.trimmingCharacters(in: .whitespaces).nilIfBlank
+    let idValue = properties["ID"]?.trimmingCharacters(in: .whitespaces).nilIfBlank
+    guard runID != nil || idValue != nil else { return nil }
+    return HeadingWorkStatus.badges(
+      links: [HeadingWorkLink(line: 0, todo: nil, idValue: idValue, runID: runID)],
+      runsByID: agentRunsByID,
+      resourceThreadIDsByKey: resourceThreadIDsByKey(),
+      isThreadRunning: { self.isAIChatThreadRunning($0) }
+    ).first
+  }
+
+  private func resourceThreadIDsByKey() -> [String: UUID] {
+    var result: [String: UUID] = [:]
+    for thread in aiChatThreads {
+      guard let key = thread.resource?.key, result[key] == nil else { continue }
+      result[key] = thread.id
+    }
+    return result
+  }
+
+  /// One explicit path from a TODO to agent work:
+  /// 1. create and start a durable `org2 run` citing the heading,
+  /// 2. link it with `:ORG2_RUN_ID:` (adding an `:ID:` if missing) and mark the
+  ///    TODO in progress,
+  /// 3. open the heading's canonical `id:` chat thread and send the task.
+  /// The heading then shows the run's live state (Working, Your turn, Done…).
+  /// If the heading already has an open run with a thread, that thread opens.
+  public func startWork(on location: WorkspaceLocation, origin: String = "agenda") async {
+    guard let corpusRoot else {
+      statusText = "Open a corpus first"
+      return
+    }
+    guard let target = headlineMutationTarget(for: location) else {
+      statusText = "Select a TODO heading first"
+      return
+    }
+    let key = "\(URL(fileURLWithPath: target.file).standardizedFileURL.path):\(target.line)"
+    guard !startingWorkHeadingKeys.contains(key) else { return }
+    startingWorkHeadingKeys.insert(key)
+    defer { startingWorkHeadingKeys.remove(key) }
+
+    let fileText: String
+    do {
+      fileText = try String(contentsOfFile: target.file, encoding: .utf8)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Start work failed"
+      return
+    }
+    let link = HeadingWorkStatus.links(in: fileText, baseLine: 1)
+      .last(where: { $0.line <= target.line })
+    guard let link else {
+      statusText = "Could not find that heading"
+      return
+    }
+    if link.todo.map(HeadingWorkStatus.terminalTodoKeywords.contains) == true {
+      statusText = "This task is already closed"
+      return
+    }
+
+    // Resume an open run instead of creating a duplicate.
+    if let runID = link.runID, let run = agentRunsByID[runID], !run.isFinished {
+      let threadID = link.idValue.flatMap { resourceThreadIDsByKey()["id:\($0)"] }
+      usageLog.record(.startWork, ["origin": .string(origin), "resumed": true])
+      openHeadingWork(threadID: threadID, runID: runID)
+      statusText = "Opened work in progress"
+      return
+    }
+
+    guard let destination = enabledAIChatDestinations.first(where: { $0.id == selectedAIChatDestination.id })
+      ?? enabledAIChatDestinations.first
+    else {
+      errorText = "Turn on an AI destination in Settings › AI Chat to start work from a TODO."
+      statusText = "No AI destination"
+      return
+    }
+
+    let title = target.title.isEmpty ? "Untitled task" : target.title
+    let relative = relativePath(target.file)
+    let idValue = link.idValue ?? UUID().uuidString.lowercased()
+    let standardizedFile = URL(fileURLWithPath: target.file).standardizedFileURL.path
+    statusText = "Starting work on \(title)…"
+
+    let run: AgentRunItem
+    do {
+      var arguments = [
+        "run", "create",
+        "--title", "Work: \(title)",
+        "--goal", title,
+        "--context", "file:\(relative):\(link.line)",
+        "--owner", "OpenOrg",
+        "--assignee", destination.title,
+        "--dir", corpusRoot.path,
+        "--json",
+      ]
+      if let agentRef = link.agentRef { arguments += ["--agent-ref", agentRef] }
+      if let goalRef = link.goalRef { arguments += ["--goal-ref", goalRef] }
+      let created: StartWorkRunCreatePayload = try await cli.runJSON(arguments)
+      run = created.run
+      _ = try await cli.run([
+        "run", "start", run.id,
+        "--actor", "OpenOrg",
+        "--dir", corpusRoot.path,
+        "--json",
+      ])
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not create a run for this task"
+      return
+    }
+
+    let headingTarget = HeadlineMutationTarget(
+      file: target.file,
+      line: link.line,
+      title: title,
+      idValue: link.idValue
+    )
+    do {
+      let context = try documentMutationContext(for: headingTarget)
+      var properties = ["ORG2_RUN_ID": run.id]
+      if link.idValue == nil { properties["ID"] = idValue }
+      let frozenProperties = properties
+      _ = try await performDocumentMutation(context: context, files: [target.file]) { execution in
+        try await Self.upsertPropertiesInDocument(frozenProperties, target: headingTarget, execution: execution)
+      }
+      if link.todo == nil || link.todo == "TODO" || link.todo == "NEXT" {
+        let cli = self.cli
+        let linkedTarget = HeadlineMutationTarget(file: target.file, line: link.line, title: title, idValue: idValue)
+        // Custom keyword sets may not declare IN_PROGRESS; the run still starts.
+        _ = try? await performDocumentMutation(context: context, files: [target.file]) { execution in
+          try await Self.mutateTodoStatusInDocument(.inProgress, target: linkedTarget, cli: cli, execution: execution)
+        }
+      }
+      await refreshAfterHeadlineMutation(headingTarget, selectMutatedBlock: false)
+    } catch {
+      // The run exists; record why the heading link failed and keep going so
+      // the work is not lost.
+      _ = try? await cli.run([
+        "run", "comment", run.id,
+        "--author", "OpenOrg",
+        "--body", "Could not link heading \(relative):\(link.line): \(error.localizedDescription)",
+        "--dir", corpusRoot.path,
+        "--json",
+      ])
+      errorText = "Started the run, but could not update the heading: \(error.localizedDescription)"
+    }
+
+    let resource = AIChatResourceReference(
+      key: "id:\(idValue)",
+      kind: .heading,
+      title: title,
+      file: standardizedFile,
+      line: link.line,
+      idValue: idValue
+    )
+    let thread: AIChatThread
+    if let existing = aiChatThreads.first(where: { $0.resource?.key == resource.key }) {
+      if existing.isSettled { reopenAIChatThread(existing.id) }
+      thread = existing
+    } else {
+      thread = createAIChatThread(
+        title: "Work: \(title)",
+        statusText: "",
+        resource: resource,
+        runtime: destination.runtime,
+        destinationID: destination.id,
+        defersPersistence: true,
+        selectsThread: false
+      )
+    }
+    let pointer = aiChatContextPointer(for: WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
+      title: title,
+      file: target.file,
+      line: link.line,
+      zone: "entry",
+      modifiedAt: nil,
+      idValue: idValue
+    )))
+    let prompt = injectedAIChatContext(pointer) + HeadingWorkStatus.startWorkPrompt(
+      title: title,
+      reference: pointer.reference,
+      runID: run.id,
+      keepsCLIInstructions: !destination.adapter.isDirectProvider
+    )
+    _ = try? await cli.run([
+      "run", "comment", run.id,
+      "--author", "OpenOrg",
+      "--body", "AI destination: \(destination.id)\nAI chat thread: \(thread.id.uuidString.lowercased())",
+      "--dir", corpusRoot.path,
+      "--json",
+    ])
+    let sent = sendAIChatRemoteMessage(prompt, threadID: thread.id)
+    navigateToSurface(.aiChat)
+    selectAIChatThread(thread.id)
+    usageLog.record(.startWork, [
+      "origin": .string(origin),
+      "resumed": false,
+      "sent": .bool(sent),
+      "had_id": .bool(link.idValue != nil),
+    ])
+    statusText = sent ? "Started work on \(title)" : "Run started; send the task from the chat"
+    await refreshAgentRuns()
   }
 
   private func renderedHeadingBlock(at line: Int) -> OrgEditableBlock? {
@@ -12149,7 +12451,36 @@ public final class WorkspaceStore {
 
   public func navigateBack() {
     guard let snapshot = workspaceNavigationBackStack.popLast() else { return }
+    let current = currentWorkspaceNavigationSnapshot()
+    if workspaceNavigationForwardStack.last != current {
+      workspaceNavigationForwardStack.append(current)
+      trimNavigationHistory(&workspaceNavigationForwardStack)
+    }
+    usageLog.record(.navigateHistory, ["direction": "back"])
+    pendingNavigationSource = "history_back"
     restoreWorkspaceNavigationSnapshot(snapshot)
+    pendingNavigationSource = nil
+  }
+
+  /// Re-applies the location most recently left with Back. A new navigation
+  /// clears this stack, matching browser history semantics.
+  public func navigateForward() {
+    guard let snapshot = workspaceNavigationForwardStack.popLast() else { return }
+    let current = currentWorkspaceNavigationSnapshot()
+    if workspaceNavigationBackStack.last != current {
+      workspaceNavigationBackStack.append(current)
+      trimNavigationHistory(&workspaceNavigationBackStack)
+    }
+    usageLog.record(.navigateHistory, ["direction": "forward"])
+    pendingNavigationSource = "history_forward"
+    restoreWorkspaceNavigationSnapshot(snapshot)
+    pendingNavigationSource = nil
+  }
+
+  private func trimNavigationHistory(_ stack: inout [WorkspaceNavigationSnapshot]) {
+    if stack.count > Self.detailNavigationHistoryLimit {
+      stack.removeFirst(stack.count - Self.detailNavigationHistoryLimit)
+    }
   }
 
   private func restoreWorkspaceNavigationSnapshot(_ snapshot: WorkspaceNavigationSnapshot) {
@@ -12216,6 +12547,7 @@ public final class WorkspaceStore {
     workspaceTabStates[selectedWorkspaceTabID] = WorkspaceTabState(
       navigation: currentWorkspaceNavigationSnapshot(),
       backStack: workspaceNavigationBackStack,
+      forwardStack: workspaceNavigationForwardStack,
       surface: currentWorkspaceTabSurfaceState(),
       editor: editorState,
       documentViewportSourceLines: documentViewportSourceLines,
@@ -12235,6 +12567,7 @@ public final class WorkspaceStore {
     // in-flight loads, and view-local state cannot leak into the next tab.
     clearDetailForNavigation()
     selectedWorkspaceTabID = tabID
+    pendingNavigationSource = "tab_switch"
     restoreWorkspaceTabSurfaceState(state.surface)
     documentViewportSourceLines = state.documentViewportSourceLines
     documentSlidePageIndexes = state.documentSlidePageIndexes
@@ -12243,6 +12576,7 @@ public final class WorkspaceStore {
     defaults.set(documentViewportSourceLines, forKey: documentViewportSourceLinesKey)
     defaults.set(documentSlidePageIndexes, forKey: documentSlidePageIndexesKey)
     workspaceNavigationBackStack = state.backStack
+    workspaceNavigationForwardStack = state.forwardStack
     restoreWorkspaceNavigationSnapshot(state.navigation)
     restoreWorkspaceTabEditorState(state.editor, tabID: tabID)
   }
@@ -12533,6 +12867,7 @@ public final class WorkspaceStore {
     let checkpointedDocumentIdentities = OrgSyntaxTextEditorLifecycle.checkpointPendingTextChanges()
     let nextMode = resolvedEntrySourceMode(for: location, requestedMode: mode)
     let nextSurface = surface ?? selectedSurface
+    noteDocumentNavigation(to: location, recordsHistory: recordsHistory)
     if recordsHistory,
        !isCurrentNavigationDestination(
          location: location,
@@ -12547,6 +12882,7 @@ public final class WorkspaceStore {
     if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
     if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
     if canReuseActiveDetail(for: location, mode: nextMode) {
+      pendingDocumentReadyMeasurement = nil
       applyDetailSelectionMetadata(for: location)
       selectedLocation = location
       scheduleSelectedDetailFreshnessCheck(for: location, mode: nextMode)
@@ -12609,13 +12945,11 @@ public final class WorkspaceStore {
 
   private func recordCurrentNavigationDestination() {
     let snapshot = currentWorkspaceNavigationSnapshot()
+    // Any new destination invalidates the forward branch.
+    if !workspaceNavigationForwardStack.isEmpty { workspaceNavigationForwardStack = [] }
     guard workspaceNavigationBackStack.last != snapshot else { return }
     workspaceNavigationBackStack.append(snapshot)
-    if workspaceNavigationBackStack.count > Self.detailNavigationHistoryLimit {
-      workspaceNavigationBackStack.removeFirst(
-        workspaceNavigationBackStack.count - Self.detailNavigationHistoryLimit
-      )
-    }
+    trimNavigationHistory(&workspaceNavigationBackStack)
   }
 
   private func currentWorkspaceNavigationSnapshot() -> WorkspaceNavigationSnapshot {
@@ -12702,6 +13036,7 @@ public final class WorkspaceStore {
       recordCurrentNavigationDestination()
     }
     if selectedSurface != surface {
+      usageLog.record(.surfaceOpen, ["surface": .string(surface.rawValue)])
       selectedSurface = surface
     }
   }
@@ -13109,6 +13444,7 @@ public final class WorkspaceStore {
       nextSelectedEntrySourceLineIndex = loaded.sourceLineIndex
       nextSelectedEntrySourceModifiedAt = loaded.fileFreshnessSignature?.contentModificationDate
       selectedEntrySource = source
+      noteDocumentReady(for: location, cached: false)
       if location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
          let id = loaded.firstOrgID {
         applyResolvedID(id, to: location)
@@ -13192,6 +13528,7 @@ public final class WorkspaceStore {
     nextSelectedEntrySourceLineIndex = cached.sourceLineIndex
     nextSelectedEntrySourceModifiedAt = cached.modifiedAt
     selectedEntrySource = source
+    noteDocumentReady(for: location, cached: true)
     updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
     renderEntrySource(source, generation: generation)
   }
@@ -18697,6 +19034,7 @@ public final class WorkspaceStore {
       modifiers: modifiers
     )
     if selectedCorpusFileID == file.id {
+      pendingNavigationSource = "file_list"
       selectCorpusFile(file)
     } else {
       selectedCorpusFileID = file.id
@@ -18753,6 +19091,7 @@ public final class WorkspaceStore {
       && (selectedSurface == .home || selectedSurface == .aiChat)
     let surface = keepsVisibleChatPane ? selectedSurface : .files
 
+    pendingNavigationSource = "sidebar"
     selectCorpusFile(file, surface: surface)
     expandedWorkspaceSurface = nil
     isWorkspaceSurfacePaneClosed = !keepsVisibleChatPane
@@ -18835,6 +19174,130 @@ public final class WorkspaceStore {
     await pinnedCorpusFileProjectionTask?.value
   }
 
+  // MARK: Navigation attribution, frecency, and the local usage log
+
+  private func noteChatTurnTransitions(from previous: Set<UUID>, to current: Set<UUID>) {
+    guard previous != current else { return }
+    let now = CFAbsoluteTimeGetCurrent()
+    for threadID in current.subtracting(previous) {
+      chatTurnStartTimes[threadID] = now
+      guard usageLog.isEnabled else { continue }
+      let thread = aiChatThreads.first(where: { $0.id == threadID })
+      usageLog.record(.chatTurnStart, [
+        "runtime": .string(thread?.runtime.rawValue ?? "unknown"),
+        "heading_thread": .bool(thread?.resource != nil),
+      ])
+    }
+    for threadID in previous.subtracting(current) {
+      let started = chatTurnStartTimes.removeValue(forKey: threadID)
+      guard usageLog.isEnabled else { continue }
+      var fields: [String: OpenOrgUsageValue] = [:]
+      if let started { fields["seconds"] = .double(now - started) }
+      usageLog.record(.chatTurnFinish, fields)
+    }
+  }
+
+  /// Tags the next document activation with how it was reached so the local
+  /// usage log can tell Quick Open from links, sidebar, history, and so on.
+  func setPendingNavigationSource(_ source: String) {
+    pendingNavigationSource = source
+  }
+
+  private func noteDocumentNavigation(to location: WorkspaceLocation, recordsHistory: Bool) {
+    let source = pendingNavigationSource ?? (recordsHistory ? "other" : "restore")
+    pendingNavigationSource = nil
+    let path = URL(fileURLWithPath: location.file).standardizedFileURL.path
+    let previousPath = selectedLocation.map { URL(fileURLWithPath: $0.file).standardizedFileURL.path }
+    let relative = corpusFilesByPath[path]?.relativePath ?? pinnedFileRelativePath(for: path)
+    if let relative, source != "tab_switch", source != "restore", previousPath != path {
+      recordFileVisit(relativePath: relative)
+    }
+    guard usageLog.isEnabled else { return }
+    var fields: [String: OpenOrgUsageValue] = [
+      "source": .string(source),
+      "ext": .string(URL(fileURLWithPath: path).pathExtension.lowercased()),
+      "same_file": .bool(previousPath == path),
+      "in_corpus": .bool(relative != nil),
+    ]
+    if let relative { fields["file"] = usageLog.pathToken(relative) }
+    usageLog.record(.documentOpen, fields)
+    pendingDocumentReadyMeasurement = previousPath == path
+      ? nil
+      : (path: path, startedAt: CFAbsoluteTimeGetCurrent(), source: source)
+  }
+
+  private func noteDocumentReady(for location: WorkspaceLocation, cached: Bool) {
+    guard let pending = pendingDocumentReadyMeasurement else { return }
+    let path = URL(fileURLWithPath: location.file).standardizedFileURL.path
+    guard pending.path == path else { return }
+    pendingDocumentReadyMeasurement = nil
+    let milliseconds = (CFAbsoluteTimeGetCurrent() - pending.startedAt) * 1000
+    usageLog.record(.documentReady, [
+      "source": .string(pending.source),
+      "ms": .double(milliseconds),
+      "cached": .bool(cached),
+    ])
+  }
+
+  private func currentFileFrecency() -> WorkspaceFileFrecency {
+    guard let corpusRoot else { return WorkspaceFileFrecency() }
+    let root = corpusRoot.standardizedFileURL.path
+    if let cache = fileFrecencyCache, cache.root == root { return cache.value }
+    let storage = defaults.dictionary(forKey: fileFrecencyByCorpusKey) ?? [:]
+    let value = (storage[root] as? Data)
+      .flatMap { try? JSONDecoder().decode(WorkspaceFileFrecency.self, from: $0) }
+      ?? WorkspaceFileFrecency()
+    fileFrecencyCache = (root, value)
+    return value
+  }
+
+  func recordFileVisit(relativePath: String, at date: Date = Date()) {
+    guard let corpusRoot else { return }
+    let root = corpusRoot.standardizedFileURL.path
+    var value = currentFileFrecency()
+    value.recordVisit(relativePath, at: date)
+    fileFrecencyCache = (root, value)
+    fileFrecencyRevision &+= 1
+    var storage = defaults.dictionary(forKey: fileFrecencyByCorpusKey) ?? [:]
+    storage[root] = try? JSONEncoder().encode(value)
+    defaults.set(storage, forKey: fileFrecencyByCorpusKey)
+  }
+
+  public func fileFrecencyScore(relativePath: String, now: Date = Date()) -> Double {
+    currentFileFrecency().score(relativePath, now: now)
+  }
+
+  /// Recently and frequently opened corpus files, best first. Missing files are skipped.
+  public func recentCorpusFiles(limit: Int = 12, now: Date = Date()) -> [CorpusFile] {
+    _ = fileFrecencyRevision
+    guard limit > 0 else { return [] }
+    let byRelativePath = Dictionary(
+      corpusFiles.map { ($0.relativePath, $0) },
+      uniquingKeysWith: { first, _ in first }
+    )
+    var result: [CorpusFile] = []
+    for entry in currentFileFrecency().ranked(now: now) {
+      guard let file = byRelativePath[entry.path] else { continue }
+      result.append(file)
+      if result.count == limit { break }
+    }
+    return result
+  }
+
+  public func fileFrecencyScores(now: Date = Date()) -> [String: Double] {
+    _ = fileFrecencyRevision
+    return currentFileFrecency().scores(now: now)
+  }
+
+  private func rankedRecentFileCount() -> Int {
+    currentFileFrecency().ranked(now: Date()).count
+  }
+
+  public func isRecentCorpusFile(_ file: CorpusFile) -> Bool {
+    _ = fileFrecencyRevision
+    return fileFrecencyScore(relativePath: file.relativePath) > 0
+  }
+
   public func presentQuickOpen() {
     guard corpusRoot != nil else {
       statusText = "No corpus selected"
@@ -18843,6 +19306,7 @@ public final class WorkspaceStore {
     quickOpenQuery = ""
     resetQuickOpenSelection()
     isQuickOpenPresented = true
+    usageLog.record(.quickOpenPresent, ["recent_count": .int(rankedRecentFileCount())])
     if corpusFiles.isEmpty {
       Task { await refreshCorpusFiles() }
     }
@@ -18880,7 +19344,7 @@ public final class WorkspaceStore {
       focusCorpusFileFilter()
     case .home, .aiChat:
       presentAIChatThreadFind()
-    case .savedViews, .meetings, .sources, .externalThreads, .skills:
+    case .savedViews, .meetings, .sources, .externalThreads, .skills, .activity:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -18900,6 +19364,7 @@ public final class WorkspaceStore {
       modifiedAt: nil,
       idValue: node.idValue
     )
+    pendingNavigationSource = "search"
     activateDetailLocation(.aiChatThreadRecord(thread), mode: .entry, surface: .search, recordsHistory: true)
     selectedAIChatThreadRecordID = nil
     statusText = "Opened \(relativePath(node.file)):\(node.line)"
@@ -18915,6 +19380,7 @@ public final class WorkspaceStore {
       modifiedAt: file.modifiedAt,
       idValue: nil
     )
+    pendingNavigationSource = "search"
     activateDetailLocation(.aiChatThreadRecord(thread), mode: .page, surface: .search, recordsHistory: true)
     selectedAIChatThreadRecordID = nil
     statusText = "Opened \(file.relativePath)"
@@ -19359,11 +19825,35 @@ public final class WorkspaceStore {
     selectedQuickOpenFileID = items[nextIndex].id
   }
 
-  public func selectQuickOpenItem(_ item: WorkspaceQuickOpenItem) {
+  public func selectQuickOpenItem(_ item: WorkspaceQuickOpenItem, inNewTab: Bool = false) {
+    if inNewTab {
+      // Capture rank before the new tab resets transient state.
+      let rank = quickOpenItems.firstIndex(of: item) ?? -1
+      newWorkspaceTab()
+      usageLog.record(.quickOpenSelect, ["kind": "file_new_tab", "rank": .int(rank)])
+      if case .file(let file) = item {
+        pendingNavigationSource = "quick_open"
+        selectCorpusFile(file, surface: .files)
+        return
+      }
+    }
     switch item {
     case .file(let file):
+      let rank = quickOpenItems.firstIndex(of: item) ?? -1
+      usageLog.record(.quickOpenSelect, [
+        "kind": "file",
+        "rank": .int(rank),
+        "query_length": .int(quickOpenQuery.count),
+        "recent": .bool(fileFrecencyScore(relativePath: file.relativePath) > 0),
+      ])
+      pendingNavigationSource = "quick_open"
       selectCorpusFile(file, surface: selectedSurface)
     case .chatThread(let thread):
+      usageLog.record(.quickOpenSelect, [
+        "kind": "chat",
+        "rank": .int(quickOpenItems.firstIndex(of: item) ?? -1),
+        "query_length": .int(quickOpenQuery.count),
+      ])
       navigateToSurface(.aiChat)
       selectAIChatThread(thread.id)
       sidebarPromotedAIChatThreadID = thread.id
@@ -19764,7 +20254,11 @@ public final class WorkspaceStore {
 
     guard !trimmedQuery.isEmpty else {
       isFilteringQuickOpenFiles = false
-      quickOpenFiles = Array(corpusFiles.prefix(80))
+      // Empty query: frequently and recently opened files first, then the
+      // rest of the corpus alphabetically.
+      let recent = recentCorpusFiles(limit: 15)
+      let recentIDs = Set(recent.map(\.id))
+      quickOpenFiles = recent + corpusFiles.lazy.filter { !recentIDs.contains($0.id) }.prefix(80 - recent.count)
       quickOpenItems = quickOpenFiles.map(WorkspaceQuickOpenItem.file)
       pruneQuickOpenSelection()
       return
@@ -19772,10 +20266,11 @@ public final class WorkspaceStore {
 
     let indexedFiles = quickOpenIndexedFiles
     let indexedChatThreads = quickOpenIndexedChatThreads
+    let frecencyScores = currentFileFrecency().scores(now: Date())
     if !isFilteringQuickOpenFiles {
       isFilteringQuickOpenFiles = true
     }
-    quickOpenSearchTask = Task { [indexedFiles, indexedChatThreads, query, generation, debounce] in
+    quickOpenSearchTask = Task { [indexedFiles, indexedChatThreads, frecencyScores, query, generation, debounce] in
       if debounce {
         try? await Task.sleep(nanoseconds: 80_000_000)
       }
@@ -19786,7 +20281,8 @@ public final class WorkspaceStore {
           files: indexedFiles,
           chatThreads: indexedChatThreads,
           query: query,
-          limit: 80
+          limit: 80,
+          frecencyScores: frecencyScores
         )
       }.value
       guard !Task.isCancelled else { return }
@@ -19852,7 +20348,8 @@ public final class WorkspaceStore {
     files: [QuickOpenIndexedFile],
     chatThreads: [QuickOpenIndexedChatThread],
     query rawQuery: String,
-    limit: Int
+    limit: Int,
+    frecencyScores: [String: Double] = [:]
   ) -> [QuickOpenSearchMatch] {
     let normalizedQuery = normalizedQuickOpenQuery(
       rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -19868,7 +20365,10 @@ public final class WorkspaceStore {
       ) else {
         return nil
       }
-      return (.file(indexedFile.file), score, indexedFile.file.relativePath)
+      let bonus = WorkspaceFileFrecency.quickOpenBonus(
+        frecencyScores[indexedFile.file.relativePath] ?? 0
+      )
+      return (.file(indexedFile.file), score + bonus, indexedFile.file.relativePath)
     }
     let chatMatches = chatThreads.compactMap { thread -> (QuickOpenSearchMatch, Int, String)? in
       guard let score = fuzzyScore(
@@ -29988,10 +30488,12 @@ public final class WorkspaceStore {
   }
 
   private func syncSelectedAIChatSendState() {
+    let previousSendingThreadIDs = aiChatSendingThreadIDs
     aiChatSendingThreadIDs = Set(drainingAIChatThreadIDs.filter {
       isAIChatRuntimeStateVisible(for: $0)
         && !aiChatPendingUserMessageIDs(for: $0).isEmpty
     })
+    noteChatTurnTransitions(from: previousSendingThreadIDs, to: aiChatSendingThreadIDs)
     guard let selectedAIChatThreadID else {
       isSendingAIChatMessage = false
       aiChatQueuedMessageCount = 0
@@ -30489,6 +30991,8 @@ public final class WorkspaceStore {
       await refreshExternalThreads()
     case .skills:
       refreshCorpusAgentSkills()
+    case .activity:
+      await refreshActivitySources()
     }
     markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
   }
@@ -30523,6 +31027,8 @@ public final class WorkspaceStore {
       isRefreshingExternalThreads
     case .skills:
       false
+    case .activity:
+      isRefreshingAgentRuns || isRefreshingApprovals || isRefreshingAgentWorkflows
     }
   }
 
@@ -32657,6 +33163,15 @@ public final class WorkspaceStore {
     }
   }
 
+  /// ⌘-click on a workspace link: open the target in a new tab and keep the
+  /// current tab where it is.
+  public func openChatFileReferenceInNewTab(_ reference: AIChatFileReference) {
+    usageLog.record(.linkOpenInNewTab)
+    newWorkspaceTab()
+    pendingNavigationSource = "link_new_tab"
+    openChatFileReference(reference)
+  }
+
   public func openChatFileReference(_ reference: AIChatFileReference) {
     guard let file = localPathForOpenClawReference(reference.path) else {
       let message = "Could not resolve file link: \(reference.path)"
@@ -32665,7 +33180,9 @@ public final class WorkspaceStore {
       return
     }
 
+    if pendingNavigationSource == nil { pendingNavigationSource = "link" }
     if canJumpWithinActivePage(to: file) {
+      pendingNavigationSource = nil
       if presentedAgentRunID != nil { presentedAgentRunID = nil }
       if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
       if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
@@ -37921,6 +38438,12 @@ public final class WorkspaceStore {
         guard focusCurrentSearchField() else { return false }
       case "k", "p":
         presentQuickOpen()
+      case "[":
+        guard canNavigateBack else { return false }
+        navigateBack()
+      case "]":
+        guard canNavigateForward else { return false }
+        navigateForward()
       case "r":
         guard corpusRoot != nil else { return false }
         if isRefreshingWorkspace {
@@ -37961,6 +38484,8 @@ public final class WorkspaceStore {
         makeSurfacePrimary(.canvases)
       case "e":
         makeSurfacePrimary(.externalThreads)
+      case "n":
+        makeSurfacePrimary(.activity)
       default:
         return false
       }
@@ -38994,6 +39519,7 @@ public final class WorkspaceStore {
   }
 
   public func selectBacklink(_ backlink: BacklinkItem) {
+    pendingNavigationSource = "backlink"
     select(.backlink(backlink))
   }
 
@@ -49170,13 +49696,16 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case aiChat = "openClaw"
   case externalThreads
   case skills
+  /// What is happening across the corpus: work needing you, live agent work,
+  /// schedules, recent changes, and a zoomable map.
+  case activity
 
   public var id: String { rawValue }
 
   /// Sidebar order. Saved Views and Canvases sit at the bottom of the
   /// Workspace section, below Review Queue and Automations.
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
+    [.home, .activity, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
   }
 
   /// Surfaces listed after the Agent Work pages (Review Queue, Automations).
@@ -49201,6 +49730,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .aiChat: "AI Chat"
     case .externalThreads: "External Threads"
     case .skills: "Skills"
+    case .activity: "Activity"
     }
   }
 
@@ -49218,6 +49748,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .aiChat: "sparkles"
     case .externalThreads: "rectangle.stack.badge.person.crop"
     case .skills: "wand.and.stars"
+    case .activity: "map"
     }
   }
 
@@ -49235,6 +49766,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .aiChat: "⌘6"
     case .externalThreads: "⌥⌘E"
     case .skills: "⌘⇧K"
+    case .activity: "⌥⌘N"
     }
   }
 }

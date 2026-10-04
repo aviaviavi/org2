@@ -37,7 +37,27 @@ struct OrgInlineTextLinkActivationKey: EnvironmentKey {
   static let defaultValue: OrgInlineTextLinkActivation? = nil
 }
 
+struct OpenOrgFileReferenceInNewTabActionKey: EnvironmentKey {
+  static let defaultValue: (@MainActor @Sendable (AIChatFileReference) -> Void)? = nil
+}
+
+struct RecordUsageEventActionKey: EnvironmentKey {
+  static let defaultValue: @MainActor @Sendable (OpenOrgUsageEvent, [String: OpenOrgUsageValue]) -> Void = { _, _ in }
+}
+
 extension EnvironmentValues {
+  /// Opens a workspace link in a new tab (⌘-click). Nil where tabs are unavailable.
+  var openOrgFileReferenceInNewTab: (@MainActor @Sendable (AIChatFileReference) -> Void)? {
+    get { self[OpenOrgFileReferenceInNewTabActionKey.self] }
+    set { self[OpenOrgFileReferenceInNewTabActionKey.self] = newValue }
+  }
+
+  /// Appends to the opt-in local usage log; a no-op when logging is off.
+  var recordUsageEvent: @MainActor @Sendable (OpenOrgUsageEvent, [String: OpenOrgUsageValue]) -> Void {
+    get { self[RecordUsageEventActionKey.self] }
+    set { self[RecordUsageEventActionKey.self] = newValue }
+  }
+
   var openOrgFileReference: @MainActor @Sendable (AIChatFileReference) -> Void {
     get { self[OpenOrgFileReferenceActionKey.self] }
     set { self[OpenOrgFileReferenceActionKey.self] = newValue }

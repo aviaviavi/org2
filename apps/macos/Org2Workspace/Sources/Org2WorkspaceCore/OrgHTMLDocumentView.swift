@@ -442,6 +442,7 @@ enum OrgHTMLRenderedEntryAction: Sendable {
   case entryView
   case edit
   case askAI
+  case startWork
   case refile
   case schedule(PlanningDateTarget)
   case todo(TodoEditStatus?)
@@ -483,6 +484,7 @@ private enum EntryContextMenuTag: Int {
   case cut
   case copyReference
   case delete
+  case startWork
 
   var action: OrgHTMLRenderedEntryAction? {
     switch self {
@@ -513,6 +515,7 @@ private enum EntryContextMenuTag: Int {
     case .cut: .cut
     case .copyReference: .copyReference
     case .delete: .delete
+    case .startWork: .startWork
     }
   }
 
@@ -520,7 +523,7 @@ private enum EntryContextMenuTag: Int {
     switch self {
     case .entryView, .askAI, .copy, .copyReference:
       false
-    case .edit, .refile,
+    case .edit, .refile, .startWork,
          .scheduleToday, .scheduleTomorrow, .scheduleNextMonday, .scheduleNextMonth,
          .todo, .todoInProgress, .todoDone, .todoCanceled, .todoToggle,
          .deadlineToday, .deadlineTomorrow, .deadlineNextMonday, .deadlineNextMonth,
@@ -533,6 +536,8 @@ private enum EntryContextMenuTag: Int {
 
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
+  @Environment(\.openOrgFileReferenceInNewTab) private var openOrgFileReferenceInNewTab
+  @Environment(\.recordUsageEvent) private var recordUsageEvent
   @Environment(\.orgRoamLinkResolver) private var linkResolver
 
   let html: String
@@ -556,6 +561,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   var saveTableView: @MainActor (OrgHTMLTableViewSnapshot) -> Void = { _ in }
   var recalculateTableFormulas: @MainActor (Int) -> Void = { _ in }
   var reportViewportSourceLine: @MainActor (Int?) -> Void = { _ in }
+  /// Non-nil enables the hover "Start work" button on open TODO headings.
+  var startWorkAtHeading: (@MainActor (Int) -> Void)? = nil
+  var openWorkAtHeading: @MainActor (Int) -> Void = { _ in }
+  var headingWorkBadges: [HeadingWorkBadge] = []
 
   func makeCoordinator() -> Coordinator {
     Coordinator()
@@ -589,6 +598,10 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       context.coordinator,
       name: Coordinator.checkboxMessageHandlerName
     )
+    configuration.userContentController.add(
+      context.coordinator,
+      name: OrgLinkHoverPreview.messageHandlerName
+    )
     configuration.userContentController.addUserScript(WKUserScript(
       source: Coordinator.paneActivationInstallationScript,
       injectionTime: .atDocumentStart,
@@ -612,6 +625,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     let coordinator = context.coordinator
     coordinator.activateWorkspacePane = activateWorkspacePane
     coordinator.openOrgFileReference = openOrgFileReference
+    coordinator.openOrgFileReferenceInNewTab = openOrgFileReferenceInNewTab
+    coordinator.recordUsageEvent = recordUsageEvent
     coordinator.linkResolver = linkResolver
     coordinator.source = source
     coordinator.corpusRoot = corpusRoot
@@ -621,6 +636,12 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       allowsAbsoluteImagesOutsideCorpus: true
     )
     coordinator.askAIAboutHeading = askAIAboutHeading
+    coordinator.startWorkAtHeading = startWorkAtHeading
+    coordinator.openWorkAtHeading = openWorkAtHeading
+    let headingWorkChanged = coordinator.headingWorkBadges != headingWorkBadges
+      || coordinator.startWorkEnabled != (startWorkAtHeading != nil)
+    coordinator.headingWorkBadges = headingWorkBadges
+    coordinator.startWorkEnabled = startWorkAtHeading != nil
     coordinator.performEntryAction = performEntryAction
     coordinator.allowsEntryContextMenu = allowsEntryContextMenu
     coordinator.reportStatus = reportStatus
@@ -680,6 +701,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       coordinator.scrollRequestID = scrollRequest?.id
       coordinator.applyScrollRequest(scrollRequest, to: webView)
     }
+    if headingWorkChanged, coordinator.renderID == renderID, !webView.isLoading {
+      coordinator.applyHeadingWork(to: webView)
+    }
   }
 
   static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -701,6 +725,9 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     )
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: Coordinator.checkboxMessageHandlerName
+    )
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: OrgLinkHoverPreview.messageHandlerName
     )
   }
 
@@ -740,11 +767,18 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
     var themeStylesheet = ""
     var openOrgFileReference: @MainActor (AIChatFileReference) -> Void = { _ in }
+    var openOrgFileReferenceInNewTab: (@MainActor (AIChatFileReference) -> Void)?
+    var recordUsageEvent: @MainActor (OpenOrgUsageEvent, [String: OpenOrgUsageValue]) -> Void = { _, _ in }
+    private var linkPreviewTask: Task<Void, Never>?
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
     var corpusRoot: URL?
     var activateWorkspacePane: @MainActor () -> Void = {}
     var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
+    var startWorkAtHeading: (@MainActor (Int) -> Void)?
+    var openWorkAtHeading: @MainActor (Int) -> Void = { _ in }
+    var headingWorkBadges: [HeadingWorkBadge] = []
+    var startWorkEnabled = false
     var performEntryAction: @MainActor (OrgHTMLRenderedEntryAction, Int) -> Void = { _, _ in }
     var allowsEntryContextMenu = true
     var entryContextMenuLine: Int?
@@ -778,6 +812,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         installEntryContextMenuHandler(in: webView)
       }
       installViewportSourceLineReporter(in: webView)
+      webView.evaluateJavaScript(OrgLinkHoverPreview.installationScript)
+      applyHeadingWork(to: webView)
       applySearch(to: webView, backwards: false)
       if let scrollRequest {
         applyScrollRequest(scrollRequest, to: webView)
@@ -791,6 +827,12 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       didReceive message: WKScriptMessage
     ) {
       switch message.name {
+      case OrgLinkHoverPreview.messageHandlerName:
+        guard let payload = message.body as? [String: Any],
+              let target = payload["target"] as? String,
+              let token = (payload["token"] as? NSNumber)?.intValue
+        else { return }
+        showLinkPreview(target: target, token: token)
       case Self.paneActivationMessageHandlerName:
         activateWorkspacePane()
       case Self.viewportMessageHandlerName:
@@ -835,6 +877,13 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       default:
         return
       }
+    }
+
+    func applyHeadingWork(to webView: WKWebView) {
+      let script = OrgHTMLHeadingWorkScript.installation
+        + "\nwindow.__org2InstallStartWork?.(\(startWorkEnabled));"
+        + "\nwindow.__org2SetWorkBadges?.(\(OrgHTMLHeadingWorkScript.badgesPayload(headingWorkBadges)));"
+      webView.evaluateJavaScript(script)
     }
 
     func installEntryContextMenuHandler(in webView: WKWebView) {
@@ -899,6 +948,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       menu.addItem(contextMenuItem("Entry View", symbol: "doc.text.magnifyingglass", tag: .entryView))
       menu.addItem(contextMenuItem("Edit Entry", symbol: "square.and.pencil", tag: .edit))
       menu.addItem(contextMenuItem("Ask AI", symbol: "sparkles", tag: .askAI))
+      menu.addItem(contextMenuItem("Start Work with AI", symbol: "play.circle", tag: .startWork))
       menu.addItem(.separator())
       menu.addItem(contextMenuItem("Move / Refile…", symbol: "arrowshape.turn.up.right", tag: .refile))
 
@@ -1191,12 +1241,29 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       }
 
       if url.scheme?.lowercased() == AIChatFileReference.deepLinkScheme,
+         url.host == "start-work" || url.host == "open-work",
+         let rawLine = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+           .queryItems?
+           .first(where: { $0.name == "line" })?
+           .value,
+         let line = Int(rawLine),
+         line > 0 {
+        if url.host == "start-work" {
+          startWorkAtHeading?(line)
+        } else {
+          openWorkAtHeading(line)
+        }
+        decisionHandler(.cancel)
+        return
+      }
+
+      if url.scheme?.lowercased() == AIChatFileReference.deepLinkScheme,
          url.host == "open-link",
          let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
            .queryItems?
            .first(where: { $0.name == "target" })?
            .value {
-        open(target: target)
+        open(target: target, inNewTab: navigationAction.modifierFlags.contains(.command))
         decisionHandler(.cancel)
         return
       }
@@ -1329,7 +1396,43 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       webView.evaluateJavaScript(script)
     }
 
-    func open(target rawTarget: String) {
+    /// Resolves a workspace link target to a file and line without opening it.
+    private func resolveWorkspaceTarget(_ target: String) async -> AIChatFileReference? {
+      if let resolved = linkResolver.resolve(target: target) { return resolved.fileReference }
+      if OrgHTMLDocumentLinkRouting.externalURL(for: target, linkResolver: linkResolver) != nil { return nil }
+      guard let source else { return nil }
+      guard let fileTarget = await fileLinkResolver(target, source.file, corpusRoot),
+            OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url),
+            FileManager.default.fileExists(atPath: fileTarget.url.path)
+      else { return nil }
+      return AIChatFileReference(path: fileTarget.url.path, line: fileTarget.line)
+    }
+
+    private func showLinkPreview(target rawTarget: String, token: Int) {
+      let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !target.isEmpty else { return }
+      linkPreviewTask?.cancel()
+      linkPreviewTask = Task { @MainActor [weak self] in
+        guard let self, let reference = await self.resolveWorkspaceTarget(target) else { return }
+        let path = reference.path
+        guard !path.lowercased().hasSuffix(".pdf"), !Task.isCancelled else { return }
+        let relative: String = {
+          guard let root = self.corpusRoot?.standardizedFileURL.path else { return URL(fileURLWithPath: path).lastPathComponent }
+          let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+          return standardized.hasPrefix(root + "/") ? String(standardized.dropFirst(root.count + 1)) : URL(fileURLWithPath: path).lastPathComponent
+        }()
+        guard let preview = await OrgLinkHoverPreview.load(path: path, line: reference.line, relativePath: relative),
+              !Task.isCancelled
+        else { return }
+        self.webView?.evaluateJavaScript(
+          "window.__org2ShowLinkPreview?.(\(token), \(preview.scriptPayload));",
+          completionHandler: nil
+        )
+        self.recordUsageEvent(.linkPreview, ["kind": target.hasPrefix("id:") ? "id" : "file"])
+      }
+    }
+
+    func open(target rawTarget: String, inNewTab: Bool = false) {
       let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !target.isEmpty else { return }
 
@@ -1337,8 +1440,17 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       fileLinkResolutionTask = nil
       fileLinkResolutionGeneration &+= 1
 
+      let openReference: @MainActor (AIChatFileReference) -> Void = { [weak self] reference in
+        guard let self else { return }
+        if inNewTab, let openInNewTab = self.openOrgFileReferenceInNewTab {
+          openInNewTab(reference)
+        } else {
+          self.openOrgFileReference(reference)
+        }
+      }
+
       if let resolved = linkResolver.resolve(target: target) {
-        openOrgFileReference(resolved.fileReference)
+        openReference(resolved.fileReference)
         return
       }
 
@@ -1376,7 +1488,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         }
 
         if OrgHTMLDocumentLinkRouting.opensInWorkspace(fileTarget.url) {
-          self.openOrgFileReference(AIChatFileReference(
+          openReference(AIChatFileReference(
             path: fileTarget.url.path,
             line: fileTarget.line
           ))
@@ -1389,6 +1501,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     }
 
     func cancelFileLinkResolution() {
+      linkPreviewTask?.cancel()
+      linkPreviewTask = nil
       fileLinkResolutionGeneration &+= 1
       fileLinkResolutionTask?.cancel()
       fileLinkResolutionTask = nil

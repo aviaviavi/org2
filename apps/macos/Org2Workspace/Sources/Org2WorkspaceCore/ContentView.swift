@@ -71,7 +71,18 @@ public struct ContentView: View {
           .labelStyle(.iconOnly)
           .frame(width: 28, height: 28)
           .disabled(!store.canNavigateBack)
-          .help(store.canNavigateBack ? "Back" : "No previous location")
+          .help(store.canNavigateBack ? "Back (⌘[)" : "No previous location")
+        }
+        ToolbarItem(placement: .navigation) {
+          Button {
+            store.navigateForward()
+          } label: {
+            Label("Forward", systemImage: "chevron.right")
+          }
+          .labelStyle(.iconOnly)
+          .frame(width: 28, height: 28)
+          .disabled(!store.canNavigateForward)
+          .help(store.canNavigateForward ? "Forward (⌘])" : "No next location")
         }
 
         ToolbarItemGroup {
@@ -119,6 +130,12 @@ public struct ContentView: View {
       }
       .environment(\.openOrgFileReference) { reference in
         store.openChatFileReference(reference)
+      }
+      .environment(\.openOrgFileReferenceInNewTab) { reference in
+        store.openChatFileReferenceInNewTab(reference)
+      }
+      .environment(\.recordUsageEvent) { event, fields in
+        store.usageLog.record(event, fields)
       }
       .onDisappear {
         store.flushDeferredAIChatTranscriptPersistence()
@@ -1761,6 +1778,8 @@ private struct WorkspaceSurfaceView: View {
           ExternalThreadsView()
         case .skills:
           SkillsView()
+        case .activity:
+          WorkspaceActivityView()
         }
       }
       // Some surface controls and rows have a useful minimum content width.
@@ -4326,6 +4345,14 @@ private struct HeadingActionsContextMenu: View {
   let select: () -> Void
 
   var body: some View {
+    Button {
+      select()
+      Task { await store.startWork(on: location, origin: "context_menu") }
+    } label: {
+      Label("Start Work with AI", systemImage: "play.circle")
+    }
+    Divider()
+
     Menu {
       todoButton("TODO", status: .todo)
       todoButton("In Progress", status: .inProgress)
@@ -4486,6 +4513,15 @@ private struct QuickOpenView: View {
           switch item {
           case .file(let file):
             CorpusFileRow(file: file)
+              .overlay(alignment: .trailing) {
+                if store.isRecentCorpusFile(file) {
+                  Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .help("Recently opened")
+                    .accessibilityLabel("Recently opened")
+                }
+              }
               .contentShape(Rectangle())
               .onTapGesture {
                 open(item)
@@ -4511,9 +4547,13 @@ private struct QuickOpenView: View {
       }
       .listStyle(.plain)
       .frame(minHeight: 320)
+
+      Text("Return opens  ·  ⌘Return opens in a new tab  ·  Recent files are listed first")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
     }
     .padding(16)
-    .frame(width: 720, height: 460)
+    .frame(width: 720, height: 480)
     .modifier(QuickOpenKeyboardEventMonitor(handler: handleKeyDown))
     .onChange(of: query) {
       store.quickOpenQuery = query
@@ -4531,14 +4571,19 @@ private struct QuickOpenView: View {
     return true
   }
 
-  private func open(_ item: WorkspaceQuickOpenItem) {
-    store.selectQuickOpenItem(item)
+  private func open(_ item: WorkspaceQuickOpenItem, inNewTab: Bool = false) {
+    store.selectQuickOpenItem(item, inNewTab: inNewTab)
     store.isQuickOpenPresented = false
     dismiss()
   }
 
   private func handleKeyDown(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    if modifiers == .command, event.keyCode == 36 || event.keyCode == 76 {
+      guard let item = store.selectedQuickOpenItem else { return false }
+      open(item, inNewTab: true)
+      return true
+    }
     guard modifiers.isEmpty else { return false }
 
     switch event.keyCode {
@@ -4551,6 +4596,7 @@ private struct QuickOpenView: View {
     case 36, 76:
       return openSelectedOrFirst()
     case 53:
+      store.usageLog.record(.quickOpenDismiss, ["query_length": .int(query.count)])
       store.isQuickOpenPresented = false
       dismiss()
       return true
@@ -4794,6 +4840,10 @@ private struct KeyboardShortcutsView: View {
           ])
 
           ShortcutSection(title: "Navigation", shortcuts: [
+            ShortcutHelpItem(keys: "⌘[ / ⌘]", action: "Back / forward"),
+            ShortcutHelpItem(keys: "⌘-click link", action: "Open link in a new tab"),
+            ShortcutHelpItem(keys: "⌘Return in Quick Open", action: "Open in a new tab"),
+            ShortcutHelpItem(keys: "⌥⌘N", action: "Activity (what's happening now)"),
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
@@ -8615,6 +8665,9 @@ private struct AgendaItemListView: View {
               isEditable: store.isResultInActiveCorpus(item.corpus),
               isAgentAssigned: store.isAgentAssignee(item.properties["ASSIGNEE"]),
               isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
+              workState: item.properties["ORG2_RUN_ID"] == nil
+                ? nil
+                : store.headingWorkState(properties: item.properties)?.state,
               toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) },
               setPriority: { priority in
                 Task { await store.applyPriorityShortcut(priority, to: .agenda(item)) }
@@ -8850,11 +8903,13 @@ private struct AgendaRow: View, Equatable {
   let isEditable: Bool
   let isAgentAssigned: Bool
   let isPersonalAssigned: Bool
+  var workState: HeadingWorkState? = nil
   let toggleBulkSelection: () -> Void
   let setPriority: (String?) -> Void
 
   nonisolated static func == (lhs: AgendaRow, rhs: AgendaRow) -> Bool {
     lhs.item == rhs.item
+      && lhs.workState == rhs.workState
       && lhs.sourceReference == rhs.sourceReference
       && lhs.isSelected == rhs.isSelected
       && lhs.isBulkSelected == rhs.isBulkSelected
@@ -8919,6 +8974,9 @@ private struct AgendaRow: View, Equatable {
         .foregroundStyle(.secondary)
       }
       Spacer(minLength: 0)
+      if let workState {
+        HeadingWorkStateBadge(state: workState)
+      }
       AgendaAssignmentIndicator(
         item: item,
         isAgentAssigned: isAgentAssigned,
@@ -12923,6 +12981,12 @@ private struct OrgRenderedDocumentPreview: View {
   let loadingLabel: String
   let reportViewportSourceLine: @MainActor (Int?) -> Void
 
+  private var startWorkAction: (@MainActor (Int) -> Void)? {
+    guard source.isEditable else { return nil }
+    let store = self.store
+    return { line in store.startWork(onHeadingAt: line) }
+  }
+
   var body: some View {
     Group {
       if store.documentPreviewKind == .slides {
@@ -12964,7 +13028,10 @@ private struct OrgRenderedDocumentPreview: View {
             allowsTablePersistence: source.isEditable,
             saveTableView: { store.requestSaveRenderedTableView($0) },
             recalculateTableFormulas: { store.requestRecalculateRenderedTableFormulas(at: $0) },
-            reportViewportSourceLine: reportViewportSourceLine
+            reportViewportSourceLine: reportViewportSourceLine,
+            startWorkAtHeading: startWorkAction,
+            openWorkAtHeading: { store.openWork(onHeadingAt: $0) },
+            headingWorkBadges: store.headingWorkBadges(for: source)
           )
           .frame(maxHeight: .infinity)
         }
