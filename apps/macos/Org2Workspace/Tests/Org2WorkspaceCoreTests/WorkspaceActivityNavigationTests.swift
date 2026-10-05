@@ -378,6 +378,74 @@ final class WorkspaceActivityNavigationTests: XCTestCase {
     XCTAssertTrue(zoomed[0].isFile)
   }
 
+  func testActivitySnapshotHidesStaleRunsGroupsApprovalsAndSkipsMachineFiles() async throws {
+    let (defaults, suiteName) = try makeDefaults()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = try temporaryCorpus()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    store.corpusRoot = root
+    let now = Date()
+    let day: TimeInterval = 24 * 3600
+    store.corpusFiles = [
+      CorpusFile(path: root.appendingPathComponent("notes/today.org").path, relativePath: "notes/today.org", modifiedAt: now.addingTimeInterval(-60), byteCount: nil),
+      CorpusFile(path: root.appendingPathComponent(".org2/runs/r.org2").path, relativePath: ".org2/runs/r.org2", modifiedAt: now.addingTimeInterval(-30), byteCount: nil),
+    ]
+    store.replaceAgentRunsForTesting([
+      try makeRun(id: "fresh-running", status: "running", updatedAt: now.addingTimeInterval(-3600)),
+      try makeRun(id: "stale-running", status: "running", updatedAt: now.addingTimeInterval(-30 * day)),
+      try makeRun(id: "stale-queued", status: "queued", updatedAt: now.addingTimeInterval(-2 * day)),
+      try makeRun(id: "fresh-blocked", status: "blocked", blockedReason: "Pick one", updatedAt: now.addingTimeInterval(-2 * day)),
+      try makeRun(id: "stale-blocked", status: "blocked", updatedAt: now.addingTimeInterval(-20 * day)),
+      try makeRun(id: "fresh-failed", status: "failed", updatedAt: now.addingTimeInterval(-day)),
+      try makeRun(id: "stale-failed", status: "failed", updatedAt: now.addingTimeInterval(-10 * day)),
+      try makeRun(id: "scout", status: "waiting-approval", updatedAt: now.addingTimeInterval(-40 * day)),
+    ])
+    let requested = ISO8601DateFormatter().string(from: now.addingTimeInterval(-3600))
+    store.replaceApprovalItemsForTesting(["Acme / a@acme.com", "Beta / b@beta.dev", "Gamma / c@gamma.io"].map { lead in
+      ApprovalItem(
+        title: "Revenue Scout review: \(lead)", status: "pending", todo: nil, level: nil,
+        file: root.appendingPathComponent(".org2/runs/scout.org2").path, line: 1, idValue: nil,
+        properties: [:], body: "", tags: [], approvalId: "approval-\(lead)",
+        requestedAt: requested, runId: "scout"
+      )
+    } + [
+      ApprovalItem(
+        title: "Send renewal follow-up", status: "pending", todo: nil, level: nil,
+        file: root.appendingPathComponent(".org2/runs/renewal.org2").path, line: 1, idValue: nil,
+        properties: [:], body: "", tags: [], approvalId: "approval-renewal", action: "send email",
+        requestedAt: requested, runId: "renewal"
+      ),
+    ])
+    try await waitForCondition { store.activitySnapshot(now: now).working.count == 1 }
+
+    let snapshot = store.activitySnapshot(now: now)
+    XCTAssertEqual(snapshot.working.map(\.id), ["run:fresh-running"], "Old running and queued runs are not live work")
+    let needsYou = Set(snapshot.needsYou.map(\.id))
+    XCTAssertEqual(needsYou, ["approvals:run:scout", "approval:run:renewal:approval-renewal", "run:fresh-blocked", "run:fresh-failed"])
+    let scout = try XCTUnwrap(snapshot.needsYou.first { $0.id == "approvals:run:scout" })
+    XCTAssertEqual(scout.title, "Revenue Scout review")
+    XCTAssertEqual(scout.detail, "3 decisions waiting")
+    XCTAssertEqual(scout.count, 3)
+    XCTAssertEqual(snapshot.needsYou.first { $0.id == "approval:run:renewal:approval-renewal" }?.detail, "Approve: send email")
+    XCTAssertEqual(snapshot.hiddenOlderCount, 4, "stale running, queued, blocked, and failed runs are counted, not listed")
+    XCTAssertEqual(snapshot.changed.map(\.relativePath), ["notes/today.org"], "Machine state under .org2 is not a change you made")
+  }
+
+  func testActivityPolicyWindowsDependOnState() {
+    let now = Date()
+    let hours: (Double) -> Date = { now.addingTimeInterval(-$0 * 3600) }
+    XCTAssertTrue(WorkspaceActivityPolicy.isCurrent(state: .working, updatedAt: hours(23), now: now))
+    XCTAssertFalse(WorkspaceActivityPolicy.isCurrent(state: .queued, updatedAt: hours(25), now: now))
+    XCTAssertTrue(WorkspaceActivityPolicy.isCurrent(state: .needsYou, updatedAt: hours(6 * 24), now: now))
+    XCTAssertFalse(WorkspaceActivityPolicy.isCurrent(state: .yourTurn, updatedAt: hours(8 * 24), now: now))
+    XCTAssertFalse(WorkspaceActivityPolicy.isCurrent(state: .failed, updatedAt: hours(4 * 24), now: now))
+    XCTAssertTrue(WorkspaceActivityPolicy.isCurrent(state: .failed, updatedAt: nil, now: now))
+    XCTAssertTrue(WorkspaceActivityPolicy.isMachineManaged(".org2/runs/a.org2"))
+    XCTAssertTrue(WorkspaceActivityPolicy.isMachineManaged("notes/.cache/x.org"))
+    XCTAssertFalse(WorkspaceActivityPolicy.isMachineManaged("notes/a.org"))
+  }
+
   func testActivityThreadIDIsReadFromRunComments() throws {
     let threadID = UUID()
     let run = try makeRun(id: "r", status: "running", comments: ["AI destination: codex\nAI chat thread: \(threadID.uuidString.lowercased())"])
@@ -461,7 +529,8 @@ final class WorkspaceActivityNavigationTests: XCTestCase {
     contextRefs: [String] = [],
     blockedReason: String? = nil,
     comments: [String] = [],
-    pendingApproval: Bool = false
+    pendingApproval: Bool = false,
+    updatedAt: Date = Date()
   ) throws -> AgentRunItem {
     var value: [String: Any] = [
       "id": id,
@@ -490,7 +559,7 @@ final class WorkspaceActivityNavigationTests: XCTestCase {
       ] },
       "events": [],
       "createdAt": "2026-10-01T00:00:00.000Z",
-      "updatedAt": "2026-10-01T00:00:00.000Z",
+      "updatedAt": ISO8601DateFormatter().string(from: updatedAt),
     ]
     if let blockedReason { value["blockedReason"] = blockedReason }
     let data = try JSONSerialization.data(withJSONObject: value)

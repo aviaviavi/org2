@@ -54,28 +54,51 @@ extension WorkspaceStore {
       }
     }
 
-    // Unified decision queue.
+    // Unified decision queue. One run can request many decisions (a scout
+    // proposing twenty outreach emails); show it once with a count.
     var runIDsWithApprovals = Set<String>()
     let runsByID = Dictionary(agentRuns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var approvalGroups: [String: [ApprovalItem]] = [:]
+    var approvalGroupOrder: [String] = []
     for approval in approvalItems {
       if let runID = approval.runId { runIDsWithApprovals.insert(runID) }
+      let key = approval.runId.map { "run:\($0)" } ?? "approval:\(approval.id)"
+      if approvalGroups[key] == nil { approvalGroupOrder.append(key) }
+      approvalGroups[key, default: []].append(approval)
+    }
+    for key in approvalGroupOrder {
+      guard let group = approvalGroups[key], !group.isEmpty else { continue }
+      let newest = group.max {
+        ($0.requestedAt.flatMap(Self.activityDate) ?? .distantPast)
+          < ($1.requestedAt.flatMap(Self.activityDate) ?? .distantPast)
+      } ?? group[0]
+      let run = newest.runId.flatMap { runsByID[$0] }
       // Run-backed approvals live in .org2/runs; place them at the run's cited source.
-      var approvalPath = relative(approval.file)
+      var approvalPath = relative(newest.file)
       if approvalPath?.hasPrefix(".org2/") == true,
-         let run = approval.runId.flatMap({ runsByID[$0] }),
-         let cited = run.context.lazy.compactMap({ relative($0.fileReference) }).first {
+         let cited = run?.context.lazy.compactMap({ relative($0.fileReference) }).first {
         approvalPath = cited
       }
+      let title: String
+      let detail: String
+      if group.count == 1 {
+        title = Org2Display.cleanInline(newest.title)
+        detail = newest.action.map { "Approve: \($0)" } ?? "Waiting for your decision"
+      } else {
+        title = Self.activityApprovalGroupTitle(group.map { Org2Display.cleanInline($0.title) }, run: run)
+        detail = "\(group.count) decisions waiting"
+      }
       snapshot.needsYou.append(WorkspaceActivityItem(
-        id: "approval:\(approval.id)",
+        id: group.count == 1 ? "approval:\(newest.id)" : "approvals:\(key)",
         kind: .needsYou,
-        title: Org2Display.cleanInline(approval.title),
-        detail: approval.action.map { "Approve: \($0)" } ?? "Waiting for your decision",
-        agent: approval.requestedFrom,
+        title: title,
+        detail: detail,
+        agent: newest.requestedFrom,
         relativePath: approvalPath,
-        date: approval.requestedAt.flatMap(Self.activityDate),
+        date: newest.requestedAt.flatMap(Self.activityDate),
         state: .needsYou,
-        target: .approval(approval.id)
+        target: .approval(newest.id),
+        count: group.count
       ))
     }
 
@@ -89,6 +112,13 @@ extension WorkspaceStore {
       }
       if let threadID, representedThreadIDs.contains(threadID), state == .working { continue }
       if state == .needsYou, runIDsWithApprovals.contains(run.id) { continue }
+      // Old open runs are history, not current activity. Keep them out of
+      // Now and the map; the Runs queue still lists every one.
+      if !threadRunning,
+         !WorkspaceActivityPolicy.isCurrent(state: state, updatedAt: Self.activityDate(run.updatedAt), now: now) {
+        snapshot.hiddenOlderCount += 1
+        continue
+      }
       let path = run.context.lazy.compactMap { relative($0.fileReference) }.first
       let title = run.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyActivity ?? run.goal
       let agent = agentName(agentRef: run.agentRef, fallback: run.assignee ?? run.owner)
@@ -135,8 +165,9 @@ extension WorkspaceStore {
     snapshot.changed = corpusFiles
       .lazy
       .filter { ($0.modifiedAt ?? .distantPast) >= recentCutoff }
+      .filter { !WorkspaceActivityPolicy.isMachineManaged($0.relativePath) }
       .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
-      .prefix(20)
+      .prefix(WorkspaceActivityPolicy.changedFileLimit)
       .map { file in
         WorkspaceActivityItem(
           id: "file:\(file.relativePath)",
@@ -191,6 +222,14 @@ extension WorkspaceStore {
     }
   }
 
+  /// Opens the full run history behind Activity's "older runs" note.
+  public func openActivityRuns() {
+    usageLog.record(.activityOpen, ["kind": "older", "target": "runs"])
+    runsAndReviewPage = .runs
+    makeSurfacePrimary(.approvals)
+    statusText = "Runs is primary"
+  }
+
   public func openActivityMapFile(relativePath: String) {
     guard let file = corpusFiles.first(where: { $0.relativePath == relativePath }) else { return }
     usageLog.record(.activityMapNavigate, ["action": "open_file"])
@@ -219,6 +258,21 @@ extension WorkspaceStore {
       if let id = UUID(uuidString: String(match.suffix(36))) { return id }
     }
     return nil
+  }
+
+  /// One title for several decisions requested by the same run.
+  nonisolated static func activityApprovalGroupTitle(_ titles: [String], run: AgentRunItem?) -> String {
+    // Titles such as "Revenue Scout review: Acme / a@acme.com" share a prefix
+    // that names the batch better than the run's own title.
+    let prefixes = Set(titles.map { title -> String in
+      guard let colon = title.firstIndex(of: ":") else { return title }
+      return String(title[..<colon]).trimmingCharacters(in: .whitespaces)
+    })
+    if prefixes.count == 1, let prefix = prefixes.first, !prefix.isEmpty { return prefix }
+    if let runTitle = run?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !runTitle.isEmpty {
+      return runTitle
+    }
+    return run?.goal.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyActivity ?? titles.first ?? "Decisions"
   }
 
   nonisolated static func activityRunDetail(_ run: AgentRunItem, state: HeadingWorkState) -> String {

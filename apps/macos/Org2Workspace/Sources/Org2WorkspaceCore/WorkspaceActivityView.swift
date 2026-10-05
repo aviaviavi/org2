@@ -142,6 +142,7 @@ struct WorkspaceActivityView: View {
 private struct ActivityNowList: View {
   @Environment(WorkspaceStore.self) private var store
   let snapshot: WorkspaceActivitySnapshot
+  @State private var expandedSections: Set<String> = []
 
   var body: some View {
     ScrollView {
@@ -155,6 +156,7 @@ private struct ActivityNowList: View {
         section("Changed today", systemImage: "pencil", items: snapshot.changed,
                 empty: "No files changed in the last 24 hours.")
         recentlyOpened
+        olderRunsNote
       }
       .padding(.horizontal, 18)
       .padding(.vertical, 14)
@@ -163,6 +165,9 @@ private struct ActivityNowList: View {
 
   @ViewBuilder
   private func section(_ title: String, systemImage: String, items: [WorkspaceActivityItem], empty: String) -> some View {
+    let limit = WorkspaceActivityPolicy.collapsedSectionLimit
+    let isExpanded = expandedSections.contains(title)
+    let visible = isExpanded ? items : Array(items.prefix(limit))
     VStack(alignment: .leading, spacing: 6) {
       sectionHeader(title, systemImage: systemImage, count: items.count)
       if items.isEmpty {
@@ -171,10 +176,36 @@ private struct ActivityNowList: View {
           .foregroundStyle(.tertiary)
           .padding(.leading, 2)
       } else {
-        ForEach(items) { item in
+        ForEach(visible) { item in
           ActivityRow(item: item) { store.openActivityItem(item) }
         }
+        if items.count > limit {
+          Button(isExpanded ? "Show fewer" : "Show all \(items.count)") {
+            if isExpanded {
+              expandedSections.remove(title)
+            } else {
+              expandedSections.insert(title)
+            }
+          }
+          .buttonStyle(.link)
+          .font(.callout)
+          .padding(.leading, 10)
+        }
       }
+    }
+  }
+
+  @ViewBuilder
+  private var olderRunsNote: some View {
+    if snapshot.hiddenOlderCount > 0 {
+      HStack(spacing: 6) {
+        Text("\(snapshot.hiddenOlderCount) older open run\(snapshot.hiddenOlderCount == 1 ? " is" : "s are") not shown.")
+          .foregroundStyle(.secondary)
+        Button("Open Runs") { store.openActivityRuns() }
+          .buttonStyle(.link)
+      }
+      .font(.callout)
+      .help("Activity shows runs updated in the last day (working), week (needs you), or three days (failed).")
     }
   }
 
@@ -248,7 +279,14 @@ private struct ActivityRow: View {
             Text(item.title)
               .font(.body.weight(.medium))
               .lineLimit(1)
-            if let state = item.state, item.kind != .working || state != .working {
+            if item.count > 1 {
+              Text("\(item.count)")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Color.orange.opacity(0.13), in: Capsule())
+            } else if let state = item.state, item.kind != .working || state != .working {
               HeadingWorkStateBadge(state: state)
             }
           }

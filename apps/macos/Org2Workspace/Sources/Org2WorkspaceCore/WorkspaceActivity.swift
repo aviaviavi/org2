@@ -31,6 +31,9 @@ public struct WorkspaceActivityItem: Identifiable, Hashable, Sendable {
   public let date: Date?
   public let state: HeadingWorkState?
   public let target: Target
+  /// Number of underlying records this row stands for, such as several
+  /// approvals requested by one run.
+  public let count: Int
 
   public init(
     id: String,
@@ -41,7 +44,8 @@ public struct WorkspaceActivityItem: Identifiable, Hashable, Sendable {
     relativePath: String? = nil,
     date: Date? = nil,
     state: HeadingWorkState? = nil,
-    target: Target
+    target: Target,
+    count: Int = 1
   ) {
     self.id = id
     self.kind = kind
@@ -52,6 +56,39 @@ public struct WorkspaceActivityItem: Identifiable, Hashable, Sendable {
     self.date = date
     self.state = state
     self.target = target
+    self.count = max(1, count)
+  }
+}
+
+/// What counts as current activity. Open runs linger for weeks after people
+/// stop caring about them; Activity shows recent work and leaves the full
+/// history to the Runs and Review queues.
+public enum WorkspaceActivityPolicy {
+  /// Running or queued work untouched for longer than this is stale.
+  public static let liveWorkWindow: TimeInterval = 24 * 3600
+  /// Blocked runs and runs waiting on a reply stay visible this long.
+  public static let attentionWindow: TimeInterval = 7 * 24 * 3600
+  /// Failures are worth a look only while they are fresh.
+  public static let failureWindow: TimeInterval = 3 * 24 * 3600
+  public static let changedFileLimit = 10
+  /// Rows each Now section shows before "Show all".
+  public static let collapsedSectionLimit = 5
+
+  public static func isCurrent(state: HeadingWorkState, updatedAt: Date?, now: Date) -> Bool {
+    guard let updatedAt else { return true }
+    let age = now.timeIntervalSince(updatedAt)
+    switch state {
+    case .working, .queued: return age <= liveWorkWindow
+    case .needsYou, .yourTurn: return age <= attentionWindow
+    case .failed: return age <= failureWindow
+    case .done: return false
+    }
+  }
+
+  /// Hidden directories such as `.org2/` hold machine-written state, not
+  /// documents a person edited.
+  public static func isMachineManaged(_ relativePath: String) -> Bool {
+    relativePath.split(separator: "/").contains { $0.hasPrefix(".") }
   }
 }
 
@@ -60,6 +97,8 @@ public struct WorkspaceActivitySnapshot: Equatable, Sendable {
   public var working: [WorkspaceActivityItem] = []
   public var scheduled: [WorkspaceActivityItem] = []
   public var changed: [WorkspaceActivityItem] = []
+  /// Open runs left out because they are older than the activity windows.
+  public var hiddenOlderCount = 0
 
   public init() {}
 
