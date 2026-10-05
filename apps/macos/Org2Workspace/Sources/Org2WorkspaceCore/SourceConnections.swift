@@ -143,6 +143,22 @@ public struct WorkspaceSourceProfileStatus: Codable, Identifiable, Equatable, Se
   public var configPath: String?
   public var configAvailable: Bool
   public var ready: Bool
+
+  /// `source list` supplies the same effective zones used by source ingestion.
+  /// Reserve those directories so edits to imported documents still serialize
+  /// with sync, without blocking unrelated notes during the crawler's network IO.
+  func importResourcePaths(in corpusRoot: URL) -> [String] {
+    let zones = [
+      rawZone.isEmpty ? "raw/connectors/\(type)/\(id)" : rawZone,
+      reviewZone.isEmpty ? "views/connectors/\(type)/\(id)" : reviewZone
+    ]
+    return zones.map { zone in
+      let url = NSString(string: zone).isAbsolutePath
+        ? URL(fileURLWithPath: zone)
+        : corpusRoot.appendingPathComponent(zone)
+      return url.standardizedFileURL.path
+    }
+  }
 }
 
 public struct WorkspaceSourceScheduleState: Codable, Equatable, Sendable {

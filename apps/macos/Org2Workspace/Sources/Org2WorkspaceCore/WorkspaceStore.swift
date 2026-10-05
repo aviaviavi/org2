@@ -5617,7 +5617,7 @@ extension WorkspaceStore {
       let cli = self.cli
       let envelope: WorkspaceSourceOperationEnvelope = try await performDocumentMutation(
         context: context,
-        files: [corpusRoot.path]
+        files: profile.importResourcePaths(in: corpusRoot)
       ) { _ in
         try await cli.runJSON(
           ["source", "sync", profile.id, "--ingest", "--apply", "--dir", corpusRoot.path, "--json"],
