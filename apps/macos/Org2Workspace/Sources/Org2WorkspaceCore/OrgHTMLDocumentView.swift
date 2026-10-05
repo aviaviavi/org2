@@ -948,7 +948,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       menu.addItem(contextMenuItem("Entry View", symbol: "doc.text.magnifyingglass", tag: .entryView))
       menu.addItem(contextMenuItem("Edit Entry", symbol: "square.and.pencil", tag: .edit))
       menu.addItem(contextMenuItem("Ask AI", symbol: "sparkles", tag: .askAI))
-      menu.addItem(contextMenuItem("Start Work with AI", symbol: "play.circle", tag: .startWork))
+      menu.addItem(contextMenuItem("Start Work with AI…", symbol: "play.circle", tag: .startWork))
       menu.addItem(.separator())
       menu.addItem(contextMenuItem("Move / Refile…", symbol: "arrowshape.turn.up.right", tag: .refile))
 

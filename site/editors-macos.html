@@ -100,11 +100,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="from-a-todo-to-agent-work">From a TODO to agent work</h1>
-<p>Every open TODO heading in the rendered document shows <strong>▶ Start work</strong> on hover, and <strong>Start Work with AI</strong> is in the heading's right-click menu and in Agenda's row menu. Starting work:</p>
+<p>Every open TODO heading in the rendered document shows <strong>▶ Start work…</strong> on hover, and <strong>Start Work with AI…</strong> is in the heading's right-click menu and in Agenda's row menu. A small dialog first asks where to start: the thread (the heading's own thread, a new thread, or the AI chat thread you have open), the agent profile, the harness, the model, and the reasoning effort. A heading's own <code>:AGENT_REF:</code> takes precedence, an existing thread keeps its harness, and new-thread choices are remembered for next time. Starting work then:</p>
 <ol>
 <li><p>creates and starts a durable <code>org2 run</code> that cites the heading,</p></li>
 <li><p>adds <code>:ORG2_RUN_ID:</code> to the heading (and an <code>:ID:</code> if it has none) and moves a <code>TODO</code> to in progress,</p></li>
-<li><p>opens the heading's own chat thread with your current AI destination and sends it the task, the source reference, and the run ID.</p></li>
+<li><p>sends the chosen thread the task, the source reference, and the run ID.</p></li>
 </ol>
 <p>The heading then carries a live badge: <em>Working</em> while the agent replies, <em>Your turn</em> when it has replied and the run is still open, <em>Needs you</em> when the run is blocked or waiting for approval, <em>Failed</em>, or <em>Done</em>. Agenda rows show the same badge. Click it to return to the conversation. Starting work on a heading whose run is still open reopens that thread instead of creating a second run. Agents that can use the Org2 CLI are asked to record an outcome under the heading and close the run with <code>org2 run complete</code>.</p>
 </section>

@@ -49,11 +49,11 @@ OpenOrg supplies its core Org2 operating guidance ambiently to every AI chat, so
 
 * From a TODO to agent work
 
-Every open TODO heading in the rendered document shows *▶ Start work* on hover, and *Start Work with AI* is in the heading's right-click menu and in Agenda's row menu. Starting work:
+Every open TODO heading in the rendered document shows *▶ Start work…* on hover, and *Start Work with AI…* is in the heading's right-click menu and in Agenda's row menu. A small dialog first asks where to start: the thread (the heading's own thread, a new thread, or the AI chat thread you have open), the agent profile, the harness, the model, and the reasoning effort. A heading's own =:AGENT_REF:= takes precedence, an existing thread keeps its harness, and new-thread choices are remembered for next time. Starting work then:
 
 1. creates and starts a durable =org2 run= that cites the heading,
 2. adds =:ORG2_RUN_ID:= to the heading (and an =:ID:= if it has none) and moves a =TODO= to in progress,
-3. opens the heading's own chat thread with your current AI destination and sends it the task, the source reference, and the run ID.
+3. sends the chosen thread the task, the source reference, and the run ID.
 
 The heading then carries a live badge: /Working/ while the agent replies, /Your turn/ when it has replied and the run is still open, /Needs you/ when the run is blocked or waiting for approval, /Failed/, or /Done/. Agenda rows show the same badge. Click it to return to the conversation. Starting work on a heading whose run is still open reopens that thread instead of creating a second run. Agents that can use the Org2 CLI are asked to record an outcome under the heading and close the run with =org2 run complete=.
 

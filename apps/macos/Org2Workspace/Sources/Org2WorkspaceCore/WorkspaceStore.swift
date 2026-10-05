@@ -2730,6 +2730,17 @@ public final class WorkspaceStore {
     }
   }
   public var isNodeBriefOptionsPresented = false
+  /// The TODO waiting on the Start Work dialog, if it is open.
+  public var pendingStartWorkRequest: StartWorkRequest?
+  /// Last Start Work choices, offered as the dialog's defaults.
+  public var startWorkLastOptions = StartWorkOptions() {
+    didSet {
+      guard startWorkLastOptions != oldValue else { return }
+      if let data = try? JSONEncoder().encode(startWorkLastOptions) {
+        defaults.set(data, forKey: startWorkLastOptionsKey)
+      }
+    }
+  }
   public private(set) var openClawLocalEditsEnabled = false
   public private(set) var openClawLocalEditNodeState: OpenClawLocalEditNodeState = .disabled
   public private(set) var openClawLocalEditNodeDetail = ""
@@ -3097,6 +3108,7 @@ public final class WorkspaceStore {
   private let launchGuideCompletedKey = "Org2Workspace.openOrgLaunchGuideCompleted.v1"
   private let aiChatBriefsStartNewThreadKey = "Org2Workspace.aiChatBriefsStartNewThread"
   private let nodeBriefConfigurationKey = "Org2Workspace.nodeBriefConfiguration"
+  private let startWorkLastOptionsKey = "Org2Workspace.startWorkLastOptions"
   private let openClawLocalEditsEnabledKey = "Org2Workspace.openClawLocalEditsEnabled.v1"
   private let meetingReadyAutomationSettingsByCorpusKey = "Org2Workspace.meetingReadyAutomation.settingsByCorpus.v1"
   private let meetingReadyAutomationDeliveriesByCorpusKey = "Org2Workspace.meetingReadyAutomation.deliveriesByCorpus.v1"
@@ -3823,6 +3835,10 @@ public final class WorkspaceStore {
     if let data = defaults.data(forKey: nodeBriefConfigurationKey),
        let configuration = try? JSONDecoder().decode(NodeBriefAIConfiguration.self, from: data) {
       nodeBriefConfiguration = configuration
+    }
+    if let data = defaults.data(forKey: startWorkLastOptionsKey),
+       let options = try? JSONDecoder().decode(StartWorkOptions.self, from: data) {
+      startWorkLastOptions = options
     }
     openClawLocalEditsEnabled = defaults.bool(forKey: openClawLocalEditsEnabledKey)
     renderedDocumentWidth = defaults.string(forKey: renderedDocumentWidthKey)
@@ -11298,7 +11314,7 @@ extension WorkspaceStore {
       askAIChatAboutBlock(block)
     case .startWork:
       guard let location = renderedHeadingLocation(for: block) else { return }
-      Task { await startWork(on: location, origin: "document_menu") }
+      requestStartWork(on: location, origin: "document_menu")
     case .refile:
       presentRenderedEntryRefile(block)
     case .schedule(let target):
@@ -11339,7 +11355,77 @@ extension WorkspaceStore {
       statusText = "Could not resolve that heading"
       return
     }
-    Task { await startWork(on: location, origin: "document_button") }
+    requestStartWork(on: location, origin: "document_button")
+  }
+
+  /// Asks where to start work on a TODO (agent, harness, model, reasoning,
+  /// thread) before starting it. A heading that already has an open run
+  /// opens that work directly.
+  public func requestStartWork(on location: WorkspaceLocation, origin: String) {
+    guard corpusRoot != nil else {
+      statusText = "Open a corpus first"
+      return
+    }
+    guard let target = headlineMutationTarget(for: location) else {
+      statusText = "Select a TODO heading first"
+      return
+    }
+    guard let fileText = try? String(contentsOfFile: target.file, encoding: .utf8),
+          let link = HeadingWorkStatus.links(in: fileText, baseLine: 1)
+            .last(where: { $0.line <= target.line })
+    else {
+      statusText = "Could not find that heading"
+      return
+    }
+    if link.todo.map(HeadingWorkStatus.terminalTodoKeywords.contains) == true {
+      statusText = "This task is already closed"
+      return
+    }
+    if let runID = link.runID, let run = agentRunsByID[runID], !run.isFinished {
+      Task { await startWork(on: location, origin: origin) }
+      return
+    }
+    guard !enabledAIChatDestinations.isEmpty else {
+      errorText = "Turn on an AI destination in Settings › AI Chat to start work from a TODO."
+      statusText = "No AI destination"
+      return
+    }
+    let taskThreadID = link.idValue
+      .flatMap { resourceThreadIDsByKey()["id:\($0)"] }
+      .flatMap { id in aiChatThreads.contains(where: { $0.id == id }) ? id : nil }
+    let currentThreadID = selectedAIChatThread
+      .flatMap { $0.isSharedRoom || $0.id == taskThreadID ? nil : $0.id }
+    pendingStartWorkRequest = StartWorkRequest(
+      location: location,
+      origin: origin,
+      title: target.title.isEmpty ? "Untitled task" : target.title,
+      headingAgentRef: link.agentRef,
+      taskThreadID: taskThreadID,
+      currentThreadID: currentThreadID
+    )
+  }
+
+  /// Starts the work chosen in the Start Work dialog.
+  public func confirmStartWork(
+    _ request: StartWorkRequest,
+    options: StartWorkOptions,
+    threadTarget: StartWorkThreadTarget
+  ) {
+    pendingStartWorkRequest = nil
+    if case .currentThread = threadTarget {
+      // The current thread's settings are not a general default.
+      startWorkLastOptions.agentRef = options.agentRef
+    } else {
+      startWorkLastOptions = options
+    }
+    Task {
+      await startWork(
+        on: request.location,
+        origin: request.origin,
+        options: options,
+        threadTarget: threadTarget
+      )
+    }
   }
 
   /// Opens the chat thread (or run) already attached to the heading at `line`.
@@ -11347,7 +11433,16 @@ extension WorkspaceStore {
     guard let source = selectedEntrySource,
           let badge = headingWorkBadges(for: source).first(where: { $0.line == line })
     else { return }
-    openHeadingWork(threadID: badge.threadID, runID: badge.runID)
+    openHeadingWork(threadID: badge.threadID ?? runChatThreadID(badge.runID), runID: badge.runID)
+  }
+
+  /// The chat a run was started in, from its "AI chat thread:" comment.
+  private func runChatThreadID(_ runID: String?) -> UUID? {
+    guard let runID, let run = agentRunsByID[runID],
+          let id = Self.activityThreadID(in: run),
+          aiChatThreads.contains(where: { $0.id == id })
+    else { return nil }
+    return id
   }
 
   func openHeadingWork(threadID: UUID?, runID: String?) {
@@ -11383,7 +11478,8 @@ extension WorkspaceStore {
       links: links,
       runsByID: agentRunsByID,
       resourceThreadIDsByKey: resourceThreadIDsByKey(),
-      isThreadRunning: { self.isAIChatThreadRunning($0) }
+      isThreadRunning: { self.isAIChatThreadRunning($0) },
+      threadIDForRun: { self.runChatThreadID($0.id) }
     )
   }
 
@@ -11396,7 +11492,8 @@ extension WorkspaceStore {
       links: [HeadingWorkLink(line: 0, todo: nil, idValue: idValue, runID: runID)],
       runsByID: agentRunsByID,
       resourceThreadIDsByKey: resourceThreadIDsByKey(),
-      isThreadRunning: { self.isAIChatThreadRunning($0) }
+      isThreadRunning: { self.isAIChatThreadRunning($0) },
+      threadIDForRun: { self.runChatThreadID($0.id) }
     ).first
   }
 
@@ -11416,7 +11513,14 @@ extension WorkspaceStore {
   /// 3. open the heading's canonical `id:` chat thread and send the task.
   /// The heading then shows the run's live state (Working, Your turn, Done…).
   /// If the heading already has an open run with a thread, that thread opens.
-  public func startWork(on location: WorkspaceLocation, origin: String = "agenda") async {
+  /// `options` and `threadTarget` come from the Start Work dialog; nil uses
+  /// the current chat's destination and the heading's own thread.
+  public func startWork(
+    on location: WorkspaceLocation,
+    origin: String = "agenda",
+    options: StartWorkOptions? = nil,
+    threadTarget: StartWorkThreadTarget? = nil
+  ) async {
     guard let corpusRoot else {
       statusText = "Open a corpus first"
       return
@@ -11452,13 +11556,25 @@ extension WorkspaceStore {
     // Resume an open run instead of creating a duplicate.
     if let runID = link.runID, let run = agentRunsByID[runID], !run.isFinished {
       let threadID = link.idValue.flatMap { resourceThreadIDsByKey()["id:\($0)"] }
+        ?? runChatThreadID(runID)
       usageLog.record(.startWork, ["origin": .string(origin), "resumed": true])
       openHeadingWork(threadID: threadID, runID: runID)
       statusText = "Opened work in progress"
       return
     }
 
-    guard let destination = enabledAIChatDestinations.first(where: { $0.id == selectedAIChatDestination.id })
+    var currentThread: AIChatThread?
+    if case .currentThread(let id) = threadTarget {
+      guard let thread = aiChatThreads.first(where: { $0.id == id }), !thread.isSharedRoom else {
+        statusText = "That chat is no longer available"
+        return
+      }
+      currentThread = thread
+    }
+    let preferredDestinationID = currentThread?.destinationID
+      ?? options?.destinationID
+      ?? selectedAIChatDestination.id
+    guard let destination = enabledAIChatDestinations.first(where: { $0.id == preferredDestinationID })
       ?? enabledAIChatDestinations.first
     else {
       errorText = "Turn on an AI destination in Settings › AI Chat to start work from a TODO."
@@ -11484,7 +11600,8 @@ extension WorkspaceStore {
         "--dir", corpusRoot.path,
         "--json",
       ]
-      if let agentRef = link.agentRef { arguments += ["--agent-ref", agentRef] }
+      // The heading's own AGENT_REF wins over a dialog choice.
+      if let agentRef = link.agentRef ?? options?.agentRef { arguments += ["--agent-ref", agentRef] }
       if let goalRef = link.goalRef { arguments += ["--goal-ref", goalRef] }
       let created: StartWorkRunCreatePayload = try await cli.runJSON(arguments)
       run = created.run
@@ -11545,19 +11662,35 @@ extension WorkspaceStore {
       idValue: idValue
     )
     let thread: AIChatThread
-    if let existing = aiChatThreads.first(where: { $0.resource?.key == resource.key }) {
+    let reusableThread: AIChatThread? = switch threadTarget {
+    case .currentThread: currentThread
+    case .newThread: nil
+    case .taskThread(let id):
+      aiChatThreads.first(where: { $0.id == id })
+        ?? aiChatThreads.first(where: { $0.resource?.key == resource.key })
+    case nil: aiChatThreads.first(where: { $0.resource?.key == resource.key })
+    }
+    if let existing = reusableThread {
       if existing.isSettled { reopenAIChatThread(existing.id) }
       thread = existing
     } else {
+      let model = options?.model
+      let reasoningEffort = options?.reasoningEffort
       thread = createAIChatThread(
         title: "Work: \(title)",
         statusText: "",
         resource: resource,
         runtime: destination.runtime,
         destinationID: destination.id,
+        inheritsChatConfiguration: model == nil && reasoningEffort == nil,
+        modelOverride: model,
+        reasoningEffortOverride: reasoningEffort,
         defersPersistence: true,
         selectsThread: false
       )
+    }
+    if let options {
+      applyStartWorkSettings(options, toThread: thread.id, includesModel: reusableThread != nil)
     }
     let pointer = aiChatContextPointer(for: WorkspaceLocation.aiChatThreadRecord(AIChatThreadRecord(
       title: title,
@@ -11591,6 +11724,31 @@ extension WorkspaceStore {
     ])
     statusText = sent ? "Started work on \(title)" : "Run started; send the task from the chat"
     await refreshAgentRuns()
+  }
+
+  /// Applies Start Work dialog choices to the chat that will receive the
+  /// task. A running chat keeps its model; changing it mid-turn is unsafe.
+  private func applyStartWorkSettings(
+    _ options: StartWorkOptions,
+    toThread threadID: UUID,
+    includesModel: Bool
+  ) {
+    guard let index = aiChatThreads.firstIndex(where: { $0.id == threadID }) else { return }
+    var thread = aiChatThreads[index]
+    if let agentRef = options.agentRef, thread.agentRef != agentRef {
+      thread = thread.replacingAIChatMetadata(agentRef: .some(agentRef))
+    }
+    if includesModel, !isAIChatThreadRunning(threadID) {
+      if let model = options.model, thread.model != model {
+        thread = thread.replacingAIChatMetadata(model: .some(model), reasoningEffort: .some(nil))
+      }
+      if let reasoningEffort = options.reasoningEffort, thread.reasoningEffort != reasoningEffort {
+        thread = thread.replacingAIChatMetadata(reasoningEffort: .some(reasoningEffort))
+      }
+    }
+    guard thread != aiChatThreads[index] else { return }
+    aiChatThreads[index] = thread
+    persistAIChatTranscript()
   }
 
   private func renderedHeadingBlock(at line: Int) -> OrgEditableBlock? {

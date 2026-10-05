@@ -137,10 +137,14 @@ enum HeadingWorkStatus {
     links: [HeadingWorkLink],
     runsByID: [String: AgentRunItem],
     resourceThreadIDsByKey: [String: UUID],
-    isThreadRunning: (UUID) -> Bool
+    isThreadRunning: (UUID) -> Bool,
+    threadIDForRun: (AgentRunItem) -> UUID? = { _ in nil }
   ) -> [HeadingWorkBadge] {
     links.compactMap { link in
+      // Work started in an existing chat is not that heading's resource
+      // thread; the run's "AI chat thread:" comment still links them.
       let threadID = link.idValue.flatMap { resourceThreadIDsByKey["id:\($0)"] }
+        ?? link.runID.flatMap { runsByID[$0] }.flatMap(threadIDForRun)
       let threadRunning = threadID.map(isThreadRunning) ?? false
       guard let runID = link.runID else {
         // Without a durable run, show only live work in this heading's thread.
@@ -258,7 +262,7 @@ enum OrgHTMLHeadingWorkScript {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'org2-heading-ai-action org2-heading-start-work';
-        button.textContent = '▶ Start work';
+        button.textContent = '▶ Start work…';
         button.title = 'Start an agent run on this task and open its chat';
         button.setAttribute('aria-label', 'Start work on this task with AI');
         button.addEventListener('click', (event) => {

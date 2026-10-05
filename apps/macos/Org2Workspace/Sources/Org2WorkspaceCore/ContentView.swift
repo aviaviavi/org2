@@ -148,6 +148,10 @@ public struct ContentView: View {
         NodeBriefOptionsView()
           .environment(store)
       }
+      .sheet(item: $store.pendingStartWorkRequest) { request in
+        StartWorkOptionsView(request: request)
+          .environment(store)
+      }
       .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
         KeyboardShortcutsView()
           .environment(store)
@@ -4347,9 +4351,9 @@ private struct HeadingActionsContextMenu: View {
   var body: some View {
     Button {
       select()
-      Task { await store.startWork(on: location, origin: "context_menu") }
+      store.requestStartWork(on: location, origin: "context_menu")
     } label: {
-      Label("Start Work with AI", systemImage: "play.circle")
+      Label("Start Work with AI…", systemImage: "play.circle")
     }
     Divider()
 

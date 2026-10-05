@@ -337,6 +337,74 @@ final class WorkspaceActivityNavigationTests: XCTestCase {
     XCTAssertEqual(HeadingWorkStatus.links(in: try String(contentsOf: file, encoding: .utf8), baseLine: 1).first { $0.line == 3 }?.runID, runID)
   }
 
+  func testStartWorkAsksWhereAndCanUseTheCurrentThreadWithChosenSettings() async throws {
+    let root = try temporaryCorpus()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (defaults, suiteName) = try makeDefaults()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let file = root.appendingPathComponent("tasks.org")
+    try "#+title: Tasks\n\n* TODO Draft the launch email\n* DONE Shipped already\n"
+      .write(to: file, atomically: true, encoding: .utf8)
+    let sentPrompts = SentPromptRecorder()
+    let store = WorkspaceStore(
+      cli: try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      aiChatTranscriptURL: root.appendingPathComponent("chats.json"),
+      aiChatSendHandler: { messages, _, _, _ in
+        await sentPrompts.append(messages.last(where: { $0.role == .user })?.content ?? "")
+        return "On it."
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let currentID = store.createAIChatThread(destinationID: store.selectedAIChatDestination.id)
+    store.selectAIChatThread(currentID)
+    func location(_ title: String, line: Int) -> WorkspaceLocation {
+      .aiChatThreadRecord(AIChatThreadRecord(title: title, file: file.path, line: line, zone: "entry", modifiedAt: nil))
+    }
+
+    // A closed task never opens the dialog.
+    store.requestStartWork(on: location("Shipped already", line: 4), origin: "test")
+    XCTAssertNil(store.pendingStartWorkRequest)
+
+    // An open task asks where to start, offering the current thread.
+    store.requestStartWork(on: location("Draft the launch email", line: 3), origin: "test")
+    let request = try XCTUnwrap(store.pendingStartWorkRequest)
+    XCTAssertEqual(request.title, "Draft the launch email")
+    XCTAssertEqual(request.currentThreadID, currentID)
+    XCTAssertNil(request.taskThreadID)
+    XCTAssertTrue(store.agentRuns.isEmpty, "nothing starts until the dialog is confirmed")
+
+    let options = StartWorkOptions(model: "test-model", reasoningEffort: "high")
+    await store.startWork(
+      on: request.location,
+      origin: request.origin,
+      options: options,
+      threadTarget: .currentThread(currentID)
+    )
+
+    let thread = try XCTUnwrap(store.aiChatThreads.first { $0.id == currentID })
+    XCTAssertEqual(thread.model, "test-model")
+    XCTAssertEqual(thread.reasoningEffort, "high")
+    XCTAssertNil(thread.resource, "the current thread is reused, not replaced")
+    XCTAssertEqual(store.aiChatThreads.filter { $0.title.hasPrefix("Work:") }.count, 0)
+    XCTAssertEqual(store.selectedAIChatThreadID, currentID)
+    let text = try String(contentsOf: file, encoding: .utf8)
+    let runID = try XCTUnwrap(HeadingWorkStatus.links(in: text, baseLine: 1).first { $0.line == 3 }?.runID)
+    try await waitForCondition(timeout: 8) { !store.isAIChatThreadRunning(currentID) }
+    let prompts = await sentPrompts.values
+    XCTAssertTrue(prompts.contains { $0.contains("Durable run: \(runID)") })
+
+    // The heading's badge follows the run to the chat it was started in.
+    let source = EntrySource(file: file.path, startLine: 1, endLineExclusive: 10, text: text, isSubtree: false)
+    try await waitForCondition(timeout: 4) { store.headingWorkBadges(for: source).first?.threadID == currentID }
+
+    // Choosing a new thread remembers the settings for next time.
+    store.confirmStartWork(request, options: options, threadTarget: .newThread)
+    XCTAssertNil(store.pendingStartWorkRequest)
+    XCTAssertEqual(store.startWorkLastOptions.model, "test-model")
+  }
+
   // MARK: Activity model and map
 
   func testActivitySnapshotGroupsRunsApprovalsAndRecentFiles() async throws {
