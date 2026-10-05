@@ -344,6 +344,58 @@ final class DocumentPublishingTests: XCTestCase {
     XCTAssertEqual(secondData, html)
   }
 
+  func testSharePreviewMetadataAnnotatesPublishedHTMLOnce() throws {
+    let exported = Data("""
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8" />
+    <title>Q4 plan</title>
+    </head>
+    <body>
+    <main class="org2-document">
+    <h1>Q4 plan</h1>
+    <p>  </p>
+    <p>Ship the <b>share</b> previews &amp; measure
+    adoption.</p>
+    </main>
+    </body>
+    </html>
+    """.utf8)
+    let annotated = SharePreviewMetadata.annotated(html: exported, title: "Q4 plan")
+    let html = try XCTUnwrap(String(data: annotated, encoding: .utf8))
+    XCTAssertTrue(html.contains(#"<meta property="og:title" content="Q4 plan">"#))
+    XCTAssertTrue(html.contains(#"<meta property="og:description" content="Ship the share previews &amp; measure adoption.">"#))
+    XCTAssertTrue(html.contains(#"<meta name="description" content="Ship the share previews &amp; measure adoption.">"#))
+    XCTAssertLessThan(html.range(of: "og:title")!.lowerBound, html.range(of: "</head>")!.lowerBound)
+    XCTAssertEqual(SharePreviewMetadata.annotated(html: annotated, title: "Q4 plan"), annotated, "Annotating twice is a no-op")
+
+    // A document #+DESCRIPTION wins over the first paragraph, without a duplicate tag.
+    let described = Data("""
+    <!doctype html><html><head><meta charset="utf-8" />
+    <meta name="description" content="Plan for &quot;Q4&quot;" />
+    </head><body><main><p>Body text</p></main></body></html>
+    """.utf8)
+    let describedHTML = try XCTUnwrap(String(data: SharePreviewMetadata.annotated(html: described, title: "Plan"), encoding: .utf8))
+    XCTAssertTrue(describedHTML.contains(#"<meta property="og:description" content="Plan for &quot;Q4&quot;">"#))
+    XCTAssertEqual(describedHTML.components(separatedBy: #"name="description""#).count - 1, 1)
+
+    let pdf = Data("%PDF-1.7".utf8)
+    XCTAssertEqual(SharePreviewMetadata.annotated(html: pdf, title: "x"), pdf)
+    XCTAssertEqual(SharePreviewMetadata.truncated(String(repeating: "word ", count: 80), limit: 30).count <= 30, true)
+  }
+
+  func testLocalHostServesLinkPreviewMetadataForPublishedPages() async throws {
+    let host = LocalDocumentPublicationHost(bindHost: "127.0.0.1", advertisedHost: "127.0.0.1")
+    defer { host.stop() }
+    let html = Data("<!doctype html><html><head><meta charset=\"utf-8\"><title>Report</title></head><body><main><p>Weekly numbers.</p></main></body></html>".utf8)
+    let publication = try await host.publish(html: html, title: "Weekly report")
+    let (served, _) = try await URLSession.shared.data(from: publication.localURL)
+    let page = try XCTUnwrap(String(data: served, encoding: .utf8))
+    XCTAssertTrue(page.contains(#"<meta property="og:title" content="Weekly report">"#))
+    XCTAssertTrue(page.contains(#"<meta property="og:description" content="Weekly numbers.">"#))
+  }
+
   func testLocalPublicationOpenURLUsesTheAdvertisedShareLink() async throws {
     let host = LocalDocumentPublicationHost(
       bindHost: "127.0.0.1",

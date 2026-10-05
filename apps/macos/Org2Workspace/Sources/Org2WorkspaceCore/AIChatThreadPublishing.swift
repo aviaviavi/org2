@@ -199,6 +199,7 @@ enum AIChatThreadPublicationPage {
     <meta name="robots" content="noindex, nofollow">
     <meta name="openorg-revision" content="\(revision)">
     <title>\(escape(title)) · OpenOrg</title>
+    \(SharePreviewMetadata.tags(title: title, description: previewDescription(snapshot)))
     <style id="org2-app-document-style">\(rendererStylesheet ?? "")</style>
     <style id="openorg-chat-page-style">\(pageStylesheet)</style>
     <style id="openorg-chat-theme">\(themeStylesheet(for: snapshot))</style>
@@ -221,6 +222,20 @@ enum AIChatThreadPublicationPage {
     </html>
 
     """
+  }
+
+  /// Link-preview summary: the conversation's opening message, which names
+  /// its topic, plus its size. Only text already on the page is used.
+  static func previewDescription(_ snapshot: AIChatThreadPublicationSnapshot) -> String {
+    let count = snapshot.messages.count
+    let size = count == 0
+      ? "Shared AI chat from OpenOrg"
+      : "AI chat · \(count) message\(count == 1 ? "" : "s")"
+    let opening = (snapshot.messages.first { $0.role == .user } ?? snapshot.messages.first)
+      .map { SharePreviewMetadata.collapsedWhitespace($0.text) } ?? ""
+    guard !opening.isEmpty else { return size }
+    let limit = SharePreviewMetadata.descriptionLimit - size.count - 3
+    return SharePreviewMetadata.truncated(opening, limit: max(40, limit)) + " — " + size
   }
 
   private static func article(

@@ -1430,6 +1430,11 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
     let trimmedStableKey = stableKey?.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedStableKey = trimmedStableKey?.isEmpty == false ? trimmedStableKey : nil
     let normalizedMediaType = Self.normalizedMediaType(mediaType)
+    // Chat apps unfurl pasted links from Open Graph tags; add them to any
+    // published page that lacks its own.
+    let data = normalizedMediaType == "text/html"
+      ? SharePreviewMetadata.annotated(html: data, title: title)
+      : data
     let existingDocument = normalizedStableKey.flatMap { stableKey in
       stateLock.withLock {
         let exactMatch = documents.values

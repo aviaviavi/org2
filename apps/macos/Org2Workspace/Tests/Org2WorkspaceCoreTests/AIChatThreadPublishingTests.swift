@@ -192,6 +192,38 @@ final class AIChatThreadPublishingTests: XCTestCase {
     XCTAssertNotEqual(AIChatThreadPublicationPage.revision(snapshot: longer, bodies: [:]), revision)
   }
 
+  func testPageDeclaresLinkPreviewMetadataFromItsVisibleText() {
+    let question = AIChatThreadPublicationSnapshot.Message(
+      id: UUID(), role: .user, author: "Avi", createdAt: Date(),
+      text: "How do we \"unfurl\" <links>\nin Slack?", formatted: false, attachments: []
+    )
+    let reply = AIChatThreadPublicationSnapshot.Message(
+      id: UUID(), role: .assistant, author: "OpenCode", createdAt: Date(),
+      text: "Add Open Graph tags.", formatted: false, attachments: []
+    )
+    let html = AIChatThreadPublicationPage.html(
+      snapshot: makeSnapshot(title: "Share & preview", messages: [question, reply], appearance: .system),
+      bodies: [:],
+      rendererStylesheet: nil
+    )
+    XCTAssertTrue(html.contains(#"<meta property="og:title" content="Share &amp; preview">"#))
+    XCTAssertTrue(html.contains(#"<meta property="og:site_name" content="OpenOrg">"#))
+    XCTAssertTrue(html.contains(#"<meta name="twitter:card" content="summary">"#))
+    XCTAssertTrue(html.contains(
+      #"<meta property="og:description" content="How do we &quot;unfurl&quot; &lt;links&gt; in Slack? — AI chat · 2 messages">"#
+    ))
+    let headEnd = html.range(of: "</head>")!.lowerBound
+    XCTAssertTrue(html.range(of: "og:title")!.lowerBound < headEnd, "Crawlers read preview tags from the head")
+
+    let empty = AIChatThreadPublicationPage.html(
+      snapshot: makeSnapshot(title: "  ", messages: [], appearance: .system),
+      bodies: [:],
+      rendererStylesheet: nil
+    )
+    XCTAssertTrue(empty.contains(#"<meta property="og:title" content="AI Chat">"#))
+    XCTAssertTrue(empty.contains(#"<meta property="og:description" content="Shared AI chat from OpenOrg">"#))
+  }
+
   func testThemeFollowsTheSelectedAppearanceMode() {
     let dark = AIChatThreadPublicationPage.themeStylesheet(
       for: makeSnapshot(title: "T", messages: [], appearance: .dark)
