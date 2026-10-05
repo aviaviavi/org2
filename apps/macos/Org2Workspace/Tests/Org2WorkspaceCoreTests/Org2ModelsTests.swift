@@ -6886,7 +6886,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testOpenClawSteerRequestUsesExplicitQueueModeWithCommandFallback() throws {
+  func testOpenClawSteerRequestUsesSteerCommandWithoutQueueMode() throws {
     let attachment = AIChatAttachment(
       fileName: "reference.txt",
       mimeType: "text/plain",
@@ -6900,31 +6900,11 @@ final class Org2ModelsTests: XCTestCase {
       idempotencyKey: "steer-id"
     )
 
-    XCTAssertEqual(params["queueMode"] as? String, "steer")
+    XCTAssertNil(params["queueMode"])
+    XCTAssertEqual(params["message"] as? String, "/steer change direction")
     XCTAssertEqual(params["sessionKey"] as? String, "agent:main:test")
     XCTAssertEqual(params["idempotencyKey"] as? String, "steer-id")
     XCTAssertEqual((params["attachments"] as? [[String: Any]])?.first?["type"] as? String, "file")
-
-    let fallback = try OpenClawGatewayClient.commandSteerRequestParams(
-      message: "change direction",
-      attachments: [attachment],
-      sessionKey: "agent:main:test",
-      agentID: "main",
-      idempotencyKey: "steer-id"
-    )
-    XCTAssertNil(fallback["queueMode"])
-    XCTAssertEqual(fallback["message"] as? String, "/steer change direction")
-    XCTAssertEqual(fallback["idempotencyKey"] as? String, "steer-id")
-    XCTAssertEqual((fallback["attachments"] as? [[String: Any]])?.first?["type"] as? String, "file")
-
-    XCTAssertTrue(OpenClawGatewayClient.shouldRetrySteerWithCommand(after: .gateway(
-      code: "INVALID_REQUEST",
-      message: "invalid chat.send params: at root: unexpected property 'queueMode'"
-    )))
-    XCTAssertFalse(OpenClawGatewayClient.shouldRetrySteerWithCommand(after: .gateway(
-      code: "INVALID_REQUEST",
-      message: "invalid chat.send params: message is required"
-    )))
   }
 
   @MainActor
