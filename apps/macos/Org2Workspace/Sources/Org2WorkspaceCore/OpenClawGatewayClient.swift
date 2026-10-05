@@ -1286,23 +1286,7 @@ public actor OpenClawGatewayClient {
       agentID: agentID,
       idempotencyKey: idempotencyKey
     )
-    do {
-      try await sendSteerRequest(params, on: socket)
-    } catch let error as OpenClawGatewayError where Self.shouldRetrySteerWithCommand(after: error) {
-      // queueMode was added to chat.send after the explicit /steer command.
-      // Older Gateways reject the otherwise valid request before enqueueing it,
-      // so it is safe to retry that same guidance using the command form.
-      try await sendSteerRequest(
-        try Self.commandSteerRequestParams(
-          message: message,
-          attachments: attachments,
-          sessionKey: sessionKey,
-          agentID: agentID,
-          idempotencyKey: idempotencyKey
-        ),
-        on: socket
-      )
-    }
+    try await sendSteerRequest(params, on: socket)
   }
 
   private func sendSteerRequest(
@@ -1331,17 +1315,10 @@ public actor OpenClawGatewayClient {
     }
   }
 
-  nonisolated static func shouldRetrySteerWithCommand(after error: OpenClawGatewayError) -> Bool {
-    guard case .gateway(let code, let message) = error else { return false }
-    let normalizedCode = code?.lowercased() ?? ""
-    let normalizedMessage = message.lowercased()
-    guard normalizedCode.isEmpty || normalizedCode == "invalid_request" else { return false }
-    return normalizedMessage.contains("queuemode")
-      && (normalizedMessage.contains("unexpected property")
-        || normalizedMessage.contains("unknown property")
-        || normalizedMessage.contains("invalid chat.send params"))
-  }
-
+  /// The current OpenClaw Gateway dropped the chat.send `queueMode` parameter
+  /// from its schema; steering injects a `/steer` message into the session. The
+  /// earlier command form and the unused retry helper were removed because this
+  /// is the only accepted wire shape.
   @discardableResult
   private func resolvePendingSteerAcknowledgement(from frame: [String: Any]) -> Bool {
     guard Self.string(frame["type"]) == "res",
@@ -1374,35 +1351,6 @@ public actor OpenClawGatewayClient {
   }
 
   nonisolated static func steerRequestParams(
-    message: String,
-    attachments: [AIChatAttachment],
-    sessionKey: String,
-    agentID: String,
-    idempotencyKey: String
-  ) throws -> [String: Any] {
-    var params: [String: Any] = [
-      "sessionKey": sessionKey,
-      "agentId": agentID,
-      "message": message,
-      "deliver": false,
-      "timeoutMs": Int(OpenClawChatClient.requestTimeout * 1_000),
-      "idempotencyKey": idempotencyKey,
-      "queueMode": "steer"
-    ]
-    if !attachments.isEmpty {
-      params["attachments"] = try attachments.map {
-        [
-          "type": $0.mimeType.hasPrefix("image/") ? "image" : "file",
-          "fileName": $0.fileName,
-          "mimeType": $0.mimeType,
-          "content": try $0.loadData().base64EncodedString()
-        ]
-      }
-    }
-    return params
-  }
-
-  nonisolated static func commandSteerRequestParams(
     message: String,
     attachments: [AIChatAttachment],
     sessionKey: String,
