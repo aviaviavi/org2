@@ -32088,7 +32088,28 @@ extension WorkspaceStore {
     persistAIChatTranscript()
   }
 
-  public func settleAIChatThread(_ id: UUID, at settledAt: Date = Date()) {
+  /// Whether the open conversation is settled. Drives the chat header's
+  /// Settle/Reopen control, which works even when the thread is hard to find
+  /// in the sidebar.
+  public var selectedAIChatThreadIsSettled: Bool {
+    selectedAIChatThread?.isSettled ?? false
+  }
+
+  /// Settles or reopens the open conversation from the chat pane. Settling
+  /// from the pane keeps the thread open, so the control flips to Reopen
+  /// instead of moving to (and risking a second click on) another thread.
+  public func toggleSelectedAIChatThreadSettlement(at date: Date = Date()) {
+    guard let thread = selectedAIChatThread else { return }
+    if thread.isSettled {
+      reopenAIChatThread(thread.id)
+      aiChatStatusText = "Reopened \(thread.title)"
+    } else {
+      settleAIChatThread(thread.id, at: date, keepsSelection: true)
+      aiChatStatusText = "Settled \(thread.title)"
+    }
+  }
+
+  public func settleAIChatThread(_ id: UUID, at settledAt: Date = Date(), keepsSelection: Bool = false) {
     let visibleThreadsBeforeArchive = visibleAIChatThreads
     let visibleIndex = visibleThreadsBeforeArchive.firstIndex(where: { $0.id == id })
     let selectedThreadWasSettled = selectedAIChatThreadID.flatMap { selectedID in
@@ -32107,6 +32128,7 @@ extension WorkspaceStore {
     lastArchivedAIChatThreadID = id
     scheduleAIChatTranscriptPersistenceAfterInteraction()
 
+    if keepsSelection, selectedAIChatThreadID == id { return }
     if selectedAIChatThreadID == id || selectedThreadWasSettled {
       let remainingThreads = visibleAIChatThreads
       let replacementIndex = min(visibleIndex ?? 0, max(remainingThreads.count - 1, 0))

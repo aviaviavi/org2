@@ -2966,6 +2966,40 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testChatPaneSettleControlSettlesAndReopensTheOpenThreadInPlace() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-pane-settle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    for title in ["First thread", "Second thread"] {
+      store.createAIChatThread(runtime: .openClaw)
+      store.aiChatMessages = [AIChatMessage(role: .user, content: title)]
+    }
+    let open = try XCTUnwrap(store.selectedAIChatThreadID)
+    XCTAssertFalse(store.selectedAIChatThreadIsSettled)
+
+    store.toggleSelectedAIChatThreadSettlement()
+
+    XCTAssertEqual(store.selectedAIChatThreadID, open, "Settling from the pane keeps the thread open")
+    XCTAssertTrue(store.selectedAIChatThreadIsSettled)
+    XCTAssertTrue(store.settledAIChatThreads.contains { $0.id == open })
+    XCTAssertFalse(store.visibleAIChatThreads.contains { $0.id == open })
+    XCTAssertTrue(store.canUndoAIChatThreadArchive)
+
+    // A second click reopens the same thread instead of settling another one.
+    store.toggleSelectedAIChatThreadSettlement()
+
+    XCTAssertEqual(store.selectedAIChatThreadID, open)
+    XCTAssertFalse(store.selectedAIChatThreadIsSettled)
+    XCTAssertTrue(store.visibleAIChatThreads.contains { $0.id == open })
+    XCTAssertEqual(store.visibleAIChatThreads.count, 2)
+  }
+
+  @MainActor
   func testSettlingAndReopeningAIChatThreadPersistsDurableState() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-settle-\(UUID().uuidString)", isDirectory: true)

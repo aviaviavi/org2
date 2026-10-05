@@ -10882,6 +10882,9 @@ private struct AIChatView: View {
         AIChatThreadShareButton()
           .labelStyle(.iconOnly)
 
+        AIChatThreadSettleButton()
+          .labelStyle(.iconOnly)
+
         AIChatSettingsButton()
           .labelStyle(.iconOnly)
 
@@ -10931,6 +10934,8 @@ private struct AIChatView: View {
 
     AIChatThreadShareButton()
 
+    AIChatThreadSettleButton()
+
     newChatButton
 
     Button {
@@ -10970,6 +10975,9 @@ private struct AIChatView: View {
     threadOutputsChip
 
     AIChatThreadShareButton()
+      .labelStyle(.iconOnly)
+
+    AIChatThreadSettleButton()
       .labelStyle(.iconOnly)
 
     newChatButton
