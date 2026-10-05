@@ -3254,6 +3254,12 @@ public final class WorkspaceStore {
   private var syncedAIChatRefreshTask: Task<Void, Never>?
   private var aiChatRepairTask: Task<Void, Never>?
   private var syncedAIChatRefreshNeeded = false
+  /// Committed chat storage as of the last successful synced refresh. Mobile
+  /// Remote reconciles before every thread request; when storage is unchanged
+  /// that reload is skipped instead of re-decoding every manifest and
+  /// discarding hydrated conversations.
+  @ObservationIgnored private var syncedAIChatAppliedState: SyncedAIChatAppliedState?
+  @ObservationIgnored private(set) var syncedAIChatRefreshSkipCountForTesting = 0
   // Metadata at the last clean local save or replica import. Message revisions
   // separately protect edits that do not change thread metadata.
   private var syncedAIChatCleanMetadata: [UUID: AIChatThread] = [:]
@@ -41330,6 +41336,24 @@ extension WorkspaceStore {
     let revisionsBeforeRead = aiChatThreadMessageRevisions
     let settingsBeforeRead = aiChatThreadSettlementSettings
     var protectedIDs = locallyProtectedAIChatThreadIDs(metadata: metadataBeforeRead)
+    let targetPath = target.standardizedFileURL.path
+    // Fingerprint before reading: a commit that lands during the read changes
+    // it again, so the next refresh still picks that commit up.
+    let fingerprint = await Task.detached(priority: .userInitiated) {
+      AIChatTranscriptStore.shared.committedStateFingerprint(legacyURL: target)
+    }.value
+    guard target == aiChatTranscriptURL, loadGeneration == aiChatTranscriptLoadGeneration,
+          !isLoadingAIChatTranscript else { return false }
+    if let applied = syncedAIChatAppliedState,
+       applied.allowsSkipping(
+         transcriptPath: targetPath,
+         transcriptGeneration: loadGeneration,
+         fingerprint: fingerprint,
+         protectedThreadIDs: locallyProtectedAIChatThreadIDs(metadata: aiChatTranscriptMetadata())
+       ) {
+      syncedAIChatRefreshSkipCountForTesting &+= 1
+      return true
+    }
     let loaded = await Task.detached(priority: .utility) {
       AIChatTranscriptStore.shared.loadCommittedIfAvailable(legacyURL: target)
     }.value
@@ -41425,6 +41449,14 @@ extension WorkspaceStore {
     // A replica can still carry this host's sends from before a restart.
     for thread in imported {
       repairStaleLocalAIChatSends(in: thread.id, transcriptURL: target)
+    }
+    syncedAIChatAppliedState = fingerprint.map {
+      SyncedAIChatAppliedState(
+        transcriptPath: targetPath,
+        transcriptGeneration: loadGeneration,
+        fingerprint: $0,
+        protectedThreadIDs: protectedIDs
+      )
     }
     return true
   }
@@ -49619,6 +49651,30 @@ private struct AIChatWorkspaceTranscriptLoad: Sendable {
 private struct AIChatPreparedWorkspaceTranscriptLoad: Sendable {
   let loaded: AIChatWorkspaceTranscriptLoad
   let presentations: [AIChatPreparedMessagePresentation]
+}
+
+struct SyncedAIChatAppliedState: Equatable, Sendable {
+  let transcriptPath: String
+  let transcriptGeneration: UInt64
+  let fingerprint: String
+  /// Threads kept local during that refresh, so not yet imported.
+  let protectedThreadIDs: Set<UUID>
+
+  /// A refresh can be skipped only when storage is byte-for-byte the same
+  /// and every thread held back last time is still held back; a thread that
+  /// lost its protection must now import the replica it skipped.
+  func allowsSkipping(
+    transcriptPath: String,
+    transcriptGeneration: UInt64,
+    fingerprint: String?,
+    protectedThreadIDs current: Set<UUID>
+  ) -> Bool {
+    guard let fingerprint else { return false }
+    return self.transcriptPath == transcriptPath
+      && self.transcriptGeneration == transcriptGeneration
+      && self.fingerprint == fingerprint
+      && protectedThreadIDs.isSubset(of: current)
+  }
 }
 
 private struct PendingAIChatHydrationCommit: Sendable {

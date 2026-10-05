@@ -215,6 +215,14 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     }
   }
 
+  /// A cheap fingerprint of committed chat storage. It changes whenever any
+  /// writer commits (head bytes), a manifest, shard, or blob arrives
+  /// (directory mtimes), or a root view changes, so an unchanged value means a
+  /// synced reload would read exactly the same committed state.
+  func committedStateFingerprint(legacyURL: URL) -> String? {
+    try? Self.repairFingerprint(storeURL: Self.storeDirectory(for: legacyURL.standardizedFileURL))
+  }
+
   /// An inexpensive idle check confined to chat storage. Directory changes
   /// detect late shards/blobs; head bytes detect commits even with preserved mtimes.
   private static func repairFingerprint(storeURL: URL) throws -> String {

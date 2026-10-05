@@ -155,6 +155,88 @@ final class SyncedAIChatTranscriptTests: XCTestCase {
     #endif
   }
 
+  /// Mobile Remote reconciles before every thread request. With unchanged
+  /// storage that must not re-decode manifests or drop hydrated threads, but
+  /// any new commit must still be imported on the next request.
+  @MainActor
+  func testSyncedRefreshSkipsUnchangedStorageAndImportsTheNextCommit() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transcriptURL = root.appendingPathComponent("chat.json")
+    let question = AIChatMessage(role: .user, content: "What is next?")
+    let thread = AIChatThread(title: "Planning", runtime: .codex, sessionKey: "planning")
+      .replacingMessages([question])
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [thread],
+      selectedThreadID: thread.id,
+      settlementSettings: AIChatThreadSettlementSettings()
+    ), legacyURL: transcriptURL)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: transcriptURL
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+
+    let firstRefresh = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(firstRefresh)
+    XCTAssertEqual(store.syncedAIChatRefreshSkipCountForTesting, 0)
+    let secondRefresh = await store.refreshSyncedAIChatTranscript()
+    let thirdRefresh = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(secondRefresh)
+    XCTAssertTrue(thirdRefresh)
+    XCTAssertEqual(
+      store.syncedAIChatRefreshSkipCountForTesting,
+      2,
+      "Unchanged committed storage must not be reloaded on every request"
+    )
+    let unchanged = await store.hydratedAIChatThreadForDetail(thread.id)
+    XCTAssertEqual(unchanged?.messages.map(\.id), [question.id])
+
+    let reply = AIChatMessage(role: .assistant, content: "Ship the fix.")
+    try AIChatTranscriptStore.shared.flush(AIChatTranscriptSnapshot(
+      threads: [thread.replacingMessages([question, reply])],
+      selectedThreadID: thread.id,
+      settlementSettings: AIChatThreadSettlementSettings()
+    ), legacyURL: transcriptURL)
+    let changedRefresh = await store.refreshSyncedAIChatTranscript()
+    XCTAssertTrue(changedRefresh)
+    XCTAssertEqual(store.syncedAIChatRefreshSkipCountForTesting, 2, "A new commit must be read")
+    let updated = await store.hydratedAIChatThreadForDetail(thread.id)
+    XCTAssertEqual(updated?.messages.map(\.id), [question.id, reply.id])
+  }
+
+  func testSyncedRefreshSkipRequiresTheSameStorageAndStillProtectedThreads() {
+    let held = UUID()
+    let state = SyncedAIChatAppliedState(
+      transcriptPath: "/corpus/.org2/chat.json",
+      transcriptGeneration: 3,
+      fingerprint: "abc",
+      protectedThreadIDs: [held]
+    )
+    XCTAssertTrue(state.allowsSkipping(
+      transcriptPath: "/corpus/.org2/chat.json", transcriptGeneration: 3,
+      fingerprint: "abc", protectedThreadIDs: [held, UUID()]
+    ))
+    XCTAssertFalse(state.allowsSkipping(
+      transcriptPath: "/corpus/.org2/chat.json", transcriptGeneration: 3,
+      fingerprint: "abd", protectedThreadIDs: [held]
+    ), "A new commit changes the fingerprint")
+    XCTAssertFalse(state.allowsSkipping(
+      transcriptPath: "/corpus/.org2/chat.json", transcriptGeneration: 3,
+      fingerprint: nil, protectedThreadIDs: [held]
+    ), "Unreadable storage always reloads")
+    XCTAssertFalse(state.allowsSkipping(
+      transcriptPath: "/corpus/.org2/chat.json", transcriptGeneration: 4,
+      fingerprint: "abc", protectedThreadIDs: [held]
+    ), "A full transcript reload invalidates the skip")
+    XCTAssertFalse(state.allowsSkipping(
+      transcriptPath: "/corpus/.org2/chat.json", transcriptGeneration: 3,
+      fingerprint: "abc", protectedThreadIDs: []
+    ), "A thread that lost local protection must import the replica it skipped")
+  }
+
   @MainActor
   func testPersistedSendingTurnShowsRunningOnAnotherHostButFollowUpStaysQueued() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
