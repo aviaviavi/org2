@@ -270,6 +270,37 @@ final class WorkspacePerformanceRegressionTests: XCTestCase {
     )
   }
 
+  func testWorkspaceObservationTracksComputedPropertiesAndExtensionMutations() {
+    let domain = "WorkspaceObservationExtensions-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let store = WorkspaceStore(defaults: defaults)
+    let filtersChanged = WorkspaceObservationProbe()
+    let hostChanged = WorkspaceObservationProbe()
+    withObservationTracking {
+      _ = store.hasAgendaStructuredFilters
+    } onChange: {
+      filtersChanged.recordChange()
+    }
+    withObservationTracking {
+      _ = store.automationHostRef
+    } onChange: {
+      hostChanged.recordChange()
+    }
+
+    store.statusText = "Unrelated background update"
+    XCTAssertEqual(filtersChanged.changeCount, 0)
+    XCTAssertEqual(hostChanged.changeCount, 0)
+
+    store.setAgendaDateFilter(.next7)
+    XCTAssertTrue(store.hasAgendaStructuredFilters)
+    XCTAssertEqual(filtersChanged.changeCount, 1)
+    XCTAssertEqual(hostChanged.changeCount, 0)
+
+    store.automationHostRef = "test-host"
+    XCTAssertEqual(hostChanged.changeCount, 1)
+  }
+
   func testLargeSourceEditorDefersFullDocumentSnapshotUntilTypingIsIdle() async throws {
     let original = String(repeating: "* Heading\nBody with enough text to model a real source file.\n", count: 90_000)
     XCTAssertGreaterThan((original as NSString).length, 4_000_000)

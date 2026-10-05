@@ -3686,6 +3686,14 @@ public final class WorkspaceStore {
   private var editorSaveConflictDraft: String?
   private var editorSaveConflictPersistenceKey: String?
   private var failedEditorPersistenceDraftsByKey: [String: FailedEditorPersistenceDraft] = [:]
+  public var automationHostRef: String = "desktop"
+  public private(set) var selectedNodeEntityType: Org2EntityType?
+  public private(set) var selectedNodeHasExplicitEntityType = false
+  /// Headings currently being started, keyed by "file:line", so a double
+  /// click cannot create two runs for one task.
+  private var startingWorkHeadingKeys: Set<String> = []
+  private var headingWorkLinksCache: (file: String, startLine: Int, text: String, links: [HeadingWorkLink])?
+  private var activeBundledAgentThreadID: UUID?
 
   public init(
     cli: Org2CLI? = nil,
@@ -3873,6 +3881,13 @@ public final class WorkspaceStore {
     aiChatStatusText = Self.aiChatStatusText(settings: currentOpenClawSettings())
     restoreInterruptedAIChatSendStatusIfNeeded()
   }
+}
+
+// Observation's member macros serialize their enclosing declaration for each
+// expansion. Keep stored state and initialization in the small Observable
+// class; implementation belongs outside its macro scope. A same-file extension
+// preserves private access, MainActor isolation, and observation of stored state.
+extension WorkspaceStore {
 
   /// Starts the corpus and chat lifecycle without desktop onboarding, audio, or windows.
   public func bootstrapHeadless(
@@ -3901,8 +3916,6 @@ public final class WorkspaceStore {
     await refreshAgenda()
     await refreshRunReviewData()
   }
-
-  public var automationHostRef: String = "desktop"
 
   func configureHeadlessDestinations(_ destinations: [AIChatDestinationConfiguration]) {
     guard let destination = destinations.first(where: { $0.id == AIChatDestinationConfiguration.openClawID }),
@@ -11311,11 +11324,6 @@ public final class WorkspaceStore {
   }
 
   // MARK: Start work on a TODO heading
-
-  /// Headings currently being started, keyed by "file:line", so a double
-  /// click cannot create two runs for one task.
-  private var startingWorkHeadingKeys: Set<String> = []
-  private var headingWorkLinksCache: (file: String, startLine: Int, text: String, links: [HeadingWorkLink])?
 
   /// The rendered document's "Start work" heading button.
   public func startWork(onHeadingAt line: Int) {
@@ -26708,8 +26716,6 @@ public final class WorkspaceStore {
     }
   }
 
-  private var activeBundledAgentThreadID: UUID?
-
   private func aiChatDestinationTurnKey(
     threadID: UUID,
     destinationID: String,
@@ -39522,9 +39528,6 @@ public final class WorkspaceStore {
     pendingNavigationSource = "backlink"
     select(.backlink(backlink))
   }
-
-  public private(set) var selectedNodeEntityType: Org2EntityType?
-  public private(set) var selectedNodeHasExplicitEntityType = false
 
   private func scheduleSelectedEntityMetadata(for source: EntrySource?) {
     selectedEntityMetadataGeneration &+= 1

@@ -274,7 +274,12 @@ npm run org2 -- --version</code></pre>
 open ~/Applications/OpenOrg.app</code></pre>
 <p>This command reuses the incremental debug cache shared with Swift tests, which
 keeps the edit-build loop short. Use <code>npm run build:macos-app:release</code> when you
-specifically need an optimized distribution or performance-validation build.</p>
+specifically need an optimized distribution or performance-validation build.
+Keep the Swift package's <code>.build/</code> directory between iterations; SwiftPM
+rebuilds changed inputs automatically. Standalone Mac DMG packaging and
+coordinated releases also reuse persistent, architecture-specific Swift caches
+under <code>~/Library/Caches/OpenOrg/release-build/</code>. Override the cache root with
+<code>OPENORG_RELEASE_BUILD_CACHE</code> when needed.</p>
 <p>For a local dogfooding loop, <code>make macos-app-restart</code> (or
 <code>npm run build:macos-app:restart</code>) leaves the current daily app open while it compiles
 and verifies a staged replacement. It requests a graceful quit only when the

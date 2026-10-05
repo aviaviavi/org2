@@ -135,7 +135,13 @@ builds a self-contained development bundle with Swift's shared incremental
 debug cache, so focused Swift tests and app builds reuse the same compiled
 objects instead of recompiling the large workspace module under =-O=. The
 explicit =:release= variant retains whole-module optimization for distribution
-and performance validation. Both paths assemble and verify a complete staged
+and performance validation. Keep the package's =.build/= directory between
+iterations; SwiftPM invalidates changed inputs automatically. The workspace's
+observable class holds state and initialization, with methods in same-file
+extensions, to keep Observation macro expansion cheap. The macOS build-mode
+regression test enforces a 128 KiB limit on that macro's declaration.
+
+Both paths assemble and verify a complete staged
 app before replacing the installed bundle, so a failed build leaves the
 existing app untouched. Use the explicit variants when switching modes during
 development:
@@ -180,6 +186,12 @@ The isolated development commands write =OpenOrg Preview.app=. Release packaging
 uses =tools/package-openorg-macos.mjs= to build in temporary staging, preserve
 the compatibility identifiers, apply hardened runtime, notarize and staple the
 DMG, and verify it with Gatekeeper. It never writes to the daily app path.
+Standalone DMG packaging and coordinated releases share persistent Swift
+compilation caches under =~/Library/Caches/OpenOrg/release-build/=, with separate
+=swift-release-arm64= and =swift-release-x86_64= directories. Set
+=OPENORG_RELEASE_BUILD_CACHE= to relocate them, or pass =--swift-scratch-path=
+to standalone packaging for an explicit cache. App bundle staging, native npm
+dependencies, signing, and notarization still run for each new artifact.
 
 The canonical test layout is =test/= for Node test scripts, with feature
 subdirectories for nearby fixtures when useful. Agent/context-pack coverage

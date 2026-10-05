@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { releaseBuildCacheRoot } from "../tools/openorg-build-cache.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const script = join(repoRoot, "tools", "package-openorg-macos.mjs");
@@ -19,6 +20,7 @@ const packagingTestEnvironment = { ...process.env };
 delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_JSON;
 delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_ID;
 delete packagingTestEnvironment.ORG2_GOOGLE_OAUTH_CLIENT_SECRET;
+delete packagingTestEnvironment.OPENORG_RELEASE_BUILD_CACHE;
 // Release credentials must never turn these plan/negative checks into a real build.
 for (const key of [
   "OPENORG_NOTARY_KEYCHAIN_PROFILE",
@@ -63,10 +65,33 @@ assert.equal(plan.dailyAppUntouched, "/Users/avi/Applications/Org2Workspace.app"
 assert.equal(plan.executableName, "Org2Workspace");
 assert.equal(plan.googleOAuthClientSource, null);
 assert.equal(plan.hardenedRuntime, true);
-assert.equal(plan.swiftBuild, "isolated per artifact");
+assert.equal(plan.swiftBuild, "persistent architecture-specific cache");
+assert.equal(plan.swiftScratch, join(releaseBuildCacheRoot(packagingTestEnvironment), "swift-release-arm64"));
 assert.equal(plan.targetRuntimeSelection, "architecture-verified at execution");
 assert.equal(plan.staging, "isolated temporary directory");
 assert.match(plan.output, /OpenOrg\.dmg$/);
+
+// Standalone packaging shares the coordinated release cache, keeps target
+// architectures separate, and preserves explicit scratch-directory overrides.
+for (const architecture of ["arm64", "x86_64"]) {
+  const cachedPlanResult = spawnSync(process.execPath, [script, "--plan", "--architecture", architecture], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...packagingTestEnvironment, OPENORG_RELEASE_BUILD_CACHE: "/tmp/openorg-packaging-cache" },
+  });
+  assert.equal(cachedPlanResult.status, 0, cachedPlanResult.stderr);
+  assert.equal(JSON.parse(cachedPlanResult.stdout).swiftScratch,
+    `/tmp/openorg-packaging-cache/swift-release-${architecture}`);
+}
+const explicitScratchResult = spawnSync(process.execPath, [
+  script, "--plan", "--swift-scratch-path", "/tmp/openorg-explicit-scratch",
+], {
+  cwd: repoRoot,
+  encoding: "utf8",
+  env: { ...packagingTestEnvironment, OPENORG_RELEASE_BUILD_CACHE: "/tmp/openorg-packaging-cache" },
+});
+assert.equal(explicitScratchResult.status, 0, explicitScratchResult.stderr);
+assert.equal(JSON.parse(explicitScratchResult.stdout).swiftScratch, "/tmp/openorg-explicit-scratch");
 
 const configuredPlanResult = spawnSync(
   process.execPath,

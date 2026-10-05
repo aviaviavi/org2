@@ -23,6 +23,21 @@ const updaterSource = readFileSync(join(
 const macAppBuildSource = readFileSync(join(repoRoot, "tools", "build-macos-app.mjs"), "utf8");
 const makefileSource = readFileSync(join(repoRoot, "Makefile"), "utf8");
 const packageJSON = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+const workspaceStoreSource = readFileSync(join(
+  repoRoot, "apps", "macos", "Org2Workspace", "Sources", "Org2WorkspaceCore", "WorkspaceStore.swift"
+), "utf8");
+
+// Observation serializes the enclosing declaration for each attached member
+// macro. Putting the entire workspace implementation inside the class made
+// every changed-file build pay for a 1.8 MB declaration repeatedly. Keep a
+// source-size budget here; wall-clock compiler budgets vary by toolchain/host.
+const observableStoreStart = workspaceStoreSource.indexOf("public final class WorkspaceStore {");
+const observableStoreEnd = workspaceStoreSource.indexOf("\n}\n", observableStoreStart);
+assert.ok(observableStoreStart >= 0 && observableStoreEnd > observableStoreStart);
+assert.ok(
+  Buffer.byteLength(workspaceStoreSource.slice(observableStoreStart, observableStoreEnd)) <= 128 * 1024,
+  "Keep WorkspaceStore's Observable declaration below 128 KiB; put methods in same-file extensions"
+);
 
 assert.match(updaterSource, /checkForUpdatesInBackground\(\)/);
 assert.match(updaterSource, /Automatically check for updates/);

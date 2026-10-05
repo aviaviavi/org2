@@ -4,6 +4,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { SWIFT_TIMING_TESTS } from "./run-swift-tests.mjs";
 export { SWIFT_TIMING_TESTS } from "./run-swift-tests.mjs";
 import { notarizationAuthentication } from "./openorg-notarization.mjs";
+import { releaseBuildCacheRoot } from "./openorg-build-cache.mjs";
+export { releaseBuildCacheRoot } from "./openorg-build-cache.mjs";
 import { createHash, createSign } from "node:crypto";
 import {
   closeSync,
@@ -18,7 +20,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { availableParallelism, homedir } from "node:os";
+import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -35,13 +37,6 @@ const vscodePackageDir = join(repoRoot, "editors", "vscode-org2");
 const iosProjectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
 const iosProjectFile = join(iosProjectPath, "project.pbxproj");
 const macPackageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
-// Persistent, architecture-specific SwiftPM scratch directories. They live
-// outside the checkout and the daily app, survive across releases, and make
-// Swift test and release builds incremental instead of cold every release.
-export function releaseBuildCacheRoot(environment = process.env) {
-  return environment.OPENORG_RELEASE_BUILD_CACHE?.trim()
-    || join(homedir(), "Library", "Caches", "OpenOrg", "release-build");
-}
 
 export const RELEASE_PHASES = [
   "preflight",

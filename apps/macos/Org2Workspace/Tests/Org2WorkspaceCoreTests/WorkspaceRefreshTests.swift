@@ -1,6 +1,15 @@
 import Foundation
+import Observation
 import XCTest
 @testable import Org2WorkspaceCore
+
+private final class WorkflowLoadingObservation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var changed = false
+
+  func recordChange() { lock.withLock { changed = true } }
+  var sawChange: Bool { lock.withLock { changed } }
+}
 
 @MainActor
 final class WorkspaceRefreshTests: XCTestCase {
@@ -122,14 +131,19 @@ final class WorkspaceRefreshTests: XCTestCase {
     )
 
     func observedLoading(_ refresh: @escaping @MainActor () async -> Void) async -> Bool {
-      var sawLoading = false
-      let task = Task { @MainActor in await refresh() }
-      for _ in 0..<20 {
-        await Task.yield()
-        if store.isLoadingAgentWorkflows { sawLoading = true }
+      XCTAssertFalse(store.isLoadingAgentWorkflows)
+      let observation = WorkflowLoadingObservation()
+      // A prefetched empty refresh can finish between scheduler yields. Record
+      // the loading property's synchronous notification instead of polling a
+      // transient value on an arbitrary number of task turns.
+      withObservationTracking {
+        _ = store.isLoadingAgentWorkflows
+      } onChange: {
+        observation.recordChange()
       }
-      await task.value
-      return sawLoading
+      await refresh()
+      XCTAssertFalse(store.isLoadingAgentWorkflows)
+      return observation.sawChange
     }
 
     let firstLoadShowedLoading = await observedLoading {
