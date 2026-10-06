@@ -365,6 +365,15 @@ function manifestNamed(
   return loadManifestV2(path.join(storeRoot, "manifests", name), expectedDigest);
 }
 
+/**
+ * Shards already verified by this process, keyed by path and expected digest.
+ * Long-lived readers (activity event streams and waits) reload the store
+ * whenever it changes; a shard whose inode, size, and modification time are
+ * unchanged since it last hashed to the same digest does not need rehashing.
+ */
+const verifiedShardCache = new Map<string, { ino: number; size: number; mtimeMs: number }>();
+const VERIFIED_SHARD_CACHE_LIMIT = 20_000;
+
 function validManifestEntry(storeRoot: string, entry: ManifestThreadEntry): boolean {
   try {
     if (!isDigest(entry.shardDigest)
@@ -372,6 +381,12 @@ function validManifestEntry(storeRoot: string, entry: ManifestThreadEntry): bool
       return false;
     }
     const shardFile = confinedShardPath(storeRoot, entry.shard);
+    const cacheKey = `${shardFile}\0${entry.shardDigest}`;
+    const stat = fs.statSync(shardFile);
+    const cached = verifiedShardCache.get(cacheKey);
+    if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+      return true;
+    }
     const data = fs.readFileSync(shardFile);
     if (digest(data) !== entry.shardDigest) return false;
     const shard = JSON.parse(data.toString("utf8")) as unknown;
@@ -386,6 +401,8 @@ function validManifestEntry(storeRoot: string, entry: ManifestThreadEntry): bool
         return false;
       }
     }
+    if (verifiedShardCache.size >= VERIFIED_SHARD_CACHE_LIMIT) verifiedShardCache.clear();
+    verifiedShardCache.set(cacheKey, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs });
     return true;
   } catch {
     return false;

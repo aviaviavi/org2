@@ -31,6 +31,11 @@ async function main(): Promise<void> {
     await runJSONCanvasCommand(args);
     return;
   }
+  if (args[0] === "activity") {
+    const { runActivityCommand } = await import("./activityCli.js");
+    await runActivityCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "server") {
     const { runServerCommand } = await import("./serverCli.js");
     await runServerCommand(args.slice(1));

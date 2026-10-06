@@ -550,6 +550,30 @@ The capability command emits =org2:capabilities:v1= JSON covering workflows, saf
 
 See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
 
+* Explainable activity, events, and waits
+
+=org2 activity= explains agent work from structured records only: host presence files under =.org2/openclaw-chat.store/live/=, committed chat transcript metadata and message provenance, the AI chat inbox, durable run event logs, workflow trigger attempts, and workflow dispatch locks. It never scrapes terminal output.
+
+#+begin_src sh
+org2 activity explain --dir ~/notes                 # everything working or waiting on you
+org2 activity explain --run RUN_ID --dir ~/notes --json
+org2 activity explain --thread THREAD_ID --dir ~/notes --json
+org2 activity explain --workflow WORKFLOW_ID --dir ~/notes
+org2 activity hosts --dir ~/notes --json
+org2 activity events --since 2h --type run.*,approval.* --dir ~/notes --json
+org2 activity events --follow --json --dir ~/notes  # NDJSON stream until interrupted
+org2 thread wait THREAD_ID --until reply --timeout 600 --dir ~/notes --json
+org2 run wait RUN_ID --until approval|blocked|completed --timeout 3600 --dir ~/notes
+#+end_src
+
+Each =org2:activity-explanation:v1= item names its =state= (=working=, =queued=, =needs-you=, =your-turn=, =failed=, =scheduled=, =due=, =paused=, =idle=, =settled=, or =done=), a stable =reason.code= with a one-sentence summary, =reportedBy= (host, host kind and connection state, runtime, destination, model, last actor), =lastSignal= (heartbeat, transition, message, or trigger attempt with its age), =confidence= (=live= while the reporting host's presence is fresh, =cached= for committed records, =uncertain= when presence is stale or a delivery is unresolved) with a reason, and =blocking= entries for the exact approval (run, approval ID, action, risk class, fingerprint, and the decision command), clarification question, delivery failure, artifact review, or unread reply. Explanations never decide approvals.
+
+=activity hosts= classifies each OpenOrg host as =online= (heartbeat within 150 seconds), =authentication-needed= (online, but a destination reports that it needs sign-in), =reconnecting= (missed heartbeats for up to 15 minutes), =stale= (silent longer), or =offline= (signed off cleanly). Silent hosts keep their last-known turns as cached state. =failoverHostRefs= lists online hosts that have one of the same destinations enabled.
+
+=activity events= emits =org2:activity-event:v1= records: =run.created=, =run.queued=, =run.running=, =run.waiting-approval=, =run.blocked=, =run.completed=, =run.failed=, =run.canceled=, =approval.requested=, =approval.decided=, =thread.prompted=, =thread.working=, =thread.reply-received=, =thread.needs-you=, =thread.idle=, =workflow.dispatched=, and =host.<state>=. Run and approval events are replayed from append-only run event logs with their original timestamps and stable IDs, so a consumer can resume with =--since=. =--follow= replays history and then watches the run, chat store, presence, inbox, and workflow directories, with a polling floor for synchronization tools that bypass file events.
+
+Waits evaluate their condition against durable state before watching, so a transition that lands between a prompt and the wait is never missed. =thread wait --until reply= treats the latest prompt (or =--after MESSAGE_ID= / =--since=) as its baseline and is satisfied by a committed assistant message or a queued =thread post= reply. =needs-you=, =idle=, and =working= use the same explanation states as =activity explain=. =run wait= accepts =approval=, =blocked=, =needs-you=, =running=, =completed=, =failed=, =terminal=, or =status:STATUS=. Exit status is 0 when matched, 2 when the run reached a terminal state that can no longer satisfy the condition, and 124 on =--timeout=.
+
 * Chat thread automation
 
 =org2 thread= reads the corpus-owned AI chat transcript from its authoritative sharded store, with compatibility for a legacy =.org2/openclaw-chat.json= transcript. Reads also project pending operation-journal entries, so active and settled threads retain the same stable ID, messages, session key, context, and timestamps while queued changes remain visible. Settlement is a reversible work-state transition, not deletion.

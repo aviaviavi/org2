@@ -39,6 +39,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use read-only `org2 doctor --dir CORPUS --json` to find contradictory run, approval, workflow-attempt, and projected headline state before an agent acts.",
       "Use `org2 run show ID --with-revision --json` when a client needs a revision token for a later guarded mutation.",
       "Use `org2 thread post THREAD_ID ... --apply` or the MCP tool `org2_thread_post` when an explicitly asynchronous worker must report into a named AI chat without starting or steering a turn; pass the target thread ID and a stable idempotency key into delegated work.",
+      "Use `org2 activity explain --json` (optionally `--thread|--run|--workflow ID`) to learn why work is running or blocked before acting, `org2 activity events --follow --json` for an NDJSON stream of run, approval, thread, workflow, and host transitions, and `org2 thread wait ID --until reply|needs-you|idle` or `org2 run wait ID --until approval|blocked|completed` for race-free coordination; waits check durable state first and exit 0 matched, 2 unreachable, 124 timed out.",
       "Use `org2 thread repair --dir CORPUS --json` on macOS to preview deterministic transcript reconciliation through the native OpenOrgServer worker; `--apply` commits a new repair head without changing original writer heads. `--watch --interval SECONDS --apply` runs without an LLM and skips unchanged chat storage. Build the worker with npm run build:server or supply --executable PATH. Desktop Settings and server chat-repair configure the background check interval; 0/off disables it.",
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
@@ -113,6 +114,12 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
         id: "workspace-agent-state",
         purpose: "Read projects, runs, workflows, goals, and agent profiles for one corpus in one process, with independent section errors and timings.",
         commands: ["org2 workspace agent-state"],
+        writes: "read-only",
+      },
+      {
+        id: "explainable-activity",
+        purpose: "Explain why every chat thread, durable run, and workflow is working or needs attention (reporting host/runtime, last heartbeat or transition, live/cached/uncertain confidence, exact blocking approval or question), list multi-host presence with failover candidates, stream local activity events, and wait race-free on thread or run conditions.",
+        commands: ["org2 activity explain", "org2 activity hosts", "org2 activity events", "org2 thread wait", "org2 run wait"],
         writes: "read-only",
       },
       {

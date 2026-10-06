@@ -176,10 +176,11 @@ const HELP = `Agentic workspace commands:
   org2 workspace agent-state --dir CORPUS --json
   org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
-  org2 thread list|show|post|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
+  org2 thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
   org2 thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
   org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
+  org2 thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
   org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
   org2 project create --title TEXT [--description TEXT] [--color none|NAME|#RRGGBB] [--file PATH] [--id UUID] [--apply]
   org2 project adopt FILE --title TEXT [--color COLOR] [--id ID] [--if-revision SHA256] [--apply]
@@ -192,7 +193,8 @@ const HELP = `Agentic workspace commands:
   org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
   org2 run create [--title TEXT] --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
   org2 run show ID --with-revision --json
-  org2 run list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|artifact-review
+  org2 run wait ID --until approval|blocked|needs-you|running|completed|failed|terminal|status:STATUS [--timeout SECONDS] [--json]
+  org2 run list|show|wait|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|artifact-review
   org2 run block ID --reason "Specific clarification needed" [--separate-from-approval]
   org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
   org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
@@ -543,6 +545,11 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
     await runAIChatRepair({ corpusRoot: corpus, apply: enabled(parsed, "apply"),
       watch: enabled(parsed, "watch"), interval: flag(parsed, "interval"),
       expectedRevision: flag(parsed, "if-revision"), executable: flag(parsed, "executable") });
+    return;
+  }
+  if (action === "wait") {
+    const { runThreadWaitCommand } = await import("./activityCli.js");
+    await runThreadWaitCommand(corpus, parsed.positional[1], parsed.flags);
     return;
   }
   if (action === "list") {
@@ -1183,6 +1190,11 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
         ? `${result.decisionKey}\t${result.canonical.approval.status}\t${result.canonical.runId}:${result.canonical.approval.id}`
         : `${result.decisionKey}\tnot found`,
     );
+    return;
+  }
+  if (action === "wait") {
+    const { runRunWaitCommand } = await import("./activityCli.js");
+    await runRunWaitCommand(corpus, parsed.positional[1], parsed.flags);
     return;
   }
   const id = required(parsed.positional[1], `run id is required for ${action}`);
