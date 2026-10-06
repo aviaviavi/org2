@@ -4350,7 +4350,7 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
     corpusFiles: [CorpusFile],
     dailyNoteFile: (WorkspaceDateMentionCandidate) -> CorpusFile? = { _ in nil },
     now: Date = Date(),
-    limit: Int = 10
+    limit: Int = WorkspaceMentionCandidates.defaultLimit
   ) -> [AIChatComposerMentionSuggestion] {
     let dailyNoteSuggestions = WorkspaceDateMentions.matchAtEnd(of: text).map { match in
       WorkspaceDateMentions.candidates(for: match.query, now: now).compactMap { candidate in
@@ -4369,23 +4369,16 @@ enum AIChatComposerMentionSuggestion: Identifiable, Equatable {
       if case .dailyNote(_, let file) = suggestion { return file.path }
       return nil
     })
-    let fileLimit = max(0, limit - destinationSuggestions.count - dailyNoteSuggestions.count)
-    let matchingFiles: [CorpusFile]
-    if query.isEmpty {
-      matchingFiles = Array(corpusFiles.prefix(fileLimit))
-    } else {
-      matchingFiles = WorkspaceStore.searchCorpusFilesForWorkspace(
-        corpusFiles,
-        query: query,
-        limit: fileLimit
-      )
-    }
+    let matchingFiles = WorkspaceMentionCandidates.corpusFiles(
+      matching: query,
+      in: corpusFiles,
+      excludingPaths: dailyNotePaths,
+      limit: max(0, limit - destinationSuggestions.count - dailyNoteSuggestions.count)
+    )
     return Array(
       (destinationSuggestions.map(AIChatComposerMentionSuggestion.destination)
         + dailyNoteSuggestions
-        + matchingFiles
-          .filter { !dailyNotePaths.contains($0.path) }
-          .map(AIChatComposerMentionSuggestion.corpusFile))
+        + matchingFiles.map(AIChatComposerMentionSuggestion.corpusFile))
         .prefix(limit)
     )
   }

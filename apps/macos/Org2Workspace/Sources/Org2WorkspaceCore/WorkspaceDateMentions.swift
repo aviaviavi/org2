@@ -24,43 +24,56 @@ struct WorkspaceDateMentionCandidate: Identifiable, Equatable, Sendable {
   var id: String { dayKey }
 }
 
-/// One insertable completion for a date mention in the document editors.
+/// One insertable completion for an `@` mention in the document editors:
+/// a date stamp, a daily note link, or a link to a corpus file.
 struct WorkspaceDateMentionOption: Identifiable, Equatable, Sendable {
   enum Kind: Equatable, Sendable {
     case timestamp
     case dailyNote(path: String, relativePath: String)
+    case corpusFile(path: String, relativePath: String, title: String)
   }
 
-  let candidate: WorkspaceDateMentionCandidate
+  /// The resolved day for date options; `nil` for corpus files.
+  let candidate: WorkspaceDateMentionCandidate?
   let kind: Kind
   /// Org text that replaces the typed `@query`.
   let insertion: String
 
   var id: String {
     switch kind {
-    case .timestamp: "timestamp:\(candidate.dayKey)"
+    case .timestamp: "timestamp:\(candidate?.dayKey ?? "")"
     case .dailyNote(let path, _): "daily:\(path)"
+    case .corpusFile(let path, _, _): "file:\(path)"
     }
   }
 
   var title: String {
     switch kind {
-    case .timestamp: candidate.timestamp
-    case .dailyNote: candidate.dayKey
+    case .timestamp: candidate?.timestamp ?? ""
+    case .dailyNote: candidate?.dayKey ?? ""
+    case .corpusFile(_, _, let title): title
     }
   }
 
   var detail: String {
     switch kind {
-    case .timestamp: "Date · \(candidate.title)"
+    case .timestamp: "Date · \(candidate?.title ?? "")"
     case .dailyNote(_, let relativePath): "Daily note · \(relativePath)"
+    case .corpusFile(_, let relativePath, _): relativePath
     }
   }
 
   var systemImage: String {
     switch kind {
     case .timestamp: "calendar"
-    case .dailyNote: "doc.text"
+    case .dailyNote, .corpusFile: "doc.text"
+    }
+  }
+
+  var isDate: Bool {
+    switch kind {
+    case .timestamp, .dailyNote: true
+    case .corpusFile: false
     }
   }
 
@@ -139,8 +152,8 @@ enum WorkspaceDateMentions {
     }
     let queryRange = NSRange(location: atRange.location + 1, length: cursor - atRange.location - 1)
     let query = ns.substring(with: queryRange)
-    guard !query.isEmpty,
-          query.first?.isWhitespace == false,
+    // A bare `@` matches too: like AI chat, it lists corpus files.
+    guard query.first?.isWhitespace != true,
           query.unicodeScalars.allSatisfy(isQueryScalar)
     else { return nil }
     return WorkspaceDateMentionMatch(
@@ -150,7 +163,7 @@ enum WorkspaceDateMentions {
   }
 
   private static func isQueryScalar(_ scalar: UnicodeScalar) -> Bool {
-    if scalar == " " || scalar == "/" || scalar == "-" || scalar == "," || scalar == "." { return true }
+    if scalar == " " || scalar == "/" || scalar == "-" || scalar == "_" || scalar == "," || scalar == "." { return true }
     return CharacterSet.alphanumerics.contains(scalar)
   }
 
@@ -312,16 +325,21 @@ enum WorkspaceDateMentions {
 
   // MARK: Editor options
 
-  /// Date stamp plus the existing daily note link for each resolved day.
+  /// Date stamp plus the existing daily note link for each resolved day,
+  /// followed by links to the corpus files that AI chat's `@` would offer
+  /// for the same query (`WorkspaceMentionCandidates`).
   static func editorOptions(
     for match: WorkspaceDateMentionMatch,
     now: Date = Date(),
     calendar: Calendar = WorkspaceDateMentions.calendar,
     sourceFile: String?,
     corpusRoot: URL?,
+    corpusFiles: [CorpusFile] = [],
+    linkResolver: OrgRoamLinkResolver = .empty,
+    limit: Int = WorkspaceMentionCandidates.defaultLimit,
     dailyNoteFile: (WorkspaceDateMentionCandidate) -> CorpusFile?
   ) -> [WorkspaceDateMentionOption] {
-    candidates(for: match.query, now: now, calendar: calendar).flatMap { candidate in
+    let dateOptions = candidates(for: match.query, now: now, calendar: calendar).flatMap { candidate in
       var options = [
         WorkspaceDateMentionOption(candidate: candidate, kind: .timestamp, insertion: candidate.timestamp)
       ]
@@ -335,6 +353,43 @@ enum WorkspaceDateMentions {
       }
       return options
     }
+    let dailyNotePaths = Set(dateOptions.compactMap { option -> String? in
+      if case .dailyNote(let path, _) = option.kind { return path }
+      return nil
+    })
+    let fileOptions = WorkspaceMentionCandidates.corpusFiles(
+      matching: match.query,
+      in: corpusFiles,
+      excludingPaths: dailyNotePaths.union(sourceFile.map { [$0] } ?? []),
+      limit: max(0, limit - dateOptions.count)
+    ).map { file in
+      fileOption(for: file, sourceFile: sourceFile, corpusRoot: corpusRoot, linkResolver: linkResolver)
+    }
+    return dateOptions + fileOptions
+  }
+
+  /// A link to `file`: an `id:` link to its file-level node when that ID is
+  /// unique, otherwise a `file:` link relative to `sourceFile`. The label is
+  /// the note title, or the file name when the file has no title.
+  static func fileOption(
+    for file: CorpusFile,
+    sourceFile: String?,
+    corpusRoot: URL?,
+    linkResolver: OrgRoamLinkResolver
+  ) -> WorkspaceDateMentionOption {
+    let node = linkResolver.pageNode(forFile: file.path)
+    let nodeTitle = node?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let title = nodeTitle.isEmpty ? file.name : nodeTitle
+    let target = node.flatMap(linkResolver.uniqueIDLinkTarget(for:))
+      ?? "file:\(linkPath(to: file.path, from: sourceFile, corpusRoot: corpusRoot))"
+    let label = title
+      .replacingOccurrences(of: "[", with: "(")
+      .replacingOccurrences(of: "]", with: ")")
+    return WorkspaceDateMentionOption(
+      candidate: nil,
+      kind: .corpusFile(path: file.path, relativePath: file.relativePath, title: title),
+      insertion: "[[\(target)][\(label)]]"
+    )
   }
 
   /// A `file:` link target for `target`, relative to the directory of the
@@ -414,7 +469,10 @@ struct WorkspaceDateMentionCompletionPanel: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
-      Label("Insert date", systemImage: "calendar.badge.plus")
+      Label(
+        options.allSatisfy(\.isDate) ? "Insert date" : "Insert link",
+        systemImage: options.allSatisfy(\.isDate) ? "calendar.badge.plus" : "link.badge.plus"
+      )
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
         .padding(.bottom, 2)

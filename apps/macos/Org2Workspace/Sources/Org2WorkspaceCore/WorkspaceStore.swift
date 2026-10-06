@@ -49088,8 +49088,9 @@ extension WorkspaceStore {
     return candidates.lazy.compactMap { path in matches.first { $0.path == path } }.first
   }
 
-  /// Date stamp and daily note link completions for an `@date` mention in
-  /// a document editor. `sourceFile` is the document receiving the link.
+  /// Completions for an `@` mention in a document editor: date stamps and
+  /// daily note links for `@date`, plus the corpus files AI chat offers for
+  /// the same query. `sourceFile` is the document receiving the link.
   func dateMentionEditorOptions(
     for match: WorkspaceDateMentionMatch,
     sourceFile: String?
@@ -49098,6 +49099,8 @@ extension WorkspaceStore {
       for: match,
       sourceFile: sourceFile,
       corpusRoot: corpusRoot,
+      corpusFiles: corpusFiles,
+      linkResolver: orgRoamLinkResolver,
       dailyNoteFile: { existingDailyNoteFile(for: $0.date) }
     )
   }

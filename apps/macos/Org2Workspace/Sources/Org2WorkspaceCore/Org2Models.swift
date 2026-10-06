@@ -4553,6 +4553,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
   private let nodesByID: [String: OrgRoamNodeReference]
   private let nodesByTitle: [String: OrgRoamNodeReference]
   private let nodeCandidatesByTitle: [String: [OrgRoamNodeReference]]
+  private let pageNodesByFile: [String: OrgRoamNodeReference]
 
   public init(nodes: [OrgRoamNodeReference], linkAbbreviations: OrgLinkAbbreviations = .empty) {
     self.nodes = nodes
@@ -4560,7 +4561,11 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
 
     var idCandidates: [String: [OrgRoamNodeReference]] = [:]
     var titleCandidates: [String: [OrgRoamNodeReference]] = [:]
+    var pageNodes: [String: OrgRoamNodeReference] = [:]
     for node in nodes {
+      if node.isPageNode, pageNodes[node.file] == nil {
+        pageNodes[node.file] = node
+      }
       if let idValue = node.idValue {
         idCandidates[Self.normalizedID(idValue), default: []].append(node)
       }
@@ -4581,6 +4586,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
       candidates.count == 1 ? candidates[0] : nil
     }
     nodeCandidatesByTitle = titleCandidates.mapValues(Self.rankedCandidates)
+    pageNodesByFile = pageNodes
     signature = Self.makeSignature(nodes, linkAbbreviations: linkAbbreviations)
   }
 
@@ -4604,6 +4610,19 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
 
     guard let node else { return nil }
     return OrgRoamResolvedLink(title: node.title, fileReference: node.fileReference)
+  }
+
+  /// The file-level node for the absolute `path`, if the file has one.
+  public func pageNode(forFile path: String) -> OrgRoamNodeReference? {
+    pageNodesByFile[path]
+  }
+
+  /// An `id:` target for `node` when its ID identifies only that node.
+  public func uniqueIDLinkTarget(for node: OrgRoamNodeReference) -> String? {
+    guard let idValue = node.idValue,
+          nodesByID[Self.normalizedID(idValue)] == node
+    else { return nil }
+    return "id:\(idValue)"
   }
 
   public func expandedLinkTarget(_ rawTarget: String) -> String {
