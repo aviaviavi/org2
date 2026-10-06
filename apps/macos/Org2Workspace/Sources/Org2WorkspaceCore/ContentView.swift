@@ -1446,7 +1446,7 @@ struct WorkspaceLazyCollection<Content: View>: View {
       .padding(.horizontal, horizontalInset)
       .padding(.vertical, verticalInset)
     }
-    .background(WorkspaceDesign.appBackground)
+    .background(WorkspaceDesign.surfaceBackground)
   }
 }
 
@@ -1465,7 +1465,7 @@ struct WorkspaceLazySectionHeader<Content: View>: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
-      .background(WorkspaceDesign.appBackground)
+      .background(WorkspaceDesign.surfaceBackground)
       .accessibilityAddTraits(.isHeader)
   }
 }
@@ -1760,7 +1760,7 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
   }
 }
 
-private struct WorkspaceSurfaceView: View {
+struct WorkspaceSurfaceView: View {
   @Environment(WorkspaceStore.self) private var store
   let surface: WorkspaceSurface
 
@@ -1807,6 +1807,7 @@ private struct WorkspaceSurfaceView: View {
       )
       .clipped()
     }
+    .background(WorkspaceDesign.surfaceBackground)
     .foregroundStyle(WorkspaceDesign.primaryText)
     .simultaneousGesture(
       TapGesture().onEnded {
@@ -4095,7 +4096,7 @@ private struct FilesView: View {
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
         }
-        .background(WorkspaceDesign.appBackground)
+        .background(WorkspaceDesign.surfaceBackground)
         .onChange(of: store.selectedCorpusFileID) {
           guard let id = store.selectedCorpusFileID,
                 let file = store.corpusFiles.first(where: { $0.id == id })
@@ -4568,7 +4569,7 @@ private struct QuickOpenView: View {
           }
       }
       .padding(10)
-      .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(Color.secondary.opacity(0.18))
@@ -13506,7 +13507,7 @@ private struct EntityActionItemsPanel: View {
     .padding(10)
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+        .fill(WorkspaceDesign.panelFill)
     )
     .overlay(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -13700,7 +13701,7 @@ private struct LinkedPDFPreviewPane: View {
       pageIndex = nil
       navigationRequest = nil
     }
-    .background(Color(nsColor: .textBackgroundColor))
+    .background(WorkspaceDesign.surfaceBackground)
   }
 
   private func navigate(_ target: OrgPDFPageNavigationTarget) {
@@ -13803,7 +13804,7 @@ private struct OrgSlidePreviewPane: View {
           .padding(14)
       }
     }
-    .background(Color(nsColor: .textBackgroundColor))
+    .background(WorkspaceDesign.surfaceBackground)
   }
 
   private var unavailableView: some View {
@@ -14047,7 +14048,7 @@ private struct OrgSourceEditorWithLinkTools: View {
           .frame(maxWidth: OrgProsePresentation.measure)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color(nsColor: .textBackgroundColor))
+      .background(WorkspaceDesign.surfaceBackground)
       if showsProseSidebar {
         OrgProseSidebar(controller: prose)
       }
@@ -14367,7 +14368,7 @@ private struct OrgSourceEditorWithLinkTools: View {
         }
       }
     }
-    .background(Color(nsColor: .textBackgroundColor))
+    .background(WorkspaceDesign.surfaceBackground)
     .overlay(alignment: .leading) {
       Rectangle()
         .fill(WorkspaceDesign.hairline)

@@ -73,11 +73,11 @@ enum WorkspaceDesign {
   }
 
   static var subtleFill: Color {
-    Color.secondary.opacity(0.045)
+    themed(.text, opacity: 0.045)
   }
 
   static var selectedFill: Color {
-    Color.accentColor.opacity(0.105)
+    structuralAccent.opacity(0.105)
   }
 
   static var hairline: Color {
@@ -85,11 +85,11 @@ enum WorkspaceDesign {
   }
 
   static var controlFill: Color {
-    Color.secondary.opacity(0.055)
+    themed(.text, opacity: 0.055)
   }
 
   static var controlHoverFill: Color {
-    Color.secondary.opacity(0.085)
+    themed(.text, opacity: 0.085)
   }
 
   static var controlGroupFill: Color {
@@ -97,7 +97,7 @@ enum WorkspaceDesign {
   }
 
   static var controlPressedFill: Color {
-    Color.accentColor.opacity(0.12)
+    structuralAccent.opacity(0.12)
   }
 
   static var panelFill: Color {
@@ -200,7 +200,7 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
       .background(
         isSelected
           ? selectedFill
-          : isHovered ? Color.primary.opacity(0.035) : Color.clear,
+          : isHovered ? WorkspaceDesign.themed(.text, opacity: 0.035) : Color.clear,
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
       .overlay {
