@@ -7656,6 +7656,7 @@ private struct RunCenterDetail: View {
 
         TextField("Your response or direction", text: $clarificationResponse, axis: .vertical)
           .lineLimit(2...5)
+          .disabled(clarificationPhase != nil)
 
         Button {
           let response = clarificationResponse
@@ -7668,13 +7669,25 @@ private struct RunCenterDetail: View {
             }
           }
         } label: {
-          Label("Reply & Resume", systemImage: "paperplane.fill")
+          if let clarificationPhase {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .small)
+              Text(clarificationPhase.buttonTitle)
+            }
+          } else {
+            Label("Reply & Resume", systemImage: "paperplane.fill")
+          }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(
           isMutating
             || WorkspaceStore.normalizedAgentRunClarificationResponse(clarificationResponse) == nil
         )
+
+        if let clarificationPhase {
+          clarificationProgressBanner(clarificationPhase)
+            .transition(.opacity)
+        }
 
         if let clarificationError {
           Label(clarificationError, systemImage: "exclamationmark.triangle.fill")
@@ -7684,6 +7697,42 @@ private struct RunCenterDetail: View {
         }
       }
     }
+  }
+
+  private var clarificationPhase: AgentRunClarificationReplyPhase? {
+    store.agentRunClarificationPhases[run.id]
+  }
+
+  private func clarificationProgressBanner(_ phase: AgentRunClarificationReplyPhase) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .center, spacing: 10) {
+        WorkspaceActivityIndicator(size: .regular)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(phase.title)
+            .font(.headline)
+          Text(phase.detail)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 0)
+        Text(phase.stepLabel)
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.secondary)
+      }
+      ProgressView()
+        .progressViewStyle(.linear)
+        .controlSize(.small)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+    )
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(phase.title) \(phase.stepLabel)")
+    .animation(WorkspaceMotion.quick, value: phase)
   }
 
   private var runActions: some View {

@@ -2377,6 +2377,8 @@ public final class WorkspaceStore {
   public private(set) var isLoadingAgentRuns = false
   public private(set) var isRefreshingWorkspace = false
   public private(set) var mutatingAgentRunIDs: Set<AgentRunItem.ID> = []
+  /// The current step of each in-flight Reply & Resume request.
+  public private(set) var agentRunClarificationPhases: [AgentRunItem.ID: AgentRunClarificationReplyPhase] = [:]
   public private(set) var agentWorkflows: [AgentWorkflowItem] = []
   public var selectedAgentWorkflowID: AgentWorkflowItem.ID?
   public private(set) var isLoadingAgentWorkflows = false
@@ -3566,6 +3568,10 @@ public final class WorkspaceStore {
   var runReviewPageRefreshOperationForTesting: ((RunsAndReviewPage) async -> Void)?
   var agentRunDetailLoaderForTesting: ((_ runID: String) async throws -> AgentRunItem)?
   var deferredAgentRunsRefreshDelayNanoseconds: UInt64 = 1_000_000_000
+  var agentRunClarificationReplyForTesting: ((
+    _ run: AgentRunItem,
+    _ response: String
+  ) async throws -> OpenClawRunContinuation)?
   var agentRunApprovalContinuationForTesting: ((
     _ run: AgentRunItem
   ) async throws -> OpenClawApprovedRunContinuation)?
@@ -4911,6 +4917,7 @@ extension WorkspaceStore {
     presentedAgentRunID = nil
     resetWorkspaceTabsForCorpusChange()
     mutatingAgentRunIDs = []
+    agentRunClarificationPhases = [:]
     approvingApprovalItemIDs = []
     rejectingApprovalItemIDs = []
     externallyCompletingApprovalItemIDs = []
@@ -8621,16 +8628,24 @@ extension WorkspaceStore {
     }
 
     mutatingAgentRunIDs.insert(run.id)
-    defer { mutatingAgentRunIDs.remove(run.id) }
+    agentRunClarificationPhases[run.id] = .recording
+    defer {
+      mutatingAgentRunIDs.remove(run.id)
+      agentRunClarificationPhases[run.id] = nil
+    }
     do {
-      let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
       let continuation: OpenClawRunContinuation
       do {
-        continuation = try await gateway.replyAndResumeRun(
-          runID: run.id,
-          response: response,
-          corpusID: activeCorpusIdentity?.id
-        )
+        if let agentRunClarificationReplyForTesting {
+          continuation = try await agentRunClarificationReplyForTesting(run, response)
+        } else {
+          let gateway = OpenClawGatewayClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+          continuation = try await gateway.replyAndResumeRun(
+            runID: run.id,
+            response: response,
+            corpusID: activeCorpusIdentity?.id
+          )
+        }
       } catch {
         guard Self.shouldUseLocalClarificationResumeFallback(for: error) else { throw error }
         let commented: AgentRunItem = try await cli.runJSON([
@@ -8640,6 +8655,7 @@ extension WorkspaceStore {
           "--dir", corpusRoot.path,
           "--json"
         ])
+        agentRunClarificationPhases[run.id] = .resuming
         let resumed: AgentRunItem = try await cli.runJSON([
           "run", "resume", run.id,
           "--actor", "Org2Workspace",
@@ -8658,8 +8674,10 @@ extension WorkspaceStore {
           )
         )
       }
+      agentRunClarificationPhases[run.id] = .resuming
       await refreshAgentRuns()
 
+      agentRunClarificationPhases[run.id] = .handingOff
       let thread: AIChatThread
       if let sessionKey = continuation.sessionKey,
          let existing = aiChatThreads.first(where: { $0.sessionKey == sessionKey }) {

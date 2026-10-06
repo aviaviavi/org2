@@ -1920,6 +1920,51 @@ final class AgentRunModelsTests: XCTestCase {
     )
   }
 
+  func testAgentRunClarificationReplyPhasesHaveProminentOrderedProgressText() {
+    let phases = AgentRunClarificationReplyPhase.allCases
+    XCTAssertEqual(phases, [.recording, .resuming, .handingOff])
+    XCTAssertEqual(phases.map(\.stepLabel), ["Step 1 of 3", "Step 2 of 3", "Step 3 of 3"])
+    for phase in phases {
+      XCTAssertFalse(phase.title.isEmpty)
+      XCTAssertFalse(phase.detail.isEmpty)
+      XCTAssertTrue(phase.buttonTitle.hasSuffix("…"))
+    }
+    XCTAssertEqual(Set(phases.map(\.title)).count, phases.count)
+  }
+
+  @MainActor
+  func testReplyAndResumeExposesItsCurrentPhaseUntilTheRequestFinishes() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-clarification-phase-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let run = try makeRun(
+      id: "blocked-run",
+      status: "blocked",
+      blockedReason: "Which reporting period should this cover?"
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.replaceAgentRunsForTesting([run])
+    var phaseDuringRequest: AgentRunClarificationReplyPhase?
+    var mutatingDuringRequest = false
+    store.agentRunClarificationReplyForTesting = { [weak store] requestedRun, response in
+      phaseDuringRequest = store?.agentRunClarificationPhases[requestedRun.id]
+      mutatingDuringRequest = store?.mutatingAgentRunIDs.contains(requestedRun.id) ?? false
+      XCTAssertEqual(response, "Use Q3 actuals.")
+      throw OpenClawGatewayError.gateway(code: "INTERNAL", message: "gateway unavailable")
+    }
+
+    let succeeded = await store.respondToAgentRunClarification(run, response: "  Use Q3 actuals. ")
+
+    XCTAssertFalse(succeeded)
+    XCTAssertEqual(phaseDuringRequest, .recording)
+    XCTAssertTrue(mutatingDuringRequest)
+    XCTAssertNil(store.agentRunClarificationPhases[run.id])
+    XCTAssertFalse(store.mutatingAgentRunIDs.contains(run.id))
+    XCTAssertEqual(store.statusText, "Clarification response failed")
+  }
+
   func testAgentRunClarificationFallbackOnlyAcceptsAnUnavailableGatewayMethod() {
     XCTAssertTrue(WorkspaceStore.shouldUseLocalClarificationResumeFallback(
       for: OpenClawGatewayError.gateway(
