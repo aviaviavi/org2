@@ -3035,8 +3035,30 @@ public final class WorkspaceStore {
   public private(set) var isBuildingSearchIndex = false
   public private(set) var searchIndexStatusText = ""
   public var isLoadingMeetings = false
-  public var isRecordingMeeting = false
-  public var isMeetingRecordingPaused = false
+  public var isRecordingMeeting = false {
+    didSet {
+      guard oldValue != isRecordingMeeting else { return }
+      if isRecordingMeeting {
+        meetingRecordingClock.start(at: Date())
+      } else {
+        meetingRecordingClock.reset()
+      }
+    }
+  }
+  public var isMeetingRecordingPaused = false {
+    didSet {
+      guard oldValue != isMeetingRecordingPaused else { return }
+      if isMeetingRecordingPaused {
+        meetingRecordingClock.pause(at: Date())
+      } else {
+        meetingRecordingClock.resume(at: Date())
+      }
+    }
+  }
+  /// Active (unpaused) time of the current meeting recording.
+  public private(set) var meetingRecordingClock = MeetingRecordingClock()
+  /// True while Stop is finalizing the recorders, before transcription starts.
+  public private(set) var isStoppingMeetingRecording = false
   public var isProcessingMeeting = false
   public var isLoadingAIChatThreadRecords = false
   public var isLoadingEntrySource = false
@@ -10768,6 +10790,9 @@ extension WorkspaceStore {
       meetingStatusText = "No active recording"
       return
     }
+    guard !isStoppingMeetingRecording else { return }
+    isStoppingMeetingRecording = true
+    defer { isStoppingMeetingRecording = false }
     let context = captureAIChatCorpusContext()
     cancelMeetingSystemAudioRecovery()
 

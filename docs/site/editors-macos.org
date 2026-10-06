@@ -223,6 +223,8 @@ See [[file:agent-quickstart.org][Agent quickstart]] for permissions, runtime int
 
 Meetings can be recorded in OpenOrg or created from an existing audio file. Choose local Whisper, macOS Speech, Fluid Voice, or a custom local command for transcription. The resulting audio, transcript, metadata, and notes remain visible in the corpus. A freshly transcribed meeting can optionally be sent to a named AI destination for a summary or follow-up workflow.
 
+While a meeting is recording, a pill in the window toolbar shows the state on every page: *REC* with the elapsed recording time (paused time excluded), *Paused*, *Stopping*, or *Transcribing* until the meeting is saved. Click the pill to open *Meetings*; its buttons pause, resume, or stop the recording without leaving the current page.
+
 The *Sources* view manages supported Slack, Notion, and email connections. *Add Email Source…* records an IMAP account (server, port, TLS or STARTTLS, user name, mailboxes, optional SMTP server) in =org2.json= and stores its password or app password in Keychain; email sync reads new mail without marking it read. Each connector can run on demand, pause or resume its schedule, and use a repeating interval or daily time. Imported material is staged for review rather than silently promoted into your canonical notes, and credentials remain outside the corpus.
 
 * Saved property views

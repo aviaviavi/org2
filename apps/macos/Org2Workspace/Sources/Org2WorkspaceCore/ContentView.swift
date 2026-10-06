@@ -85,6 +85,10 @@ public struct ContentView: View {
           .help(store.canNavigateForward ? "Forward (⌘])" : "No next location")
         }
 
+        ToolbarItem {
+          MeetingRecordingToolbarIndicator()
+        }
+
         ToolbarItemGroup {
           Button {
             store.makeSurfacePrimary(.aiChat)
