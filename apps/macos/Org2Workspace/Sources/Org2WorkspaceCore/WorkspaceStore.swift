@@ -2811,6 +2811,7 @@ public final class WorkspaceStore {
     didSet {
       scheduleCurrentNodeBriefArtifactRefresh()
       guard oldValue?.file != selectedLocation?.file else { return }
+      htmlFileShowsSource = false
       updateSelectedFileDataNotebookState(for: selectedLocation?.file, sourceText: nil)
     }
   }
@@ -3716,6 +3717,10 @@ public final class WorkspaceStore {
   public internal(set) var pendingPluginProposals: [WorkspacePluginProposal] = []
   /// The plugin output and proposal currently under review.
   public var activePluginReview: WorkspacePluginReview?
+  /// The in-app web browser surface.
+  public let browser = WorkspaceBrowserModel()
+  /// Show the selected HTML file's source instead of the rendered page.
+  public var htmlFileShowsSource = false
   @ObservationIgnored var isDispatchingPluginHooks = false
   public private(set) var selectedNodeEntityType: Org2EntityType?
   public private(set) var selectedNodeHasExplicitEntityType = false
@@ -5183,6 +5188,14 @@ extension WorkspaceStore {
     }
     if !requiresFullScan, !classified.mediaPreviewPaths.isEmpty {
       refreshSelectedMediaPreview(for: classified.mediaPreviewPaths)
+    }
+    // A rendered HTML page reloads when its file (or a sibling asset) changes.
+    if let selected = selectedLocation?.file, Self.isHTMLFile(selected) {
+      let directory = URL(fileURLWithPath: selected).deletingLastPathComponent().standardizedFileURL.path + "/"
+      if classified.contentPaths.contains(where: { $0.hasPrefix(directory) })
+          || classified.mediaPreviewPaths.contains(where: { $0.hasPrefix(directory) }) {
+        linkedMediaPreviewRevision &+= 1
+      }
     }
     recordCorpusFileEvents(classified.contentPaths)
     if requiresFullScan || !classified.contentPaths.isEmpty || classified.hasConfigurationChanges {
@@ -19533,7 +19546,7 @@ extension WorkspaceStore {
       focusCorpusFileFilter()
     case .home, .aiChat:
       presentAIChatThreadFind()
-    case .savedViews, .meetings, .sources, .externalThreads, .skills, .activity:
+    case .savedViews, .meetings, .sources, .externalThreads, .skills, .activity, .browser:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -30853,7 +30866,8 @@ extension WorkspaceStore {
         pdfPreviewPaths.append(path)
         continue
       }
-      if isMediaFile(path),
+      // Web page assets refresh a rendered HTML file the same way.
+      if isMediaFile(path) || ["html", "htm", "xhtml", "css", "js", "mjs", "svg", "json"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
          !isDefaultIgnoredSyncArtifactPath(path),
          seenMediaPreviewPaths.insert(path).inserted {
         mediaPreviewPaths.append(path)
@@ -31180,6 +31194,8 @@ extension WorkspaceStore {
       refreshCorpusAgentSkills()
     case .activity:
       await refreshActivitySources()
+    case .browser:
+      await browser.refreshRunningLocalPorts()
     }
     markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
   }
@@ -31216,6 +31232,8 @@ extension WorkspaceStore {
       false
     case .activity:
       isRefreshingAgentRuns || isRefreshingApprovals || isRefreshingAgentWorkflows
+    case .browser:
+      browser.isLoading
     }
   }
 
@@ -38695,6 +38713,8 @@ extension WorkspaceStore {
         makeSurfacePrimary(.externalThreads)
       case "n":
         makeSurfacePrimary(.activity)
+      case "b":
+        makeSurfacePrimary(.browser)
       default:
         return false
       }
@@ -49958,13 +49978,16 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   /// What is happening across the corpus: work needing you, live agent work,
   /// schedules, recent changes, and a zoomable map.
   case activity
+  /// An in-app web browser for websites, local development servers, and
+  /// HTML files.
+  case browser
 
   public var id: String { rawValue }
 
   /// Sidebar order. Saved Views and Canvases sit at the bottom of the
   /// Workspace section, below Review Queue and Automations.
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .activity, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
+    [.home, .activity, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .browser, .savedViews]
   }
 
   /// Surfaces listed after the Agent Work pages (Review Queue, Automations).
@@ -49990,6 +50013,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "External Threads"
     case .skills: "Skills"
     case .activity: "Activity"
+    case .browser: "Browser"
     }
   }
 
@@ -50008,6 +50032,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "rectangle.stack.badge.person.crop"
     case .skills: "wand.and.stars"
     case .activity: "map"
+    case .browser: "globe"
     }
   }
 
@@ -50026,6 +50051,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "⌥⌘E"
     case .skills: "⌘⇧K"
     case .activity: "⌥⌘N"
+    case .browser: "⌥⌘B"
     }
   }
 }

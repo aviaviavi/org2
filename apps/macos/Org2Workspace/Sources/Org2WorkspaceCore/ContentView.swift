@@ -1788,6 +1788,8 @@ private struct WorkspaceSurfaceView: View {
           SkillsView()
         case .activity:
           WorkspaceActivityView()
+        case .browser:
+          WorkspaceBrowserView()
         }
       }
       // Some surface controls and rows have a useful minimum content width.
@@ -4852,6 +4854,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘-click link", action: "Open link in a new tab"),
             ShortcutHelpItem(keys: "⌘Return in Quick Open", action: "Open in a new tab"),
             ShortcutHelpItem(keys: "⌥⌘N", action: "Activity (what's happening now)"),
+            ShortcutHelpItem(keys: "⌥⌘B", action: "Browser"),
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
@@ -11936,6 +11939,10 @@ private struct DetailView: View {
             )
             .id(location.file)
             .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
+          } else if store.showsSelectedHTMLFileAsPage {
+            HTMLFilePreviewPane(file: location.file, revision: store.linkedMediaPreviewRevision)
+              .id(location.file)
+              .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else if store.isLiveFileEditorSelected {
             LiveFileEditorBody(
               location: location,
@@ -12583,6 +12590,19 @@ private struct DetailHeader: View {
     Menu {
       LiveEmbedInsertButton()
       Divider()
+      if store.selectedFileIsHTML {
+        Button {
+          store.showHTMLFileSource(!store.htmlFileShowsSource)
+        } label: {
+          Label(store.htmlFileShowsSource ? "View as Web Page" : "View HTML Source", systemImage: store.htmlFileShowsSource ? "globe" : "chevron.left.forwardslash.chevron.right")
+        }
+        Button {
+          store.openInBrowser(URL(fileURLWithPath: location.file))
+        } label: {
+          Label("Open in Browser", systemImage: "safari")
+        }
+        Divider()
+      }
       if !store.selectedFileIsNativePreview {
         PluginActionsMenu(context: .heading(file: location.file, line: location.lineForEditor), title: "Plugin Actions for Heading")
         PluginActionsMenu(context: .note(file: location.file), title: "Plugin Actions for Note")

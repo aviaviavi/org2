@@ -156,6 +156,10 @@ The iOS Files tab supports local fuzzy search across pages, headings, and entry 
 
 Every chat thread, durable run, and automation can explain itself: why it is working or waiting on you, which host and runtime reported that, the last heartbeat or transition, whether the state is live, cached, or uncertain, and the exact approval or question that blocks it. Explanations come from structured presence, transcript, and run records rather than terminal output. OpenOrg shows them in Activity's *Explain Status* inspector and a *Hosts* section covering the Mac, headless servers, and remote harnesses; agents and scripts use =org2 activity explain=, =org2 activity events --follow=, and race-free =org2 thread wait= / =org2 run wait=. See [[file:tooling-reference.org::*Explainable activity, events, and waits][the tooling reference]].
 
+* Web pages and a built-in browser
+
+OpenOrg renders corpus HTML files as live web pages beside their source and includes a Browser for websites, local development servers such as =localhost:5173=, and static web apps served read-only from a folder over loopback http. See [[file:editors-macos.org][macOS workspace]].
+
 * Projects as ordinary notes
 
 A project is one ordinary Org file containing its purpose, TODO actions,
