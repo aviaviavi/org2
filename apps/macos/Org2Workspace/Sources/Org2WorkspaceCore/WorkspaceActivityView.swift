@@ -178,7 +178,7 @@ private struct ActivityNowList: View {
           .padding(.leading, 2)
       } else {
         ForEach(visible) { item in
-          ActivityRow(item: item, explainable: store.canExplainActivityItem(item)) { store.openActivityItem(item) }
+          ActivityRow(item: item, explainable: store.canExplainActivityItem(item), pluginContext: store.pluginActionContext(for: item)) { store.openActivityItem(item) }
         }
         if items.count > limit {
           Button(isExpanded ? "Show fewer" : "Show all \(items.count)") {
@@ -280,6 +280,7 @@ private struct ActivityNowList: View {
 private struct ActivityRow: View {
   let item: WorkspaceActivityItem
   var explainable = false
+  var pluginContext: WorkspacePluginActionContext?
   let open: () -> Void
   @State private var isHovered = false
   @State private var isExplaining = false
@@ -361,6 +362,9 @@ private struct ActivityRow: View {
       Button("Open") { open() }
       if explainable {
         Button("Explain Status") { isExplaining = true }
+      }
+      if let context = pluginContext {
+        PluginActionsMenu(context: context)
       }
     }
     .accessibilityLabel("\(item.title), \(item.detail)")

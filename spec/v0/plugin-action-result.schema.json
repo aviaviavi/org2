@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/plugin-action-result.schema.json",
+  "title": "Org2 plugin action or hook result v1",
+  "description": "Returned by a context-aware plugin action or lifecycle hook. Proposals are stored as pending org2:plugin-proposal:v1 records and change the corpus only when a person applies them.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["$schema", "ok"],
+  "properties": {
+    "$schema": { "const": "org2:plugin-action-result:v1" },
+    "ok": { "type": "boolean" },
+    "text": { "type": "string" },
+    "error": { "type": "string" },
+    "proposals": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["kind", "path", "find", "replace"],
+            "properties": {
+              "kind": { "const": "edit" },
+              "path": { "type": "string", "description": "Corpus-relative; hidden and machine-managed paths are rejected." },
+              "find": { "type": "string", "minLength": 1, "description": "Exact text that must occur once." },
+              "replace": { "type": "string" },
+              "expectedSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "summary": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["kind", "path", "content"],
+            "properties": {
+              "kind": { "const": "create" },
+              "path": { "type": "string", "pattern": "^views/" },
+              "content": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["kind", "threadId", "message"],
+            "properties": {
+              "kind": { "const": "thread-post" },
+              "threadId": { "type": "string" },
+              "message": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["kind", "runId", "body"],
+            "properties": {
+              "kind": { "const": "run-comment" },
+              "runId": { "type": "string" },
+              "body": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

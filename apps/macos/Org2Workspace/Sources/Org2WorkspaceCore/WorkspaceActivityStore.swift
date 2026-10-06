@@ -102,6 +102,21 @@ extension WorkspaceStore {
       ))
     }
 
+    // Plugin proposals (from actions or lifecycle hooks) awaiting review.
+    for proposal in pendingPluginProposals {
+      snapshot.needsYou.append(WorkspaceActivityItem(
+        id: "plugin-proposal:\(proposal.id)",
+        kind: .needsYou,
+        title: proposal.source.title,
+        detail: "\(proposal.proposals.count) change\(proposal.proposals.count == 1 ? "" : "s") proposed by \(proposal.source.pluginName)",
+        agent: proposal.source.pluginName,
+        relativePath: proposal.proposals.lazy.compactMap(\.path).first,
+        date: Self.activityDate(proposal.createdAt),
+        state: .needsYou,
+        target: .pluginProposal(proposal.id)
+      ))
+    }
+
     // Durable runs.
     for run in agentRuns where !run.isFinished {
       let threadID = Self.activityThreadID(in: run)
@@ -219,6 +234,8 @@ extension WorkspaceStore {
     case .file(let path, let line):
       setPendingNavigationSource("activity")
       openChatFileReference(AIChatFileReference(path: path, line: line))
+    case .pluginProposal(let id):
+      Task { await reviewPluginProposal(id: id) }
     }
   }
 
@@ -245,6 +262,7 @@ extension WorkspaceStore {
     await refreshAgentRuns()
     await refreshApprovals()
     await refreshAgentWorkflows()
+    await refreshPluginActions()
     await serverStatus.value
   }
 
@@ -310,6 +328,7 @@ extension WorkspaceStore {
     case .approval: "approval"
     case .workflow: "workflow"
     case .file: "file"
+    case .pluginProposal: "plugin_proposal"
     }
   }
 }

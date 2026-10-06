@@ -32,6 +32,51 @@ export type Org2PluginTemplateContribution = {
   path: string;
 };
 
+/** Selections a context-aware action can run against. */
+export const ORG2_PLUGIN_ACTION_CONTEXTS = ["note", "heading", "thread", "run", "approval"] as const;
+export type Org2PluginActionContext = (typeof ORG2_PLUGIN_ACTION_CONTEXTS)[number];
+
+/**
+ * Optional capabilities an action or hook may request. Corpus writes are never
+ * a capability: actions and hooks return proposals that a person reviews.
+ */
+export const ORG2_PLUGIN_ACTION_CAPABILITIES = ["read-corpus", "network"] as const;
+export type Org2PluginActionCapability = (typeof ORG2_PLUGIN_ACTION_CAPABILITIES)[number];
+
+/** Lifecycle events a hook can subscribe to. */
+export const ORG2_PLUGIN_HOOK_EVENTS = [
+  "run.created",
+  "run.running",
+  "run.waiting-approval",
+  "run.blocked",
+  "run.completed",
+  "run.failed",
+  "run.canceled",
+  "approval.requested",
+  "approval.decided",
+  "thread.reply-received",
+  "thread.needs-you",
+  "workflow.dispatched",
+] as const;
+export type Org2PluginHookEvent = (typeof ORG2_PLUGIN_HOOK_EVENTS)[number];
+
+export type Org2PluginActionContribution = {
+  id: string;
+  title: string;
+  description?: string;
+  contexts: Org2PluginActionContext[];
+  entry: string;
+  capabilities?: Org2PluginActionCapability[];
+};
+
+export type Org2PluginHookContribution = {
+  id: string;
+  description?: string;
+  events: Org2PluginHookEvent[];
+  entry: string;
+  capabilities?: Org2PluginActionCapability[];
+};
+
 export type Org2PluginManifest = {
   $schema: typeof ORG2_PLUGIN_MANIFEST_SCHEMA;
   id: string;
@@ -44,6 +89,8 @@ export type Org2PluginManifest = {
     commands?: Org2PluginCommandContribution[];
     renderers?: Org2PluginRendererContribution[];
     templates?: Org2PluginTemplateContribution[];
+    actions?: Org2PluginActionContribution[];
+    hooks?: Org2PluginHookContribution[];
   };
 };
 
@@ -257,7 +304,7 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
     throw new Error(`${label}.contributes must be an object`);
   }
   const contributesRecord = (rawContributes || {}) as Record<string, unknown>;
-  assertOnlyKeys(contributesRecord, ["commands", "renderers", "templates"], `${label}.contributes`);
+  assertOnlyKeys(contributesRecord, ["commands", "renderers", "templates", "actions", "hooks"], `${label}.contributes`);
   const seen = new Set<string>();
   const commands = contributionArray(contributesRecord.commands, `${label}.contributes.commands`).map((item, index) => {
     assertOnlyKeys(item, ["id", "description", "entry"], `${label}.contributes.commands[${index}]`);
@@ -302,6 +349,60 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
       path: safeRelativePath(item.path, `${label}.contributes.templates[${index}].path`),
     };
   });
+  const capabilityList = (value: unknown, itemLabel: string): Org2PluginActionCapability[] => {
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error(`${itemLabel}.capabilities must be an array`);
+    const result = [...new Set(value.map((item) => requiredString(item, `${itemLabel} capability`).toLowerCase()))];
+    for (const capability of result) {
+      if (!(ORG2_PLUGIN_ACTION_CAPABILITIES as readonly string[]).includes(capability)) {
+        throw new Error(`${itemLabel} requests unsupported capability ${capability}; corpus writes are proposals, never a capability`);
+      }
+    }
+    return result as Org2PluginActionCapability[];
+  };
+  const actions = contributionArray(contributesRecord.actions, `${label}.contributes.actions`).map((item, index) => {
+    const itemLabel = `${label}.contributes.actions[${index}]`;
+    assertOnlyKeys(item, ["id", "title", "description", "contexts", "entry", "capabilities"], itemLabel);
+    const contributionId = requiredString(item.id, `${itemLabel}.id`).toLowerCase();
+    if (!CONTRIBUTION_ID_PATTERN.test(contributionId)) throw new Error(`invalid action id ${contributionId}`);
+    if (seen.has(`action:${contributionId}`)) throw new Error(`duplicate action id ${contributionId}`);
+    seen.add(`action:${contributionId}`);
+    if (!Array.isArray(item.contexts) || item.contexts.length === 0) throw new Error(`action ${contributionId} requires contexts`);
+    const contexts = [...new Set(item.contexts.map((context) => requiredString(context, `action ${contributionId} context`).toLowerCase()))];
+    for (const context of contexts) {
+      if (!(ORG2_PLUGIN_ACTION_CONTEXTS as readonly string[]).includes(context)) throw new Error(`action ${contributionId} has unsupported context ${context}`);
+    }
+    const capabilities = capabilityList(item.capabilities, itemLabel);
+    return {
+      id: contributionId,
+      title: requiredString(item.title, `${itemLabel}.title`),
+      ...(optionalString(item.description) ? { description: optionalString(item.description) } : {}),
+      contexts: contexts as Org2PluginActionContext[],
+      entry: safeProcessEntry(item.entry, `${itemLabel}.entry`),
+      ...(capabilities.length ? { capabilities } : {}),
+    };
+  });
+  const hooks = contributionArray(contributesRecord.hooks, `${label}.contributes.hooks`).map((item, index) => {
+    const itemLabel = `${label}.contributes.hooks[${index}]`;
+    assertOnlyKeys(item, ["id", "description", "events", "entry", "capabilities"], itemLabel);
+    const contributionId = requiredString(item.id, `${itemLabel}.id`).toLowerCase();
+    if (!CONTRIBUTION_ID_PATTERN.test(contributionId)) throw new Error(`invalid hook id ${contributionId}`);
+    if (seen.has(`hook:${contributionId}`)) throw new Error(`duplicate hook id ${contributionId}`);
+    seen.add(`hook:${contributionId}`);
+    if (!Array.isArray(item.events) || item.events.length === 0) throw new Error(`hook ${contributionId} requires events`);
+    const events = [...new Set(item.events.map((event) => requiredString(event, `hook ${contributionId} event`)))];
+    for (const event of events) {
+      if (!(ORG2_PLUGIN_HOOK_EVENTS as readonly string[]).includes(event)) throw new Error(`hook ${contributionId} subscribes to unsupported event ${event}`);
+    }
+    const capabilities = capabilityList(item.capabilities, itemLabel);
+    return {
+      id: contributionId,
+      ...(optionalString(item.description) ? { description: optionalString(item.description) } : {}),
+      events: events as Org2PluginHookEvent[],
+      entry: safeProcessEntry(item.entry, `${itemLabel}.entry`),
+      ...(capabilities.length ? { capabilities } : {}),
+    };
+  });
   const permissionsRaw = raw.permissions;
   if (permissionsRaw !== undefined && (!permissionsRaw || typeof permissionsRaw !== "object" || Array.isArray(permissionsRaw))) {
     throw new Error(`${label}.permissions must be an object`);
@@ -333,6 +434,8 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
       ...(commands.length ? { commands } : {}),
       ...(renderers.length ? { renderers } : {}),
       ...(templates.length ? { templates } : {}),
+      ...(actions.length ? { actions } : {}),
+      ...(hooks.length ? { hooks } : {}),
     },
   };
 }
@@ -497,7 +600,7 @@ export function pluginEntryPath(pluginRoot: string, relative: string): string {
   return candidate;
 }
 
-function pluginEnvironment(manifest: Org2PluginManifest, entry: Org2PluginLockEntry): NodeJS.ProcessEnv {
+export function pluginEnvironment(manifest: Org2PluginManifest, entry: Org2PluginLockEntry): NodeJS.ProcessEnv {
   const allowed = new Set(["HOME", "PATH", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TZ"]);
   for (const variable of manifest.permissions?.environment || []) allowed.add(variable);
   const environment: NodeJS.ProcessEnv = {

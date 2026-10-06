@@ -136,6 +136,14 @@ CLI HTML runtime powers both read mode and source preview, so the same plugin
 also works in <code>org2 export html</code> without a separate Mac extension or app
 rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 <a href="tooling-reference.html#plugins">Tooling reference → Plugins</a>.</p>
+<p>Plugins can also contribute context-aware actions. The document <strong>File</strong> menu
+shows <strong>Plugin Actions for Heading</strong> and <strong>Plugin Actions for Note</strong>, and Activity
+row context menus show actions for chat threads, runs, and approvals. An action
+runs sandboxed without corpus write access; its output and any proposed changes
+open in a review sheet with unified diffs, and nothing is written until you
+choose <strong>Apply Changes</strong>. Lifecycle hooks (for example on <code>run.blocked</code> or
+<code>approval.requested</code>) are dispatched by the corpus's automation host, and their
+proposals appear under <strong>Needs you</strong> in Activity for the same review.</p>
 <p>OpenOrg can export an ordinary document or selected subtree as a clean PDF. Document PDFs preserve styled headings and content while omitting heading stars, outline guides and their indentation, disclosure arrows, property drawers, and interactive controls such as Ask AI. It can also preview slide decks and export presentation PDFs. Publication uses a disclosure-safe copy that removes private workspace metadata and unresolved local references from the shared output.</p>
 </section>
 <section class="org2-headline level-1">

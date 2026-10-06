@@ -133,7 +133,7 @@ extension WorkspaceStore {
     case .approval(let id):
       guard let runID = approvalItems.first(where: { $0.id == id })?.runId else { return nil }
       return ["--run", runID]
-    case .file: return nil
+    case .file, .pluginProposal: return nil
     }
   }
 

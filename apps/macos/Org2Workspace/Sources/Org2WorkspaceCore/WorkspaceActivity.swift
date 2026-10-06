@@ -18,6 +18,8 @@ public struct WorkspaceActivityItem: Identifiable, Hashable, Sendable {
     case approval(ApprovalItem.ID)
     case workflow(String)
     case file(path: String, line: Int?)
+    /// A pending plugin proposal awaiting review.
+    case pluginProposal(String)
   }
 
   public let id: String

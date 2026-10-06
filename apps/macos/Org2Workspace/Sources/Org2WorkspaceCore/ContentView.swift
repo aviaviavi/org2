@@ -152,6 +152,10 @@ public struct ContentView: View {
         StartWorkOptionsView(request: request)
           .environment(store)
       }
+      .sheet(item: $store.activePluginReview) { review in
+        PluginProposalReviewSheet(review: review)
+          .environment(store)
+      }
       .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
         KeyboardShortcutsView()
           .environment(store)
@@ -12579,6 +12583,10 @@ private struct DetailHeader: View {
     Menu {
       LiveEmbedInsertButton()
       Divider()
+      if !store.selectedFileIsNativePreview {
+        PluginActionsMenu(context: .heading(file: location.file, line: location.lineForEditor), title: "Plugin Actions for Heading")
+        PluginActionsMenu(context: .note(file: location.file), title: "Plugin Actions for Note")
+      }
       Button {
         store.togglePinnedFile(path: location.file)
       } label: {

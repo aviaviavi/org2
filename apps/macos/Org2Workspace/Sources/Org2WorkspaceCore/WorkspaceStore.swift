@@ -3709,6 +3709,14 @@ public final class WorkspaceStore {
   /// The corpus's scheduler owner from `org2.json` (`automationHostRef`),
   /// read when Activity refreshes. Nil until read.
   public internal(set) var corpusAutomationHostRef: String?
+  /// Context-aware actions and lifecycle hooks contributed by locked plugins.
+  public internal(set) var pluginActions: [WorkspacePluginAction] = []
+  public internal(set) var pluginHooks: [WorkspacePluginHook] = []
+  /// Plugin proposals (from actions or hooks) waiting for a person.
+  public internal(set) var pendingPluginProposals: [WorkspacePluginProposal] = []
+  /// The plugin output and proposal currently under review.
+  public var activePluginReview: WorkspacePluginReview?
+  @ObservationIgnored var isDispatchingPluginHooks = false
   public private(set) var selectedNodeEntityType: Org2EntityType?
   public private(set) var selectedNodeHasExplicitEntityType = false
   /// Headings currently being started, keyed by "file:line", so a double
@@ -4738,6 +4746,11 @@ extension WorkspaceStore {
       )
     })
     refreshCorpusAgentSkills()
+    pluginActions = []
+    pluginHooks = []
+    pendingPluginProposals = []
+    corpusAutomationHostRef = nil
+    Task { @MainActor [weak self] in await self?.refreshPluginActions() }
     activeCorpusIdentity = cachedWorkspace?.identity
     upsertCorpusMount(path: standardized.path, identity: nil)
     openClawRemoteCorpusPath = restoreOpenClawRemoteCorpusPath(for: standardized)
@@ -41804,6 +41817,7 @@ extension WorkspaceStore {
             self.adoptOrphanedOpenCodeTurns()
           }
           if tick % 15 == 0 { self.scheduleAIChatLiveRefresh() }
+          if tick % 60 == 30 { Task { await self.dispatchPluginHooksIfOwner() } }
           tick &+= 1
           try? await Task.sleep(nanoseconds: self.aiChatLivePresenceTickNanoseconds)
         }

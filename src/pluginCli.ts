@@ -5,7 +5,24 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type Org2Config, type Org2PluginConfig } from "./config.js";
+import { parseSince } from "./activityCli.js";
 import {
+  ORG2_PLUGIN_ACTION_LIST_SCHEMA,
+  applyPluginProposal,
+  dismissPluginProposal,
+  dispatchPluginHooksOnce,
+  followPluginHooks,
+  listPluginActions,
+  listPluginHooks,
+  listPluginProposals,
+  loadPluginProposal,
+  pluginSandboxAvailable,
+  runPluginAction,
+  type PluginActionContextRef,
+  type PluginProposalRecord,
+} from "./pluginActions.js";
+import {
+  ORG2_PLUGIN_ACTION_CONTEXTS,
   ORG2_PLUGIN_INVOCATION_SCHEMA,
   ORG2_PLUGIN_LOCK_SCHEMA,
   ORG2_PLUGIN_RESULT_SCHEMA,
@@ -28,6 +45,7 @@ import {
   verifyPluginStore,
   writeJSONAtomic,
   writePluginLock,
+  type Org2PluginActionContext,
   type Org2PluginLock,
   type Org2PluginLockEntry,
 } from "./pluginRuntime.js";
@@ -57,6 +75,13 @@ Usage:
   org2 plugin doctor [--dir CORPUS] [--json]
   org2 plugin exec PLUGIN_ID COMMAND_ID [--dir CORPUS] -- [ARG ...]
   org2 plugin template PLUGIN_ID:TEMPLATE_ID --out FILE [--apply] [--force] [--dir CORPUS]
+  org2 plugin actions [--context note|heading|thread|run|approval] [--dir CORPUS] [--json]
+  org2 plugin action run PLUGIN_ID:ACTION_ID --context note|heading --file FILE [--line N] [--apply] [--json]
+  org2 plugin action run PLUGIN_ID:ACTION_ID --context thread --thread ID | --context run|approval --run ID [--approval ID]
+  org2 plugin proposals list [--status pending|applied|dismissed] [--json]
+  org2 plugin proposals show|apply|dismiss PROPOSAL_ID [--only N[,N]] [--actor NAME] [--apply] [--json]
+  org2 plugin hooks list [--json]
+  org2 plugin hooks dispatch [--since ISO|DURATION] [--follow] [--apply] [--json]
 
 Sources:
   github:OWNER/REPOSITORY
@@ -64,6 +89,12 @@ Sources:
   ssh://git@example.com/path/repository.git
   git@example.com:path/repository.git
   file:///path/to/repository or a local Git checkout
+
+Actions and hooks never write the corpus directly. They receive the selected
+note, heading, thread, run, approval, or lifecycle event as JSON, run under a
+macOS sandbox that denies corpus writes (and corpus reads or network unless
+the manifest requests read-corpus or network), and return proposals that stay
+pending under .org2/plugin-proposals/ until a person applies them.
 
 Source intent lives in org2.json. org2.plugins.lock.json pins an exact Git
 commit and SHA-256 content hash. sync reproduces the lock without moving refs;
@@ -371,6 +402,8 @@ function pluginStatuses(corpus: string): Array<Record<string, unknown>> {
         commands: entry.manifest.contributes?.commands?.map((item) => item.id) || [],
         renderers: entry.manifest.contributes?.renderers?.map((item) => ({ id: item.id, languages: item.languages })) || [],
         templates: entry.manifest.contributes?.templates?.map((item) => item.id) || [],
+        ...(entry.manifest.contributes?.actions?.length ? { actions: entry.manifest.contributes.actions.map((item) => ({ id: item.id, contexts: item.contexts })) } : {}),
+        ...(entry.manifest.contributes?.hooks?.length ? { hooks: entry.manifest.contributes.hooks.map((item) => ({ id: item.id, events: item.events })) } : {}),
       },
       ...(store.issue ? { issue: store.issue } : {}),
       ...(compatibilityIssue ? { compatibilityIssue } : {}),
@@ -603,6 +636,114 @@ export async function runPluginCommand(args: string[]): Promise<boolean> {
     }
     output(parsed, { $schema: "org2:plugin-template:v1", applied: apply, pluginId: id, templateId, source, destination }, `${apply ? "created" : "would create"} ${path.relative(corpus, destination)}`);
     return true;
+  }
+
+  if (action === "actions") {
+    const context = flag(parsed, "context");
+    if (context && !(ORG2_PLUGIN_ACTION_CONTEXTS as readonly string[]).includes(context)) throw new Error(`--context must be one of ${ORG2_PLUGIN_ACTION_CONTEXTS.join(", ")}`);
+    const actions = listPluginActions(corpus, context as Org2PluginActionContext | undefined);
+    output(parsed, { $schema: ORG2_PLUGIN_ACTION_LIST_SCHEMA, actions, hooks: listPluginHooks(corpus), sandbox: pluginSandboxAvailable() ? "macos-sandbox-exec" : "none" }, actions.length
+      ? actions.map((item) => `${item.id}\t${item.contexts.join(",")}\t${item.trusted ? "trusted" : "untrusted"}\t${item.title}`).join("\n")
+      : "No plugin actions");
+    return true;
+  }
+
+  if (action === "action") {
+    const sub = parsed.positional[1];
+    if (sub !== "run") throw new Error("usage: org2 plugin action run PLUGIN_ID:ACTION_ID --context KIND ...");
+    const selector = required(parsed.positional[2], "plugin action run requires PLUGIN_ID:ACTION_ID");
+    const kind = required(flag(parsed, "context"), "--context is required");
+    if (!(ORG2_PLUGIN_ACTION_CONTEXTS as readonly string[]).includes(kind)) throw new Error(`--context must be one of ${ORG2_PLUGIN_ACTION_CONTEXTS.join(", ")}`);
+    const line = flag(parsed, "line");
+    const ref: PluginActionContextRef = {
+      kind: kind as Org2PluginActionContext,
+      ...(flag(parsed, "file") ? { file: flag(parsed, "file") } : {}),
+      ...(line ? { line: Number(line) } : {}),
+      ...(flag(parsed, "thread") ? { threadId: flag(parsed, "thread") } : {}),
+      ...(flag(parsed, "run") ? { runId: flag(parsed, "run") } : {}),
+      ...(flag(parsed, "approval") ? { approvalId: flag(parsed, "approval") } : {}),
+    };
+    if (ref.line !== undefined && (!Number.isInteger(ref.line) || ref.line < 1)) throw new Error("--line must be a positive integer");
+    const result = runPluginAction(corpus, selector, ref);
+    if (enabled(parsed, "apply") && result.proposal) {
+      const applied = applyPluginProposal(corpus, result.proposal.id, { apply: true, actor: flag(parsed, "actor") });
+      output(parsed, { ...result, applied }, `${result.text ? `${result.text}\n` : ""}applied ${applied.changes.length} change(s) from proposal ${result.proposal.id}`);
+      return true;
+    }
+    output(parsed, result, [
+      result.text,
+      result.proposal
+        ? `proposal ${result.proposal.id}: ${result.proposal.proposals.length} change(s) pending review\n${result.proposal.proposals.map((change, index) => `  #${index} ${change.kind} ${"path" in change ? change.path : "threadId" in change ? change.threadId : change.runId}${change.summary ? ` — ${change.summary}` : ""}`).join("\n")}\nApply with: org2 plugin proposals apply ${result.proposal.id} --apply`
+        : "no proposals",
+    ].filter(Boolean).join("\n"));
+    return true;
+  }
+
+  if (action === "proposals") {
+    const sub = parsed.positional[1] || "list";
+    if (sub === "list") {
+      const status = flag(parsed, "status") as PluginProposalRecord["status"] | undefined;
+      const proposals = listPluginProposals(corpus, status);
+      output(parsed, { $schema: "org2:plugin-proposal-list:v1", proposals }, proposals.length
+        ? proposals.map((item) => `${item.id}\t${item.status}\t${item.source.pluginId}:${item.source.contributionId}\t${item.proposals.length} change(s)\t${item.source.title}`).join("\n")
+        : "No plugin proposals");
+      return true;
+    }
+    const id = required(parsed.positional[2], `plugin proposals ${sub} requires a proposal id`);
+    if (sub === "show") {
+      const { record } = loadPluginProposal(corpus, id);
+      output(parsed, record, JSON.stringify(record, null, 2));
+      return true;
+    }
+    if (sub === "apply") {
+      const only = (flag(parsed, "only") || "").split(",").map((item) => item.trim()).filter(Boolean).map(Number);
+      if (only.some((item) => !Number.isInteger(item) || item < 0)) throw new Error("--only must list proposal change indexes");
+      const result = applyPluginProposal(corpus, id, { apply: enabled(parsed, "apply"), actor: flag(parsed, "actor"), only });
+      output(parsed, result, result.changes.map((change) => `#${change.index} ${change.ok ? "ok" : "blocked"} ${change.kind} ${change.target}: ${change.detail}${change.diff ? `\n${change.diff}` : ""}`).join("\n") + (result.applied ? `\napplied proposal ${id}` : `\npreview only; add --apply to apply proposal ${id}`));
+      return true;
+    }
+    if (sub === "dismiss") {
+      const result = dismissPluginProposal(corpus, id, { apply: enabled(parsed, "apply"), actor: flag(parsed, "actor") });
+      output(parsed, result, `${result.applied ? "dismissed" : "would dismiss"} proposal ${id}`);
+      return true;
+    }
+    throw new Error(`unknown plugin proposals action: ${sub}`);
+  }
+
+  if (action === "hooks") {
+    const sub = parsed.positional[1] || "list";
+    if (sub === "list") {
+      const hooks = listPluginHooks(corpus);
+      output(parsed, { $schema: "org2:plugin-hook-list:v1", hooks }, hooks.length
+        ? hooks.map((item) => `${item.id}\t${item.events.join(",")}\t${item.trusted ? "trusted" : "untrusted"}`).join("\n")
+        : "No plugin hooks");
+      return true;
+    }
+    if (sub === "dispatch") {
+      const apply = enabled(parsed, "apply");
+      const json = enabled(parsed, "json") || flag(parsed, "format") === "json";
+      if (enabled(parsed, "follow")) {
+        if (!apply) throw new Error("hooks dispatch --follow requires --apply");
+        const controller = new AbortController();
+        const stop = () => controller.abort();
+        process.once("SIGINT", stop);
+        process.once("SIGTERM", stop);
+        try {
+          await followPluginHooks(corpus, (outcome) => process.stdout.write(json ? `${JSON.stringify(outcome)}\n` : `${outcome.ok ? "ok" : "error"}\t${outcome.eventType}\t${outcome.hook}\t${outcome.detail}\n`), { signal: controller.signal });
+        } finally {
+          process.off("SIGINT", stop);
+          process.off("SIGTERM", stop);
+        }
+        return true;
+      }
+      const since = flag(parsed, "since");
+      const result = dispatchPluginHooksOnce(corpus, { apply, ...(since ? { since: parseSince(since) } : {}) });
+      output(parsed, { $schema: "org2:plugin-hook-dispatch:v1", applied: apply, ...result }, result.outcomes.length
+        ? result.outcomes.map((outcome) => `${outcome.ok ? "ok" : "error"}\t${outcome.eventType}\t${outcome.hook}\t${outcome.detail}`).join("\n")
+        : "No hook invocations");
+      return true;
+    }
+    throw new Error(`unknown plugin hooks action: ${sub}`);
   }
 
   if (action === "init") {

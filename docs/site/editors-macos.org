@@ -98,6 +98,15 @@ also works in =org2 export html= without a separate Mac extension or app
 rebuild. Renderer UI runs in a sandboxed, opaque-origin frame. See
 [[file:tooling-reference.org::*Plugins][Tooling reference → Plugins]].
 
+Plugins can also contribute context-aware actions. The document *File* menu
+shows *Plugin Actions for Heading* and *Plugin Actions for Note*, and Activity
+row context menus show actions for chat threads, runs, and approvals. An action
+runs sandboxed without corpus write access; its output and any proposed changes
+open in a review sheet with unified diffs, and nothing is written until you
+choose *Apply Changes*. Lifecycle hooks (for example on =run.blocked= or
+=approval.requested=) are dispatched by the corpus's automation host, and their
+proposals appear under *Needs you* in Activity for the same review.
+
 OpenOrg can export an ordinary document or selected subtree as a clean PDF. Document PDFs preserve styled headings and content while omitting heading stars, outline guides and their indentation, disclosure arrows, property drawers, and interactive controls such as Ask AI. It can also preview slide decks and export presentation PDFs. Publication uses a disclosure-safe copy that removes private workspace metadata and unresolved local references from the shared output.
 
 * Discover connections

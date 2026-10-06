@@ -44,6 +44,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Use `org2 ledger` for stable per-account bookkeeping in recurring workflows; canonical accounts live under `notes/LEDGER/accounts/`.",
       "Use `org2 corpus show|validate|init` to inspect or establish portable corpus identity before team mounting.",
       "Use `org2 source list|doctor|status|bind|import|sync` to manage corpus-declared Slack and Notion crawler profiles and stage review packets without storing credentials in the corpus.",
+      "Use `org2 plugin actions --context note|heading|thread|run|approval` and `org2 plugin action run PLUGIN:ACTION` for context-aware plugin actions, and `org2 plugin hooks dispatch --apply` for lifecycle hooks (run.blocked, run.completed, approval.requested, thread.reply-received, ...). Both are sandboxed and only return proposals; review them with `org2 plugin proposals list|apply|dismiss` (preview by default, `--apply` to write).",
       "Use `org2 plugin list|doctor` to inspect corpus-declared extensions, `plugin sync` to reproduce the content-addressed lock, and `plugin update` to advance a Git ref deliberately.",
       "Use `org2 workspace agenda|search` only with explicitly granted `--mount` paths for read-only multi-corpus projections.",
       "Use `org2 publish document` to preview and publish a disclosure-safe document or subtree as a web bundle, Beamer PDF, Google Doc, Google Slides deck, Google Sheet, or Google Drive PDF.",
@@ -160,8 +161,8 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       },
       {
         id: "plugins",
-        purpose: "Pin, reproduce, inspect, trust, and run content-addressed Git extensions that contribute CLI commands, templates, or sandboxed document renderers shared by CLI and app clients.",
-        commands: ["org2 plugin"],
+        purpose: "Pin, reproduce, inspect, trust, and run content-addressed Git extensions that contribute CLI commands, templates, sandboxed document renderers, context-aware actions, and lifecycle hooks shared by CLI and app clients; actions and hooks return reviewable proposals instead of writing the corpus.",
+        commands: ["org2 plugin", "org2 plugin actions", "org2 plugin action run", "org2 plugin proposals", "org2 plugin hooks"],
         writes: "preview-by-default",
       },
       {

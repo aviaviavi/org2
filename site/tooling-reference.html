@@ -189,6 +189,18 @@ dependency-install step.</p>
     ],
     &quot;templates&quot;: [
       { &quot;id&quot;: &quot;card-note&quot;, &quot;path&quot;: &quot;templates/card.org&quot; }
+    ],
+    &quot;actions&quot;: [
+      {
+        &quot;id&quot;: &quot;summarize&quot;,
+        &quot;title&quot;: &quot;Summarize with Example&quot;,
+        &quot;contexts&quot;: [&quot;heading&quot;, &quot;run&quot;],
+        &quot;entry&quot;: &quot;summarize.mjs&quot;,
+        &quot;capabilities&quot;: [&quot;network&quot;]
+      }
+    ],
+    &quot;hooks&quot;: [
+      { &quot;id&quot;: &quot;notify&quot;, &quot;events&quot;: [&quot;run.blocked&quot;, &quot;approval.requested&quot;], &quot;entry&quot;: &quot;notify.mjs&quot; }
     ]
   }
 }</code></pre>
@@ -200,7 +212,7 @@ to receive.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="contributions-and-process-protocol">Contributions and process protocol</h2>
-<p>V1 has three additive contribution kinds:</p>
+<p>V1 has five additive contribution kinds:</p>
 <ul>
 <li>
 <p><strong>Commands</strong> run explicitly with <code>org2 plugin exec PLUGIN COMMAND -- ARG...</code>.</p>
@@ -220,9 +232,43 @@ document path. It returns
 JavaScript, title, and height. The result replaces that source block in
 <code>org2 export html</code>, OpenOrg read mode, and OpenOrg source preview.</p>
 </li>
+<li>
+<p><strong>Context-aware actions</strong> declare <code>title</code>, the <code>contexts</code> they apply to</p>
+<p>(<code>note</code>, <code>heading</code>, <code>thread</code>, <code>run</code>, <code>approval</code>), an <code>entry</code>, and optional
+<code>capabilities</code> (<code>read-corpus</code>, <code>network</code>). OpenOrg lists them in the File
+menu for the current note or heading and in Activity row menus for threads,
+runs, and approvals; scripts use <code>org2 plugin actions --context KIND</code> and
+<code>org2 plugin action run PLUGIN:ACTION --context KIND ...</code>.</p>
+</li>
+<li>
+<p><strong>Lifecycle hooks</strong> subscribe to activity events such as <code>run.blocked</code>,</p>
+<p><code>run.completed</code>, <code>approval.requested</code>, and <code>thread.reply-received</code>.
+<code>org2 plugin hooks dispatch --apply</code> (once, from a cursor, or with
+<code>--follow</code>) invokes them; the scheduler host in OpenOrg dispatches them
+automatically. Each event is delivered to a hook once.</p>
+</li>
 </ul>
+<p>Actions and hooks cannot mutate the corpus silently. The process receives an
+<code>org2:plugin-action-invocation:v1</code> object containing only the selected object
+(the note or heading text with its revision, a thread's recent messages and
+activity explanation, or a run and approval with its explanation, or the
+event) and no corpus path unless it requests <code>read-corpus</code>. On macOS it runs
+under <code>sandbox-exec</code> with corpus and plugin-trust writes denied, corpus reads
+denied without <code>read-corpus</code>, and network denied without <code>network</code>. It returns
+<code>org2:plugin-action-result:v1</code> with optional text and up to 50 <strong>proposals</strong>:
+exact-text <code>edit</code> (the text must occur once; <code>expectedSha256</code> pins the file),
+<code>create</code> under <code>views/</code>, <code>thread-post</code>, or <code>run-comment</code>. Proposals are stored
+as pending <code>org2:plugin-proposal:v1</code> records in <code>.org2/plugin-proposals/</code>.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 plugin actions --context heading --json
+org2 plugin action run example.helper:summarize --context heading --file notes/a.org --line 12
+org2 plugin proposals list --status pending
+org2 plugin proposals apply PROPOSAL_ID            # preview with unified diffs
+org2 plugin proposals apply PROPOSAL_ID --apply    # every change must still apply cleanly
+org2 plugin proposals dismiss PROPOSAL_ID --apply
+org2 plugin hooks dispatch --since 1h              # dry run
+org2 plugin hooks dispatch --apply</code></pre>
 <p>The npm package ships JSON Schemas for the manifest, lock, invocation, command
-result, and renderer result under <code>spec/v0/plugin-*.schema.json</code>. Plugin stdout
+result, action result, and renderer result under <code>spec/v0/plugin-*.schema.json</code>. Plugin stdout
 is bounded to 1 MiB; renderer fields have smaller per-field limits, and a
 package is limited to 10,000 files and 64 MiB of content.</p>
 <p>The shared parser still owns the canonical Org2 AST. V1 renderer languages are
@@ -237,9 +283,11 @@ part of core. Built-in <code>chart</code> and <code>plot</code> languages remain
 package's exact content hash in the current machine's trust file. A later Git
 commit has a different hash and is inert until separately reviewed and trusted;
 <code>plugin trust --revoke --apply</code> stops execution of the locked hash immediately.</p>
-<p>A trusted plugin process is native code with the user's file and network access.
-The reduced environment limits accidental credential inheritance but is not an
-OS sandbox. Trust packages as carefully as any local executable. Renderer output
+<p>A trusted command or renderer process is native code with the user's file and
+network access. The reduced environment limits accidental credential
+inheritance but is not an OS sandbox; actions and hooks additionally run under
+the macOS sandbox described above (other platforms rely on the proposal
+boundary and the absence of a corpus path). Trust packages as carefully as any local executable. Renderer output
 has a second boundary: OpenOrg puts it in an opaque-origin iframe with a
 deny-by-default content-security policy, no network connections, no forms,
 frames, objects, workers, or top-level navigation, and only inline code plus

@@ -42,6 +42,14 @@
         "templates": {
           "type": "array",
           "items": { "$ref": "#/$defs/template" }
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/action" }
+        },
+        "hooks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hook" }
         }
       }
     }
@@ -89,6 +97,53 @@
         "id": { "$ref": "#/$defs/contributionId" },
         "description": { "type": "string" },
         "path": { "$ref": "#/$defs/packagePath" }
+      }
+    },
+    "capabilities": {
+      "description": "Optional sandbox capabilities. Corpus writes are never granted; actions and hooks return reviewable proposals.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["read-corpus", "network"] }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "contexts", "entry"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "contexts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["note", "heading", "thread", "run", "approval"] }
+        },
+        "entry": { "$ref": "#/$defs/processEntry" },
+        "capabilities": { "$ref": "#/$defs/capabilities" }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "events", "entry"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "description": { "type": "string" },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "run.created", "run.running", "run.waiting-approval", "run.blocked", "run.completed",
+              "run.failed", "run.canceled", "approval.requested", "approval.decided",
+              "thread.reply-received", "thread.needs-you", "workflow.dispatched"
+            ]
+          }
+        },
+        "entry": { "$ref": "#/$defs/processEntry" },
+        "capabilities": { "$ref": "#/$defs/capabilities" }
       }
     }
   }
