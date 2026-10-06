@@ -114,7 +114,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
         <li>Enable Experimental features in Settings → General to reveal workspace tools, which let a compatible direct model search, read, and propose edits through the built-in agent. Review each patch in OpenOrg before applying it.</li>
         <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
         <li>Synced chat history has deterministic repair without a model call, with a configurable background interval and an off option.</li>
-        <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched.</li>
+        <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched. The original agent stays the room's default, so later messages without an <code>@mention</code> keep going to it; change the default from the composer at any time.</li>
         <li>Agents can disagree, compare approaches, or propose explicit handoffs without Org2 hiding an autonomous loop behind the interface.</li>
       </ul>
       <p class="org2-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="agent-quickstart.html">Connect an agent</a></p>
@@ -216,8 +216,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Every chat thread, durable run, and automation can explain itself: why it is working or waiting on you, which host and runtime reported that, the last heartbeat or transition, whether the state is live, cached, or uncertain, and the exact approval or question that blocks it. Explanations come from structured presence, transcript, and run records rather than terminal output. OpenOrg shows them in Activity's <strong>Explain Status</strong> inspector and a <strong>Hosts</strong> section covering the Mac, headless servers, and remote harnesses; agents and scripts use <code>org2 activity explain</code>, <code>org2 activity events --follow</code>, and race-free <code>org2 thread wait</code> / <code>org2 run wait</code>. See <a href="tooling-reference.html#explainable-activity-events-and-waits">the tooling reference</a>.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="web-pages-and-a-built-in-browser">Web pages and a built-in browser</h1>
-<p>OpenOrg renders corpus HTML files as live web pages beside their source and includes a Browser for websites, local development servers such as <code>localhost:5173</code>, and static web apps served read-only from a folder over loopback http. See <a href="editors-macos.html">macOS workspace</a>.</p>
+<h1 id="web-pages-beside-your-notes">Web pages beside your notes</h1>
+<p>OpenOrg renders corpus HTML files as live web pages beside their source, and web links clicked in notes or chat open as pages in the same detail pane, with back and forward history like documents. Local development servers such as <code>localhost:5173</code> and static web apps served read-only from a folder over loopback http open there too. See <a href="editors-macos.html">macOS workspace</a>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="projects-as-ordinary-notes">Projects as ordinary notes</h1>
