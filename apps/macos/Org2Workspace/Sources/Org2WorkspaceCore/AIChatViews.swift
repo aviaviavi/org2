@@ -3124,7 +3124,9 @@ struct AIChatComposerView: View {
           if presentation.userText.isEmpty {
             Text(
               store.selectedAIChatIsSharedRoom
-                ? "Add context, or @mention an agent or file…"
+                ? (store.selectedAIChatRoomDefaultDestinationID.map {
+                    "Message \(store.aiChatDestinationTitle($0)), or @mention another agent or file…"
+                  } ?? "Add context, or @mention an agent or file…")
                 : "Message \(store.selectedAIChatDestination.title), or @mention a file…"
             )
               .font(.body)
@@ -3197,13 +3199,13 @@ struct AIChatComposerView: View {
       }
 
       if store.selectedAIChatIsSharedRoom {
-        let routing = destinationRouting(for: presentation.userText)
+        let summary = roomRoutingSummary(for: presentation.userText)
         Label(
-          routing.summary,
-          systemImage: routing.destinationIDs.isEmpty ? "text.bubble" : "person.2.fill"
+          summary.title,
+          systemImage: summary.invokesAgent ? "person.2.fill" : "text.bubble"
         )
           .font(.caption.weight(.medium))
-          .foregroundStyle(routing.destinationIDs.isEmpty ? .secondary : Color.accentColor)
+          .foregroundStyle(summary.invokesAgent ? Color.accentColor : .secondary)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, 2)
       } else {
@@ -3303,7 +3305,9 @@ struct AIChatComposerView: View {
     HStack(spacing: showsDetailedConfiguration ? 8 : 5) {
       attachmentButton
       if showsDetailedConfiguration {
-        if !store.selectedAIChatIsSharedRoom {
+        if store.selectedAIChatIsSharedRoom {
+          roomDefaultDestinationPicker()
+        } else {
           assistantPicker()
         }
       } else if !store.selectedAIChatIsSharedRoom {
@@ -3333,17 +3337,20 @@ struct AIChatComposerView: View {
   @ViewBuilder
   private var compactConfigurationControls: some View {
     if store.selectedAIChatIsSharedRoom {
-      Menu {
-        ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
-          roomModelPicker(forDestinationID: destinationID)
+      HStack(spacing: 2) {
+        roomDefaultDestinationPicker(iconOnly: true)
+        Menu {
+          ForEach(store.selectedAIChatRoomDestinationIDs, id: \.self) { destinationID in
+            roomModelPicker(forDestinationID: destinationID)
+          }
+        } label: {
+          Label("Models", systemImage: "cpu")
+            .font(.caption.weight(.medium))
         }
-      } label: {
-        Label("Models", systemImage: "cpu")
-          .font(.caption.weight(.medium))
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Shared room models")
       }
-      .menuStyle(.borderlessButton)
-      .fixedSize()
-      .accessibilityLabel("Shared room models")
     } else {
       HStack(spacing: 2) {
         assistantPicker(iconOnly: true)
@@ -3570,6 +3577,52 @@ struct AIChatComposerView: View {
     .disabled(!canChangeAssistant)
     .task { await store.refreshAgentProfiles() }
     .help("Choose the agent identity, instructions, and runtime")
+  }
+
+  /// Picks the agent that receives un-mentioned messages in a shared room.
+  private func roomDefaultDestinationPicker(iconOnly: Bool = false) -> some View {
+    let defaultID = store.selectedAIChatRoomDefaultDestinationID
+    let defaultDestination = defaultID.flatMap { store.aiChatDestination(id: $0) }
+    let title = defaultDestination.map { "Default: \($0.title)" } ?? "Default: Context only"
+    return Menu {
+      Section("Messages without an @mention go to") {
+        ForEach(store.enabledAIChatDestinations) { destination in
+          Button {
+            store.setSelectedAIChatRoomDefaultDestination(destination.id)
+          } label: {
+            Label(
+              destination.title,
+              systemImage: destination.id == defaultID ? "checkmark" : destination.systemImage
+            )
+          }
+        }
+        Button {
+          store.setSelectedAIChatRoomDefaultDestination(nil)
+        } label: {
+          Label("No agent (post context only)", systemImage: defaultID == nil ? "checkmark" : "text.bubble")
+        }
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: defaultDestination?.systemImage ?? "text.bubble")
+        if !iconOnly {
+          Text(title)
+            .lineLimit(1)
+            .frame(maxWidth: compact ? 125 : 165)
+        }
+      }
+      .font(.caption.weight(.medium))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 4)
+      .contentShape(Rectangle())
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .accessibilityIdentifier("ai-chat-room-default-picker")
+    .accessibilityLabel(title)
+    .help("Choose which agent gets messages that do not @mention anyone. An @mention only routes that one message.")
   }
 
   private func roomModelPicker(forDestinationID destinationID: String) -> some View {
@@ -3829,8 +3882,9 @@ struct AIChatComposerView: View {
       return "Finish & Send"
     }
     if store.selectedAIChatIsSharedRoom,
-       destinationRouting(for: AIChatContextPresentation(localDraft).userText)
-         .destinationIDs.isEmpty {
+       store.selectedAIChatRoomTargetDestinationIDs(
+         for: AIChatContextPresentation(localDraft).userText
+       ).isEmpty {
       return "Post"
     }
     if isRunning {
@@ -3844,8 +3898,9 @@ struct AIChatComposerView: View {
       return "arrow.up.circle.fill"
     }
     if store.selectedAIChatIsSharedRoom,
-       destinationRouting(for: AIChatContextPresentation(localDraft).userText)
-         .destinationIDs.isEmpty {
+       store.selectedAIChatRoomTargetDestinationIDs(
+         for: AIChatContextPresentation(localDraft).userText
+       ).isEmpty {
       return "text.bubble.fill"
     }
     if isRunning {
@@ -3991,6 +4046,15 @@ struct AIChatComposerView: View {
       localDraft = store.aiChatDraftByAddingCorpusFileContext(file, to: draftWithoutMention)
     }
     moveComposerCursorToEndRequest &+= 1
+  }
+
+  private func roomRoutingSummary(for text: String) -> (title: String, invokesAgent: Bool) {
+    let routing = destinationRouting(for: text)
+    guard routing.destinationIDs.isEmpty else { return (routing.summary, true) }
+    guard let defaultID = store.selectedAIChatRoomDefaultDestinationID else {
+      return (routing.summary, false)
+    }
+    return ("Sends to \(store.aiChatDestinationTitle(defaultID)) · default agent", true)
   }
 
   private func destinationRouting(for text: String) -> AIChatDestinationRouting {

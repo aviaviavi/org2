@@ -3728,6 +3728,12 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
   public let roomModels: AIChatRoomModelSelection
   public let roomDestinationIDs: [String]
   public let roomModelsByDestination: [String: String]
+  /// The shared-room agent that receives messages without an @mention.
+  /// `nil` means it was never chosen and follows the room's first agent;
+  /// `noRoomDefaultDestinationID` means the user chose to post context only.
+  public let roomDefaultDestinationID: String?
+
+  public static let noRoomDefaultDestinationID = ""
 
   public init(
     id: UUID = UUID(),
@@ -3757,6 +3763,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomModels: AIChatRoomModelSelection = AIChatRoomModelSelection(),
     roomDestinationIDs: [String] = [],
     roomModelsByDestination: [String: String] = [:],
+    roomDefaultDestinationID: String? = nil,
     agentRef: String? = nil
   ) {
     self.agentRef = agentRef
@@ -3791,6 +3798,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
           : roomDestinationIDs)
       : []
     self.roomModelsByDestination = isSharedRoom ? roomModelsByDestination : [:]
+    self.roomDefaultDestinationID = isSharedRoom ? roomDefaultDestinationID : nil
   }
 
   public var messageCount: Int {
@@ -3858,6 +3866,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     case roomModels
     case roomDestinationIDs
     case roomModelsByDestination
+    case roomDefaultDestinationID
   }
 
   public init(from decoder: Decoder) throws {
@@ -3941,6 +3950,33 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomModelsByDestination = isSharedRoom
       ? (decodedRoomModelsByDestination ?? migratedRoomModelsByDestination)
       : [:]
+    roomDefaultDestinationID = isSharedRoom
+      ? try container.decodeIfPresent(String.self, forKey: .roomDefaultDestinationID)
+      : nil
+  }
+
+  /// The agent that receives shared-room messages without an @mention: the
+  /// user's explicit choice, or else the room's original agent (the agent of
+  /// the conversation it was forked from, or the first agent it addressed).
+  public var roomDefaultDestination: String? {
+    guard isSharedRoom else { return nil }
+    if let roomDefaultDestinationID {
+      return roomDefaultDestinationID == Self.noRoomDefaultDestinationID ? nil : roomDefaultDestinationID
+    }
+    for message in messages where !message.isRoomDispatchCopy {
+      switch message.role {
+      case .user:
+        if let targetDestinationID = message.targetDestinationID { return targetDestinationID }
+      case .assistant:
+        // Replies copied from a single-agent thread belong to no room round;
+        // they came from the agent the room was forked from.
+        guard message.roomRoundID != nil else { return destinationID }
+        return message.authorDestinationID ?? destinationID
+      case .system:
+        continue
+      }
+    }
+    return nil
   }
 
   private static func legacyRoomDestinationIDs(
@@ -3975,7 +4011,8 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomAudience nextRoomAudience: AIChatAudience? = nil,
     roomModels nextRoomModels: AIChatRoomModelSelection? = nil,
     roomDestinationIDs nextRoomDestinationIDs: [String]? = nil,
-    roomModelsByDestination nextRoomModelsByDestination: [String: String]? = nil
+    roomModelsByDestination nextRoomModelsByDestination: [String: String]? = nil,
+    roomDefaultDestinationID nextRoomDefaultDestinationID: String?? = nil
   ) -> AIChatThread {
     let archived = nextIsArchived ?? isArchived
     let settlement = nextSettledAt ?? (archived ? settledAt : nil)
@@ -4007,6 +4044,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: nextRoomModels ?? roomModels,
       roomDestinationIDs: nextRoomDestinationIDs ?? roomDestinationIDs,
       roomModelsByDestination: nextRoomModelsByDestination ?? roomModelsByDestination,
+      roomDefaultDestinationID: nextRoomDefaultDestinationID ?? roomDefaultDestinationID,
       agentRef: nextAgentRef ?? agentRef
     )
   }
@@ -4040,6 +4078,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: agentRef
     )
   }
@@ -4073,6 +4112,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: agentRef
     )
   }
@@ -4125,6 +4165,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: agentRef
     )
   }
@@ -4158,6 +4199,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: agentRef
     )
   }
@@ -4192,6 +4234,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: agentRef
     )
   }

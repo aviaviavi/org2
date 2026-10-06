@@ -22955,6 +22955,60 @@ extension WorkspaceStore {
     }
   }
 
+  /// The enabled agent that receives this shared room's messages when they
+  /// have no @mention, or `nil` when such messages only post context.
+  func aiChatRoomDefaultDestinationID(for thread: AIChatThread) -> String? {
+    guard let destinationID = thread.roomDefaultDestination,
+          aiChatDestination(id: destinationID)?.isEnabled == true
+    else { return nil }
+    return destinationID
+  }
+
+  public var selectedAIChatRoomDefaultDestinationID: String? {
+    selectedAIChatThread.flatMap(aiChatRoomDefaultDestinationID(for:))
+  }
+
+  /// Agents a shared-room message reaches: its @mentions, or else the room's
+  /// default agent. Empty means the message only posts context.
+  public func selectedAIChatRoomTargetDestinationIDs(for text: String) -> [String] {
+    guard let thread = selectedAIChatThread, thread.isSharedRoom else { return [] }
+    let routing = AIChatDestinationRouting(
+      text,
+      destinations: enabledAIChatDestinations,
+      allDestinationIDs: thread.roomDestinationIDs
+    )
+    if !routing.destinationIDs.isEmpty { return routing.destinationIDs }
+    return aiChatRoomDefaultDestinationID(for: thread).map { [$0] } ?? []
+  }
+
+  /// Chooses the agent that receives un-mentioned messages in the open
+  /// shared room. `nil` makes such messages post context only. An @mention
+  /// still routes just that message and never changes this default.
+  public func setSelectedAIChatRoomDefaultDestination(_ destinationID: String?) {
+    guard let selectedAIChatThreadID,
+          let index = aiChatThreads.firstIndex(where: { $0.id == selectedAIChatThreadID }),
+          aiChatThreads[index].isSharedRoom
+    else { return }
+    if let destinationID {
+      guard aiChatDestination(id: destinationID)?.isEnabled == true else { return }
+    }
+    let thread = aiChatThreads[index]
+    let storedValue = destinationID ?? AIChatThread.noRoomDefaultDestinationID
+    guard thread.roomDefaultDestinationID != storedValue else { return }
+    var participants = thread.roomDestinationIDs
+    if let destinationID, !participants.contains(destinationID) {
+      participants.append(destinationID)
+    }
+    aiChatThreads[index] = thread.replacingAIChatMetadata(
+      roomDestinationIDs: participants,
+      roomDefaultDestinationID: .some(storedValue)
+    )
+    persistAIChatTranscript()
+    aiChatStatusText = destinationID.map {
+      "Messages without an @mention go to \(aiChatDestinationTitle($0))"
+    } ?? "Messages without an @mention post context only"
+  }
+
   public func setSelectedAIChatAudience(_ audience: AIChatAudience) {
     guard let selectedAIChatThreadID,
           let index = aiChatThreads.firstIndex(where: {
@@ -25925,6 +25979,10 @@ extension WorkspaceStore {
       : [thread.destinationID]
     if targetDestinationIDs.isEmpty, let audience {
       targetDestinationIDs = audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
+    }
+    if targetDestinationIDs.isEmpty,
+       let defaultDestinationID = aiChatRoomDefaultDestinationID(for: thread) {
+      targetDestinationIDs = [defaultDestinationID]
     }
     let targetRuntimes = targetDestinationIDs.map(aiChatDestinationRuntime)
     let effectiveAudience: AIChatAudience = {
@@ -32025,14 +32083,19 @@ extension WorkspaceStore {
     let roomModels: AIChatRoomModelSelection
     let roomModelsByDestination: [String: String]
     let roomDestinationIDs: [String]
+    let roomDefaultDestinationID: String?
     if source.isSharedRoom {
       roomModels = source.roomModels
       roomModelsByDestination = source.roomModelsByDestination
       roomDestinationIDs = source.roomDestinationIDs
+      roomDefaultDestinationID = source.roomDefaultDestinationID
     } else {
       roomModels = AIChatRoomModelSelection().replacingModel(source.model, for: source.runtime)
       roomModelsByDestination = source.model.map { [source.destinationID: $0] } ?? [:]
       roomDestinationIDs = [source.destinationID]
+      // Pinging another agent from a thread keeps the original agent as
+      // the room's default; only that one message goes to the new agent.
+      roomDefaultDestinationID = source.destinationID
     }
     let forked = AIChatThread(
       title: Self.normalizedAIChatThreadTitle("\(titlePrefix): \(source.title)"),
@@ -32056,6 +32119,7 @@ extension WorkspaceStore {
       roomModels: roomModels,
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
+      roomDefaultDestinationID: roomDefaultDestinationID,
       agentRef: source.agentRef
     )
     aiChatThreads.insert(forked, at: 0)
@@ -33121,6 +33185,7 @@ extension WorkspaceStore {
       roomModels: current.roomModels,
       roomDestinationIDs: current.roomDestinationIDs,
       roomModelsByDestination: current.roomModelsByDestination,
+      roomDefaultDestinationID: current.roomDefaultDestinationID,
       agentRef: current.agentRef
     )
   }
