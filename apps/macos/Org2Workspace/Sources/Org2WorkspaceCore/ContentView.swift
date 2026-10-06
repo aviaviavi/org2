@@ -2708,7 +2708,6 @@ private struct SidebarView: View {
       }
       .listStyle(.sidebar)
       .scrollContentBackground(.hidden)
-      .background(WorkspaceDesign.appBackground)
 
       SidebarCorpusSwitcher()
     }
@@ -2717,7 +2716,7 @@ private struct SidebarView: View {
     .sheet(item: $projectSheet) { sheet in sheet.content }
     .commandShortcutRevealMonitor($showsCommandShortcuts)
     .animation(WorkspaceMotion.quick, value: showsCommandShortcuts)
-    .background(WorkspaceDesign.appBackground)
+    .background { WorkspaceAtmosphere() }
     .onAppear {
       store.autoSettleAIChatThreads()
     }
@@ -3151,9 +3150,10 @@ private struct SidebarHeader: View {
 
   var body: some View {
     HStack(spacing: 7) {
-      WorkspaceAsteriskMarker(color: WorkspaceDesign.signalAccent, size: 10)
+      WorkspaceBrandMark()
       Text(WorkspaceProductIdentity.displayName)
-        .font(.headline.weight(.semibold))
+        .font(.system(size: 16, weight: .semibold))
+        .tracking(-0.4)
 
       Spacer(minLength: 0)
 
@@ -3190,8 +3190,8 @@ private struct SidebarHeader: View {
     }
     .padding(.leading, 13)
     .padding(.trailing, 10)
-    .padding(.top, 9)
-    .padding(.bottom, 7)
+    .padding(.top, 16)
+    .padding(.bottom, 14)
   }
 }
 
@@ -11302,7 +11302,18 @@ private struct AIChatView: View {
     .fixedSize()
   }
 
-  private var chatTranscript: some View {
+  @ViewBuilder private var chatTranscript: some View {
+    if store.aiChatMessages.isEmpty,
+       !store.isSendingAIChatMessage,
+       !store.isLoadingAIChatTranscript,
+       store.aiChatTranscriptRecoveryNotice == nil {
+      EmptyChatView()
+    } else {
+      chatTranscriptDocument
+    }
+  }
+
+  private var chatTranscriptDocument: some View {
     let window = AIChatTranscriptWindow(
       messages: store.aiChatMessages,
       isSharedRoom: store.selectedAIChatIsSharedRoom,
@@ -12137,19 +12148,37 @@ private struct DataSourceConfigurationSheet: View {
 }
 
 private struct EmptyChatView: View {
-  let statusText: String
-
   var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: "sparkles")
-        .font(.title2)
-        .foregroundStyle(.secondary)
-      Text(statusText)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
+    GeometryReader { geometry in
+      ScrollView {
+        VStack(spacing: 20) {
+          VStack(spacing: 10) {
+            Text("What would you like to work on?")
+              .font(.system(size: 27, weight: .medium, design: .serif))
+              .foregroundStyle(WorkspaceDesign.primaryText)
+              .multilineTextAlignment(.center)
+            Text("Message your agents. Use \(contextSymbol("@")) to add an agent or file to the context, and \(contextSymbol("/")) for skills.")
+              .font(.system(size: 13))
+              .foregroundStyle(WorkspaceDesign.secondaryText)
+              .multilineTextAlignment(.center)
+              .lineSpacing(4)
+          }
+        }
+        .frame(maxWidth: 360)
+        .padding(28)
+        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+      }
+      .background { WorkspaceAtmosphere() }
     }
+    .accessibilityIdentifier("ai-chat-empty-state")
   }
+
+  private func contextSymbol(_ symbol: String) -> Text {
+    Text(symbol)
+      .font(.system(size: 13, weight: .semibold, design: .monospaced))
+      .foregroundColor(WorkspaceDesign.structuralAccent)
+  }
+
 }
 
 private struct AssignedWorkRow: View {

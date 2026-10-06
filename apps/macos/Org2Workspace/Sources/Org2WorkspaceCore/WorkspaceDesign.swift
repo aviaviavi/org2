@@ -105,6 +105,49 @@ enum WorkspaceDesign {
   }
 }
 
+/// A static, theme-derived wash: no timer, blur passes, or editor rasterization.
+/// Decorative layers never intercept the sidebar's pointer or accessibility events.
+struct WorkspaceAtmosphere: View {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    ZStack {
+      WorkspaceDesign.appBackground
+      if !reduceTransparency {
+        LinearGradient(
+          colors: [WorkspaceDesign.structuralAccent.opacity(colorScheme == .dark ? 0.12 : 0.07), .clear],
+          startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+        RadialGradient(
+          colors: [WorkspaceDesign.signalAccent.opacity(colorScheme == .dark ? 0.14 : 0.09), .clear],
+          center: .topLeading, startRadius: 0, endRadius: 330
+        )
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+/// The canonical OpenOrg artwork, shared by the sidebar and empty chat.
+struct WorkspaceBrandMark: View {
+  var size: CGFloat = 32
+  private static let image: NSImage? = Bundle.module.url(forResource: "OpenOrgBrand", withExtension: "png")
+    .flatMap { NSImage(contentsOf: $0) }
+
+  var body: some View {
+    if let image = Self.image {
+      Image(nsImage: image)
+        .resizable()
+        .interpolation(.high)
+        .aspectRatio(contentMode: .fit)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+  }
+}
+
 enum WorkspaceSyntax {
   static let selectionMarker = "*"
 
@@ -160,6 +203,12 @@ struct WorkspaceSelectableRowModifier: ViewModifier {
           : isHovered ? Color.primary.opacity(0.035) : Color.clear,
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
+      .overlay {
+        if isSelected {
+          RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(WorkspaceDesign.structuralAccent.opacity(0.16), lineWidth: 0.75)
+        }
+      }
       .overlay(alignment: .leading) {
         if isSelected && showsSelectionMarker {
           WorkspaceSelectionMarker()
@@ -419,9 +468,12 @@ struct WorkspaceControlStrip<Content: View>: View {
     HStack(spacing: 1) {
       content
     }
-    .padding(3)
+    .padding(4)
     .background(
-      WorkspaceDesign.controlGroupFill,
+      LinearGradient(
+        colors: [WorkspaceDesign.controlGroupFill, WorkspaceDesign.structuralAccent.opacity(0.015)],
+        startPoint: .top, endPoint: .bottom
+      ),
       in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
     )
     .overlay {
