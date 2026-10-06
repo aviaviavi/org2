@@ -100,6 +100,10 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
   public var isOnline: Bool
   public var enabledDestinationIDs: [String]
   public var turns: [AIChatLiveTurnRecord]
+  /// Enabled destinations whose latest delivery on this host failed for an
+  /// authentication reason (sign-in expired, token rejected). Absent in
+  /// records from older builds.
+  public var authenticationNeededDestinationIDs: [String]?
 
   public init(
     writerID: String,
@@ -107,7 +111,8 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
     updatedAt: Date = Date(),
     isOnline: Bool = true,
     enabledDestinationIDs: [String] = [],
-    turns: [AIChatLiveTurnRecord] = []
+    turns: [AIChatLiveTurnRecord] = [],
+    authenticationNeededDestinationIDs: [String]? = nil
   ) {
     schema = Self.schemaValue
     self.writerID = writerID
@@ -118,6 +123,7 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
     self.isOnline = isOnline
     self.enabledDestinationIDs = enabledDestinationIDs
     self.turns = turns
+    self.authenticationNeededDestinationIDs = authenticationNeededDestinationIDs
   }
 
   public var host: AIChatHostIdentity {

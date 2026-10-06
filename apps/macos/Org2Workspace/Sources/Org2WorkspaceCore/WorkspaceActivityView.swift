@@ -153,6 +153,7 @@ private struct ActivityNowList: View {
                 empty: "No agent is working right now. Start work from a TODO with ▶ Start work.")
         section("Scheduled", systemImage: "clock", items: snapshot.scheduled,
                 empty: "No active scheduled automations.")
+        hostsSection
         section("Changed today", systemImage: "pencil", items: snapshot.changed,
                 empty: "No files changed in the last 24 hours.")
         recentlyOpened
@@ -177,7 +178,7 @@ private struct ActivityNowList: View {
           .padding(.leading, 2)
       } else {
         ForEach(visible) { item in
-          ActivityRow(item: item) { store.openActivityItem(item) }
+          ActivityRow(item: item, explainable: store.canExplainActivityItem(item)) { store.openActivityItem(item) }
         }
         if items.count > limit {
           Button(isExpanded ? "Show fewer" : "Show all \(items.count)") {
@@ -191,6 +192,18 @@ private struct ActivityNowList: View {
           .font(.callout)
           .padding(.leading, 10)
         }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var hostsSection: some View {
+    let hosts = store.activityHosts()
+    if hosts.count > 1 || hosts.contains(where: { !$0.turns.isEmpty || $0.state != .online }) {
+      VStack(alignment: .leading, spacing: 6) {
+        sectionHeader("Hosts", systemImage: "network", count: hosts.filter { $0.state.isLive }.count)
+          .help("OpenOrg hosts and agent harnesses that execute work for this corpus")
+        ActivityHostsSection(hosts: hosts)
       }
     }
   }
@@ -266,8 +279,10 @@ private struct ActivityNowList: View {
 
 private struct ActivityRow: View {
   let item: WorkspaceActivityItem
+  var explainable = false
   let open: () -> Void
   @State private var isHovered = false
+  @State private var isExplaining = false
 
   var body: some View {
     Button(action: open) {
@@ -304,6 +319,20 @@ private struct ActivityRow: View {
           .foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
+        if explainable {
+          Button {
+            isExplaining = true
+          } label: {
+            Image(systemName: "info.circle")
+              .foregroundStyle(isHovered || isExplaining ? .secondary : .quaternary)
+          }
+          .buttonStyle(.plain)
+          .help("Explain Status: why this is \(item.kind == .needsYou ? "waiting on you" : "in this state"), who reported it, and what blocks it")
+          .accessibilityLabel("Explain Status")
+          .popover(isPresented: $isExplaining, arrowEdge: .trailing) {
+            ActivityExplanationInspector(item: item)
+          }
+        }
         VStack(alignment: .trailing, spacing: 3) {
           if let agent = item.agent {
             Text(agent)
@@ -328,6 +357,12 @@ private struct ActivityRow: View {
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
+    .contextMenu {
+      Button("Open") { open() }
+      if explainable {
+        Button("Explain Status") { isExplaining = true }
+      }
+    }
     .accessibilityLabel("\(item.title), \(item.detail)")
   }
 

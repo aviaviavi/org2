@@ -212,6 +212,10 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The iOS Files tab supports local fuzzy search across pages, headings, and entry text, with parent-note previews and rendered entry/full-note navigation. See <a href="editors.html">Editor integrations</a>.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="explainable-agent-activity">Explainable agent activity</h1>
+<p>Every chat thread, durable run, and automation can explain itself: why it is working or waiting on you, which host and runtime reported that, the last heartbeat or transition, whether the state is live, cached, or uncertain, and the exact approval or question that blocks it. Explanations come from structured presence, transcript, and run records rather than terminal output. OpenOrg shows them in Activity's <strong>Explain Status</strong> inspector and a <strong>Hosts</strong> section covering the Mac, headless servers, and remote harnesses; agents and scripts use <code>org2 activity explain</code>, <code>org2 activity events --follow</code>, and race-free <code>org2 thread wait</code> / <code>org2 run wait</code>. See <a href="tooling-reference.html#explainable-activity-events-and-waits">the tooling reference</a>.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="projects-as-ordinary-notes">Projects as ordinary notes</h1>
 <p>A project is one ordinary Org file containing its purpose, TODO actions,
 decisions, and source links. OpenOrg for macOS adds a colored sidebar group,

@@ -238,9 +238,14 @@ extension WorkspaceStore {
   }
 
   func refreshActivitySources() async {
+    refreshCorpusAutomationHostRef()
+    scheduleAIChatLiveRefresh()
+    // A paired server that is unreachable must not delay the run refresh.
+    let serverStatus = Task { @MainActor [openOrgServer] in await openOrgServer.refreshStatus() }
     await refreshAgentRuns()
     await refreshApprovals()
     await refreshAgentWorkflows()
+    await serverStatus.value
   }
 
   private func relativePathOrName(_ path: String) -> String {

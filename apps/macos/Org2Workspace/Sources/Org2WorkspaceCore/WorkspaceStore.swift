@@ -3516,6 +3516,7 @@ public final class WorkspaceStore {
   ) async throws -> AgentRunItem)?
   var agentRunSourceReconciliationForTesting: ((_ runID: String) async throws -> Void)?
   var agentRunListLoaderForTesting: (() async throws -> [AgentRunItem])?
+  @ObservationIgnored var activityExplanationLoaderForTesting: (([String]) async throws -> WorkspaceActivityExplanationPayload)?
   var workspaceSearchLoaderForTesting: ((String, [String]) async throws -> SearchPayload)?
   var runReviewPageRefreshOperationForTesting: ((RunsAndReviewPage) async -> Void)?
   var agentRunDetailLoaderForTesting: ((_ runID: String) async throws -> AgentRunItem)?
@@ -3705,6 +3706,9 @@ public final class WorkspaceStore {
   private var editorSaveConflictPersistenceKey: String?
   private var failedEditorPersistenceDraftsByKey: [String: FailedEditorPersistenceDraft] = [:]
   public var automationHostRef: String = "desktop"
+  /// The corpus's scheduler owner from `org2.json` (`automationHostRef`),
+  /// read when Activity refreshes. Nil until read.
+  public internal(set) var corpusAutomationHostRef: String?
   public private(set) var selectedNodeEntityType: Org2EntityType?
   public private(set) var selectedNodeHasExplicitEntityType = false
   /// Headings currently being started, keyed by "file:line", so a double
@@ -41846,11 +41850,13 @@ extension WorkspaceStore {
         activities: Array(activities)
       )
     }
+    let authenticationNeeded = aiChatAuthenticationNeededDestinationIDs()
     return AIChatLiveHostRecord(
       writerID: AIChatTranscriptStore.shared.writerIdentity.id,
       host: aiChatHostIdentity,
       enabledDestinationIDs: enabledAIChatDestinations.map(\.id).sorted(),
-      turns: turns
+      turns: turns,
+      authenticationNeededDestinationIDs: authenticationNeeded.isEmpty ? nil : authenticationNeeded
     )
   }
 
