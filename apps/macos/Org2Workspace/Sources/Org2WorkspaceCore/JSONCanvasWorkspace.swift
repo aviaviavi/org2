@@ -313,7 +313,7 @@ struct JSONCanvasWorkspaceView: View {
 
   private func open(_ resource: JSONCanvasResource?) {
     guard let resource, resource.status == "ready" else { return }
-    if let url = resource.url.flatMap(URL.init(string:)) { NSWorkspace.shared.open(url); return }
+    if let url = resource.url.flatMap(URL.init(string:)) { store.openWorkspaceWebLinkAction(url); return }
     if let file = resource.file, ["org", "org2", "canvas"].contains(URL(fileURLWithPath: file).pathExtension.lowercased()), let location = resource.location {
       store.select(location, surface: .files)
     } else if let file = resource.file { NSWorkspace.shared.open(URL(fileURLWithPath: file)) }

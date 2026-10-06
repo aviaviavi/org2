@@ -1156,6 +1156,7 @@ private struct WorkspaceNavigationSnapshot: Hashable {
   let location: WorkspaceLocation?
   let missingDailyNote: WorkspaceMissingDailyNote?
   let agentRunDetailID: AgentRunItem.ID?
+  var webPageURL: URL? = nil
   let selectedSurface: WorkspaceSurface
   let activeWorkspacePane: WorkspacePaneFocus
   let selectedEntrySourceMode: EntrySourceMode
@@ -2371,6 +2372,8 @@ public final class WorkspaceStore {
   public var selectedAgentRunID: AgentRunItem.ID?
   public var selectedAgentRunIDsForAIContext: Set<AgentRunItem.ID> = []
   public private(set) var presentedAgentRunID: AgentRunItem.ID?
+  /// A web page opened from a link, shown in the detail pane like a document.
+  public private(set) var presentedWebPageURL: URL?
   public private(set) var isLoadingAgentRuns = false
   public private(set) var isRefreshingWorkspace = false
   public private(set) var mutatingAgentRunIDs: Set<AgentRunItem.ID> = []
@@ -11261,6 +11264,7 @@ extension WorkspaceStore {
 
   public var hasWorkspaceDetailContent: Bool {
     presentedAgentRun != nil
+      || presentedWebPageURL != nil
       || selectedLocation != nil
       || selectedEntrySource != nil
       || missingDailyNote != nil
@@ -12443,6 +12447,45 @@ extension WorkspaceStore {
     statusText = "Opened agent run"
   }
 
+  /// Opens a web link as a page in the detail pane, the way file links open
+  /// documents, recording it in back/forward history.
+  public func openWebPage(_ url: URL) {
+    presentWebPage(url, surface: nil, recordsHistory: true)
+  }
+
+  /// ⌘-click on a web link: open the page in a new tab.
+  public func openWebPageInNewTab(_ url: URL) {
+    usageLog.record(.linkOpenInNewTab)
+    newWorkspaceTab()
+    presentWebPage(url, surface: nil, recordsHistory: true)
+  }
+
+  private func presentWebPage(
+    _ url: URL,
+    surface: WorkspaceSurface?,
+    recordsHistory: Bool
+  ) {
+    let nextSurface = surface ?? selectedSurface
+    if presentedWebPageURL != nil,
+       currentWebPageNavigationURL == url,
+       selectedSurface == nextSurface,
+       !isWorkspaceDetailPaneClosed {
+      return
+    }
+    cancelPendingDailyNoteNavigation()
+    if recordsHistory,
+       hasWorkspaceDetailContent || selectedSurface != nextSurface {
+      recordCurrentNavigationDestination()
+    }
+    clearDetailForNavigation()
+    if selectedSurface != nextSurface { selectedSurface = nextSurface }
+    presentedWebPageURL = url
+    browser.load(url)
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    statusText = "Opened \(url.host ?? url.absoluteString)"
+  }
+
   public var hasRenderedSearchHighlight: Bool {
     renderedSearchHighlightQuery?.isEmpty == false
   }
@@ -12759,6 +12802,8 @@ extension WorkspaceStore {
         surface: snapshot.selectedSurface,
         recordsHistory: false
       )
+    } else if let webPageURL = snapshot.webPageURL {
+      presentWebPage(webPageURL, surface: snapshot.selectedSurface, recordsHistory: false)
     } else if let missingDailyNote = snapshot.missingDailyNote,
               let corpusRoot {
       presentMissingDailyNote(
@@ -13099,6 +13144,8 @@ extension WorkspaceStore {
       }
     } else if let presentedAgentRun {
       rawTitle = presentedAgentRun.goal
+    } else if let presentedWebPageURL {
+      rawTitle = browser.title.isEmpty ? (presentedWebPageURL.host ?? presentedWebPageURL.absoluteString) : browser.title
     } else if let missingDailyNote {
       rawTitle = missingDailyNote.title
     } else if let selectedLocation {
@@ -13146,6 +13193,7 @@ extension WorkspaceStore {
       recordCurrentNavigationDestination()
     }
     if presentedAgentRunID != nil { presentedAgentRunID = nil }
+    if presentedWebPageURL != nil { presentedWebPageURL = nil }
     if selectedSurface != nextSurface { selectedSurface = nextSurface }
     if isWorkspaceDetailPaneClosed { isWorkspaceDetailPaneClosed = false }
     if isWorkspaceDetailPaneExpanded { isWorkspaceDetailPaneExpanded = false }
@@ -13249,6 +13297,7 @@ extension WorkspaceStore {
       location: selectedLocation,
       missingDailyNote: missingDailyNote,
       agentRunDetailID: presentedAgentRunID,
+      webPageURL: currentWebPageNavigationURL,
       selectedSurface: selectedSurface,
       activeWorkspacePane: activeWorkspacePane,
       selectedEntrySourceMode: selectedEntrySourceMode,
@@ -13282,6 +13331,7 @@ extension WorkspaceStore {
   ) -> Bool {
     guard selectedSurface == surface,
           presentedAgentRunID == nil,
+          presentedWebPageURL == nil,
           selectedEntrySourceMode == mode
     else {
       return false
@@ -13356,6 +13406,7 @@ extension WorkspaceStore {
     selectedLocation = nil
     missingDailyNote = nil
     presentedAgentRunID = nil
+    presentedWebPageURL = nil
     cancelSourceEditorPreviewRender(clearStatus: true)
     cancelLinkedPDFPreview(clearStatus: true)
     selectedEntrySource = nil
@@ -19612,7 +19663,7 @@ extension WorkspaceStore {
       focusCorpusFileFilter()
     case .home, .aiChat:
       presentAIChatThreadFind()
-    case .savedViews, .meetings, .sources, .externalThreads, .skills, .activity, .browser:
+    case .savedViews, .meetings, .sources, .externalThreads, .skills, .activity:
       return focusPageSearch()
     case .search:
       if selectedLocation != nil {
@@ -31388,8 +31439,6 @@ extension WorkspaceStore {
       refreshCorpusAgentSkills()
     case .activity:
       await refreshActivitySources()
-    case .browser:
-      await browser.refreshRunningLocalPorts()
     }
     markWorkspaceSurfaceCleanIfUnchanged(surface, generation: dirtyGeneration)
   }
@@ -31426,8 +31475,6 @@ extension WorkspaceStore {
       false
     case .activity:
       isRefreshingAgentRuns || isRefreshingApprovals || isRefreshingAgentWorkflows
-    case .browser:
-      browser.isLoading
     }
   }
 
@@ -38957,8 +39004,6 @@ extension WorkspaceStore {
         makeSurfacePrimary(.externalThreads)
       case "n":
         makeSurfacePrimary(.activity)
-      case "b":
-        makeSurfacePrimary(.browser)
       default:
         return false
       }
@@ -50288,16 +50333,13 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   /// What is happening across the corpus: work needing you, live agent work,
   /// schedules, recent changes, and a zoomable map.
   case activity
-  /// An in-app web browser for websites, local development servers, and
-  /// HTML files.
-  case browser
 
   public var id: String { rawValue }
 
   /// Sidebar order. Saved Views and Canvases sit at the bottom of the
   /// Workspace section, below Review Queue and Automations.
   public static var sidebarCases: [WorkspaceSurface] {
-    [.home, .activity, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .browser, .savedViews]
+    [.home, .activity, .agenda, .approvals, .meetings, .sources, .skills, .externalThreads, .savedViews]
   }
 
   /// Surfaces listed after the Agent Work pages (Review Queue, Automations).
@@ -50323,7 +50365,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "External Threads"
     case .skills: "Skills"
     case .activity: "Activity"
-    case .browser: "Browser"
     }
   }
 
@@ -50342,7 +50383,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "rectangle.stack.badge.person.crop"
     case .skills: "wand.and.stars"
     case .activity: "map"
-    case .browser: "globe"
     }
   }
 
@@ -50361,7 +50401,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .externalThreads: "⌥⌘E"
     case .skills: "⌘⇧K"
     case .activity: "⌥⌘N"
-    case .browser: "⌥⌘B"
     }
   }
 }

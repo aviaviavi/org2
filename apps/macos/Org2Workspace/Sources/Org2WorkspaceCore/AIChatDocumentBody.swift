@@ -8,6 +8,7 @@ import WebKit
 struct AIChatDocumentBody: View {
   @Environment(\.aiChatMediaCorpusRoot) private var corpusRoot
   @Environment(\.openOrgFileReference) private var openFileReference
+  @Environment(\.openWorkspaceWebLink) private var openWebLink
   @Environment(\.orgRoamLinkResolver) private var linkResolver
   @State private var html: String?
   @State private var renderedText: String?
@@ -23,7 +24,8 @@ struct AIChatDocumentBody: View {
       corpusRoot: corpusRoot,
       linkResolver: linkResolver,
       height: $height,
-      openFileReference: openFileReference
+      openFileReference: openFileReference,
+      openWebLink: openWebLink
     )
     .frame(height: height)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -190,6 +192,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
   let linkResolver: OrgRoamLinkResolver
   @Binding var height: CGFloat
   let openFileReference: (AIChatFileReference) -> Void
+  var openWebLink = OpenWorkspaceWebLinkAction()
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -215,6 +218,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     let coordinator = context.coordinator
     coordinator.onHeight = { next in if abs(height - next) > 0.5 { height = next } }
     coordinator.openFileReference = openFileReference
+    coordinator.openWebLink = openWebLink
     coordinator.linkResolver = linkResolver
     coordinator.sourcePath = sourcePath
     coordinator.corpusRoot = corpusRoot
@@ -248,6 +252,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     var loading = false
     var onHeight: ((CGFloat) -> Void)?
     var openFileReference: ((AIChatFileReference) -> Void)?
+    var openWebLink = OpenWorkspaceWebLinkAction()
     var linkResolver = OrgRoamLinkResolver.empty
     var sourcePath = ""
     var corpusRoot: URL?
@@ -318,7 +323,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
         if let resolved = linkResolver.resolve(target: target) {
           openFileReference?(resolved.fileReference)
         } else if let external = OrgHTMLDocumentLinkRouting.externalURL(for: target, linkResolver: linkResolver) {
-          NSWorkspace.shared.open(external)
+          openWebLink(external, inNewTab: navigationAction.modifierFlags.contains(.command))
         } else {
           linkTask?.cancel()
           linkTask = Task { @MainActor [weak self] in
@@ -333,7 +338,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
       } else if url.isFileURL {
         openFileReference?(AIChatFileReference(path: url.path, line: nil))
       } else if ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
-        NSWorkspace.shared.open(url)
+        openWebLink(url, inNewTab: navigationAction.modifierFlags.contains(.command))
       }
     }
   }

@@ -138,6 +138,7 @@ public struct ContentView: View {
       .environment(\.openOrgFileReferenceInNewTab) { reference in
         store.openChatFileReferenceInNewTab(reference)
       }
+      .environment(\.openWorkspaceWebLink, store.openWorkspaceWebLinkAction)
       .environment(\.recordUsageEvent) { event, fields in
         store.usageLog.record(event, fields)
       }
@@ -1719,6 +1720,7 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
           .environment(\.openOrgFileReference) { reference in
             store.openChatFileReference(reference)
           }
+          .environment(\.openWorkspaceWebLink, store.openWorkspaceWebLinkAction)
           .workspaceThemed()
           .id("\(workspaceTabID.uuidString):\(surface.rawValue)")
       )
@@ -1792,8 +1794,6 @@ private struct WorkspaceSurfaceView: View {
           SkillsView()
         case .activity:
           WorkspaceActivityView()
-        case .browser:
-          WorkspaceBrowserView()
         }
       }
       // Some surface controls and rows have a useful minimum content width.
@@ -4918,7 +4918,6 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘-click link", action: "Open link in a new tab"),
             ShortcutHelpItem(keys: "⌘Return in Quick Open", action: "Open in a new tab"),
             ShortcutHelpItem(keys: "⌥⌘N", action: "Activity (what's happening now)"),
-            ShortcutHelpItem(keys: "⌥⌘B", action: "Browser"),
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
@@ -12084,6 +12083,9 @@ private struct DetailView: View {
     VStack(alignment: .leading, spacing: 0) {
       if let run = store.presentedAgentRun {
         RunCenterDetail(run: run)
+      } else if store.presentedWebPageURL != nil {
+        WorkspaceWebPageDetailPane()
+          .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
       } else if let missingDailyNote = store.missingDailyNote {
         MissingDailyNoteView(note: missingDailyNote)
       } else if let location = store.selectedLocation {
@@ -12767,9 +12769,9 @@ private struct DetailHeader: View {
           Label(store.htmlFileShowsSource ? "View as Web Page" : "View HTML Source", systemImage: store.htmlFileShowsSource ? "globe" : "chevron.left.forwardslash.chevron.right")
         }
         Button {
-          store.openInBrowser(URL(fileURLWithPath: location.file))
+          NSWorkspace.shared.open(URL(fileURLWithPath: location.file))
         } label: {
-          Label("Open in Browser", systemImage: "safari")
+          Label("Open in Default Browser", systemImage: "safari")
         }
         Divider()
       }

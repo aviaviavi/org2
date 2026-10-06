@@ -1044,6 +1044,7 @@ enum OrgRenderedBlockDisplayPolicy {
 
 private struct EditableRenderedBlockView<Content: View>: View {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
+  @Environment(\.openWorkspaceWebLink) private var openWorkspaceWebLink
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   let block: OrgEditableBlock
   let isSourceEditable: Bool
@@ -1402,7 +1403,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
     }
 
     if url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https" {
-      NSWorkspace.shared.open(url)
+      openWorkspaceWebLink(url)
     }
   }
 

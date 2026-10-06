@@ -78,7 +78,68 @@ final class WorkspaceBrowserTests: XCTestCase {
 
     XCTAssertTrue(WorkspaceStore.isHTMLFile("/a/index.HTML"))
     XCTAssertFalse(WorkspaceStore.isHTMLFile("/a/index.org"))
-    XCTAssertEqual(WorkspaceSurface.browser.title, "Browser")
-    XCTAssertTrue(WorkspaceSurface.sidebarCases.contains(.browser))
+    XCTAssertFalse(WorkspaceSurface.allCases.map(\.rawValue).contains("browser"), "web pages open from links, not a Browser surface")
   }
+
+  func testWebLinksRouteToAnInAppPageRegardlessOfFileType() throws {
+    for raw in ["https://example.com", "http://localhost:5173/app", "https://example.com/report.pdf", "HTTPS://Example.com/a.png?x=1"] {
+      let url = try XCTUnwrap(URL(string: raw))
+      XCTAssertEqual(WorkspaceWebLinkRouting.destination(for: url), .webPage(url), raw)
+    }
+    for raw in ["mailto:a@example.com", "zoommtg://join?x=1", "file:///tmp/a.html", "https:///no-host"] {
+      let url = try XCTUnwrap(URL(string: raw))
+      XCTAssertEqual(WorkspaceWebLinkRouting.destination(for: url), .external(url), raw)
+    }
+  }
+
+  @MainActor
+  func testWebLinkOpensInDetailPaneWithBackAndForward() throws {
+    let suiteName = "org2-web-page-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    let file = root.appendingPathComponent("note.org").path
+    try Data("* Note\nSee https://example.com/docs\n".utf8).write(to: URL(fileURLWithPath: file))
+
+    store.selectedSurface = .aiChat
+    store.openChatFileReference(AIChatFileReference(path: file, line: nil))
+    XCTAssertEqual(store.selectedLocation?.file, file)
+
+    let page = try XCTUnwrap(URL(string: "https://example.com/docs"))
+    let recorder = WebLinkRecorder()
+    let action = OpenWorkspaceWebLinkAction { url, inNewTab in recorder.opened.append((url, inNewTab)) }
+    action(page, inNewTab: true)
+    XCTAssertEqual(recorder.opened.map(\.0), [page])
+    XCTAssertEqual(recorder.opened.map(\.1), [true])
+
+    store.openWebPage(page)
+    XCTAssertEqual(store.presentedWebPageURL, page)
+    XCTAssertNil(store.selectedLocation, "the web page replaces the document in the detail pane")
+    XCTAssertTrue(store.hasWorkspaceDetailContent)
+    XCTAssertEqual(store.selectedSurface, .aiChat, "opening a link keeps the current surface")
+    guard case .load(let requested) = store.browser.pendingRequest?.action else { return XCTFail("expected a load") }
+    XCTAssertEqual(requested, page)
+
+    store.navigateBack()
+    XCTAssertNil(store.presentedWebPageURL)
+    XCTAssertEqual(store.selectedLocation?.file, file)
+
+    store.navigateForward()
+    XCTAssertEqual(store.presentedWebPageURL, page)
+    XCTAssertNil(store.selectedLocation)
+
+    store.openChatFileReference(AIChatFileReference(path: file, line: nil))
+    XCTAssertNil(store.presentedWebPageURL, "opening a document clears the web page")
+    XCTAssertEqual(store.selectedLocation?.file, file)
+
+    let tabCount = store.workspaceTabs.count
+    store.openWebPageInNewTab(page)
+    XCTAssertEqual(store.workspaceTabs.count, tabCount + 1)
+    XCTAssertEqual(store.presentedWebPageURL, page)
+  }
+}
+
+@MainActor
+private final class WebLinkRecorder {
+  var opened: [(URL, Bool)] = []
 }

@@ -96,6 +96,7 @@ extension EnvironmentValues {
 
 struct OrgInlineText: View {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
+  @Environment(\.openWorkspaceWebLink) private var openWorkspaceWebLink
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   @Environment(\.orgInlineSearchHighlightQuery) private var searchHighlightQuery
   @Environment(\.orgInlineTextSelectionEnabled) private var textSelectionEnabled
@@ -169,7 +170,7 @@ struct OrgInlineText: View {
         }
 
         if url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https" {
-          NSWorkspace.shared.open(url)
+          openWorkspaceWebLink(url)
           return .handled
         }
 

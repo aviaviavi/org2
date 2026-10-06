@@ -277,6 +277,8 @@ public final class WorkspaceBrowserModel {
 
   public func load(_ url: URL) {
     errorMessage = nil
+    // Until the web view reports the new page, the old one is not current.
+    currentURL = nil
     addressText = url.isFileURL ? url.path : url.absoluteString
     request(.load(url))
   }
@@ -504,11 +506,60 @@ struct WorkspaceWebView: NSViewRepresentable {
   }
 }
 
-// MARK: - Browser surface
+// MARK: - Link routing
 
-struct WorkspaceBrowserView: View {
+/// Decides where a clicked link goes. Web links (http and https) open as a
+/// page in the detail pane, whatever the linked file type; other external
+/// schemes (mailto, app links) go to macOS.
+public enum WorkspaceWebLinkRouting {
+  public enum Destination: Equatable, Sendable {
+    case webPage(URL)
+    case external(URL)
+  }
+
+  public static func destination(for url: URL) -> Destination {
+    if let scheme = url.scheme?.lowercased(),
+       scheme == "http" || scheme == "https",
+       url.host?.isEmpty == false {
+      return .webPage(url)
+    }
+    return .external(url)
+  }
+}
+
+/// Opens a web link the way the workspace routes links: in the detail pane
+/// when a workspace is attached, otherwise in the default browser.
+struct OpenWorkspaceWebLinkAction: Sendable {
+  var openWebPage: (@MainActor @Sendable (URL, _ inNewTab: Bool) -> Void)?
+
+  @MainActor
+  func callAsFunction(_ url: URL, inNewTab: Bool = false) {
+    switch WorkspaceWebLinkRouting.destination(for: url) {
+    case .webPage(let page) where openWebPage != nil:
+      openWebPage?(page, inNewTab)
+    case .webPage(let other), .external(let other):
+      NSWorkspace.shared.open(other)
+    }
+  }
+}
+
+struct OpenWorkspaceWebLinkActionKey: EnvironmentKey {
+  static let defaultValue = OpenWorkspaceWebLinkAction()
+}
+
+extension EnvironmentValues {
+  var openWorkspaceWebLink: OpenWorkspaceWebLinkAction {
+    get { self[OpenWorkspaceWebLinkActionKey.self] }
+    set { self[OpenWorkspaceWebLinkActionKey.self] = newValue }
+  }
+}
+
+// MARK: - Web pages in the detail pane
+
+/// A web page opened from a link, rendered in the detail pane with page
+/// navigation, an editable address, and Open in Default Browser.
+struct WorkspaceWebPageDetailPane: View {
   @Environment(WorkspaceStore.self) private var store
-  @FocusState private var addressFocused: Bool
 
   var body: some View {
     let browser = store.browser
@@ -530,16 +581,9 @@ struct WorkspaceBrowserView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .background(Color.orange.opacity(0.08))
       }
-      ZStack {
-        WorkspaceWebView(model: browser, fileReadAccessRoot: store.corpusRoot)
-          .opacity(browser.currentURL == nil ? 0 : 1)
-        if browser.currentURL == nil {
-          startPage(browser)
-        }
-      }
+      WorkspaceWebView(model: browser, fileReadAccessRoot: store.corpusRoot)
     }
     .background(WorkspaceDesign.surfaceBackground)
-    .task { await browser.refreshRunningLocalPorts() }
   }
 
   private func toolbar(_ browser: WorkspaceBrowserModel) -> some View {
@@ -547,20 +591,18 @@ struct WorkspaceBrowserView: View {
     return HStack(spacing: 8) {
       Button { browser.goBack() } label: { Image(systemName: "chevron.left") }
         .disabled(!browser.canGoBack)
-        .help("Back")
+        .help("Previous page")
       Button { browser.goForward() } label: { Image(systemName: "chevron.right") }
         .disabled(!browser.canGoForward)
-        .help("Forward")
+        .help("Next page")
       Button {
         browser.isLoading ? browser.stopLoading() : browser.reload()
       } label: {
         Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise")
       }
-      .disabled(browser.currentURL == nil)
       .help(browser.isLoading ? "Stop" : "Reload")
-      TextField("Enter a URL, localhost:3000, a file path, or search", text: $browser.addressText)
+      TextField("Enter a URL, localhost:3000, or search", text: $browser.addressText)
         .textFieldStyle(.roundedBorder)
-        .focused($addressFocused)
         .onSubmit { browser.submitAddress(corpusRoot: store.corpusRoot) }
         .accessibilityLabel("Address")
       Menu {
@@ -586,44 +628,16 @@ struct WorkspaceBrowserView: View {
       .fixedSize()
       .help("Serve a folder as a local web app, or open a running development server")
       Button {
-        if let url = browser.currentURL { NSWorkspace.shared.open(url) }
+        if let url = browser.currentURL ?? store.presentedWebPageURL { NSWorkspace.shared.open(url) }
       } label: {
         Image(systemName: "safari")
       }
-      .disabled(browser.currentURL == nil)
       .help("Open in Default Browser")
+      .accessibilityLabel("Open in Default Browser")
     }
     .buttonStyle(.borderless)
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
-  }
-
-  private func startPage(_ browser: WorkspaceBrowserModel) -> some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text("Browser")
-        .font(.title2.weight(.semibold))
-      Text("Visit a website, open a local development server such as localhost:5173, or open an HTML file from the corpus. Use Serve Folder to run a static web app over http on this Mac only.")
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      if !browser.runningLocalPorts.isEmpty {
-        Text("Running on this Mac")
-          .font(.headline)
-        HStack(spacing: 8) {
-          ForEach(browser.runningLocalPorts, id: \.self) { port in
-            Button("localhost:\(port)") { browser.load(URL(string: "http://localhost:\(port)")!) }
-              .buttonStyle(.bordered)
-          }
-        }
-      }
-      HStack(spacing: 10) {
-        Button("Serve Folder…") { chooseFolderToServe(browser) }
-        Button("Open HTML File…") { chooseHTMLFile(browser) }
-      }
-      Spacer()
-    }
-    .padding(28)
-    .frame(maxWidth: 640, maxHeight: .infinity, alignment: .topLeading)
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func chooseFolderToServe(_ browser: WorkspaceBrowserModel) {
@@ -636,22 +650,13 @@ struct WorkspaceBrowserView: View {
     guard panel.runModal() == .OK, let url = panel.url else { return }
     Task { await browser.serve(folder: url) }
   }
-
-  private func chooseHTMLFile(_ browser: WorkspaceBrowserModel) {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = true
-    panel.allowedContentTypes = [.html]
-    panel.directoryURL = store.corpusRoot
-    guard panel.runModal() == .OK, let url = panel.url else { return }
-    browser.load(url)
-  }
 }
 
 // MARK: - HTML files in the detail pane
 
 /// Shows a corpus HTML file as a rendered web page, with relative assets
 /// resolved inside the corpus, a switch to its source, and actions to open
-/// it in the Browser or serve its folder over http.
+/// it in the default browser or serve its folder over http.
 struct HTMLFilePreviewPane: View {
   @Environment(WorkspaceStore.self) private var store
   let file: String
@@ -669,11 +674,10 @@ struct HTMLFilePreviewPane: View {
         Spacer()
         Button("Source") { store.showHTMLFileSource(true) }
           .help("Edit this file's HTML source")
-        Button("Open in Browser") { store.openInBrowser(URL(fileURLWithPath: file)) }
+        Button("Open in Default Browser") { NSWorkspace.shared.open(URL(fileURLWithPath: file)) }
         Button("Serve Folder") {
           let url = URL(fileURLWithPath: file)
-          store.makeSurfacePrimary(.browser)
-          Task { await store.browser.serve(folder: url.deletingLastPathComponent(), entry: url) }
+          Task { await store.serveFolderAsWebPage(url.deletingLastPathComponent(), entry: url) }
         }
         .help("Serve this file's folder over http on this Mac only, for pages that need an http origin")
       }
@@ -717,9 +721,34 @@ extension WorkspaceStore {
     htmlFileShowsSource = showsSource
   }
 
-  /// Opens `url` in the Browser surface.
-  public func openInBrowser(_ url: URL) {
-    browser.load(url)
-    makeSurfacePrimary(.browser)
+  /// Serves `folder` over loopback http and shows `entry` (or its index) as
+  /// a web page in the detail pane.
+  public func serveFolderAsWebPage(_ folder: URL, entry: URL? = nil) async {
+    let previousRequestID = browser.pendingRequest?.id
+    await browser.serve(folder: folder, entry: entry)
+    guard let request = browser.pendingRequest, request.id != previousRequestID,
+          case .load(let url) = request.action
+    else { return }
+    openWebPage(url)
+  }
+
+  /// Routes web links into this workspace's detail pane.
+  var openWorkspaceWebLinkAction: OpenWorkspaceWebLinkAction {
+    OpenWorkspaceWebLinkAction { [weak self] url, inNewTab in
+      guard let self else { return }
+      if inNewTab {
+        self.openWebPageInNewTab(url)
+      } else {
+        self.openWebPage(url)
+      }
+    }
+  }
+
+  /// The page to restore for back/forward: the page the user navigated to
+  /// inside the web view, or the link that opened it.
+  var currentWebPageNavigationURL: URL? {
+    guard let presentedWebPageURL else { return nil }
+    if let current = browser.currentURL, current.absoluteString != "about:blank" { return current }
+    return presentedWebPageURL
   }
 }

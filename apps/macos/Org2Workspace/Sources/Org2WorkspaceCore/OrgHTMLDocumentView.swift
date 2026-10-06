@@ -537,6 +537,7 @@ private enum EntryContextMenuTag: Int {
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.openOrgFileReferenceInNewTab) private var openOrgFileReferenceInNewTab
+  @Environment(\.openWorkspaceWebLink) private var openWorkspaceWebLink
   @Environment(\.recordUsageEvent) private var recordUsageEvent
   @Environment(\.orgRoamLinkResolver) private var linkResolver
 
@@ -626,6 +627,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.activateWorkspacePane = activateWorkspacePane
     coordinator.openOrgFileReference = openOrgFileReference
     coordinator.openOrgFileReferenceInNewTab = openOrgFileReferenceInNewTab
+    coordinator.openWorkspaceWebLink = openWorkspaceWebLink
     coordinator.recordUsageEvent = recordUsageEvent
     coordinator.linkResolver = linkResolver
     coordinator.source = source
@@ -768,6 +770,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var themeStylesheet = ""
     var openOrgFileReference: @MainActor (AIChatFileReference) -> Void = { _ in }
     var openOrgFileReferenceInNewTab: (@MainActor (AIChatFileReference) -> Void)?
+    var openWorkspaceWebLink = OpenWorkspaceWebLinkAction()
     var recordUsageEvent: @MainActor (OpenOrgUsageEvent, [String: OpenOrgUsageValue]) -> Void = { _, _ in }
     private var linkPreviewTask: Task<Void, Never>?
     var linkResolver = OrgRoamLinkResolver.empty
@@ -1281,7 +1284,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       if url.scheme?.lowercased() == "http"
           || url.scheme?.lowercased() == "https"
           || url.scheme?.lowercased() == "mailto" {
-        NSWorkspace.shared.open(url)
+        openWorkspaceWebLink(url, inNewTab: navigationAction.modifierFlags.contains(.command))
         decisionHandler(.cancel)
         return
       }
@@ -1458,7 +1461,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         for: target,
         linkResolver: linkResolver
       ) {
-        NSWorkspace.shared.open(externalURL)
+        openWorkspaceWebLink(externalURL, inNewTab: inNewTab)
         return
       }
 
