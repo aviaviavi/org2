@@ -450,6 +450,22 @@ assert.match(chartRendered.html, /mark\.dataset\.series \|\| yLabel/);
 const appScript = chartRendered.html.match(/<script id="org2-app-document-script">\n([\s\S]*?)\n<\/script>/)?.[1];
 assert.ok(appScript);
 new Function(appScript);
+// Chart behavior is one shared script that documents and chat both run.
+const chartScript = chartRendered.html.match(/<script id="org2-chart-interaction">\n([\s\S]*?)\n<\/script>/)?.[1];
+assert.ok(chartScript, "documents with charts carry the shared chart interaction script");
+new Function(chartScript);
+assert.match(chartScript, /window\.__org2InstallCharts = installInteractiveCharts/);
+assert.match(chartScript, /function toggleSeries/);
+assert.match(chartScript, /aria-pressed/);
+assert.match(chartRendered.html, /\.org2-chart-series-hidden \{ display: none; \}/);
+for (let index = 2; index <= 8; index += 1) {
+  assert.match(chartRendered.html, new RegExp(`--org2-chart-series-${index}: #`), `series ${index} has a themable default`);
+}
+assert.doesNotMatch(
+  renderOrgDocumentToAppHtml(parseOrgToCanonicalAst("Plain text.\n", { sourceRanges: true })).html,
+  /org2-chart-interaction"/,
+  "documents without charts do not carry the chart script",
+);
 assert.doesNotMatch(chartRendered.html, /<code class="language-chart">/);
 assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%; height: auto;/);
 const chartPublished = renderOrgDocumentToHtml(chartDocument, { charts });

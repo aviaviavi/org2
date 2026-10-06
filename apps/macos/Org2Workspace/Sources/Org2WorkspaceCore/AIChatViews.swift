@@ -1202,7 +1202,15 @@ enum AIChatMessageOrgNormalizer {
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return false }
     let inner = trimmed.dropFirst().dropLast()
-    return inner.contains("-") && inner.allSatisfy { $0 == "-" || $0 == "+" || $0.isWhitespace }
+    if inner.contains("-") && inner.allSatisfy({ $0 == "-" || $0 == "+" || $0.isWhitespace }) { return true }
+    // Markdown delimiter rows (`|---|:---:|`) become Org hlines at the chat
+    // boundary, so pipe tables in replies render (and chart) as tables.
+    let cells = inner.split(separator: "|", omittingEmptySubsequences: false)
+    return cells.count > 1 && cells.allSatisfy { cell in
+      let body = cell.trimmingCharacters(in: .whitespaces)
+      let dashes = body.drop { $0 == ":" }.reversed().drop { $0 == ":" }
+      return dashes.count >= 3 && dashes.allSatisfy { $0 == "-" } && body.count - dashes.count <= 2
+    }
   }
 
   private nonisolated static func tableCells(_ line: String) -> [String]? {

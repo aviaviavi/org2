@@ -470,6 +470,12 @@ public struct AIChatWorkspaceContext: Sendable {
     | Interest → Investigation | 3.3 |
 
   The hline must have one dash segment per column and exactly one fewer + join than the number of columns. Never collapse a multi-column hline into a single dash segment such as |----------------|. If you cannot confidently form the hline, use a list instead of a table.
+  - Charts in chat: to visualize numbers, follow the table with a chart block instead of generating a chart image. OpenOrg renders it inline as an interactive chart in the user's theme. Types are bar, line, and histogram; x names one column and y lists one or more columns separated by commas, using header names without spaces:
+
+    #+begin_src chart bar
+    x: Stage
+    y: Days
+    #+end_src
   - Source blocks use exactly one # before the + directive:
 
     #+begin_src sh

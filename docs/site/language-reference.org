@@ -362,7 +362,20 @@ interactive: true
 #+end_src
 #+end_example
 
-The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order. =size= accepts =compact=, =medium=, or =wide=. =height= accepts 220–720 pixels and defaults according to the size preset. =interactive= defaults to =true=; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.
+The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order. =size= accepts =compact=, =medium=, or =wide=. =height= accepts 220–720 pixels and defaults according to the size preset. =interactive= defaults to =true=; in the Mac app's documents and AI chat it enables nearest-point hover, exact-value tooltips, a crosshair, keyboard navigation between marks, and legend toggling that hides or shows a series (the last visible series stays). Static SVG remains the canonical CLI and export fallback.
+
+A chart block may also carry its own data: table rows written inside the block are used instead of the previous table, which keeps a chart self-contained in a chat reply or a short note. An explicit =source:= still wins.
+
+#+begin_example
+#+begin_src chart bar
+x: package
+y: downloads
+| package | downloads |
+|---------+-----------|
+| alpha   | 1200      |
+| beta    | 800       |
+#+end_src
+#+end_example
 
 Line and bar charts may render multiple numeric columns against the same x-axis. List the columns in =y= (or =series= inside a chart source block), separated by commas:
 
@@ -380,7 +393,7 @@ source: quarterly_metrics
 #+end_src
 #+end_example
 
-Each line receives a stable color and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
+Each line receives a stable color from the =--org2-chart-mark= and =--org2-chart-series-2= … =--org2-chart-series-8= style variables, which OpenOrg sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
 
 The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use =size= and =height= when the desired dimensions should remain deterministic in source.
 

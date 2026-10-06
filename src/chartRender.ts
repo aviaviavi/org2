@@ -250,7 +250,19 @@ type FencedChartBlock = {
   source?: string;
   startLine: number;
   endLine: number;
+  /** Self-contained data: table rows written inside the chart block itself. */
+  inlineTable?: { lines: string[]; startLine: number };
 };
+
+function inlineChartTable(bodyLines: string[], firstBodyLine: number): FencedChartBlock["inlineTable"] {
+  const start = bodyLines.findIndex((line) => isOrgTableDataLine(line));
+  if (start < 0) return undefined;
+  const lines: string[] = [];
+  for (let index = start; index < bodyLines.length && isOrgTableDataLine(bodyLines[index] || ""); index += 1) {
+    lines.push(bodyLines[index] || "");
+  }
+  return { lines, startLine: firstBodyLine + start };
+}
 
 type ParsedFencedChartSpec = {
   raw: string;
@@ -270,14 +282,16 @@ function parseFencedChartBlock(lines: string[], startIndex: number): FencedChart
     const line = lines[i] || "";
     if (parsedOpener.isEnd(line)) {
       const parsed = parseFencedChartSpec(openerRest, bodyLines);
-      return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: i + 1 };
+      const inlineTable = inlineChartTable(bodyLines, startIndex + 2);
+      return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: i + 1, ...(inlineTable ? { inlineTable } : {}) };
     }
     bodyLines.push(line);
     i++;
   }
 
   const parsed = parseFencedChartSpec(openerRest, bodyLines);
-  return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: lines.length };
+  const inlineTable = inlineChartTable(bodyLines, startIndex + 2);
+  return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: lines.length, ...(inlineTable ? { inlineTable } : {}) };
 }
 
 function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFencedChartSpec {
@@ -438,6 +452,17 @@ function collectNamedTables(
   return tables;
 }
 
+function inlineParsedTable(chart: FencedChartBlock, file?: string): ParsedTableBlock | undefined {
+  if (!chart.inlineTable) return undefined;
+  const parsed = parseTable(chart.inlineTable.lines);
+  return {
+    source: { ...(file ? { file } : {}), line: chart.inlineTable.startLine, endLine: chart.inlineTable.startLine + chart.inlineTable.lines.length - 1, kind: "table" },
+    headers: parsed.headers,
+    rows: parsed.rows,
+    diagnostics: parsed.diagnostics,
+  };
+}
+
 function collectChartCandidates(
   raw: string,
   file?: string,
@@ -505,7 +530,13 @@ function collectChartCandidates(
         candidates.push(candidateFromTable(table, parsedSpec.spec, parsedSpec.diagnostics));
       } else if (effectiveChartRaw) {
         const parsedSpec = parseChartSpecWithFencedSource(effectiveChartRaw, fencedChart?.source, caption || fencedChart?.title);
-        if (parsedSpec.source.kind === "named-table") {
+        const inline = fencedChart && !fencedChart.source ? inlineParsedTable(fencedChart, file) : undefined;
+        if (inline) {
+          candidates.push(candidateFromTable(inline, parsedSpec.spec, parsedSpec.diagnostics, {
+            chartLine: fencedChart!.startLine,
+            chartEndLine: fencedChart!.endLine,
+          }));
+        } else if (parsedSpec.source.kind === "named-table") {
           const sourcedTable = namedTables.get(parsedSpec.source.blockId);
           if (sourcedTable) {
             candidates.push(candidateFromTable(sourcedTable, parsedSpec.spec, parsedSpec.diagnostics, {
@@ -539,7 +570,10 @@ function collectChartCandidates(
       const name = keywordValue(pending, "NAME");
       const caption = keywordValue(pending, "CAPTION") || fencedChart.title;
       const parsedSpec = parseChartSpecWithFencedSource(fencedChart.raw, fencedChart.source, caption);
-      const table = parsedSpec.source.kind === "named-table" ? namedTables.get(parsedSpec.source.blockId) : previousTable;
+      const inline = inlineParsedTable(fencedChart, file);
+      const table = inline && !fencedChart.source
+        ? inline
+        : parsedSpec.source.kind === "named-table" ? namedTables.get(parsedSpec.source.blockId) : previousTable;
       const diagnostics = [...parsedSpec.diagnostics];
       if (!table) {
         diagnostics.push(diagnostic(

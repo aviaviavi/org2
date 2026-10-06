@@ -88,6 +88,25 @@ actor AIChatDocumentRenderCache {
   }
 }
 
+/// Chat pages block page scripts, so the host installs the renderer's shared
+/// chart interaction script itself (hover tooltips, crosshair, keyboard
+/// navigation, and legend toggling) instead of duplicating it in Swift.
+enum AIChatChartInteraction {
+  static let scriptElementOpen = "<script id=\"org2-chart-interaction\">"
+  static let installFunction = "window.__org2InstallCharts"
+
+  /// The chart interaction script from compiler output, or `nil` when the
+  /// message has no charts. App-profile output escapes message HTML, so only
+  /// the renderer itself emits this element.
+  static func script(inRenderedHTML html: String) -> String? {
+    guard let open = html.range(of: scriptElementOpen),
+          let close = html.range(of: "</script>", range: open.upperBound..<html.endIndex)
+    else { return nil }
+    let script = html[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+    return script.contains(installFunction) ? script : nil
+  }
+}
+
 enum AIChatDocumentHTML {
   static func plain(_ text: String) -> String {
     let escaped = text.replacingOccurrences(of: "&", with: "&amp;")
@@ -172,6 +191,8 @@ enum AIChatDocumentHTML {
         wrapper.append(button);
       }
       document.body.replaceChildren(...next.body.childNodes);
+      // Charts share the document renderer's interaction script (installed by the host).
+      if (window.__org2InstallCharts) window.__org2InstallCharts(document);
       pending = null;
       measure();
     };
@@ -259,8 +280,14 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     var linkTask: Task<Void, Never>?
 
 
+    var installedChartScript: String?
+
     func update(_ view: WKWebView) {
       guard let html else { return }
+      if let chartScript = AIChatChartInteraction.script(inRenderedHTML: html), chartScript != installedChartScript {
+        installedChartScript = chartScript
+        view.evaluateJavaScript(chartScript)
+      }
       let rewritten = OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in: html)
       view.callAsyncJavaScript("window.__chatUpdate(html)", arguments: ["html": rewritten], in: nil, in: .page)
     }

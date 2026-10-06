@@ -1862,6 +1862,149 @@ var Org2MobileDocument = (() => {
     return doc;
   }
 
+  // src/chartInteraction.ts
+  var CHART_INTERACTION_SCRIPT = `(() => {
+  function installInteractiveCharts(root) {
+    (root || document).querySelectorAll("figure.org2-chart[data-org2-chart-interactive='true']").forEach((figure) => {
+      if (figure.dataset.org2ChartEnhanced === "true") return;
+      const svg = figure.querySelector("svg.org2-chart-svg");
+      if (!svg || svg.dataset.org2ChartInteractive !== "true") return;
+      const marks = Array.from(svg.querySelectorAll("[data-org2-chart-mark='true']"));
+      if (marks.length === 0) return;
+
+      figure.dataset.org2ChartEnhanced = "true";
+      window.__org2ChartCount = (window.__org2ChartCount || 0) + 1;
+      const tooltip = document.createElement("div");
+      const tooltipID = "org2-chart-tooltip-" + window.__org2ChartCount;
+      tooltip.id = tooltipID;
+      tooltip.className = "org2-chart-tooltip";
+      tooltip.setAttribute("role", "tooltip");
+      tooltip.hidden = true;
+      const tooltipLabel = document.createElement("span");
+      tooltipLabel.className = "org2-chart-tooltip-label";
+      const tooltipValue = document.createElement("span");
+      tooltipValue.className = "org2-chart-tooltip-value";
+      tooltip.append(tooltipLabel, tooltipValue);
+      figure.appendChild(tooltip);
+
+      const crosshair = svg.querySelector(".org2-chart-crosshair");
+      const hiddenSeries = new Set();
+      let activeMark = null;
+      const isVisible = (mark) => !hiddenSeries.has(mark.dataset.series || "");
+      const visibleMarks = () => marks.filter(isVisible);
+
+      marks.forEach((mark) => {
+        const nativeTitle = mark.querySelector(":scope > title");
+        if (nativeTitle) nativeTitle.remove();
+        mark.setAttribute("aria-describedby", tooltipID);
+        mark.addEventListener("focus", () => showMark(mark));
+        mark.addEventListener("blur", hideMark);
+        mark.addEventListener("keydown", (event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const candidates = visibleMarks();
+          const index = candidates.indexOf(mark);
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          const next = candidates[Math.max(0, Math.min(candidates.length - 1, index + direction))];
+          if (next && typeof next.focus === "function") next.focus();
+        });
+      });
+
+      function showMark(mark) {
+        if (!mark || !isVisible(mark)) return;
+        if (activeMark && activeMark !== mark) activeMark.classList.remove("org2-chart-mark-active");
+        activeMark = mark;
+        mark.classList.add("org2-chart-mark-active");
+        tooltipLabel.textContent = mark.dataset.label || "";
+        const yLabel = svg.dataset.org2ChartYLabel || "value";
+        const seriesLabel = mark.dataset.series || yLabel;
+        tooltipValue.textContent = seriesLabel + ": " + (mark.dataset.value || "");
+        tooltip.hidden = false;
+
+        if (crosshair) {
+          const x = mark.dataset.chartX || "0";
+          crosshair.setAttribute("x1", x);
+          crosshair.setAttribute("x2", x);
+          crosshair.setAttribute("visibility", "visible");
+        }
+
+        const figureRect = figure.getBoundingClientRect();
+        const markRect = mark.getBoundingClientRect();
+        const centerX = markRect.left - figureRect.left + markRect.width / 2;
+        let left = centerX - tooltip.offsetWidth / 2;
+        left = Math.max(10, Math.min(left, figure.clientWidth - tooltip.offsetWidth - 10));
+        let top = markRect.top - figureRect.top - tooltip.offsetHeight - 10;
+        if (top < 8) top = markRect.bottom - figureRect.top + 10;
+        tooltip.style.left = left + "px";
+        tooltip.style.top = top + "px";
+      }
+
+      function hideMark() {
+        if (activeMark) activeMark.classList.remove("org2-chart-mark-active");
+        activeMark = null;
+        tooltip.hidden = true;
+        if (crosshair) crosshair.setAttribute("visibility", "hidden");
+      }
+
+      const legendItems = Array.from(svg.querySelectorAll(".org2-chart-legend-item[data-series]"));
+      const seriesCount = legendItems.length;
+      function toggleSeries(item) {
+        const series = item.dataset.series || "";
+        if (!hiddenSeries.has(series) && hiddenSeries.size >= seriesCount - 1) return;
+        if (hiddenSeries.has(series)) hiddenSeries.delete(series);
+        else hiddenSeries.add(series);
+        const hidden = hiddenSeries.has(series);
+        item.setAttribute("aria-pressed", hidden ? "false" : "true");
+        svg.querySelectorAll("[data-series]").forEach((element) => {
+          if (element === item || element.classList.contains("org2-chart-legend-item")) return;
+          if ((element.dataset.series || "") === series) element.classList.toggle("org2-chart-series-hidden", hidden);
+        });
+        if (activeMark && !isVisible(activeMark)) hideMark();
+      }
+      legendItems.forEach((item) => {
+        item.setAttribute("role", "button");
+        item.setAttribute("tabindex", "0");
+        item.setAttribute("aria-pressed", "true");
+        item.setAttribute("aria-label", "Show or hide " + (item.dataset.series || "series"));
+        item.addEventListener("click", () => toggleSeries(item));
+        item.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggleSeries(item);
+        });
+      });
+
+      figure.addEventListener("mousemove", (event) => {
+        let nearest = null;
+        let nearestDistance = Infinity;
+        visibleMarks().forEach((mark) => {
+          const rect = mark.getBoundingClientRect();
+          const distance = Math.abs(event.clientX - (rect.left + rect.width / 2)) + Math.abs(event.clientY - (rect.top + rect.height / 2)) / 8;
+          if (distance < nearestDistance) {
+            nearest = mark;
+            nearestDistance = distance;
+          }
+        });
+        showMark(nearest);
+      });
+      figure.addEventListener("mouseleave", () => {
+        if (!marks.includes(document.activeElement)) hideMark();
+      });
+    });
+  }
+
+  window.__org2InstallCharts = installInteractiveCharts;
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => installInteractiveCharts(document), { once: true });
+  } else {
+    installInteractiveCharts(document);
+  }
+})();`;
+  var CHART_INTERACTION_STYLE = `.org2-chart-legend-item { cursor: pointer; outline: none; }
+.org2-chart-legend-item[aria-pressed="false"] { opacity: 0.38; }
+.org2-chart-legend-item:focus-visible circle { stroke: var(--org2-text); stroke-width: 2; }
+.org2-chart-series-hidden { display: none; }`;
+
   // src/colorBinding.ts
   var NAMED_COLORS = {
     black: "1c1c1e",
@@ -3624,6 +3767,13 @@ li > .org2-image-figure { margin-top: 0.55rem; }
   --org2-chart-label: #475569;
   --org2-chart-title: #0f172a;
   --org2-chart-surface: #ffffff;
+  --org2-chart-series-2: #d9480f;
+  --org2-chart-series-3: #0f9d8a;
+  --org2-chart-series-4: #8e44ad;
+  --org2-chart-series-5: #c2185b;
+  --org2-chart-series-6: #5c8a1f;
+  --org2-chart-series-7: #b7791f;
+  --org2-chart-series-8: #2b6cb0;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -3633,6 +3783,13 @@ li > .org2-image-figure { margin-top: 0.55rem; }
     --org2-chart-label: #a4a8b0;
     --org2-chart-title: #e9eaed;
     --org2-chart-surface: #202226;
+    --org2-chart-series-2: #ff9b6a;
+    --org2-chart-series-3: #4fd1c5;
+    --org2-chart-series-4: #c39bf0;
+    --org2-chart-series-5: #f687b3;
+    --org2-chart-series-6: #9ae66e;
+    --org2-chart-series-7: #f6c66b;
+    --org2-chart-series-8: #7fb2f0;
   }
 }
 .org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
@@ -3694,6 +3851,13 @@ li > .org2-image-figure { margin-top: 0.55rem; }
   --org2-chart-label: #6c7078;
   --org2-chart-title: #24262a;
   --org2-chart-surface: #ffffff;
+  --org2-chart-series-2: #d9480f;
+  --org2-chart-series-3: #0f9d8a;
+  --org2-chart-series-4: #8e44ad;
+  --org2-chart-series-5: #c2185b;
+  --org2-chart-series-6: #5c8a1f;
+  --org2-chart-series-7: #b7791f;
+  --org2-chart-series-8: #2b6cb0;
   --org2-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --org2-content-width: 960px;
   --org2-page-padding: 28px;
@@ -3720,6 +3884,13 @@ li > .org2-image-figure { margin-top: 0.55rem; }
     --org2-chart-label: #a4a8b0;
     --org2-chart-title: #e9eaed;
     --org2-chart-surface: #202226;
+    --org2-chart-series-2: #ff9b6a;
+    --org2-chart-series-3: #4fd1c5;
+    --org2-chart-series-4: #c39bf0;
+    --org2-chart-series-5: #f687b3;
+    --org2-chart-series-6: #9ae66e;
+    --org2-chart-series-7: #f6c66b;
+    --org2-chart-series-8: #7fb2f0;
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -4145,6 +4316,7 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
 .org2-chart-tooltip[hidden] { display: none; }
 .org2-chart-tooltip-label { display: block; color: var(--org2-muted); }
 .org2-chart-tooltip-value { display: block; margin-top: 0.08rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+${CHART_INTERACTION_STYLE}
 .org2-plugin-render { width: 100%; margin: 0.85rem 0 1.25rem; overflow: hidden; }
 .org2-plugin-render iframe { color-scheme: light dark; }
 .org2-plugin-render-error {
@@ -4489,113 +4661,16 @@ body.org2-resizing-column { cursor: col-resize; user-select: none; }
     };
   }
 
-  function installInteractiveCharts() {
-    document.querySelectorAll("figure.org2-chart[data-org2-chart-interactive='true']").forEach((figure, chartIndex) => {
-      if (figure.dataset.org2ChartEnhanced === "true") return;
-      const svg = figure.querySelector("svg.org2-chart-svg");
-      if (!svg || svg.dataset.org2ChartInteractive !== "true") return;
-      const marks = Array.from(svg.querySelectorAll("[data-org2-chart-mark='true']"));
-      if (marks.length === 0) return;
-
-      figure.dataset.org2ChartEnhanced = "true";
-      const tooltip = document.createElement("div");
-      const tooltipID = "org2-chart-tooltip-" + chartIndex;
-      tooltip.id = tooltipID;
-      tooltip.className = "org2-chart-tooltip";
-      tooltip.setAttribute("role", "tooltip");
-      tooltip.hidden = true;
-      const tooltipLabel = document.createElement("span");
-      tooltipLabel.className = "org2-chart-tooltip-label";
-      const tooltipValue = document.createElement("span");
-      tooltipValue.className = "org2-chart-tooltip-value";
-      tooltip.append(tooltipLabel, tooltipValue);
-      figure.appendChild(tooltip);
-
-      const crosshair = svg.querySelector(".org2-chart-crosshair");
-      let activeMark = null;
-
-      marks.forEach((mark, index) => {
-        const nativeTitle = mark.querySelector(":scope > title");
-        if (nativeTitle) nativeTitle.remove();
-        mark.setAttribute("aria-describedby", tooltipID);
-        mark.addEventListener("focus", () => showMark(mark));
-        mark.addEventListener("blur", hideMark);
-        mark.addEventListener("keydown", (event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          const direction = event.key === "ArrowRight" ? 1 : -1;
-          const next = marks[Math.max(0, Math.min(marks.length - 1, index + direction))];
-          if (next && typeof next.focus === "function") next.focus();
-        });
-      });
-
-      function showMark(mark) {
-        if (!mark) return;
-        if (activeMark && activeMark !== mark) activeMark.classList.remove("org2-chart-mark-active");
-        activeMark = mark;
-        mark.classList.add("org2-chart-mark-active");
-        tooltipLabel.textContent = mark.dataset.label || "";
-        const yLabel = svg.dataset.org2ChartYLabel || "value";
-        const seriesLabel = mark.dataset.series || yLabel;
-        tooltipValue.textContent = seriesLabel + ": " + (mark.dataset.value || "");
-        tooltip.hidden = false;
-
-        if (crosshair) {
-          const x = mark.dataset.chartX || "0";
-          crosshair.setAttribute("x1", x);
-          crosshair.setAttribute("x2", x);
-          crosshair.setAttribute("visibility", "visible");
-        }
-
-        const figureRect = figure.getBoundingClientRect();
-        const markRect = mark.getBoundingClientRect();
-        const centerX = markRect.left - figureRect.left + markRect.width / 2;
-        let left = centerX - tooltip.offsetWidth / 2;
-        left = Math.max(10, Math.min(left, figure.clientWidth - tooltip.offsetWidth - 10));
-        let top = markRect.top - figureRect.top - tooltip.offsetHeight - 10;
-        if (top < 8) top = markRect.bottom - figureRect.top + 10;
-        tooltip.style.left = left + "px";
-        tooltip.style.top = top + "px";
-      }
-
-      function hideMark() {
-        if (activeMark) activeMark.classList.remove("org2-chart-mark-active");
-        activeMark = null;
-        tooltip.hidden = true;
-        if (crosshair) crosshair.setAttribute("visibility", "hidden");
-      }
-
-      figure.addEventListener("mousemove", (event) => {
-        let nearest = null;
-        let nearestDistance = Infinity;
-        marks.forEach((mark) => {
-          const rect = mark.getBoundingClientRect();
-          const distance = Math.abs(event.clientX - (rect.left + rect.width / 2));
-          if (distance < nearestDistance) {
-            nearest = mark;
-            nearestDistance = distance;
-          }
-        });
-        showMark(nearest);
-      });
-      figure.addEventListener("mouseleave", () => {
-        if (!marks.includes(document.activeElement)) hideMark();
-      });
-    });
-  }
-
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       installHeadingActions();
       installTableResizers();
       installInteractiveTables();
-      installInteractiveCharts();
     }, { once: true });
   } else {
     installHeadingActions();
     installTableResizers();
     installInteractiveTables();
-    installInteractiveCharts();
   }
 })();`;
   function renderHeadStyleSection(opts) {
@@ -5877,6 +5952,9 @@ ${APP_CODE_HIGHLIGHT_STYLE}
         `<script id="org2-app-document-script">
 ${APP_DOCUMENT_SCRIPT}
 <\/script>`,
+        opts.charts?.length ? `<script id="org2-chart-interaction">
+${CHART_INTERACTION_SCRIPT}
+<\/script>` : "",
         customStyle
       ].filter(Boolean),
       linkAbbreviations: opts.linkAbbreviations,

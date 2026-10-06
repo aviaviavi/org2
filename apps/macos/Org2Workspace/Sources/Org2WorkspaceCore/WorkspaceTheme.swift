@@ -699,7 +699,7 @@ public enum WorkspaceThemeDocumentStyle {
       --org2-chart-label: \(c(.secondaryText));
       --org2-chart-title: \(c(.text));
       --org2-chart-surface: \(c(.document));
-    }
+    \(chartSeriesVariables(for: theme))}
     \(root), \(root) body { background: \(c(.document)); }
     \(root) h1 { color: \(c(.heading1)); }
     \(root) h2 { color: \(c(.heading2)); }
@@ -713,6 +713,39 @@ public enum WorkspaceThemeDocumentStyle {
     \(root) .org2-comment, \(root) .org2-comment-keyword { color: \(c(.comment)); }
 
     """
+  }
+
+  /// Theme roles that color chart series 2…8, after `--org2-chart-mark`
+  /// (the theme's structural accent). Roles that repeat an earlier color are
+  /// skipped so series stay distinguishable.
+  static let chartSeriesRoles: [WorkspaceThemeRole] = [.signal, .done, .tag, .link, .priority, .planning, .todo, .keyword, .heading2]
+
+  /// Fallbacks matching the renderer's defaults in src/export.ts.
+  static let defaultChartSeries: [WorkspaceThemeAppearance: [String]] = [
+    .light: ["#d9480f", "#0f9d8a", "#8e44ad", "#c2185b", "#5c8a1f", "#b7791f", "#2b6cb0"],
+    .dark: ["#ff9b6a", "#4fd1c5", "#c39bf0", "#f687b3", "#9ae66e", "#f6c66b", "#7fb2f0"],
+  ]
+
+  static let chartSeriesCount = 7
+
+  /// CSS colors for `--org2-chart-series-2` … `--org2-chart-series-8`.
+  public static func chartSeriesColors(for theme: WorkspaceTheme) -> [String] {
+    var used: Set<String> = [cssColor(theme.resolvedColor(.structural)), cssColor(theme.resolvedColor(.text))]
+    var colors: [String] = []
+    for role in chartSeriesRoles where colors.count < chartSeriesCount {
+      let color = cssColor(theme.resolvedColor(role))
+      if used.insert(color).inserted { colors.append(color) }
+    }
+    for color in defaultChartSeries[theme.appearance] ?? [] where colors.count < chartSeriesCount {
+      if used.insert(color).inserted { colors.append(color) }
+    }
+    return colors
+  }
+
+  static func chartSeriesVariables(for theme: WorkspaceTheme) -> String {
+    chartSeriesColors(for: theme).enumerated()
+      .map { "  --org2-chart-series-\($0.offset + 2): \($0.element);\n" }
+      .joined()
   }
 
   static func cssColor(_ color: NSColor) -> String {
