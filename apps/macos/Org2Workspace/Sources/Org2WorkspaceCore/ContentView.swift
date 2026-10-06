@@ -2806,6 +2806,13 @@ private struct SidebarView: View {
           .transition(.opacity.combined(with: .move(edge: .trailing)))
       }
     }
+    .contextMenu {
+      Button {
+        store.markAllAutomationAIChatThreadsReadAndSettled()
+      } label: {
+        Label(AIChatAutomationThreadsAction.title, systemImage: AIChatAutomationThreadsAction.systemImage)
+      }
+    }
   }
 
   private func chatThreadRow(_ summary: AIChatSidebarThreadSummary) -> some View {
@@ -3571,6 +3578,15 @@ private struct AIChatSidebarThreadRow: View {
           Label("Settle Thread", systemImage: "checkmark.circle")
         }
       }
+
+      if WorkspaceStore.isAutomationAIChatThreadTitle(summary.title) {
+        Divider()
+        Button {
+          store.markAllAutomationAIChatThreadsReadAndSettled()
+        } label: {
+          Label(AIChatAutomationThreadsAction.title, systemImage: AIChatAutomationThreadsAction.systemImage)
+        }
+      }
     }
     .overlay {
       // SwiftUI can reuse another recycled row's context-menu action when this
@@ -3592,6 +3608,8 @@ private struct AIChatSidebarThreadRow: View {
         isShared: store.isChatThreadShared(summary.id),
         copyShareLink: { id in Task { await store.copyChatThreadShareLink(id) } },
         stopSharing: { id in store.stopSharingChatThread(id) },
+        isAutomation: WorkspaceStore.isAutomationAIChatThreadTitle(summary.title),
+        markAllAutomationThreads: { store.markAllAutomationAIChatThreadsReadAndSettled() },
         projects: store.projectNotes,
         toggleProject: { id in
           guard let project = store.projectNotes.first(where: { $0.id == id }) else { return }
@@ -3672,6 +3690,8 @@ private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
   let isShared: Bool
   let copyShareLink: (UUID) -> Void
   let stopSharing: (UUID) -> Void
+  let isAutomation: Bool
+  let markAllAutomationThreads: () -> Void
 
   let projects: [WorkspaceProjectNote]
   let toggleProject: (String) -> Void
@@ -3695,6 +3715,8 @@ private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
     view.isShared = isShared
     view.copyShareLink = copyShareLink
     view.stopSharing = stopSharing
+    view.isAutomation = isAutomation
+    view.markAllAutomationThreads = markAllAutomationThreads
     view.setAccessibilityIdentifier(
       AIChatSidebarThreadAccessibilityIdentity.accessibilityIdentifier(for: threadID)
     )
@@ -3717,6 +3739,8 @@ private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
     var isShared = false
     var copyShareLink: ((UUID) -> Void)?
     var stopSharing: ((UUID) -> Void)?
+    var isAutomation = false
+    var markAllAutomationThreads: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
       super.init(frame: frameRect)
@@ -3774,6 +3798,14 @@ private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
         systemImage: isSettled ? "arrow.uturn.backward.circle" : "checkmark.circle",
         action: #selector(toggleThreadSettlement)
       ))
+      if isAutomation {
+        menu.addItem(.separator())
+        menu.addItem(menuItem(
+          title: AIChatAutomationThreadsAction.title,
+          systemImage: AIChatAutomationThreadsAction.systemImage,
+          action: #selector(markAllAutomationThreadsReadAndSettled)
+        ))
+      }
       if !projects.isEmpty {
         let submenu = NSMenu(title: "Projects")
         for project in projects {
@@ -3838,7 +3870,16 @@ private struct AIChatSidebarThreadContextMenuTarget: NSViewRepresentable {
     @objc func toggleThreadSettlement() {
       isSettled ? reopen?() : settle?()
     }
+
+    @objc func markAllAutomationThreadsReadAndSettled() {
+      markAllAutomationThreads?()
+    }
   }
+}
+
+enum AIChatAutomationThreadsAction {
+  static let title = "Mark All Automation Threads Read & Settled"
+  static let systemImage = "checkmark.rectangle.stack"
 }
 
 private struct AIChatUnreadBadge: View {
@@ -11100,6 +11141,12 @@ private struct AIChatView: View {
         Label("Clear", systemImage: "trash")
       }
       .disabled(store.isSendingAIChatMessage || store.aiChatMessages.isEmpty)
+
+      Button {
+        store.markAllAutomationAIChatThreadsReadAndSettled()
+      } label: {
+        Label(AIChatAutomationThreadsAction.title, systemImage: AIChatAutomationThreadsAction.systemImage)
+      }
 
       AIChatSettingsButton()
     } label: {

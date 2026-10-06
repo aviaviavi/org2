@@ -32509,6 +32509,49 @@ extension WorkspaceStore {
     }
   }
 
+  nonisolated static func isAutomationAIChatThreadTitle(_ title: String) -> Bool {
+    title.hasPrefix("Automation:")
+  }
+
+  /// Marks every "Automation: …" thread read and settles those not running,
+  /// as one in-memory update with a single receipt write and one debounced
+  /// transcript save, regardless of how many threads match.
+  @discardableResult
+  public func markAllAutomationAIChatThreadsReadAndSettled(at settledAt: Date = Date()) -> Int {
+    var threads = aiChatThreads
+    var automationThreads: [AIChatThread] = []
+    var changedCount = 0
+    for index in threads.indices {
+      let thread = threads[index]
+      guard Self.isAutomationAIChatThreadTitle(thread.title) else { continue }
+      automationThreads.append(thread)
+      let isRunning = thread.pendingTurn != nil
+        || aiChatSendingThreadIDs.contains(thread.id)
+        || drainingAIChatThreadIDs.contains(thread.id)
+      let settles = !thread.isSettled && !isRunning
+      guard settles || thread.unreadMessageCount != 0 else { continue }
+      threads[index] = thread.replacingAIChatMetadata(
+        isArchived: settles ? true : thread.isArchived,
+        settledAt: .some(settles ? settledAt : thread.settledAt),
+        unreadMessageCount: 0
+      )
+      changedCount += 1
+    }
+    aiChatReadState.markRead(automationThreads, transcriptURL: aiChatTranscriptURL)
+    guard changedCount > 0 else {
+      aiChatStatusText = automationThreads.isEmpty
+        ? "No automation threads"
+        : "Automation threads are already read and settled"
+      return 0
+    }
+    aiChatThreads = Self.sortedAIChatThreadsForDisplay(threads)
+    scheduleAIChatTranscriptPersistenceAfterInteraction()
+    aiChatStatusText = changedCount == 1
+      ? "Marked 1 automation thread read and settled"
+      : "Marked \(changedCount) automation threads read and settled"
+    return changedCount
+  }
+
   public func reopenAIChatThread(_ id: UUID) {
     guard let index = aiChatThreads.firstIndex(where: { $0.id == id }),
           aiChatThreads[index].isSettled

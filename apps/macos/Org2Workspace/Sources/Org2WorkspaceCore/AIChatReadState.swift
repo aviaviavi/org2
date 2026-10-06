@@ -34,6 +34,26 @@ final class AIChatReadState {
     defaults.set(data, forKey: storageKey(for: path))
   }
 
+  /// Records receipts for many threads with one defaults write, so bulk
+  /// actions stay linear in the number of threads.
+  func markRead(_ threads: [AIChatThread], transcriptURL: URL) {
+    let path = transcriptURL.standardizedFileURL.path
+    var receipts = receipts(for: path)
+    var changed = false
+    for thread in threads {
+      let previous = receipts[thread.id]
+      guard previous?.covers(thread) != true else { continue }
+      receipts[thread.id] = Receipt(
+        updatedAt: max(previous?.updatedAt ?? thread.updatedAt, thread.updatedAt),
+        messageCount: max(previous?.messageCount ?? 0, thread.messageCount)
+      )
+      changed = true
+    }
+    guard changed, let data = try? JSONEncoder().encode(receipts) else { return }
+    receiptsByPath[path] = receipts
+    defaults.set(data, forKey: storageKey(for: path))
+  }
+
   func applying(to threads: [AIChatThread], transcriptURL: URL) -> [AIChatThread] {
     let receipts = receipts(for: transcriptURL.standardizedFileURL.path)
     return threads.map { thread in
