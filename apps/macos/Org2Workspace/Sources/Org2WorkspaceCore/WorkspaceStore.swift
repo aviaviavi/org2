@@ -2539,7 +2539,8 @@ public final class WorkspaceStore {
   public private(set) var isLoadingSources = false
   public var isSourceCredentialPresented = false
   public var sourceCredentialProfileID: String?
-  public var isAddEmailSourcePresented = false
+  /// The add/edit sheet for any catalog source type.
+  public var sourceDraft: WorkspaceSourceDraft?
   public var sourceCredentialDraft = ""
   public private(set) var processingMeetings: [MeetingProcessingItem] = []
   public var selectedMeetingID: String?
@@ -5899,32 +5900,60 @@ extension WorkspaceStore {
   }
 
   private func sourceEnvironment(for profile: WorkspaceSourceProfileStatus) -> [String: String] {
-    guard let token = SourceCredentialsKeychain.readToken(profileID: profile.id) else { return [:] }
-    switch profile.type {
-    case "notion": return ["NOTION_TOKEN": token]
     // Passed only to this sync's process; never written to the corpus.
-    case "email": return ["ORG2_EMAIL_PASSWORD": token]
-    default: return [:]
-    }
+    guard let secret = profile.sourceType?.secret,
+          let token = SourceCredentialsKeychain.readToken(profileID: profile.id)
+    else { return [:] }
+    return [secret.environmentVariable: token]
   }
 
-  /// Adds an IMAP email source to `org2.json` and stores its password in Keychain.
+  public func presentNewSource(type: WorkspaceSourceType) {
+    var draft = WorkspaceSourceDraft(type: type)
+    let existing = Set(sourceProfiles.map(\.id))
+    if existing.contains(draft.profileID) {
+      draft.profileID = (2...).lazy.map { "\(type.defaultProfileID)-\($0)" }.first { !existing.contains($0) } ?? draft.profileID
+    }
+    sourceDraft = draft
+  }
+
+  public func presentSourceEditor(for profile: WorkspaceSourceProfileStatus) {
+    sourceDraft = WorkspaceSourceDraft(editing: profile)
+  }
+
+  /// Adds or updates any catalog source in `org2.json` through `org2 source add`,
+  /// and stores an entered secret in Keychain. Returns an error message.
   @discardableResult
-  public func addEmailSource(_ draft: WorkspaceEmailSourceDraft) async -> String? {
+  public func saveSourceDraft(_ draft: WorkspaceSourceDraft) async -> String? {
     guard let corpusRoot else { return "Open a corpus first." }
     do {
       let arguments = try draft.arguments(corpusRoot: corpusRoot.path)
-      let password = draft.password
-      if !password.isEmpty {
-        try SourceCredentialsKeychain.saveToken(password, profileID: draft.profileID.trimmingCharacters(in: .whitespacesAndNewlines))
-      }
+      let profileID = draft.profileID.trimmingCharacters(in: .whitespacesAndNewlines)
       _ = try await cli.run(arguments)
+      let secret = draft.secret.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !secret.isEmpty {
+        try SourceCredentialsKeychain.saveToken(secret, profileID: profileID)
+      }
       await refreshSourceConnections()
-      setSourceOperationMessage("Email source added. Use Check Setup to verify the connection.", profileID: draft.profileID)
+      setSourceOperationMessage(
+        draft.isEditing ? "Source updated." : "\(draft.sourceType?.displayName ?? "Source") source added. Use Check Setup to verify the connection.",
+        profileID: profileID
+      )
       return nil
     } catch {
       return error.localizedDescription
     }
+  }
+
+  /// Optional agent-assisted setup, available for every catalog type.
+  public func askAIChatToSetUpSource(type: WorkspaceSourceType) {
+    sourceDraft = nil
+    prepareAIChatThread(
+      mode: .newThread,
+      title: "Set up \(type.displayName) source",
+      statusText: "New source setup chat"
+    )
+    publishAIChatComposerDraft(type.agentSetupPrompt)
+    navigateToSurface(.aiChat)
   }
 
   public func setSourceAutoSyncActive(

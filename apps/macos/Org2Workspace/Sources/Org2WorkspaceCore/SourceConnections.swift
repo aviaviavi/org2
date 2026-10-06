@@ -149,9 +149,9 @@ public struct WorkspaceSourceProfileStatus: Codable, Identifiable, Equatable, Se
   public var credentialAvailable: Bool?
   public var setupError: String?
 
-  /// Whether this source authenticates with a secret OpenOrg keeps in Keychain.
+  /// Whether this source cannot sync without a secret OpenOrg keeps in Keychain.
   public var usesStoredCredential: Bool {
-    type == "email" || (type == "notion" && syncArgs.contains("api"))
+    sourceType?.requiresSecret(syncArgs: syncArgs) ?? false
   }
 
   /// `source list` supplies the same effective zones used by source ingestion.
@@ -182,47 +182,6 @@ public struct WorkspaceEmailSourceSummary: Codable, Equatable, Sendable {
   public var username: String
   public var mailboxes: [String]
   public var smtp: SMTP?
-}
-
-/// Fields for "Add Email Source…".
-public struct WorkspaceEmailSourceDraft: Equatable, Sendable {
-  public var profileID = "mail"
-  public var host = ""
-  public var port = 993
-  public var security = "tls"
-  public var username = ""
-  public var mailboxes = "INBOX"
-  public var smtpHost = ""
-  public var smtpPort = 587
-  public var password = ""
-  public var since = "14d"
-
-  public init() {}
-
-  /// `org2 source add-email` arguments (the password is never an argument).
-  public func arguments(corpusRoot: String) throws -> [String] {
-    let id = profileID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard id.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"#, options: .regularExpression) != nil else {
-      throw WorkspaceSourceScheduleDraft.ValidationError("Use letters, digits, dots, dashes, or underscores for the source name.")
-    }
-    let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
-    let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !host.isEmpty, !username.isEmpty else {
-      throw WorkspaceSourceScheduleDraft.ValidationError("Enter the IMAP server and user name.")
-    }
-    var arguments = [
-      "source", "add-email", id, "--host", host, "--username", username,
-      "--port", String(port), "--security", security,
-    ]
-    for mailbox in mailboxes.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !mailbox.isEmpty {
-      arguments += ["--mailbox", mailbox]
-    }
-    let smtp = smtpHost.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !smtp.isEmpty { arguments += ["--smtp-host", smtp, "--smtp-port", String(smtpPort)] }
-    let window = since.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !window.isEmpty { arguments += ["--since", window] }
-    return arguments + ["--dir", corpusRoot, "--apply", "--json"]
-  }
 }
 
 public struct WorkspaceSourceScheduleState: Codable, Equatable, Sendable {

@@ -16,7 +16,7 @@ struct ConnectorBrandLogo: View {
         .frame(width: size, height: size)
         .accessibilityLabel(Text(type.capitalized))
     } else {
-      Image(systemName: "point.3.connected.trianglepath.dotted")
+      Image(systemName: WorkspaceSourceCatalog.type(type)?.systemImage ?? "point.3.connected.trianglepath.dotted")
         .foregroundStyle(.secondary)
         .frame(width: size, height: size)
     }

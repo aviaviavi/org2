@@ -9847,12 +9847,7 @@ private struct SourcesView: View {
         if store.isLoadingSources {
           WorkspaceActivityIndicator(size: .small)
         }
-        Button {
-          store.isAddEmailSourcePresented = true
-        } label: {
-          Label("Add Email Source…", systemImage: "envelope.badge")
-        }
-        .help("Sync an IMAP mailbox into reviewable Org2 packets")
+        AddSourceMenu()
         Button {
           Task { await store.refreshSourceConnections() }
         } label: {
@@ -9865,10 +9860,10 @@ private struct SourcesView: View {
         Spacer()
         EmptyStateView(
           title: "No Sources Configured",
-          detail: "Add an email account, or declare Slack and Notion externalSources in this corpus’s org2.json, then refresh.",
-          action: "Add Email Source…"
+          detail: "Add a Slack workspace, Notion workspace, or email account. Settings go in this corpus’s org2.json; tokens and passwords stay in macOS Keychain.",
+          action: "Add Source…"
         ) {
-          store.isAddEmailSourcePresented = true
+          store.presentNewSource(type: WorkspaceSourceCatalog.types[0])
         }
         Spacer()
       } else {
@@ -9907,48 +9902,98 @@ private struct SourcesView: View {
       SourceCredentialSheet()
         .environment(store)
     }
-    .sheet(isPresented: $store.isAddEmailSourcePresented) {
-      AddEmailSourceSheet()
+    .sheet(item: $store.sourceDraft) { draft in
+      SourceEditorSheet(draft: draft)
         .environment(store)
     }
   }
 }
 
-private struct AddEmailSourceSheet: View {
+/// One menu entry per catalog type, plus optional agent-assisted setup.
+private struct AddSourceMenu: View {
   @Environment(WorkspaceStore.self) private var store
-  @State private var draft = WorkspaceEmailSourceDraft()
+
+  var body: some View {
+    Menu {
+      ForEach(WorkspaceSourceCatalog.types) { type in
+        Button("\(type.displayName)…") { store.presentNewSource(type: type) }
+      }
+      Divider()
+      Menu("Set Up with AI") {
+        ForEach(WorkspaceSourceCatalog.types) { type in
+          Button(type.displayName) { store.askAIChatToSetUpSource(type: type) }
+        }
+      }
+    } label: {
+      Label("Add Source", systemImage: "plus")
+    }
+    .help("Add a Slack, Notion, or email source")
+  }
+}
+
+/// The single add/configure form for every catalog source type.
+private struct SourceEditorSheet: View {
+  @Environment(WorkspaceStore.self) private var store
+  @State private var draft: WorkspaceSourceDraft
   @State private var errorMessage: String?
   @State private var isSaving = false
 
+  init(draft: WorkspaceSourceDraft) {
+    _draft = State(initialValue: draft)
+  }
+
+  private var type: WorkspaceSourceType? { draft.sourceType }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      Text("Add Email Source")
-        .font(.title2.weight(.semibold))
-      Text("OpenOrg reads new mail over IMAP (without marking it read) and stages it as raw captures plus review-required Org2 packets. Use the IMAP settings your provider lists next to its SMTP settings; many providers require an app password. The password is stored in macOS Keychain and passed only to the sync; it is never written to the corpus.")
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      Form {
-        TextField("Source name", text: $draft.profileID)
-        TextField("IMAP server", text: $draft.host, prompt: Text("imap.example.com"))
-        HStack {
-          TextField("Port", value: $draft.port, format: .number.grouping(.never))
-            .frame(width: 140)
-          Picker("Security", selection: $draft.security) {
-            Text("TLS").tag("tls")
-            Text("STARTTLS").tag("starttls")
+      HStack(spacing: 10) {
+        if let type { ConnectorBrandLogo(type: type.id, size: 24) }
+        Text(draft.isEditing ? "Configure \(draft.profileID)" : (type?.addTitle ?? "Add Source"))
+          .font(.title2.weight(.semibold))
+        Spacer()
+        if !draft.isEditing {
+          Picker("Type", selection: Binding(
+            get: { draft.typeID },
+            set: { id in
+              if let type = WorkspaceSourceCatalog.type(id), id != draft.typeID {
+                draft = WorkspaceSourceDraft(type: type)
+                errorMessage = nil
+              }
+            }
+          )) {
+            ForEach(WorkspaceSourceCatalog.types) { type in
+              Text(type.displayName).tag(type.id)
+            }
           }
-          .onChange(of: draft.security) { _, security in
-            if security == "starttls", draft.port == 993 { draft.port = 143 }
-            if security == "tls", draft.port == 143 { draft.port = 993 }
+          .labelsHidden()
+          .pickerStyle(.segmented)
+          .fixedSize()
+        }
+      }
+      if let type {
+        Text(type.summary)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Form {
+        if !draft.isEditing {
+          TextField("Source name", text: $draft.profileID)
+        }
+        ForEach(type?.fields ?? []) { field in
+          if draft.isVisible(field) {
+            fieldRow(field)
           }
         }
-        TextField("User name", text: $draft.username, prompt: Text("you@example.com"))
-        SecureField("Password or app password", text: $draft.password)
-        TextField("Mailboxes", text: $draft.mailboxes, prompt: Text("INBOX, Archive"))
-        TextField("Initial window", text: $draft.since, prompt: Text("14d"))
-        TextField("SMTP server (optional)", text: $draft.smtpHost, prompt: Text("smtp.example.com"))
-        if !draft.smtpHost.isEmpty {
-          TextField("SMTP port", value: $draft.smtpPort, format: .number.grouping(.never))
+        if let secret = type?.secret {
+          SecureField(
+            draft.isEditing ? "\(secret.label) (leave empty to keep)" : secret.label,
+            text: $draft.secret
+          )
+          .help(secret.help)
+          Text(secret.help)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
       .formStyle(.grouped)
@@ -9958,22 +10003,47 @@ private struct AddEmailSourceSheet: View {
           .textSelection(.enabled)
       }
       HStack {
+        if let type {
+          Button("Set Up with AI…") { store.askAIChatToSetUpSource(type: type) }
+            .help("Open an AI chat that walks through this setup instead")
+        }
         Spacer()
-        Button("Cancel") { store.isAddEmailSourcePresented = false }
-        Button("Add Source") {
+        Button("Cancel") { store.sourceDraft = nil }
+        Button(draft.isEditing ? "Save" : "Add Source") {
           isSaving = true
           Task {
-            errorMessage = await store.addEmailSource(draft)
+            errorMessage = await store.saveSourceDraft(draft)
             isSaving = false
-            if errorMessage == nil { store.isAddEmailSourcePresented = false }
+            if errorMessage == nil { store.sourceDraft = nil }
           }
         }
         .keyboardShortcut(.defaultAction)
-        .disabled(isSaving || draft.host.isEmpty || draft.username.isEmpty)
+        .disabled(isSaving || draft.validationMessage != nil)
+        .help(draft.validationMessage ?? "")
       }
     }
     .padding(22)
-    .frame(width: 540)
+    .frame(width: 560)
+  }
+
+  @ViewBuilder
+  private func fieldRow(_ field: WorkspaceSourceField) -> some View {
+    let binding = Binding(
+      get: { draft.value(field.id) },
+      set: { draft.setValue($0, for: field.id) }
+    )
+    switch field.kind {
+    case .choice(let choices):
+      Picker(field.label, selection: binding) {
+        ForEach(choices) { choice in
+          Text(choice.title).tag(choice.value)
+        }
+      }
+      .help(field.help ?? "")
+    case .text, .integer, .list:
+      TextField(field.label, text: binding, prompt: field.prompt.isEmpty ? nil : Text(field.prompt))
+        .help(field.help ?? "")
+    }
   }
 }
 
@@ -10188,14 +10258,19 @@ private struct SourceProfileCard: View {
           store.revealSourceReviews(profile)
         }
 
-        if profile.type == "notion" || profile.type == "email" {
-          Button(store.sourceHasStoredCredential(profile)
-            ? (profile.type == "email" ? "Replace Password" : "Replace Token")
-            : (profile.type == "email" ? "Add Password" : "Add Token")) {
+        if profile.sourceType != nil {
+          Button("Configure…") {
+            store.presentSourceEditor(for: profile)
+          }
+          .disabled(isRunning)
+        }
+
+        if let secret = profile.sourceType?.secret {
+          Button(store.sourceHasStoredCredential(profile) ? "Replace \(secret.label)" : "Add \(secret.label)") {
             store.presentSourceCredential(for: profile)
           }
           if store.sourceHasStoredCredential(profile) {
-            Button(profile.type == "email" ? "Remove Password" : "Remove Token", role: .destructive) {
+            Button("Remove \(secret.label)", role: .destructive) {
               store.deleteSourceCredential(profile)
             }
           }
@@ -10314,16 +10389,16 @@ private struct SourceCredentialSheet: View {
 
   var body: some View {
     @Bindable var store = store
-    let isEmail = store.sourceProfiles.first { $0.id == store.sourceCredentialProfileID }?.type == "email"
+    let profile = store.sourceProfiles.first { $0.id == store.sourceCredentialProfileID }
+    let secret = profile?.sourceType?.secret
+    let label = secret?.label ?? "Credential"
     VStack(alignment: .leading, spacing: 14) {
-      Text(isEmail ? "Email Password" : "Connect Notion")
+      Text("\(profile?.sourceType?.displayName ?? "Source") \(label)")
         .font(.title2.weight(.semibold))
-      Text(isEmail
-        ? "Enter the IMAP password or app password. Org2 stores it in macOS Keychain and passes it only to the email sync; it is never written to the corpus."
-        : "Paste a Notion internal integration token. Org2 stores it in macOS Keychain and passes it only to notcrawl; it is never written to the corpus.")
+      Text(secret?.help ?? "OpenOrg stores this credential in macOS Keychain and passes it only to the sync; it is never written to the corpus.")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-      SecureField(isEmail ? "Password" : "Notion token", text: $store.sourceCredentialDraft)
+      SecureField(label, text: $store.sourceCredentialDraft)
         .textFieldStyle(.roundedBorder)
       HStack {
         Spacer()
@@ -10331,7 +10406,7 @@ private struct SourceCredentialSheet: View {
           store.sourceCredentialDraft = ""
           store.isSourceCredentialPresented = false
         }
-        Button(isEmail ? "Save Password" : "Save Token") {
+        Button("Save \(label)") {
           store.savePresentedSourceCredential()
         }
         .keyboardShortcut(.defaultAction)

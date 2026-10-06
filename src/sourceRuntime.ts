@@ -224,11 +224,110 @@ function normalizedSchedule(id: string, profile: Org2ExternalSourceConfig): Sour
   throw new Error(`external source ${id} schedule kind must be interval or daily`);
 }
 
+export const EXTERNAL_SOURCE_TYPES = ["slack", "notion", "email"] as const;
+
+const EXTERNAL_SOURCE_KEYS = new Set([
+  "type", "email", "enabled", "scopes", "workspaceId", "rawZone", "media", "syncArgs", "ingestion", "schedule",
+]);
+const SECRET_KEY_PATTERN = /token|password|passwd|secret|api[-_]?key|credential|cookie/i;
+const SECRET_VALUE_PATTERN = /^(?:xox[abposr]-|xapp-|secret_|ntn_)/;
+
+function assertStringList(id: string, key: string, value: unknown): void {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`external source ${id} ${key} must be a list of strings`);
+  }
+}
+
+function assertCorpusRelative(id: string, key: string, value: unknown): void {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`external source ${id} ${key} must be a non-empty path`);
+  const normalized = path.posix.normalize(value.replace(/\\/g, "/"));
+  if (path.posix.isAbsolute(normalized) || normalized === ".." || normalized.startsWith("../")) {
+    throw new Error(`external source ${id} ${key} must stay inside the corpus`);
+  }
+}
+
+function assertNoSecrets(id: string, value: unknown, where: string): void {
+  if (typeof value === "string") {
+    if (SECRET_VALUE_PATTERN.test(value.trim())) throw new Error(`external source ${id} ${where} looks like a credential; keep secrets out of org2.json`);
+    return;
+  }
+  if (Array.isArray(value)) { value.forEach((item, index) => assertNoSecrets(id, item, `${where}[${index}]`)); return; }
+  if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (SECRET_KEY_PATTERN.test(key)) throw new Error(`external source ${id} must not store ${key} in org2.json; credentials stay machine-local`);
+      assertNoSecrets(id, child, where ? `${where}.${key}` : key);
+    }
+  }
+}
+
+/**
+ * Validates one org2.json externalSources entry. The shared contract behind
+ * `org2 source add` and OpenOrg's source sheet: only known, non-secret keys.
+ */
+export function validateExternalSourceProfile(id: string, value: unknown): Org2ExternalSourceConfig {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id)) throw new Error("source PROFILE ids use letters, digits, ., _, or - (at most 64 characters)");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`external source ${id} must be a JSON object`);
+  const profile = value as Record<string, unknown>;
+  assertNoSecrets(id, profile, "");
+  for (const key of Object.keys(profile)) {
+    if (!EXTERNAL_SOURCE_KEYS.has(key)) throw new Error(`external source ${id} has unknown key ${key}`);
+  }
+  if (!EXTERNAL_SOURCE_TYPES.includes(profile.type as typeof EXTERNAL_SOURCE_TYPES[number])) {
+    throw new Error(`external source ${id} type must be one of ${EXTERNAL_SOURCE_TYPES.join(", ")}`);
+  }
+  if (profile.enabled !== undefined && typeof profile.enabled !== "boolean") throw new Error(`external source ${id} enabled must be true or false`);
+  if (profile.scopes !== undefined) assertStringList(id, "scopes", profile.scopes);
+  if (profile.syncArgs !== undefined) assertStringList(id, "syncArgs", profile.syncArgs);
+  if (profile.workspaceId !== undefined && typeof profile.workspaceId !== "string") throw new Error(`external source ${id} workspaceId must be a string`);
+  if (profile.rawZone !== undefined) assertCorpusRelative(id, "rawZone", profile.rawZone);
+  if (profile.media !== undefined && profile.media !== "lazy" && profile.media !== "metadata-only") {
+    throw new Error(`external source ${id} media must be lazy or metadata-only`);
+  }
+  if (profile.ingestion !== undefined) {
+    const ingestion = profile.ingestion as Record<string, unknown>;
+    if (!ingestion || typeof ingestion !== "object" || Array.isArray(ingestion)) throw new Error(`external source ${id} ingestion must be an object`);
+    for (const key of Object.keys(ingestion)) {
+      if (!["since", "maxItems", "reviewZone"].includes(key)) throw new Error(`external source ${id} ingestion has unknown key ${key}`);
+    }
+    if (ingestion.since !== undefined && (typeof ingestion.since !== "string" || !ingestion.since.trim())) {
+      throw new Error(`external source ${id} ingestion.since must be a window such as 14d or a timestamp`);
+    }
+    if (ingestion.maxItems !== undefined && (!Number.isInteger(ingestion.maxItems) || (ingestion.maxItems as number) <= 0)) {
+      throw new Error(`external source ${id} ingestion.maxItems must be a positive integer`);
+    }
+    if (ingestion.reviewZone !== undefined) assertCorpusRelative(id, "ingestion.reviewZone", ingestion.reviewZone);
+  }
+  const typed = profile as Org2ExternalSourceConfig;
+  if (typed.schedule !== undefined) normalizedSchedule(id, typed);
+  if (typed.type === "email") emailSourceSettings(id, typed);
+  else if (typed.email !== undefined) throw new Error(`external source ${id} email settings apply only to type email`);
+  return typed;
+}
+
+/** Merges an update into an existing profile; `null` removes a key. */
+export function mergeExternalSourceProfile(existing: Org2ExternalSourceConfig, update: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [key, value] of Object.entries(update)) {
+    if (value === null) delete merged[key];
+    else if (key === "ingestion" && value && typeof value === "object" && !Array.isArray(value)) {
+      const ingestion: Record<string, unknown> = { ...(existing.ingestion || {}) };
+      for (const [child, childValue] of Object.entries(value)) {
+        if (childValue === null) delete ingestion[child];
+        else ingestion[child] = childValue;
+      }
+      if (Object.keys(ingestion).length) merged.ingestion = ingestion;
+      else delete merged.ingestion;
+    } else merged[key] = value;
+  }
+  return merged;
+}
+
 function usage(): string {
   return `External source commands:
   org2 source list [--dir CORPUS] [--json]
   org2 source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
   org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--password-env VAR] [--password-command CMD] [--dir CORPUS] [--apply] [--json]
+  org2 source add PROFILE --source-json JSON [--update] [--dir CORPUS] [--apply] [--json]
   org2 source add-email PROFILE --host HOST --username USER [--port 993] [--security tls|starttls] [--mailbox INBOX]... [--smtp-host HOST --smtp-port 587] [--dir CORPUS] [--apply] [--json]
   org2 source schedule PROFILE (--pause|--resume) [--dir CORPUS] [--apply] [--json]
   org2 source schedule PROFILE --kind interval --every-minutes N [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
@@ -237,7 +336,8 @@ function usage(): string {
   org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
   org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
 
-The corpus declares non-secret externalSources in org2.json. Machine-local bindings are stored
+The corpus declares non-secret externalSources in org2.json; \`source add\` validates one entry of any
+supported type (${EXTERNAL_SOURCE_TYPES.join(", ")}) and refuses credential-like keys or values. Machine-local bindings are stored
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Slack and Notion sync delegates to
 slacrawl/notcrawl. Email profiles read IMAP directly (read-only EXAMINE and BODY.PEEK, so mail is not
 marked read) and keep a machine-local UID cursor; the password comes from ORG2_EMAIL_PASSWORD, a
@@ -277,6 +377,8 @@ function parseArgs(args: string[]) {
   const mailboxes: string[] = [];
   let smtpHost: string | undefined;
   let smtpPort: number | undefined;
+  let sourceJSON: string | undefined;
+  let update = false;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === "--dir") {
@@ -360,7 +462,12 @@ function parseArgs(args: string[]) {
     } else if (arg === "--smtp-host") {
       smtpHost = optionValue(args, i, arg);
       i += 1;
-    } else if (arg === "--help" || arg === "-h") positional.push("help");
+    } else if (arg === "--source-json") {
+      sourceJSON = args[i + 1];
+      if (!sourceJSON) throw new Error("--source-json requires a value");
+      i += 1;
+    } else if (arg === "--update") update = true;
+    else if (arg === "--help" || arg === "-h") positional.push("help");
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
   }
@@ -368,6 +475,7 @@ function parseArgs(args: string[]) {
     positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit,
     pause, resume, scheduleKind, everyMinutes, scheduleTime, timezone, timeoutMs,
     passwordEnv, passwordCommand, host, username, port, security, mailboxes, smtpHost, smtpPort,
+    sourceJSON, update,
   };
 }
 
@@ -571,7 +679,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
   const { root, configFile, profiles } = resolveCorpus(parsed.dir);
   const selected = parsed.positional;
   const select = <T extends { id: string }>(items: T[]) => selected.length ? items.filter((item) => selected.includes(item.id)) : items;
-  if (action !== "add-email" && selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
+  if (action !== "add-email" && action !== "add" && selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
 
   if (action === "list" || action === "doctor") {
     const result = select(statuses(root, profiles));
@@ -757,6 +865,43 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       try { fs.chmodSync(preview.bindingPath, 0o600); } catch {}
     }
     emit(preview, parsed.json);
+    return true;
+  }
+
+  if (action === "add") {
+    const id = selected[0];
+    if (!id || selected.length !== 1) throw new Error("org2 source add requires exactly one PROFILE");
+    if (!parsed.sourceJSON) throw new Error("org2 source add requires --source-json with an externalSources entry");
+    let requested: unknown;
+    try { requested = JSON.parse(parsed.sourceJSON); } catch { throw new Error("--source-json must be valid JSON"); }
+    if (!requested || typeof requested !== "object" || Array.isArray(requested)) throw new Error("--source-json must be a JSON object");
+    const existing = profiles[id];
+    if (existing && !parsed.update) throw new Error(`external source ${id} already exists; pass --update to change it`);
+    if (!existing && parsed.update) throw new Error(`external source ${id} does not exist`);
+    const candidate = existing ? mergeExternalSourceProfile(existing, requested as Record<string, unknown>) : requested;
+    if (existing && (candidate as Org2ExternalSourceConfig).type !== existing.type) throw new Error(`external source ${id} cannot change type from ${existing.type}`);
+    const profile = validateExternalSourceProfile(id, candidate);
+    const changed = JSON.stringify(existing ?? null) !== JSON.stringify(profile);
+    if (parsed.apply && changed) {
+      const config = loadConfig(configFile);
+      config.externalSources = { ...(config.externalSources || {}), [id]: profile };
+      writeJSONAtomic(configFile, config);
+    }
+    const credential = profile.type === "email"
+      ? `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, org2 source bind ${id} --password-command CMD --apply, or OpenOrg's Sources view`
+      : `Provide the crawler token through its environment (${profile.type === "slack" ? "SLACK_BOT_TOKEN" : "NOTION_TOKEN"}) or OpenOrg's Sources view, and bind a non-default crawler with org2 source bind ${id} --binary PATH --config PATH --apply`;
+    emit({
+      schema: "org2:source-add:v1",
+      root,
+      configFile,
+      profile: id,
+      source: profile,
+      ...(existing ? { previous: existing } : {}),
+      created: !existing,
+      changed,
+      applied: parsed.apply,
+      next: `${credential}; then org2 source doctor ${id}.`,
+    }, parsed.json);
     return true;
   }
 
