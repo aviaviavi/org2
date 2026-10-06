@@ -3483,7 +3483,6 @@ struct AIChatComposerView: View {
   @ViewBuilder
   private var deliveryOptionsMenu: some View {
     if isRunning
-      && !store.selectedAIChatIsSharedRoom
       && !store.isRecordingAIChatVoiceNote
     {
       Menu {

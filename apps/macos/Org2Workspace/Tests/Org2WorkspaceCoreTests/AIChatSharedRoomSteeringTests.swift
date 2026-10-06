@@ -1,0 +1,112 @@
+import Foundation
+import XCTest
+@testable import Org2WorkspaceCore
+
+private actor AIChatRoomSteerGate {
+  private var isOpen = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    if isOpen { return }
+    await withCheckedContinuation { continuations.append($0) }
+  }
+
+  func open() {
+    isOpen = true
+    let waiting = continuations
+    continuations.removeAll()
+    waiting.forEach { $0.resume() }
+  }
+}
+
+private actor AIChatRoomSteerRecorder {
+  private(set) var steers: [String] = []
+
+  func record(runtime: AIChatRuntime, content: String) {
+    steers.append("\(runtime.rawValue):\(content)")
+  }
+}
+
+final class AIChatSharedRoomSteeringTests: XCTestCase {
+  @MainActor
+  func testSharedRoomSteersTheRunningAgentAndQueuesOtherAgents() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-room-steer-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AIChatSharedRoomSteering.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let gate = AIChatRoomSteerGate()
+    let recorder = AIChatRoomSteerRecorder()
+    let store = WorkspaceStore(
+      defaults: defaults,
+      aiChatTranscriptURL: root.appendingPathComponent("chat.json"),
+      aiChatSendHandler: { _, _, _, _ in "OpenClaw answer" },
+      codexSendHandlerForTesting: { _, _, _ in
+        await gate.wait()
+        return "Codex answer"
+      },
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.aiChatSteerHandlerForTesting = { runtime, _, content, _ in
+      await recorder.record(runtime: runtime, content: content)
+    }
+    store.createAIChatSharedRoom()
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+
+    let firstTurn = Task { @MainActor in
+      await store.sendAIChatMessage(text: "@codex Start a long task")
+    }
+    for _ in 0..<200 where store.aiChatActiveDestinationID(for: threadID)
+      != AIChatDestinationConfiguration.localCodexID {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    XCTAssertTrue(store.isAIChatThreadRunning(threadID))
+
+    // Un-mentioned guidance goes to the room's default agent (Codex), which is
+    // the agent running, so it steers instead of queueing.
+    store.sendComposedAIChatMessage(text: "Also check the tests", delivery: .steer)
+    for _ in 0..<200 where store.aiChatMessages.last?.deliveryStatus != .sent {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    let steered = try XCTUnwrap(store.aiChatMessages.last)
+    XCTAssertEqual(steered.content, "Also check the tests")
+    XCTAssertEqual(steered.deliveryKind, .steer)
+    XCTAssertEqual(steered.deliveryStatus, .sent)
+    XCTAssertEqual(steered.targetDestinationID, AIChatDestinationConfiguration.localCodexID)
+    var steers = await recorder.steers
+    XCTAssertEqual(steers, ["codex:Also check the tests"])
+
+    // Guidance for another participant cannot steer Codex's turn; it queues.
+    store.sendComposedAIChatMessage(text: "@openclaw weigh in after", delivery: .steer)
+    let queuedForOpenClaw = try XCTUnwrap(store.aiChatMessages.last)
+    XCTAssertEqual(queuedForOpenClaw.deliveryKind, .followUp)
+    XCTAssertEqual(queuedForOpenClaw.targetDestinationID, AIChatDestinationConfiguration.openClawID)
+    XCTAssertTrue(store.isAIChatMessageQueued(queuedForOpenClaw.id))
+    XCTAssertFalse(store.canSteerQueuedAIChatMessage(queuedForOpenClaw.id))
+
+    // A queued message for the running agent can be promoted to a steer.
+    store.sendComposedAIChatMessage(text: "@codex one more thing")
+    let queuedForCodex = try XCTUnwrap(store.aiChatMessages.last)
+    XCTAssertEqual(queuedForCodex.deliveryKind, .followUp)
+    XCTAssertTrue(store.canSteerQueuedAIChatMessage(queuedForCodex.id))
+    await store.steerQueuedAIChatMessage(queuedForCodex.id)
+    steers = await recorder.steers
+    XCTAssertEqual(steers.last, "codex:@codex one more thing")
+    XCTAssertFalse(store.isAIChatMessageQueued(queuedForCodex.id))
+
+    await gate.open()
+    await firstTurn.value
+    for _ in 0..<300 where store.isAIChatThreadRunning(threadID) {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    let thread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == threadID }))
+    XCTAssertTrue(thread.messages.contains {
+      $0.role == .assistant && $0.content == "OpenClaw answer"
+    })
+    steers = await recorder.steers
+    XCTAssertEqual(steers.count, 2)
+  }
+}

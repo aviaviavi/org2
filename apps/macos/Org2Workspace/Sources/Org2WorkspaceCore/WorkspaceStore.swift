@@ -22964,6 +22964,28 @@ extension WorkspaceStore {
     return destinationID
   }
 
+  /// Agents a shared-room message reaches, in order: its @mentions, an
+  /// explicit audience, or else the room's default agent.
+  func aiChatRoomTargets(
+    for text: String,
+    in thread: AIChatThread,
+    audience: AIChatAudience? = nil
+  ) -> (destinationIDs: [String], normalizedText: String) {
+    let routing = AIChatDestinationRouting(
+      text,
+      destinations: enabledAIChatDestinations,
+      allDestinationIDs: thread.roomDestinationIDs
+    )
+    var destinationIDs = routing.destinationIDs
+    if destinationIDs.isEmpty, let audience {
+      destinationIDs = audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
+    }
+    if destinationIDs.isEmpty, let defaultDestinationID = aiChatRoomDefaultDestinationID(for: thread) {
+      destinationIDs = [defaultDestinationID]
+    }
+    return (destinationIDs, routing.normalizedText)
+  }
+
   public var selectedAIChatRoomDefaultDestinationID: String? {
     selectedAIChatThread.flatMap(aiChatRoomDefaultDestinationID(for:))
   }
@@ -25416,27 +25438,43 @@ extension WorkspaceStore {
     // An explicit steer (for example from iOS right after the turn started)
     // can arrive before the runtime reports its live session. Keep it a steer
     // and let delivery wait for the session instead of silently queueing it.
+    // In a shared room, guidance can only steer the agent whose turn is
+    // running, and only when the message addresses exactly that agent
+    // (explicitly or as the room's default). Anything else is queued.
+    let steeringThread = aiChatThreads.first(where: { $0.id == threadID })
+    let roomSteerTargets = delivery == .steer && steeringThread?.isSharedRoom == true
+      ? steeringThread.map { aiChatRoomTargets(for: text, in: $0, audience: audience) }
+      : nil
+    let roomSteerDestinationID = roomSteerTargets.flatMap { targets in
+      targets.destinationIDs.count == 1 ? targets.destinationIDs[0] : nil
+    }
     let shouldTrySteering = delivery == .steer
       && isAIChatThreadRunning(threadID)
-      && aiChatThreadSupportsSteering(threadID)
+      && (roomSteerTargets == nil || roomSteerDestinationID != nil)
+      && aiChatThreadSupportsSteering(threadID, destinationID: roomSteerDestinationID)
     if shouldTrySteering {
+      let steerDestinationID = roomSteerDestinationID
+        ?? steeringThread?.destinationID
+        ?? AIChatDestinationConfiguration.openClawID
       let userMessage = AIChatMessage(
         role: .user,
-        content: text,
+        content: roomSteerTargets?.normalizedText ?? text,
         attachments: attachments,
         deliveryStatus: .sending,
         deliveryKind: .steer,
-        audience: audience,
+        audience: roomSteerDestinationID == nil
+          ? audience
+          : AIChatAudience(runtime: aiChatDestinationRuntime(steerDestinationID)),
+        targetRuntime: roomSteerDestinationID.map(aiChatDestinationRuntime),
+        audienceDestinationIDs: roomSteerDestinationID.map { [$0] } ?? [],
+        targetDestinationID: roomSteerDestinationID,
         provenance: aiChatUserMessageProvenance(origin: origin, routedTo: nil, at: Date())
       )
       var messages = aiChatMessages(for: threadID)
       messages.append(userMessage)
       replaceAIChatMessages(messages, for: threadID, shouldPersist: true)
       if selectedAIChatThreadID == threadID {
-        let destinationTitle = aiChatThreads.first(where: { $0.id == threadID })
-          .map { aiChatDestinationTitle($0.destinationID) }
-          ?? "agent"
-        aiChatStatusText = "Steering \(destinationTitle)…"
+        aiChatStatusText = "Steering \(aiChatDestinationTitle(steerDestinationID))…"
       }
       Task { @MainActor [weak self] in
         await self?.deliverAIChatSteer(
@@ -25475,12 +25513,12 @@ extension WorkspaceStore {
 
   /// Whether this thread's runtime can take live guidance at all, regardless of
   /// whether the current turn's session is ready yet.
-  private func aiChatThreadSupportsSteering(_ threadID: UUID) -> Bool {
+  private func aiChatThreadSupportsSteering(_ threadID: UUID, destinationID: String? = nil) -> Bool {
     guard let thread = aiChatThreads.first(where: { $0.id == threadID }),
-          !thread.isSharedRoom,
-          aiChatDestination(id: thread.destinationID)?.adapter.isDirectProvider != true
+          let target = aiChatSteerTarget(for: thread, destinationID: destinationID),
+          aiChatDestination(id: target.destinationID)?.adapter.isDirectProvider != true
     else { return false }
-    switch thread.runtime {
+    switch target.runtime {
     case .codex, .openClaw:
       return true
     case .openCode:
@@ -25490,9 +25528,27 @@ extension WorkspaceStore {
     }
   }
 
+  /// The agent a live steer reaches: the thread's own agent or, in a shared
+  /// room, the agent whose turn is running. A room steer must name that
+  /// agent; one addressed to another participant cannot steer this turn.
+  private func aiChatSteerTarget(
+    for thread: AIChatThread,
+    destinationID: String?
+  ) -> (destinationID: String, runtime: AIChatRuntime)? {
+    guard thread.isSharedRoom else { return (thread.destinationID, thread.runtime) }
+    guard let destinationID,
+          activeSharedRoomDestinationByThreadID[thread.id] == destinationID
+    else { return nil }
+    return (
+      destinationID,
+      activeSharedRoomRuntimeByThreadID[thread.id] ?? aiChatDestinationRuntime(destinationID)
+    )
+  }
+
   /// Waits briefly for a just-started turn to expose a steerable session.
   private func waitForAIChatSteerReadiness(
     _ threadID: UUID,
+    destinationID: String?,
     context: AIChatCorpusContextToken
   ) async -> Bool {
     let clock = ContinuousClock()
@@ -25504,10 +25560,15 @@ extension WorkspaceStore {
     // Its session always arrives while this host drives the turn, so wait for
     // that turn. (`isAIChatThreadRunning` alone would also count the pending
     // steer itself and could wait forever.)
-    let waitsForWholeTurn = aiChatThreads.first(where: { $0.id == threadID })?.runtime == .openCode
-    while !canSteerAIChatThread(threadID) {
+    let waitsForWholeTurn = aiChatThreads.first(where: { $0.id == threadID })
+      .flatMap { aiChatSteerTarget(for: $0, destinationID: destinationID) }?
+      .runtime == .openCode
+    while !canSteerAIChatThread(threadID, destinationID: destinationID) {
       guard isCurrentAIChatCorpusContext(context),
             isAIChatThreadRunning(threadID),
+            // A shared room moved on to another agent's turn.
+            aiChatThreads.first(where: { $0.id == threadID })
+              .flatMap({ aiChatSteerTarget(for: $0, destinationID: destinationID) }) != nil,
             waitsForWholeTurn
               ? drainingAIChatThreadIDs.contains(threadID)
               : clock.now < deadline,
@@ -25518,21 +25579,22 @@ extension WorkspaceStore {
     return true
   }
 
-  private func canSteerAIChatThread(_ threadID: UUID) -> Bool {
-    guard let thread = aiChatThreads.first(where: { $0.id == threadID }) else {
+  private func canSteerAIChatThread(_ threadID: UUID, destinationID: String? = nil) -> Bool {
+    guard let thread = aiChatThreads.first(where: { $0.id == threadID }),
+          let target = aiChatSteerTarget(for: thread, destinationID: destinationID)
+    else {
       return false
     }
-    guard !thread.isSharedRoom else { return false }
-    guard aiChatDestination(id: thread.destinationID)?.adapter.isDirectProvider != true else {
+    guard aiChatDestination(id: target.destinationID)?.adapter.isDirectProvider != true else {
       return false
     }
     if let aiChatSteerReadinessForTesting { return aiChatSteerReadinessForTesting(threadID) }
     if aiChatSteerHandlerForTesting != nil { return true }
-    switch thread.runtime {
+    switch target.runtime {
     case .codex:
-      let hasClient = thread.destinationID == AIChatDestinationConfiguration.localCodexID
+      let hasClient = target.destinationID == AIChatDestinationConfiguration.localCodexID
         ? codexAppServerClient != nil
-        : codexAppServerClientsByDestinationID[thread.destinationID] != nil
+        : codexAppServerClientsByDestinationID[target.destinationID] != nil
       return codexActiveTurnsByThreadID[threadID] != nil && hasClient
     case .openClaw:
       return openClawGatewayClientsByThreadID[threadID] != nil
@@ -25542,7 +25604,7 @@ extension WorkspaceStore {
     case .pi:
       return false
     case .openCode:
-      return openCodeClientsByDestinationID[thread.destinationID] != nil
+      return openCodeClientsByDestinationID[target.destinationID] != nil
         && aiChatActiveRunIDByThreadID[threadID] != nil
         && !openCodeReattachedThreadIDs.contains(threadID)
     }
@@ -25555,7 +25617,14 @@ extension WorkspaceStore {
   ) async {
     guard isCurrentAIChatCorpusContext(context) else { return }
     guard aiChatThreads.contains(where: { $0.id == threadID }) else { return }
-    guard await waitForAIChatSteerReadiness(threadID, context: context) else {
+    let roomDestinationID = aiChatThreads.first(where: { $0.id == threadID })?.isSharedRoom == true
+      ? message.targetDestinationID
+      : nil
+    guard await waitForAIChatSteerReadiness(
+      threadID,
+      destinationID: roomDestinationID,
+      context: context
+    ) else {
       guard isCurrentAIChatCorpusContext(context),
             aiChatMessages(for: threadID).contains(where: {
               $0.id == message.id && $0.deliveryStatus == .sending
@@ -25574,7 +25643,9 @@ extension WorkspaceStore {
       }
       return
     }
-    guard let thread = aiChatThreads.first(where: { $0.id == threadID }) else { return }
+    guard let thread = aiChatThreads.first(where: { $0.id == threadID }),
+          let target = aiChatSteerTarget(for: thread, destinationID: roomDestinationID)
+    else { return }
     do {
       let message = try await Task.detached {
         try AIChatTextAttachments.expanding(message)
@@ -25582,13 +25653,13 @@ extension WorkspaceStore {
       guard !Task.isCancelled, isCurrentAIChatCorpusContext(context) else { return }
       if let aiChatSteerHandlerForTesting {
         try await aiChatSteerHandlerForTesting(
-          thread.runtime,
+          target.runtime,
           threadID,
           message.content,
           message.attachments
         )
       } else {
-        switch thread.runtime {
+        switch target.runtime {
         case .codex:
           guard let active = codexActiveTurnsByThreadID[threadID] else {
             throw CodexAppServerError.server(
@@ -25596,7 +25667,7 @@ extension WorkspaceStore {
               message: "There is no active turn to steer."
             )
           }
-          let codexClient = try codexClient(forDestinationID: thread.destinationID)
+          let codexClient = try codexClient(forDestinationID: target.destinationID)
           try await codexClient.steer(
             threadID: active.runtimeThreadID,
             expectedTurnID: active.turnID,
@@ -25627,7 +25698,7 @@ extension WorkspaceStore {
           guard let sessionID = aiChatActiveRunIDByThreadID[threadID] else {
             throw OpenCodeError.invalidResponse("there is no active OpenCode turn to steer")
           }
-          try await openCodeClient(forDestinationID: thread.destinationID).steer(
+          try await openCodeClient(forDestinationID: target.destinationID).steer(
             openOrgThreadID: threadID,
             sessionID: sessionID,
             message: message.content,
@@ -25638,11 +25709,11 @@ extension WorkspaceStore {
       guard isCurrentAIChatCorpusContext(context) else { return }
       replaceAIChatDeliveryStatus(for: message.id, in: threadID, with: .sent)
       if selectedAIChatThreadID == threadID {
-        aiChatStatusText = "Guidance sent to \(aiChatDestinationTitle(thread.destinationID))"
+        aiChatStatusText = "Guidance sent to \(aiChatDestinationTitle(target.destinationID))"
       }
     } catch {
       guard isCurrentAIChatCorpusContext(context) else { return }
-      if shouldQueueAIChatSteerAsFollowUp(after: error, runtime: thread.runtime) {
+      if shouldQueueAIChatSteerAsFollowUp(after: error, runtime: target.runtime) {
         enqueueExistingAIChatMessageAsFollowUp(message.id, in: threadID)
         if selectedAIChatThreadID == threadID {
           aiChatStatusText = "The run finished; queued as a follow-up"
@@ -25652,19 +25723,19 @@ extension WorkspaceStore {
         }
         return
       }
-      if thread.runtime == .codex,
+      if target.runtime == .codex,
          Self.codexRuntimeThreadWasStale(after: error) {
         let active = codexActiveTurnsByThreadID[threadID]
         forgetCodexRuntimeThread(
           active?.runtimeThreadID,
-          destinationID: thread.destinationID,
+          destinationID: target.destinationID,
           in: threadID
         )
-        let staleMessage = "\(aiChatDestinationTitle(thread.destinationID)) task expired before this guidance could be sent. Retry to start a new turn with this chat context."
+        let staleMessage = "\(aiChatDestinationTitle(target.destinationID)) task expired before this guidance could be sent. Retry to start a new turn with this chat context."
         markStaleCodexRunExpired(
           in: threadID,
-          destinationID: thread.destinationID,
-          statusText: "\(aiChatDestinationTitle(thread.destinationID)) task expired; retry your last message to continue"
+          destinationID: target.destinationID,
+          statusText: "\(aiChatDestinationTitle(target.destinationID)) task expired; retry your last message to continue"
         )
         replaceAIChatMessageDelivery(
           for: message.id,
@@ -25678,10 +25749,10 @@ extension WorkspaceStore {
       replaceAIChatSendFailure(
         for: message.id,
         in: threadID,
-        with: "Could not steer \(aiChatDestinationTitle(thread.destinationID)): \(error.localizedDescription)"
+        with: "Could not steer \(aiChatDestinationTitle(target.destinationID)): \(error.localizedDescription)"
       )
       if selectedAIChatThreadID == threadID {
-        aiChatStatusText = "Could not steer \(aiChatDestinationTitle(thread.destinationID))"
+        aiChatStatusText = "Could not steer \(aiChatDestinationTitle(target.destinationID))"
       }
     }
   }
@@ -25966,24 +26037,11 @@ extension WorkspaceStore {
     }
     stoppedAIChatThreadIDs.remove(threadID)
     staleCodexRuntimeThreadIDs.remove(threadID)
-    let destinationRouting = thread.isSharedRoom
-      ? AIChatDestinationRouting(
-          text,
-          destinations: enabledAIChatDestinations,
-          allDestinationIDs: thread.roomDestinationIDs
-        )
+    let roomTargets = thread.isSharedRoom
+      ? aiChatRoomTargets(for: text, in: thread, audience: audience)
       : nil
-    let effectiveText = destinationRouting?.normalizedText ?? text
-    var targetDestinationIDs = thread.isSharedRoom
-      ? (destinationRouting?.destinationIDs ?? [])
-      : [thread.destinationID]
-    if targetDestinationIDs.isEmpty, let audience {
-      targetDestinationIDs = audience.runtimes.map(AIChatDestinationConfiguration.defaultID(for:))
-    }
-    if targetDestinationIDs.isEmpty,
-       let defaultDestinationID = aiChatRoomDefaultDestinationID(for: thread) {
-      targetDestinationIDs = [defaultDestinationID]
-    }
+    let effectiveText = roomTargets?.normalizedText ?? text
+    let targetDestinationIDs = roomTargets?.destinationIDs ?? [thread.destinationID]
     let targetRuntimes = targetDestinationIDs.map(aiChatDestinationRuntime)
     let effectiveAudience: AIChatAudience = {
       if targetRuntimes.isEmpty { return .thread }
@@ -30267,7 +30325,7 @@ extension WorkspaceStore {
     replaceAIChatDeliveryStatus(for: messageID, in: threadID, with: .sending)
     if message.deliveryKind == .steer,
        isAIChatThreadRunning(threadID),
-       canSteerAIChatThread(threadID),
+       canSteerAIChatThread(threadID, destinationID: message.targetDestinationID),
        let retryMessage = aiChatMessages(for: threadID).first(where: { $0.id == messageID }) {
       await deliverAIChatSteer(
         retryMessage,
@@ -30305,7 +30363,17 @@ extension WorkspaceStore {
           isAIChatMessageQueued(messageID),
           isAIChatThreadRunning(threadID)
     else { return false }
-    return canSteerAIChatThread(threadID)
+    guard aiChatThreads.first(where: { $0.id == threadID })?.isSharedRoom == true else {
+      return canSteerAIChatThread(threadID)
+    }
+    // A queued room message can steer only the running agent it targets;
+    // a round addressed to several agents stays queued for each of them.
+    guard let message = aiChatMessages(for: threadID).first(where: { $0.id == messageID }),
+          !message.isRoomDispatchCopy,
+          message.audienceDestinationIDs.count <= 1,
+          let destinationID = message.targetDestinationID
+    else { return false }
+    return canSteerAIChatThread(threadID, destinationID: destinationID)
   }
 
   public func steerQueuedAIChatMessage(_ messageID: UUID) async {
@@ -30341,13 +30409,15 @@ extension WorkspaceStore {
       audienceDestinationIDs: message.audienceDestinationIDs,
       targetDestinationID: message.targetDestinationID,
       isRoomDispatchCopy: message.isRoomDispatchCopy,
-      roomRoundID: message.roomRoundID,
+      // Guidance joins the running turn; it no longer opens its own round.
+      roomRoundID: nil,
       provenance: message.provenance
     )
     replaceAIChatMessages(messages, for: threadID, shouldPersist: true)
     syncSelectedAIChatSendState()
     if selectedAIChatThreadID == threadID {
-      let destinationID = aiChatThreads.first(where: { $0.id == threadID })?.destinationID
+      let destinationID = message.targetDestinationID
+        ?? aiChatThreads.first(where: { $0.id == threadID })?.destinationID
         ?? AIChatDestinationConfiguration.openClawID
       aiChatStatusText = "Steering \(aiChatDestinationTitle(destinationID))…"
     }
