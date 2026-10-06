@@ -144,7 +144,7 @@ function cli(args, input) {
 
 const svg = cli(["render-chart", "--file", note, "--block-id", "quarterly_revenue"]);
 assert.match(svg, /^<svg /);
-assert.match(svg, /<polyline /);
+assert.match(svg, /<path class="org2-chart-line" /);
 assert.match(svg, /Quarterly revenue/);
 
 const json = JSON.parse(cli(["render-chart", "--file", note, "--line", "14", "--out", out, "--format", "json"]));
@@ -180,7 +180,7 @@ assert.equal(namedSourceJson.source.line, 6);
 assert.equal(namedSourceJson.source.chartLine, 34);
 assert.deepEqual(namedSourceJson.presentation, { size: "compact", height: 280, interactive: false });
 assert.match(namedSourceJson.svg, /Revenue from named source/);
-assert.match(namedSourceJson.svg, /<polyline /);
+assert.match(namedSourceJson.svg, /<path class="org2-chart-line" /);
 assert.match(namedSourceJson.svg, /height="280"/);
 assert.match(namedSourceJson.svg, /data-org2-chart-size="compact"/);
 assert.match(namedSourceJson.svg, /data-org2-chart-interactive="false"/);
@@ -198,7 +198,7 @@ assert.match(canonicalChartJson.svg, /Org2 histogram chart/);
 
 const multiLineChartJson = JSON.parse(cli(["render-chart", "--file", multiLineChartNote, "--block-id", "quarterly_metrics", "--format", "json"]));
 assert.equal(multiLineChartJson.ok, true);
-assert.equal((multiLineChartJson.svg.match(/<polyline /g) || []).length, 3);
+assert.equal((multiLineChartJson.svg.match(/<path class="org2-chart-line" /g) || []).length, 3);
 assert.equal((multiLineChartJson.svg.match(/class="org2-chart-legend-item"/g) || []).length, 3);
 assert.match(multiLineChartJson.svg, /data-org2-chart-series="revenue,cost,profit"/);
 assert.match(multiLineChartJson.svg, /data-series="cost"/);
@@ -207,7 +207,7 @@ assert.match(multiLineChartJson.svg, /<title>cost — 2026-Q2: 825<\/title>/);
 const multiBarChartJson = JSON.parse(cli(["render-chart", "--file", multiBarChartNote, "--block-id", "regional_metrics_chart", "--format", "json"]));
 assert.equal(multiBarChartJson.ok, true);
 assert.equal(multiBarChartJson.source.dataBlockId, "regional_metrics");
-assert.equal((multiBarChartJson.svg.match(/<rect class="org2-chart-mark"/g) || []).length, 4);
+assert.equal((multiBarChartJson.svg.match(/<rect class="org2-chart-mark org2-chart-bar"/g) || []).length, 4);
 assert.equal((multiBarChartJson.svg.match(/class="org2-chart-legend-item"/g) || []).length, 2);
 assert.match(multiBarChartJson.svg, /Regional comparison/);
 assert.match(multiBarChartJson.svg, /data-series="previous"/);

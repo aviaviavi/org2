@@ -1884,6 +1884,10 @@ var Org2MobileDocument = (() => {
       tooltipLabel.className = "org2-chart-tooltip-label";
       const tooltipValue = document.createElement("span");
       tooltipValue.className = "org2-chart-tooltip-value";
+      const tooltipSwatch = document.createElement("span");
+      tooltipSwatch.className = "org2-chart-tooltip-swatch";
+      const tooltipText = document.createElement("span");
+      tooltipValue.append(tooltipSwatch, tooltipText);
       tooltip.append(tooltipLabel, tooltipValue);
       figure.appendChild(tooltip);
 
@@ -1918,7 +1922,8 @@ var Org2MobileDocument = (() => {
         tooltipLabel.textContent = mark.dataset.label || "";
         const yLabel = svg.dataset.org2ChartYLabel || "value";
         const seriesLabel = mark.dataset.series || yLabel;
-        tooltipValue.textContent = seriesLabel + ": " + (mark.dataset.value || "");
+        tooltipText.textContent = seriesLabel + ": " + (mark.dataset.display || mark.dataset.value || "");
+        tooltipSwatch.style.background = mark.getAttribute("fill") || "currentColor";
         tooltip.hidden = false;
 
         if (crosshair) {
@@ -2002,7 +2007,7 @@ var Org2MobileDocument = (() => {
 })();`;
   var CHART_INTERACTION_STYLE = `.org2-chart-legend-item { cursor: pointer; outline: none; }
 .org2-chart-legend-item[aria-pressed="false"] { opacity: 0.38; }
-.org2-chart-legend-item:focus-visible circle { stroke: var(--org2-text); stroke-width: 2; }
+.org2-chart-legend-item:focus-visible rect { stroke: var(--org2-text); stroke-width: 2; }
 .org2-chart-series-hidden { display: none; }`;
 
   // src/colorBinding.ts
@@ -4281,41 +4286,45 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
   width: min(100%, 800px);
   max-width: 100%;
   min-width: min(360px, 100%);
-  margin: 0.85rem 0 1.25rem;
-  padding: 0.65rem 0.75rem 0.5rem;
-  border: 1px solid color-mix(in srgb, var(--org2-text) 11%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--org2-chart-surface) 96%, var(--org2-faint));
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--org2-text) 7%, transparent);
+  margin: 1rem 0 1.4rem;
+  padding: 0.9rem 1rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 7%, transparent);
+  border-radius: 14px;
+  background: var(--org2-chart-surface);
   overflow: hidden;
   resize: horizontal;
 }
 .org2-chart-compact { width: min(100%, 680px); }
 .org2-chart-wide { width: 100%; }
 .org2-chart svg { display: block; width: 100%; height: auto; margin: 0; overflow: visible; }
-.org2-chart-line { opacity: 0.9; }
-.org2-chart-mark { cursor: crosshair; outline: none; transition: opacity 100ms ease-out, stroke-width 100ms ease-out; }
-.org2-chart-mark:focus-visible { stroke: var(--org2-text); stroke-width: 3; }
-.org2-chart-mark-active { opacity: 1; stroke: var(--org2-text); stroke-width: 3; }
-.org2-chart-crosshair { opacity: 0.42; }
+.org2-chart-mark { cursor: crosshair; outline: none; transition: opacity 120ms ease-out, fill-opacity 120ms ease-out, stroke-opacity 120ms ease-out; }
+.org2-chart-bar { transition: opacity 120ms ease-out; }
+.org2-chart:hover .org2-chart-bar { opacity: 0.55; }
+.org2-chart:hover .org2-chart-bar.org2-chart-mark-active, .org2-chart-bar:focus-visible { opacity: 1; }
+.org2-chart-point.org2-chart-mark-active, .org2-chart-point:focus-visible { fill-opacity: 1; stroke-opacity: 1; }
+.org2-chart-bar:focus-visible { stroke: var(--org2-text); stroke-width: 2; }
+.org2-chart-crosshair { opacity: 0.5; }
 .org2-chart-tooltip {
   position: absolute;
   z-index: 3;
-  min-width: 108px;
-  max-width: min(220px, calc(100% - 20px));
-  padding: 0.42rem 0.55rem;
-  border: 1px solid color-mix(in srgb, var(--org2-text) 14%, transparent);
-  border-radius: 8px;
+  min-width: 112px;
+  max-width: min(240px, calc(100% - 20px));
+  padding: 0.45rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 10%, transparent);
+  border-radius: 10px;
   color: var(--org2-text);
-  background: color-mix(in srgb, var(--org2-chart-surface) 96%, var(--org2-faint));
-  box-shadow: 0 7px 22px color-mix(in srgb, var(--org2-text) 16%, transparent);
+  background: color-mix(in srgb, var(--org2-chart-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--org2-text) 14%, transparent), 0 1px 2px color-mix(in srgb, var(--org2-text) 8%, transparent);
   font-size: 0.78rem;
-  line-height: 1.32;
+  line-height: 1.35;
   pointer-events: none;
 }
 .org2-chart-tooltip[hidden] { display: none; }
-.org2-chart-tooltip-label { display: block; color: var(--org2-muted); }
-.org2-chart-tooltip-value { display: block; margin-top: 0.08rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.org2-chart-tooltip-label { display: block; color: var(--org2-muted); font-size: 0.72rem; }
+.org2-chart-tooltip-value { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.12rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.org2-chart-tooltip-swatch { flex: none; width: 8px; height: 8px; border-radius: 2px; }
 ${CHART_INTERACTION_STYLE}
 .org2-plugin-render { width: 100%; margin: 0.85rem 0 1.25rem; overflow: hidden; }
 .org2-plugin-render iframe { color-scheme: light dark; }

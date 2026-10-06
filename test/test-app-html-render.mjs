@@ -442,7 +442,7 @@ const charts = renderOrgCharts(chartSource, { sourceLineOffset: 30 })
 const chartRendered = renderOrgDocumentToAppHtml(chartDocument, { charts });
 assert.match(chartRendered.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true" data-org2-start-line="40"/);
 assert.match(chartRendered.html, /<svg [^>]*role="img"/);
-assert.match(chartRendered.html, /<polyline /);
+assert.match(chartRendered.html, /<path class="org2-chart-line" /);
 assert.match(chartRendered.html, /tooltip\.className = "org2-chart-tooltip"/);
 assert.match(chartRendered.html, /installInteractiveCharts/);
 assert.match(chartRendered.html, /data-org2-chart-mark="true"/);
@@ -470,7 +470,7 @@ assert.doesNotMatch(chartRendered.html, /<code class="language-chart">/);
 assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%; height: auto;/);
 const chartPublished = renderOrgDocumentToHtml(chartDocument, { charts });
 assert.match(chartPublished.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true">/);
-assert.match(chartPublished.html, /<polyline /);
+assert.match(chartPublished.html, /<path class="org2-chart-line" /);
 assert.doesNotMatch(chartPublished.html, /language-chart/);
 
 console.log("app HTML renderer tests: ok");

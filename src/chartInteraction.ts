@@ -32,6 +32,10 @@ export const CHART_INTERACTION_SCRIPT = `(() => {
       tooltipLabel.className = "org2-chart-tooltip-label";
       const tooltipValue = document.createElement("span");
       tooltipValue.className = "org2-chart-tooltip-value";
+      const tooltipSwatch = document.createElement("span");
+      tooltipSwatch.className = "org2-chart-tooltip-swatch";
+      const tooltipText = document.createElement("span");
+      tooltipValue.append(tooltipSwatch, tooltipText);
       tooltip.append(tooltipLabel, tooltipValue);
       figure.appendChild(tooltip);
 
@@ -66,7 +70,8 @@ export const CHART_INTERACTION_SCRIPT = `(() => {
         tooltipLabel.textContent = mark.dataset.label || "";
         const yLabel = svg.dataset.org2ChartYLabel || "value";
         const seriesLabel = mark.dataset.series || yLabel;
-        tooltipValue.textContent = seriesLabel + ": " + (mark.dataset.value || "");
+        tooltipText.textContent = seriesLabel + ": " + (mark.dataset.display || mark.dataset.value || "");
+        tooltipSwatch.style.background = mark.getAttribute("fill") || "currentColor";
         tooltip.hidden = false;
 
         if (crosshair) {
@@ -152,5 +157,5 @@ export const CHART_INTERACTION_SCRIPT = `(() => {
 /** Stylesheet rules for the interactions above; appended to the chart styles. */
 export const CHART_INTERACTION_STYLE = `.org2-chart-legend-item { cursor: pointer; outline: none; }
 .org2-chart-legend-item[aria-pressed="false"] { opacity: 0.38; }
-.org2-chart-legend-item:focus-visible circle { stroke: var(--org2-text); stroke-width: 2; }
+.org2-chart-legend-item:focus-visible rect { stroke: var(--org2-text); stroke-width: 2; }
 .org2-chart-series-hidden { display: none; }`;

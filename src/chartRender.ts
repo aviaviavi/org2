@@ -645,10 +645,148 @@ function niceTickStep(span: number, targetTicks = 4): number {
   return factor * magnitude;
 }
 
-function formatTick(value: number, step: number): string {
-  if (Number.isInteger(value)) return value.toFixed(0);
-  const digits = step >= 1 ? 1 : Math.min(3, Math.max(1, Math.ceil(-Math.log10(step))));
-  return value.toFixed(digits).replace(/\.0+$/, "");
+/** How chart values are written: a currency prefix and/or percent suffix. */
+export type ChartValueUnit = { prefix: string; suffix: string };
+
+/** Parse a table cell as a chart value, accepting `1,200`, `$1,200`, and `12%`. */
+export function parseChartValue(raw: string): number {
+  const cleaned = raw.trim().replace(/,/g, "").replace(/^([-+]?)\$/, "$1").replace(/%$/, "");
+  return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(cleaned) ? Number.parseFloat(cleaned) : Number.NaN;
+}
+
+/** Infer a display unit from the series columns and their raw cells. */
+export function chartValueUnit(series: string[], rawValues: string[]): ChartValueUnit {
+  const values = rawValues.map((value) => value.trim()).filter(Boolean);
+  const currency = values.length > 0 && values.every((value) => /^[-+]?\$/.test(value))
+    || series.every((column) => /(^|[_\s-])(usd|dollars?)($|[_\s-])|\$/i.test(column));
+  const percent = values.length > 0 && values.every((value) => /%$/.test(value))
+    || series.every((column) => /(^|[_\s-])(pct|percent(age)?)($|[_\s-])|%/i.test(column));
+  return { prefix: currency ? "$" : "", suffix: percent && !currency ? "%" : "" };
+}
+
+function trimZeros(value: string): string {
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
+}
+
+/**
+ * Compact axis/label formatting: `950`, `1.2k`, `85k`, `24M`, `$1.1M`, `18%`.
+ * `step` (the tick spacing) chooses enough precision to keep ticks distinct.
+ */
+export function formatChartNumber(value: number, unit: ChartValueUnit = { prefix: "", suffix: "" }, step?: number): string {
+  const abs = Math.abs(value);
+  const scales: Array<[number, string]> = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  const [divisor, symbol] = scales.find(([size]) => abs >= size) || [1, ""];
+  const scaled = value / divisor;
+  const scaledStep = step !== undefined ? step / divisor : undefined;
+  let digits: number;
+  if (scaledStep !== undefined && scaledStep > 0) {
+    digits = 0;
+    while (digits < 3 && Math.abs(scaledStep * 10 ** digits - Math.round(scaledStep * 10 ** digits)) > 1e-6) digits += 1;
+  } else if (divisor === 1) {
+    digits = Number.isInteger(scaled) ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+  } else {
+    digits = Math.abs(scaled) >= 100 ? 0 : 1;
+  }
+  const number = trimZeros(scaled.toFixed(digits));
+  const sign = number.startsWith("-") ? "-" : "";
+  return `${sign}${unit.prefix}${number.replace(/^-/, "")}${symbol}${unit.suffix}`;
+}
+
+/** Full-precision tooltip formatting with grouping: `$95,880`, `12.5%`. */
+export function formatChartValue(value: number, unit: ChartValueUnit = { prefix: "", suffix: "" }): string {
+  const grouped = value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const sign = grouped.startsWith("-") ? "-" : "";
+  return `${sign}${unit.prefix}${grouped.replace(/^-/, "")}${unit.suffix}`;
+}
+
+/** `mrr_usd` → `mrr usd`, so column names read as words in titles and legends. */
+export function humanizeChartLabel(column: string): string {
+  return column.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Approximate rendered width of 11–12px system-UI text, for layout without a DOM. */
+function textWidth(text: string, fontSize = 11): number {
+  let units = 0;
+  for (const char of text) {
+    if (/[ilI.,:;'|!]/.test(char)) units += 0.3;
+    else if (/[mwMW@]/.test(char)) units += 0.85;
+    else if (/[A-Z0-9$%]/.test(char)) units += 0.64;
+    else if (char === " ") units += 0.3;
+    else units += 0.55;
+  }
+  return units * fontSize;
+}
+
+function truncateToWidth(text: string, maxWidth: number, fontSize = 11): string {
+  if (textWidth(text, fontSize) <= maxWidth) return text;
+  let result = text;
+  while (result.length > 1 && textWidth(`${result}…`, fontSize) > maxWidth) result = result.slice(0, -1);
+  return `${result.trimEnd()}…`;
+}
+
+/** Monotone cubic interpolation (Fritsch–Carlson): smooth, never overshoots the data. */
+function monotonePath(points: Array<[number, number]>): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M${points[0]![0].toFixed(1)},${points[0]![1].toFixed(1)}`;
+  if (points.length === 2) return `M${points[0]![0].toFixed(1)},${points[0]![1].toFixed(1)}L${points[1]![0].toFixed(1)},${points[1]![1].toFixed(1)}`;
+  const n = points.length;
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx.push(points[i + 1]![0] - points[i]![0]);
+    slope.push((points[i + 1]![1] - points[i]![1]) / Math.max(Number.EPSILON, dx[i]!));
+  }
+  const tangent: number[] = [slope[0]!];
+  for (let i = 1; i < n - 1; i += 1) {
+    tangent.push(slope[i - 1]! * slope[i]! <= 0 ? 0 : (slope[i - 1]! + slope[i]!) / 2);
+  }
+  tangent.push(slope[n - 2]!);
+  for (let i = 0; i < n - 1; i += 1) {
+    if (slope[i] === 0) {
+      tangent[i] = 0;
+      tangent[i + 1] = 0;
+      continue;
+    }
+    const a = tangent[i]! / slope[i]!;
+    const b = tangent[i + 1]! / slope[i]!;
+    const h = a * a + b * b;
+    if (h > 9) {
+      const t = 3 / Math.sqrt(h);
+      tangent[i] = t * a * slope[i]!;
+      tangent[i + 1] = t * b * slope[i]!;
+    }
+  }
+  let path = `M${points[0]![0].toFixed(1)},${points[0]![1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const [x0, y0] = points[i]!;
+    const [x1, y1] = points[i + 1]!;
+    const h = dx[i]! / 3;
+    path += `C${(x0 + h).toFixed(1)},${(y0 + h * tangent[i]!).toFixed(1)} ${(x1 - h).toFixed(1)},${(y1 - h * tangent[i + 1]!).toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+  }
+  return path;
+}
+
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Separate stacked end-of-line labels so they never overlap. */
+function spreadLabels(positions: number[], minGap: number, top: number, bottom: number): number[] {
+  const order = positions.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < order.length; i += 1) {
+    if (order[i]!.y - order[i - 1]!.y < minGap) order[i]!.y = order[i - 1]!.y + minGap;
+  }
+  const overflow = order.length ? order[order.length - 1]!.y - bottom : 0;
+  if (overflow > 0) for (const item of order) item.y -= overflow;
+  for (let i = 0; i < order.length; i += 1) order[i]!.y = Math.max(top + i * minGap, order[i]!.y);
+  const result = [...positions];
+  for (const item of order) result[item.index] = item.y;
+  return result;
 }
 
 function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: ChartRenderDiagnostic[] } {
@@ -669,7 +807,7 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
         label: String(row[xIndex] || ""),
         series,
         rawValue,
-        value: Number.parseFloat(rawValue.replace(/,/g, "")),
+        value: parseChartValue(rawValue),
       };
     }),
   }));
@@ -692,33 +830,61 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
     sortedCategories.sort((a, b) => (b.points[0]?.value || 0) - (a.points[0]?.value || 0) || compareLabels(a.label, b.label));
   }
 
+  const series = candidate.spec.series;
+  const unit = chartValueUnit(series, sortedCategories.flatMap((category) => category.points.map((point) => point.rawValue)));
   const width = 720;
   const height = candidate.spec.presentation.height;
-  const hasMultipleSeries = candidate.spec.series.length > 1;
-  const legendColumns = Math.min(4, candidate.spec.series.length);
-  const legendRows = hasMultipleSeries ? Math.ceil(candidate.spec.series.length / legendColumns) : 0;
-  const legendTop = candidate.spec.title ? 38 : 14;
-  const margin = {
-    top: hasMultipleSeries ? legendTop + legendRows * 19 + 10 : candidate.spec.title ? 48 : 20,
-    right: 22,
-    bottom: 72,
-    left: 58,
-  };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const hasMultipleSeries = series.length > 1;
+  const isBarChart = candidate.spec.type === "bar" || candidate.spec.type === "histogram";
+  const isHistogram = candidate.spec.type === "histogram";
   const allPoints = sortedCategories.flatMap((category) => category.points);
-  const rawMaxValue = Math.max(0, ...allPoints.map((point) => point.value));
-  const rawMinValue = Math.min(0, ...allPoints.map((point) => point.value));
-  const rawSpan = Math.max(1, rawMaxValue - rawMinValue);
-  const tickStep = niceTickStep(rawSpan);
-  const minValue = Math.floor(rawMinValue / tickStep) * tickStep;
-  const maxValue = Math.max(tickStep, Math.ceil(rawMaxValue / tickStep) * tickStep);
-  const span = maxValue - minValue;
-  const yFor = (value: number): number => margin.top + plotHeight - ((value - minValue) / span) * plotHeight;
-  const zeroY = yFor(0);
-  const axisColor = "var(--org2-chart-axis, #334155)";
-  const gridColor = "var(--org2-chart-grid, #d7dee8)";
-  const labelColor = "var(--org2-chart-label, #475569)";
+
+  // Value domain. Bars always include zero; lines fit the data so trends stay visible.
+  const rawMaxValue = Math.max(...allPoints.map((point) => point.value));
+  const rawMinValue = Math.min(...allPoints.map((point) => point.value));
+  let domainMin = isBarChart ? Math.min(0, rawMinValue) : rawMinValue;
+  let domainMax = isBarChart ? Math.max(0, rawMaxValue) : rawMaxValue;
+  if (!isBarChart) {
+    const pad = Math.max((domainMax - domainMin) * 0.12, Math.abs(domainMax) * 0.02, 1e-9);
+    domainMin = rawMinValue >= 0 && domainMin - pad < 0 ? 0 : domainMin - pad;
+    domainMax += pad;
+    // Close to zero relative to the range? Then anchor at zero, which reads more honestly.
+    if (rawMinValue >= 0 && rawMinValue < (rawMaxValue - rawMinValue) * 0.5) domainMin = 0;
+  }
+  const showBarValues = isBarChart && !hasMultipleSeries && sortedCategories.length <= 14;
+  if (showBarValues) {
+    const range = Math.max(domainMax - domainMin, 1e-9);
+    if (domainMax > 0) domainMax += range * 0.1;
+    if (domainMin < 0) domainMin -= range * 0.14;
+  }
+  const rawSpan = Math.max(domainMax - domainMin, Math.abs(domainMax) * 0.1, 1e-9);
+  const tickStep = niceTickStep(rawSpan, 4);
+  const minValue = Math.floor(domainMin / tickStep + 1e-9) * tickStep;
+  const maxValue = Math.max(minValue + tickStep, Math.ceil(domainMax / tickStep - 1e-9) * tickStep);
+  const tickValues: number[] = [];
+  for (let value = minValue; value <= maxValue + tickStep / 2 && tickValues.length < 12; value += tickStep) {
+    tickValues.push(Math.abs(value) < tickStep * 1e-6 ? 0 : value);
+  }
+  const tickLabels = tickValues.map((value) => formatChartNumber(value, unit, tickStep));
+
+  // Header: title, subtitle, and a flowing legend.
+  const titleText = candidate.spec.title;
+  const yLabel = series.length === 1 ? series[0]! : "value";
+  const subtitleText = hasMultipleSeries
+    ? `by ${humanizeChartLabel(candidate.spec.x)}`
+    : `${humanizeChartLabel(yLabel)} by ${humanizeChartLabel(candidate.spec.x)}`;
+  let cursorY = 0;
+  const header: string[] = [];
+  if (titleText) {
+    cursorY += 20;
+    header.push(`<text class="org2-chart-title" x="0" y="${cursorY}" font-size="15" font-weight="600" letter-spacing="-0.01em" fill="var(--org2-chart-title, #0f172a)">${escapeXml(titleText)}</text>`);
+  }
+  cursorY += titleText ? 19 : 14;
+  header.push(`<text class="org2-chart-subtitle" x="0" y="${cursorY}" font-size="12" fill="var(--org2-chart-label, #64748b)">${escapeXml(subtitleText)}</text>`);
+
+  const labelColor = "var(--org2-chart-label, #64748b)";
+  const gridColor = "var(--org2-chart-grid, #e2e8f0)";
+  const axisColor = "var(--org2-chart-axis, #94a3b8)";
   const seriesColors = [
     "var(--org2-chart-mark, #2563eb)",
     "var(--org2-chart-series-2, #dc2626)",
@@ -730,92 +896,166 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
     "var(--org2-chart-series-8, #4d7c0f)",
   ];
   const colorForSeries = (index: number): string => seriesColors[index % seriesColors.length] || seriesColors[0]!;
-  const isBarChart = candidate.spec.type === "bar" || candidate.spec.type === "histogram";
-  const categoryX = (index: number): number => isBarChart
-    ? margin.left + (plotWidth * (index + 0.5)) / Math.max(1, sortedCategories.length)
-    : margin.left + (sortedCategories.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedCategories.length - 1));
 
-  const labelEvery = Math.max(1, Math.ceil(sortedCategories.length / 7));
-  const labels = sortedCategories.map((category, index) => {
-    if (index % labelEvery !== 0 && index !== sortedCategories.length - 1) return "";
-    const x = categoryX(index);
-    return `<text x="${x.toFixed(1)}" y="${height - 38}" font-size="11" fill="${labelColor}" text-anchor="end" transform="rotate(-28 ${x.toFixed(1)} ${height - 38})">${escapeXml(category.label)}</text>`;
-  }).filter(Boolean);
-
-  const tickValues: number[] = [];
-  for (let value = minValue; value <= maxValue + tickStep / 2 && tickValues.length < 12; value += tickStep) {
-    tickValues.push(value);
+  const legend: string[] = [];
+  if (hasMultipleSeries) {
+    cursorY += 12;
+    let legendX = 0;
+    let legendRowY = cursorY + 9;
+    series.forEach((name, index) => {
+      const label = humanizeChartLabel(name);
+      const itemWidth = 10 + 6 + textWidth(label, 12) + 16;
+      if (legendX > 0 && legendX + itemWidth > width) {
+        legendX = 0;
+        legendRowY += 20;
+      }
+      legend.push(`<g class="org2-chart-legend-item" data-series="${escapeXml(name)}"><rect x="${legendX.toFixed(1)}" y="${(legendRowY - 5).toFixed(1)}" width="10" height="10" rx="3" fill="${colorForSeries(index)}"/><text x="${(legendX + 16).toFixed(1)}" y="${(legendRowY + 4).toFixed(1)}" font-size="12" fill="var(--org2-chart-title, #0f172a)">${escapeXml(label)}</text></g>`);
+      legendX += itemWidth;
+    });
+    cursorY = legendRowY + 5;
   }
-  const yTicks = tickValues.map((value) => {
-    const y = yFor(value);
-    return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="end">${formatTick(value, tickStep)}</text>`;
-  });
 
-  const markAttributes = (point: { label: string; series: string; value: number }, x: number): string => {
-    const label = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
-    return `class="org2-chart-mark" data-org2-chart-mark="true" data-label="${escapeXml(point.label)}" data-series="${escapeXml(point.series)}" data-value="${point.value}" data-chart-x="${x.toFixed(1)}" role="graphics-symbol" aria-label="${escapeXml(label)}" tabindex="0"`;
-  };
-
-  const marks = isBarChart
-    ? sortedCategories.flatMap((category, categoryIndex) => {
-        const band = plotWidth / Math.max(1, sortedCategories.length);
-        const groupWidth = band * (hasMultipleSeries ? 0.76 : 0.62);
-        const gap = hasMultipleSeries ? Math.min(3, groupWidth * 0.04) : 0;
-        const barWidth = Math.max(1, (groupWidth - gap * Math.max(0, category.points.length - 1)) / Math.max(1, category.points.length));
-        const groupX = margin.left + band * categoryIndex + (band - groupWidth) / 2;
-        return category.points.map((point, seriesIndex) => {
-          const x = groupX + seriesIndex * (barWidth + gap);
-          const y = yFor(Math.max(0, point.value));
-          const h = Math.abs(zeroY - yFor(point.value));
-          const titleText = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
-          return `<rect ${markAttributes(point, x + barWidth / 2)} x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${colorForSeries(seriesIndex)}"><title>${escapeXml(titleText)}</title></rect>`;
-        });
-      })
-    : candidate.spec.series.flatMap((series, seriesIndex) => {
-        const points = sortedCategories.map((category) => category.points[seriesIndex]!).filter(Boolean);
-        const color = colorForSeries(seriesIndex);
-        return [
-          `<polyline class="org2-chart-line" data-series="${escapeXml(series)}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${points.map((point, index) => `${categoryX(index).toFixed(1)},${yFor(point.value).toFixed(1)}`).join(" ")}"/>`,
-          ...points.map((point, index) => {
-            const x = categoryX(index);
-            const titleText = hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
-            return `<circle ${markAttributes(point, x)} cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="3.4" fill="${color}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${escapeXml(titleText)}</title></circle>`;
-          }),
-        ];
-      });
-
-  const legend = hasMultipleSeries
-    ? candidate.spec.series.map((series, index) => {
-        const column = index % legendColumns;
-        const row = Math.floor(index / legendColumns);
-        const itemWidth = plotWidth / legendColumns;
-        const x = margin.left + column * itemWidth;
-        const y = legendTop + row * 19;
-        return `<g class="org2-chart-legend-item" data-series="${escapeXml(series)}"><circle cx="${(x + 5).toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${colorForSeries(index)}"/><text x="${(x + 14).toFixed(1)}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}">${escapeXml(series)}</text></g>`;
+  // Plot geometry.
+  const yLabelWidth = Math.max(...tickLabels.map((label) => textWidth(label, 11)));
+  const endLabels = !isBarChart
+    ? series.map((name, seriesIndex) => {
+        const last = sortedCategories[sortedCategories.length - 1]!.points[seriesIndex]!;
+        const value = formatChartNumber(last.value, unit);
+        return hasMultipleSeries ? `${truncateToWidth(humanizeChartLabel(name), 84)} ${value}` : value;
       })
     : [];
+  const endLabelWidth = endLabels.length ? Math.min(140, Math.max(...endLabels.map((label) => textWidth(label, 11)))) : 0;
+  const margin = {
+    top: cursorY + 18,
+    right: endLabelWidth ? endLabelWidth + 14 : 8,
+    bottom: 30,
+    left: Math.ceil(yLabelWidth) + 12,
+  };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = Math.max(80, height - margin.top - margin.bottom);
+  const plotBottom = margin.top + plotHeight;
+  const span = maxValue - minValue;
+  const yFor = (value: number): number => margin.top + plotHeight - ((value - minValue) / span) * plotHeight;
+  const zeroY = yFor(Math.min(maxValue, Math.max(minValue, 0)));
+  const count = sortedCategories.length;
+  const band = plotWidth / Math.max(1, count);
+  const linePad = count > 1 ? 4 : 0;
+  const categoryX = (index: number): number => isBarChart
+    ? margin.left + band * (index + 0.5)
+    : margin.left + (count === 1 ? plotWidth / 2 : linePad + ((plotWidth - linePad * 2) * index) / (count - 1));
 
-  const title = candidate.spec.title
-    ? `<text x="${margin.left}" y="27" font-size="16" font-weight="600" fill="var(--org2-chart-title, #0f172a)">${escapeXml(candidate.spec.title)}</text>`
-    : "";
-  const seriesLabel = candidate.spec.series.join(", ");
-  const accessibleTitle = candidate.spec.title || `${seriesLabel} by ${candidate.spec.x}`;
+  // Gridlines and y tick labels (no y axis line).
+  const yTicks = tickValues.map((value, index) => {
+    const y = yFor(value);
+    const isBaseline = value === 0 || (index === 0 && minValue > 0);
+    return `<line class="org2-chart-grid" x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${isBaseline ? axisColor : gridColor}" stroke-opacity="${isBaseline ? 0.55 : 1}" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${margin.left - 8}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="end">${escapeXml(tickLabels[index]!)}</text>`;
+  });
+
+  // X labels stay horizontal: bars truncate to their band; lines thin out by width.
+  const labels: string[] = [];
+  const labelY = plotBottom + 19;
+  const longest = Math.max(...sortedCategories.map((category) => textWidth(category.label, 11)));
+  if (isBarChart && (longest <= band - 8 || band - 8 >= 72)) {
+    sortedCategories.forEach((category, index) => {
+      const text = truncateToWidth(category.label, band - 8);
+      labels.push(`<text x="${categoryX(index).toFixed(1)}" y="${labelY}" font-size="11" fill="${labelColor}" text-anchor="middle"><title>${escapeXml(category.label)}</title>${escapeXml(text)}</text>`);
+    });
+  } else {
+    const slotWidth = isBarChart ? band : (plotWidth - linePad * 2) / Math.max(1, count - 1);
+    const labelWidth = Math.min(longest, 120);
+    const every = Math.max(1, Math.ceil((labelWidth + 14) / Math.max(1, slotWidth)));
+    let lastRight = -Infinity;
+    sortedCategories.forEach((category, index) => {
+      const isLast = index === count - 1;
+      if (index % every !== 0 && !isLast) return;
+      const text = truncateToWidth(category.label, 120);
+      const w = textWidth(text, 11);
+      const x = categoryX(index);
+      let anchor = !isBarChart && count > 1 && index === 0 ? "start" : !isBarChart && count > 1 && isLast ? "end" : "middle";
+      if (anchor === "middle" && x + w / 2 > width) anchor = "end";
+      if (anchor === "middle" && x - w / 2 < 0) anchor = "start";
+      const labelX = anchor === "end" && isBarChart ? Math.min(x + band / 2, width) : anchor === "start" && isBarChart ? Math.max(x - band / 2, 0) : x;
+      const left = anchor === "start" ? labelX : anchor === "end" ? labelX - w : labelX - w / 2;
+      if (left < lastRight + 10) return;
+      lastRight = left + w;
+      labels.push(`<text x="${labelX.toFixed(1)}" y="${labelY}" font-size="11" fill="${labelColor}" text-anchor="${anchor}">${escapeXml(text)}</text>`);
+    });
+  }
+
+  const markAttributes = (point: { label: string; series: string; value: number }, x: number, extraClass = ""): string => {
+    const display = formatChartValue(point.value, unit);
+    const label = hasMultipleSeries ? `${point.series} — ${point.label}: ${display}` : `${point.label}: ${display}`;
+    return `class="org2-chart-mark${extraClass}" data-org2-chart-mark="true" data-label="${escapeXml(point.label)}" data-series="${escapeXml(point.series)}" data-value="${point.value}" data-display="${escapeXml(display)}" data-chart-x="${x.toFixed(1)}" role="graphics-symbol" aria-label="${escapeXml(label)}" tabindex="0"`;
+  };
+  const nativeTitle = (point: { label: string; series: string; value: number }): string =>
+    hasMultipleSeries ? `${point.series} — ${point.label}: ${point.value}` : `${point.label}: ${point.value}`;
+
+  const defs: string[] = [];
+  const gradientBase = `org2-chart-fill-${hashString(`${titleText || ""}|${series.join(",")}|${candidate.spec.x}|${count}|${rawMaxValue}`)}`;
+  const marks: string[] = [];
+  if (isBarChart) {
+    const showValues = showBarValues && band >= 30;
+    sortedCategories.forEach((category, categoryIndex) => {
+      const groupWidth = band * (isHistogram ? 0.94 : hasMultipleSeries ? 0.78 : 0.66);
+      const gap = hasMultipleSeries ? Math.min(3, groupWidth * 0.05) : 0;
+      const barWidth = Math.max(1, Math.min(isHistogram ? Infinity : 56 * category.points.length, groupWidth - gap * Math.max(0, category.points.length - 1)) / Math.max(1, category.points.length));
+      const totalWidth = barWidth * category.points.length + gap * Math.max(0, category.points.length - 1);
+      const groupX = margin.left + band * categoryIndex + (band - totalWidth) / 2;
+      category.points.forEach((point, seriesIndex) => {
+        const x = groupX + seriesIndex * (barWidth + gap);
+        const top = yFor(Math.max(0, point.value));
+        const h = Math.max(point.value === 0 ? 0 : 1, Math.abs(zeroY - yFor(point.value)));
+        const radius = Math.min(4, barWidth / 3, h / 2);
+        marks.push(`<rect ${markAttributes(point, x + barWidth / 2, " org2-chart-bar")} x="${x.toFixed(1)}" y="${(point.value >= 0 ? Math.min(top, zeroY - h) : zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="${radius.toFixed(1)}" fill="${colorForSeries(seriesIndex)}"><title>${escapeXml(nativeTitle(point))}</title></rect>`);
+        if (showValues) {
+          const valueY = point.value >= 0 ? zeroY - h - 6 : zeroY + h + 14;
+          marks.push(`<text class="org2-chart-value" data-series="${escapeXml(point.series)}" x="${(x + barWidth / 2).toFixed(1)}" y="${valueY.toFixed(1)}" font-size="11" font-weight="500" fill="${labelColor}" text-anchor="middle" pointer-events="none">${escapeXml(formatChartNumber(point.value, unit))}</text>`);
+        }
+      });
+    });
+  } else {
+    const endPositions = series.map((_, seriesIndex) => yFor(sortedCategories[count - 1]!.points[seriesIndex]!.value));
+    const endLabelY = spreadLabels(endPositions, 14, margin.top + 4, plotBottom - 2);
+    series.forEach((name, seriesIndex) => {
+      const points = sortedCategories.map((category) => category.points[seriesIndex]!).filter(Boolean);
+      const color = colorForSeries(seriesIndex);
+      const coordinates = points.map((point, index): [number, number] => [categoryX(index), yFor(point.value)]);
+      const path = monotonePath(coordinates);
+      const group: string[] = [`<g class="org2-chart-series" data-series="${escapeXml(name)}">`];
+      if (series.length <= 2 && coordinates.length > 1) {
+        const gradientID = `${gradientBase}-${seriesIndex}`;
+        defs.push(`<linearGradient id="${gradientID}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: ${color}; stop-opacity: ${series.length === 1 ? 0.22 : 0.12}"/><stop offset="1" style="stop-color: ${color}; stop-opacity: 0"/></linearGradient>`);
+        const baseY = plotBottom;
+        group.push(`<path class="org2-chart-area" d="${path}L${coordinates[coordinates.length - 1]![0].toFixed(1)},${baseY.toFixed(1)}L${coordinates[0]![0].toFixed(1)},${baseY.toFixed(1)}Z" fill="url(#${gradientID})" stroke="none" pointer-events="none"/>`);
+      }
+      group.push(`<path class="org2-chart-line" data-series="${escapeXml(name)}" d="${path}" fill="none" stroke="${color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`);
+      const [endX, endY] = coordinates[coordinates.length - 1]!;
+      group.push(`<circle class="org2-chart-endpoint" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="3.5" fill="${color}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="2" pointer-events="none"/>`);
+      group.push(`<text class="org2-chart-end-label" x="${(endX + 9).toFixed(1)}" y="${(endLabelY[seriesIndex]! + 4).toFixed(1)}" font-size="11" font-weight="600" fill="${color}" pointer-events="none">${escapeXml(endLabels[seriesIndex]!)}</text>`);
+      points.forEach((point, index) => {
+        const [x, y] = coordinates[index]!;
+        group.push(`<circle ${markAttributes(point, x, " org2-chart-point")} cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${color}" fill-opacity="0" stroke="var(--org2-chart-surface, #ffffff)" stroke-opacity="0" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(nativeTitle(point))}</title></circle>`);
+      });
+      group.push(`</g>`);
+      marks.push(group.join(""));
+    });
+  }
+
+  const seriesLabel = series.join(", ");
+  const accessibleTitle = titleText || `${seriesLabel} by ${candidate.spec.x}`;
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(accessibleTitle)}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(candidate.spec.series.length === 1 ? seriesLabel : "value")}" data-org2-chart-series="${escapeXml(candidate.spec.series.join(","))}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${height - margin.bottom}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(accessibleTitle)}" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" style="font-variant-numeric: tabular-nums" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(yLabel)}" data-org2-chart-series="${escapeXml(series.join(","))}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${plotBottom.toFixed(1)}">`,
     `<title>${escapeXml(accessibleTitle)}</title>`,
     `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(seriesLabel)} by ${escapeXml(candidate.spec.x)}</desc>`,
-    title,
+    defs.length ? `<defs>${defs.join("")}</defs>` : "",
+    ...header,
     ...legend,
     ...yTicks,
-    `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
-    `<line x1="${margin.left}" y1="${zeroY.toFixed(1)}" x2="${width - margin.right}" y2="${zeroY.toFixed(1)}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
     candidate.spec.presentation.interactive
-      ? `<line class="org2-chart-crosshair" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${labelColor}" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden" pointer-events="none"/>`
+      ? `<line class="org2-chart-crosshair" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${plotBottom.toFixed(1)}" stroke="${labelColor}" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" visibility="hidden" pointer-events="none"/>`
       : "",
     ...marks,
     ...labels,
-    `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 7}" font-size="11" fill="${labelColor}" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
-    `<text x="16" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="middle" transform="rotate(-90 16 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.series.length === 1 ? seriesLabel : "value")}</text>`,
     `</svg>`,
   ].filter(Boolean).join("\n");
 
