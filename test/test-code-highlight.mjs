@@ -2,7 +2,9 @@
 // OpenOrg shows linked code files and app source blocks with native,
 // script-free syntax highlighting from the shared renderer.
 import assert from "node:assert/strict";
-import { codeLanguageForPath, highlightCodeToHtml, normalizeCodeLanguage, tokenizeCode } from "../dist/codeHighlight.js";
+import fs from "node:fs";
+import { codeLanguageForPath, codeLanguageTable, highlightCodeToHtml, normalizeCodeLanguage, sourceLanguageForPath, supportedCodeLanguages, tokenizeCode } from "../dist/codeHighlight.js";
+import { CODE_HIGHLIGHT_PARITY_PATH, CODE_LANGUAGE_TABLE_PATH, renderCodeHighlightParity, renderCodeLanguageTable } from "../tools/generate-code-languages.mjs";
 import { renderAppHTML } from "../dist/appHtmlRenderer.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
@@ -75,5 +77,37 @@ assert.ok(app.includes('<span class="org2-tok-keyword">def</span>'));
 assert.ok(renderAppHTML("* Heading\n", { sourcePath: "/repo/notes/a.org", referenceEmbeds: true }).includes("org2-headline"));
 const published = renderOrgDocumentToHtml(org, { profile: "publish" }).html;
 assert.ok(!published.includes('class="org2-tok-') && !published.includes("org2-tok-keyword"));
+
+// Broad format coverage: programming, markup, config, data, and build files.
+for (const [file, language] of [
+  ["main.tf", "hcl"], ["schema.graphql", "graphql"], ["api.proto", "protobuf"], ["build.zig", "zig"], ["main.dart", "dart"],
+  ["fit.jl", "julia"], ["script.pl", "perl"], ["parser.ml", "ocaml"], ["App.fs", "fsharp"], ["srv.erl", "erlang"],
+  ["setup.ps1", "powershell"], ["run.bat", "batch"], ["paper.tex", "latex"], ["build.gradle", "groovy"], ["Token.sol", "solidity"],
+  ["boot.asm", "asm"], ["solver.f90", "fortran"], ["app.cr", "crystal"], ["main.nim", "nim"], ["CMakeLists.txt", "cmake"],
+  ["nginx.conf", "nginx"], [".gitignore", "gitignore"], ["schema.prisma", "prisma"], ["app.coffee", "coffeescript"], ["Main.elm", "elm"],
+  ["top.sv", "verilog"], ["alu.vhd", "vhdl"], ["Module.vb", "visualbasic"], ["lib.libsonnet", "jsonnet"], ["fix.patch", "diff"],
+  ["setup.cfg", "ini"], [".editorconfig", "ini"], ["Gemfile", "ruby"], ["Jenkinsfile", "groovy"], ["BUILD.bazel", "python"],
+  ["App.svelte", "markup"], ["Main.storyboard", "markup"], ["data.geojson", "json"], ["kernel.cu", "cpp"], [".env.production", "shell"],
+]) assert.equal(codeLanguageForPath(file), language, file);
+assert.equal(codeLanguageForPath("README.md"), null, "Markdown still renders as a document");
+assert.equal(sourceLanguageForPath("README.md"), "markdown", "but edits as highlighted source");
+assert.equal(sourceLanguageForPath("notes/a.org"), null);
+assert.ok(supportedCodeLanguages().length >= 60);
+assert.deepEqual(kinds("# Title\n> quote\n- item **bold** [link](https://x) `code`\n", "markdown"), [
+  ["keyword", "# Title"], ["comment", "> quote"], ["keyword", "-"], ["type", "**bold**"], ["function", "[link](https://x)"], ["string", "`code`"],
+]);
+assert.deepEqual(kinds("@@ -1 +1 @@\n-old\n+new\n same\n", "diff"), [["meta", "@@ -1 +1 @@"], ["variable", "-old"], ["string", "+new"]]);
+assert.deepEqual(kinds("[core]\neditor = vim ; note\n", "ini"), [["type", "[core]"], ["property", "editor"], ["comment", "; note"]]);
+for (const [source, language] of [["\\section{A} $x$ % c", "latex"], ["model User {\n  id Int @id\n}", "prisma"], ["fn main() void {}", "zig"], ["@echo off\nset X=%PATH%", "batch"]]) {
+  roundTrips(source, language);
+  assert.ok(kinds(source, language).length > 0, language);
+}
+// The native editor consumes the same definitions.
+const table = codeLanguageTable();
+assert.equal(table.schema, "org2:code-language-table:v1");
+assert.equal(table.aliases.tf, "hcl");
+assert.ok(table.languages.markdown.lineRules.every((rule) => rule.pattern.startsWith("^")));
+assert.equal(fs.readFileSync(CODE_LANGUAGE_TABLE_PATH, "utf8"), renderCodeLanguageTable(), "regenerate CodeLanguages.json with node tools/generate-code-languages.mjs");
+assert.equal(fs.readFileSync(CODE_HIGHLIGHT_PARITY_PATH, "utf8"), renderCodeHighlightParity(), "regenerate the parity fixture with node tools/generate-code-languages.mjs");
 
 console.log("Code highlight tests passed: language detection, tokens, code-file view, and app source blocks.");

@@ -16,6 +16,7 @@ function main() {
   }
   if (!args.includes("--built")) run("npm", ["run", "build"]);
   run("npm", ["run", "check:mobile-document"]);
+  run("node", ["tools/generate-code-languages.mjs", "--check"]);
   run("npm", ["run", "fixtures", "--", "--e2e"]);
   run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
   run("git", [

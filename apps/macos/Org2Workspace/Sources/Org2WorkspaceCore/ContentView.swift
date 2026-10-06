@@ -13795,7 +13795,10 @@ private struct OrgSourceEditorWithLinkTools: View {
         }
         return slashResult
       }
-    let analyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = prose
+    // Code, markup, config, and data files are highlighted as their own
+    // language and skip Org-only analysis and writing commands.
+    let codeLanguage = prose ? nil : OrgCodeHighlighter.language(forPath: sourceAtMount?.file)
+    let analyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = prose || codeLanguage != nil
       ? nil
       : { text in await store.analyzeSourceEditorText(text) }
     OrgSyntaxTextEditor(
@@ -13809,9 +13812,9 @@ private struct OrgSourceEditorWithLinkTools: View {
       incrementalHighlighting: true,
       incrementalHighlightingDelayMilliseconds: 120,
       concealsSyntax: prose,
-      orgWritingCommands: !prose,
-      pasteAsOrgEnabled: { store.experimentalFeaturesEnabled },
-      textChecking: .spellingAndGrammar,
+      orgWritingCommands: !prose && codeLanguage == nil,
+      pasteAsOrgEnabled: { store.experimentalFeaturesEnabled && codeLanguage == nil },
+      textChecking: codeLanguage == nil ? .spellingAndGrammar : .disabled,
       caretPublishingDelayMilliseconds: 180,
       semanticAnalysisDelayMilliseconds: 900,
       commandRequest: store.sourceEditorCommandRequest,
@@ -13866,8 +13869,9 @@ private struct OrgSourceEditorWithLinkTools: View {
         Task { await store.saveEditedEntry() }
         return true
       },
-      completionKeyHandler: dateMentionKeyHandler,
-      proseController: activeProse
+      completionKeyHandler: codeLanguage == nil ? dateMentionKeyHandler : nil,
+      proseController: activeProse,
+      codeLanguage: codeLanguage
     )
   }
 

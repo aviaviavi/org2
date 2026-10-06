@@ -2047,6 +2047,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   /// Present only for Prose mode. It switches the typography and drives the
   /// reversible-prose presentation over the same native text view.
   let proseController: OrgProseEditorController?
+  /// A code, markup, config, or data language from the shared language table.
+  /// When set, the editor highlights the text as that language instead of Org.
+  let codeLanguage: String?
 
   var isProse: Bool { proseController != nil }
 
@@ -2091,9 +2094,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)? = nil,
     onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)? = nil,
     completionKeyHandler: ((OrgSyntaxTextEditorCompletionKey, OrgSyntaxTextEditorSelectionSnapshot) -> OrgSyntaxTextEditorCompletionKeyResult)? = nil,
-    proseController: OrgProseEditorController? = nil
+    proseController: OrgProseEditorController? = nil,
+    codeLanguage: String? = nil
   ) {
     _text = text
+    self.codeLanguage = codeLanguage
     self.monospaced = monospaced
     self.showsScrollers = showsScrollers
     self.textInset = textInset
@@ -4353,15 +4358,37 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func applyIncrementalHighlighting(to textView: NSTextView, editedRange: NSRange) {
       guard let storage = textView.textStorage else { return }
-      let typingAttributes = OrgSyntaxHighlighter.apply(
+      let typingAttributes = applySyntaxHighlighting(to: storage, characterRange: editedRange)
+      textView.typingAttributes = typingAttributes
+      recordHighlightedState(for: textView)
+    }
+
+    /// Org highlighting, or code highlighting for files in a code language.
+    @discardableResult
+    func applySyntaxHighlighting(to storage: NSTextStorage, characterRange: NSRange?) -> [NSAttributedString.Key: Any] {
+      if let language = parent.codeLanguage {
+        return OrgCodeHighlighter.apply(
+          to: storage,
+          language: language,
+          characterRange: characterRange,
+          baseAttributes: OrgSyntaxHighlighter.baseTypingAttributes(monospaced: true)
+        )
+      }
+      if let characterRange {
+        return OrgSyntaxHighlighter.apply(
+          to: storage,
+          characterRange: characterRange,
+          monospaced: parent.monospaced,
+          concealsSyntax: parent.concealsSyntax,
+          prose: parent.isProse
+        )
+      }
+      return OrgSyntaxHighlighter.apply(
         to: storage,
-        characterRange: editedRange,
         monospaced: parent.monospaced,
         concealsSyntax: parent.concealsSyntax,
         prose: parent.isProse
       )
-      textView.typingAttributes = typingAttributes
-      recordHighlightedState(for: textView)
     }
 
     private func scheduleDeferredIncrementalHighlighting(
@@ -4431,13 +4458,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       viewportHighlightedCharacterIndexes.insert(integersIn: coveredRange)
       isApplyingViewportHighlighting = true
       defer { isApplyingViewportHighlighting = false }
-      _ = OrgSyntaxHighlighter.apply(
-        to: storage,
-        characterRange: lineRange,
-        monospaced: parent.monospaced,
-        concealsSyntax: parent.concealsSyntax,
-        prose: parent.isProse
-      )
+      applySyntaxHighlighting(to: storage, characterRange: lineRange)
       return true
     }
 
@@ -5456,12 +5477,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         publishContentHeight(for: textView)
         return
       }
-      let typingAttributes = OrgSyntaxHighlighter.apply(
-        to: storage,
-        monospaced: parent.monospaced,
-        concealsSyntax: parent.concealsSyntax,
-        prose: parent.isProse
-      )
+      let typingAttributes = applySyntaxHighlighting(to: storage, characterRange: nil)
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
       if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: storage.length) {

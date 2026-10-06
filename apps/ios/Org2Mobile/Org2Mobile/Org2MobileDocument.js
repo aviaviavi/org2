@@ -2685,6 +2685,288 @@ var Org2MobileDocument = (() => {
       literals: words("true false null"),
       shellVariables: true
     },
+    markdown: {
+      strings: ["`"],
+      plainWords: true,
+      lineRules: [
+        { pattern: /^#{1,6}(?:\s.*)?$/, kind: "keyword" },
+        { pattern: /^>.*$/, kind: "comment" },
+        { pattern: /^(?:```|~~~).*$/, kind: "meta" },
+        { pattern: /^(?:-{3,}|\*{3,}|_{3,})\s*$/, kind: "meta" },
+        { pattern: /^(?:[-*+]|\d+[.)])(?=\s)/, kind: "keyword" }
+      ],
+      inlineRules: [
+        { pattern: /!?\[[^\]\n]*\]\([^)\n]*\)/, kind: "function" },
+        { pattern: /\*\*[^*\n]+\*\*|__[^_\n]+__/, kind: "type" },
+        { pattern: /<https?:\/\/[^>\s]+>/, kind: "function" }
+      ]
+    },
+    diff: {
+      plainWords: true,
+      lineRules: [
+        { pattern: /^(?:diff|index|similarity|rename|new file|deleted file)\b.*$/, kind: "keyword" },
+        { pattern: /^(?:\+\+\+|---)(?:\s.*)?$/, kind: "keyword" },
+        { pattern: /^@@.*$/, kind: "meta" },
+        { pattern: /^\+.*$/, kind: "string" },
+        { pattern: /^-.*$/, kind: "variable" }
+      ]
+    },
+    ini: {
+      lineComments: [";", "#"],
+      strings: ['"', "'"],
+      literals: words("true false yes no on off null"),
+      identifierChars: /[A-Za-z0-9_.-]/,
+      lineRules: [
+        { pattern: /^\[[^\]\n]*\]/, kind: "type" },
+        { pattern: /^[A-Za-z0-9_.@-][A-Za-z0-9_.@ -]*?(?=\s*[=:])/, kind: "property" }
+      ]
+    },
+    graphql: {
+      lineComments: ["#"],
+      strings: ['"""', '"'],
+      multilineStrings: ['"""'],
+      keywords: words("query mutation subscription fragment on type interface union enum scalar input extend schema directive implements repeatable"),
+      literals: words("true false null"),
+      types: words("Int Float String Boolean ID"),
+      decorators: true,
+      shellVariables: true,
+      capitalizedTypes: true
+    },
+    protobuf: {
+      ...cLike,
+      keywords: words("syntax edition package import option message enum service rpc returns stream oneof map reserved extensions extend optional required repeated public weak to max struct union exception namespace include typedef const throws"),
+      literals: words("true false"),
+      types: words("double float int32 int64 uint32 uint64 sint32 sint64 fixed32 fixed64 sfixed32 sfixed64 bool string bytes i8 i16 i32 i64 binary list set void"),
+      capitalizedTypes: true
+    },
+    hcl: {
+      lineComments: ["#", "//"],
+      blockComments: [["/*", "*/"]],
+      strings: ['"'],
+      keywords: words("resource data variable output locals module provider terraform backend required_providers for_each count depends_on lifecycle dynamic content for in if else endif endfor"),
+      literals: words("true false null"),
+      types: words("string number bool list map set object tuple any"),
+      identifierChars: /[A-Za-z0-9_-]/,
+      shellVariables: true
+    },
+    zig: {
+      lineComments: ["//"],
+      strings: ['"', "'"],
+      keywords: words("addrspace align allowzero and anyframe anytype asm async await break callconv catch comptime const continue defer else enum errdefer error export extern fn for if inline noalias nosuspend noinline opaque or orelse packed pub resume return linksection struct suspend switch test threadlocal try union unreachable usingnamespace var volatile while"),
+      literals: words("true false null undefined"),
+      types: words("i8 u8 i16 u16 i32 u32 i64 u64 i128 u128 isize usize f16 f32 f64 f80 f128 bool void noreturn type anyerror anyopaque comptime_int comptime_float"),
+      decorators: true,
+      capitalizedTypes: true
+    },
+    dart: {
+      ...cLike,
+      strings: ['"""', "'''", '"', "'"],
+      multilineStrings: ['"""', "'''"],
+      keywords: words("abstract as assert async await base break case catch class const continue covariant default deferred do dynamic else enum export extends extension external factory final finally for function get hide if implements import in interface is late library mixin new of on operator part required rethrow return sealed set show static super switch sync this throw try typedef var void when while with yield"),
+      literals: words("true false null"),
+      types: words("int double num String bool List Map Set Future Stream Object dynamic"),
+      decorators: true,
+      capitalizedTypes: true
+    },
+    julia: {
+      lineComments: ["#"],
+      blockComments: [["#=", "=#"]],
+      strings: ['"""', '"'],
+      multilineStrings: ['"""'],
+      keywords: words("abstract baremodule begin break catch const continue do else elseif end export finally for function global if import let local macro module mutable primitive quote return struct try type using where while"),
+      literals: words("true false nothing missing NaN Inf"),
+      types: words("Int Int8 Int16 Int32 Int64 UInt8 Float32 Float64 Bool String Char Vector Matrix Array Dict Tuple Any Nothing"),
+      decorators: true,
+      capitalizedTypes: true
+    },
+    perl: {
+      lineComments: ["#"],
+      strings: ['"', "'", "`"],
+      rawStrings: ["'"],
+      keywords: words("my our local sub package use no require if elsif else unless while until for foreach do last next redo return and or not eq ne lt gt le ge cmp print printf die warn eval BEGIN END"),
+      literals: words("undef"),
+      shellVariables: true
+    },
+    ocaml: {
+      blockComments: [["(*", "*)"]],
+      strings: ['"'],
+      keywords: words("and as assert begin class constraint do done downto else end exception external for fun function functor if in include inherit initializer lazy let match method module mutable new nonrec object of open or private rec sig struct then to try type val virtual when while with"),
+      literals: words("true false"),
+      types: words("int float bool char string unit list array option ref"),
+      identifierChars: /[A-Za-z0-9_']/,
+      capitalizedTypes: true
+    },
+    fsharp: {
+      lineComments: ["//"],
+      blockComments: [["(*", "*)"]],
+      strings: ['"""', '"'],
+      multilineStrings: ['"""'],
+      keywords: words("abstract and as assert base begin class default delegate do done downcast downto elif else end exception extern for fun function global if in inherit inline interface internal lazy let match member module mutable namespace new not of open or override private public rec return static struct then to try type upcast use val void when while with yield"),
+      literals: words("true false null"),
+      types: words("int float bool char string unit list array option seq decimal int64 byte"),
+      identifierChars: /[A-Za-z0-9_']/,
+      capitalizedTypes: true
+    },
+    erlang: {
+      lineComments: ["%"],
+      strings: ['"'],
+      keywords: words("after and andalso band begin bnot bor bsl bsr bxor case catch cond div end fun if let not of or orelse receive rem try when xor"),
+      literals: words("true false undefined ok error"),
+      capitalizedTypes: true
+    },
+    powershell: {
+      lineComments: ["#"],
+      blockComments: [["<#", "#>"]],
+      strings: ['"', "'"],
+      rawStrings: ["'"],
+      keywords: words("begin break catch class continue data define do dynamicparam else elseif end enum exit filter finally for foreach from function if in param process return switch throw trap try until using var while workflow"),
+      caseInsensitive: true,
+      shellVariables: true,
+      identifierChars: /[A-Za-z0-9_-]/
+    },
+    batch: {
+      lineComments: ["::", "REM ", "rem ", "@rem ", "@REM "],
+      strings: ['"'],
+      keywords: words("call cd chdir cls copy del dir echo else endlocal errorlevel exist exit for goto if in md mkdir move not pause popd pushd rd rem ren rmdir set setlocal shift start title type"),
+      caseInsensitive: true,
+      inlineRules: [{ pattern: /%[A-Za-z0-9_~:]+%|%%?[A-Za-z0-9]/, kind: "variable" }]
+    },
+    latex: {
+      lineComments: ["%"],
+      plainWords: true,
+      inlineRules: [
+        { pattern: /\\(?:begin|end)\{[^}\n]*\}/, kind: "keyword" },
+        { pattern: /\\[A-Za-z@]+\*?|\\./, kind: "function" },
+        { pattern: /\$\$?[^$\n]*\$\$?/, kind: "string" }
+      ]
+    },
+    groovy: {
+      ...cLike,
+      strings: ['"""', "'''", '"', "'"],
+      multilineStrings: ['"""', "'''"],
+      keywords: words("abstract as assert break case catch class const continue def default do else enum extends final finally for goto if implements import in instanceof interface native new package private protected public return static super switch synchronized this throw throws trait transient try var void volatile while"),
+      literals: words("true false null"),
+      decorators: true,
+      capitalizedTypes: true
+    },
+    solidity: {
+      ...cLike,
+      keywords: words("pragma solidity import contract interface library abstract is function modifier event emit struct enum mapping public private internal external pure view payable constant immutable override virtual returns return if else for while do break continue new delete using memory storage calldata require revert assert try catch constructor fallback receive unchecked"),
+      literals: words("true false wei gwei ether seconds minutes hours days weeks"),
+      types: words("address bool string bytes byte int uint int256 uint256 uint8 bytes32")
+    },
+    asm: {
+      lineComments: [";", "#", "//"],
+      strings: ['"', "'"],
+      keywords: words("mov add sub mul div inc dec push pop call ret jmp je jne jz jnz jg jl cmp test and or xor not shl shr lea nop int syscall ldr str b bl bx cbz cbnz section global extern db dw dd dq resb"),
+      types: words("rax rbx rcx rdx rsi rdi rbp rsp eax ebx ecx edx esi edi ebp esp r8 r9 r10 r11 r12 r13 r14 r15 x0 x1 x2 x3 sp lr pc"),
+      caseInsensitive: true,
+      identifierChars: /[A-Za-z0-9_.]/
+    },
+    fortran: {
+      lineComments: ["!"],
+      strings: ['"', "'"],
+      keywords: words("program end module use implicit none integer real double precision complex logical character dimension parameter allocatable intent in out inout subroutine function call return if then else elseif endif do enddo while select case contains type interface print write read stop"),
+      caseInsensitive: true
+    },
+    matlab: {
+      lineComments: ["%"],
+      blockComments: [["%{", "%}"]],
+      strings: ['"', "'"],
+      keywords: words("break case catch classdef continue else elseif end for function global if otherwise parfor persistent return spmd switch try while"),
+      literals: words("true false pi inf NaN eps")
+    },
+    crystal: {
+      lineComments: ["#"],
+      strings: ['"', "`"],
+      keywords: words("abstract alias as begin break case class def do else elsif end ensure enum extend for fun if in include lib macro module next of out private protected require rescue return select struct super then type union unless until when while with yield"),
+      literals: words("true false nil self"),
+      capitalizedTypes: true,
+      decorators: true
+    },
+    nim: {
+      lineComments: ["#"],
+      blockComments: [["#[", "]#"]],
+      strings: ['"""', '"', "'"],
+      multilineStrings: ['"""'],
+      keywords: words("addr and as asm bind block break case cast concept const continue converter defer discard distinct div do elif else end enum except export finally for from func if import in include interface is isnot iterator let macro method mixin mod nil not notin object of or out proc ptr raise ref return shl shr static template try tuple type using var when while xor yield"),
+      literals: words("true false nil"),
+      types: words("int int8 int16 int32 int64 uint float float32 float64 bool char string seq array set"),
+      capitalizedTypes: true
+    },
+    cmake: {
+      lineComments: ["#"],
+      strings: ['"'],
+      keywords: words("if elseif else endif foreach endforeach while endwhile function endfunction macro endmacro return set unset option project cmake_minimum_required add_executable add_library target_link_libraries target_include_directories include find_package message install add_subdirectory"),
+      literals: words("ON OFF TRUE FALSE YES NO"),
+      caseInsensitive: true,
+      shellVariables: true
+    },
+    nginx: {
+      lineComments: ["#"],
+      strings: ['"', "'"],
+      keywords: words("server location upstream http events listen server_name root index proxy_pass proxy_set_header return rewrite include error_page access_log error_log ssl_certificate ssl_certificate_key try_files add_header gzip worker_processes"),
+      literals: words("on off"),
+      shellVariables: true
+    },
+    gitignore: {
+      lineComments: ["#"],
+      plainWords: true,
+      lineRules: [{ pattern: /^!.*$/, kind: "keyword" }]
+    },
+    prisma: {
+      lineComments: ["//"],
+      strings: ['"'],
+      keywords: words("model enum datasource generator type view"),
+      literals: words("true false null"),
+      types: words("String Boolean Int BigInt Float Decimal DateTime Json Bytes Unsupported"),
+      decorators: true
+    },
+    coffeescript: {
+      lineComments: ["#"],
+      blockComments: [["###", "###"]],
+      strings: ['"""', "'''", '"', "'"],
+      multilineStrings: ['"""', "'''"],
+      keywords: words("and break by catch class continue delete do else extends finally for if in instanceof is isnt loop new not of or return super switch then this throw try typeof unless until when while yield"),
+      literals: words("true false null undefined yes no on off"),
+      decorators: true
+    },
+    elm: {
+      lineComments: ["--"],
+      blockComments: [["{-", "-}"]],
+      strings: ['"""', '"'],
+      multilineStrings: ['"""'],
+      keywords: words("module exposing import as type alias port case of if then else let in"),
+      literals: words("True False"),
+      capitalizedTypes: true
+    },
+    verilog: {
+      ...cLike,
+      keywords: words("module endmodule input output inout wire reg logic always always_ff always_comb assign begin end if else case endcase for while parameter localparam function endfunction task endtask generate endgenerate initial posedge negedge integer typedef struct enum package endpackage interface endinterface"),
+      preprocessor: true
+    },
+    vhdl: {
+      lineComments: ["--"],
+      strings: ['"'],
+      keywords: words("library use entity architecture is begin end port map signal variable constant process if then else elsif case when others for loop generate component in out inout of type subtype array record function procedure return wait until"),
+      types: words("std_logic std_logic_vector integer boolean natural unsigned signed bit"),
+      caseInsensitive: true
+    },
+    visualbasic: {
+      lineComments: ["'", "REM "],
+      strings: ['"'],
+      keywords: words("and as boolean byval byref case catch class const dim do each else elseif end enum exit for function get if implements imports in inherits integer interface is loop me module namespace new next not nothing of or private property protected public return select set shared static string structure sub then throw to try until while with"),
+      literals: words("true false nothing"),
+      caseInsensitive: true
+    },
+    jsonnet: {
+      ...cLike,
+      lineComments: ["//", "#"],
+      strings: ["|||", '"', "'"],
+      multilineStrings: ["|||"],
+      keywords: words("assert else error for function if import importstr importbin in local tailstrict then self super"),
+      literals: words("true false null")
+    },
     markup: { markup: true },
     plaintext: {}
   };
@@ -2746,10 +3028,10 @@ var Org2MobileDocument = (() => {
     yaml: "yaml",
     yml: "yaml",
     toml: "toml",
-    ini: "toml",
-    cfg: "toml",
-    conf: "toml",
-    properties: "toml",
+    ini: "ini",
+    cfg: "ini",
+    conf: "ini",
+    properties: "ini",
     env: "shell",
     sql: "sql",
     psql: "sql",
@@ -2793,6 +3075,215 @@ var Org2MobileDocument = (() => {
     make: "makefile",
     mk: "makefile",
     nix: "nix",
+    md: "markdown",
+    markdown: "markdown",
+    mdx: "markdown",
+    mkd: "markdown",
+    rmd: "markdown",
+    qmd: "markdown",
+    diff: "diff",
+    patch: "diff",
+    rej: "diff",
+    graphql: "graphql",
+    gql: "graphql",
+    graphqls: "graphql",
+    proto: "protobuf",
+    protobuf: "protobuf",
+    thrift: "protobuf",
+    tf: "hcl",
+    tfvars: "hcl",
+    hcl: "hcl",
+    terraform: "hcl",
+    nomad: "hcl",
+    zig: "zig",
+    dart: "dart",
+    jl: "julia",
+    julia: "julia",
+    pl: "perl",
+    pm: "perl",
+    perl: "perl",
+    ml: "ocaml",
+    mli: "ocaml",
+    ocaml: "ocaml",
+    re: "ocaml",
+    rei: "ocaml",
+    reason: "ocaml",
+    fs: "fsharp",
+    fsx: "fsharp",
+    fsi: "fsharp",
+    fsharp: "fsharp",
+    erl: "erlang",
+    hrl: "erlang",
+    erlang: "erlang",
+    ps1: "powershell",
+    psm1: "powershell",
+    psd1: "powershell",
+    powershell: "powershell",
+    pwsh: "powershell",
+    bat: "batch",
+    cmd: "batch",
+    batch: "batch",
+    tex: "latex",
+    latex: "latex",
+    sty: "latex",
+    cls: "latex",
+    bib: "latex",
+    bibtex: "latex",
+    groovy: "groovy",
+    gradle: "groovy",
+    gvy: "groovy",
+    jenkinsfile: "groovy",
+    sol: "solidity",
+    solidity: "solidity",
+    asm: "asm",
+    s: "asm",
+    nasm: "asm",
+    assembly: "asm",
+    f: "fortran",
+    f90: "fortran",
+    f95: "fortran",
+    f03: "fortran",
+    for: "fortran",
+    fortran: "fortran",
+    matlab: "matlab",
+    octave: "matlab",
+    cr: "crystal",
+    crystal: "crystal",
+    nim: "nim",
+    nims: "nim",
+    nimble: "nim",
+    cmake: "cmake",
+    nginx: "nginx",
+    nginxconf: "nginx",
+    gitignore: "gitignore",
+    dockerignore: "gitignore",
+    npmignore: "gitignore",
+    gitattributes: "gitignore",
+    ignore: "gitignore",
+    prisma: "prisma",
+    coffee: "coffeescript",
+    coffeescript: "coffeescript",
+    litcoffee: "coffeescript",
+    elm: "elm",
+    purs: "haskell",
+    purescript: "haskell",
+    idr: "haskell",
+    agda: "haskell",
+    v: "verilog",
+    sv: "verilog",
+    svh: "verilog",
+    verilog: "verilog",
+    systemverilog: "verilog",
+    vhd: "vhdl",
+    vhdl: "vhdl",
+    vb: "visualbasic",
+    vbs: "visualbasic",
+    bas: "visualbasic",
+    vba: "visualbasic",
+    visualbasic: "visualbasic",
+    jsonnet: "jsonnet",
+    libsonnet: "jsonnet",
+    bzl: "python",
+    star: "python",
+    starlark: "python",
+    bazel: "python",
+    pyi: "python",
+    pyw: "python",
+    gyp: "python",
+    sage: "python",
+    rake: "ruby",
+    gemspec: "ruby",
+    podspec: "ruby",
+    erb: "ruby",
+    ru: "ruby",
+    tcsh: "shell",
+    csh: "shell",
+    bats: "shell",
+    envrc: "shell",
+    sqlx: "sql",
+    ddl: "sql",
+    hql: "sql",
+    cql: "sql",
+    pgsql: "sql",
+    svelte: "markup",
+    astro: "markup",
+    hbs: "markup",
+    handlebars: "markup",
+    mustache: "markup",
+    ejs: "markup",
+    njk: "markup",
+    jinja: "markup",
+    jinja2: "markup",
+    liquid: "markup",
+    xsd: "markup",
+    xsl: "markup",
+    xslt: "markup",
+    wsdl: "markup",
+    rss: "markup",
+    atom: "markup",
+    csproj: "markup",
+    fsproj: "markup",
+    vbproj: "markup",
+    props: "markup",
+    targets: "markup",
+    storyboard: "markup",
+    xib: "markup",
+    xaml: "markup",
+    resx: "markup",
+    kml: "markup",
+    gpx: "markup",
+    opml: "markup",
+    styl: "css",
+    stylus: "css",
+    pcss: "css",
+    postcss: "css",
+    geojson: "json",
+    webmanifest: "json",
+    har: "json",
+    avsc: "json",
+    babelrc: "json",
+    eslintrc: "json",
+    prettierrc: "json",
+    jsonld: "json",
+    topojson: "json",
+    cff: "yaml",
+    cljc: "lisp",
+    edn: "lisp",
+    ss: "lisp",
+    rkt: "lisp",
+    racket: "lisp",
+    cl: "lisp",
+    lsp: "lisp",
+    fnl: "lisp",
+    fennel: "lisp",
+    wat: "lisp",
+    wast: "lisp",
+    hy: "lisp",
+    objectivec: "cpp",
+    "objective-c": "cpp",
+    cu: "cpp",
+    cuh: "cpp",
+    cuda: "cpp",
+    ino: "cpp",
+    glsl: "cpp",
+    vert: "cpp",
+    frag: "cpp",
+    hlsl: "cpp",
+    metal: "cpp",
+    wgsl: "cpp",
+    d: "cpp",
+    hx: "cpp",
+    haxe: "cpp",
+    editorconfig: "ini",
+    gitconfig: "ini",
+    npmrc: "ini",
+    desktop: "ini",
+    service: "ini",
+    rst: "plaintext",
+    adoc: "plaintext",
+    asciidoc: "plaintext",
+    srt: "plaintext",
+    vtt: "plaintext",
     txt: "plaintext",
     text: "plaintext",
     log: "plaintext",
@@ -2829,6 +3320,8 @@ var Org2MobileDocument = (() => {
     const raw = new Set(spec.rawStrings ?? []);
     const identStart = /[A-Za-z_$]/;
     const identChar = spec.identifierChars ?? /[A-Za-z0-9_$]/;
+    const lineRules = (spec.lineRules ?? []).map(({ pattern, kind }) => ({ pattern: anchored(pattern), kind }));
+    const inlineRules = (spec.inlineRules ?? []).map(({ pattern, kind }) => ({ pattern: sticky(pattern), kind }));
     const length = source.length;
     let lineStart = true;
     let i = 0;
@@ -2857,6 +3350,33 @@ var Org2MobileDocument = (() => {
       }
       const atLineStart = lineStart;
       lineStart = false;
+      if (atLineStart && lineRules.length) {
+        const end = source.indexOf("\n", i);
+        const rest = source.slice(i, end < 0 ? length : end);
+        const rule = lineRules.find(({ pattern }) => pattern.test(rest));
+        if (rule) {
+          const match = rule.pattern.exec(rest)[0];
+          if (match) {
+            push(match, rule.kind);
+            i += match.length;
+            continue;
+          }
+        }
+      }
+      if (inlineRules.length) {
+        let matched = false;
+        for (const rule of inlineRules) {
+          rule.pattern.lastIndex = i;
+          const match = rule.pattern.exec(source);
+          if (match && match[0]) {
+            push(match[0], rule.kind);
+            i += match[0].length;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+      }
       const block = spec.blockComments?.find(([open]) => source.startsWith(open, i));
       if (block) {
         const end = source.indexOf(block[1], i + block[0].length);
@@ -2925,6 +3445,13 @@ var Org2MobileDocument = (() => {
         i = j;
         continue;
       }
+      if (spec.plainWords) {
+        let j = i + 1;
+        while (j < length && /[A-Za-z0-9_]/.test(source[j - 1]) && /[A-Za-z0-9_]/.test(source[j])) j++;
+        push(source.slice(i, j));
+        i = j;
+        continue;
+      }
       const previous = i > 0 ? source[i - 1] : "";
       if (/[0-9]/.test(ch) || ch === "." && /[0-9]/.test(source[i + 1] ?? "") && !identChar.test(previous)) {
         if (!identChar.test(previous)) {
@@ -2957,6 +3484,13 @@ var Org2MobileDocument = (() => {
       i++;
     }
     return tokens;
+  }
+  function anchored(pattern) {
+    const source = pattern.source.startsWith("^") ? pattern.source : `^(?:${pattern.source})`;
+    return new RegExp(source, pattern.flags.replace(/[gy]/g, ""));
+  }
+  function sticky(pattern) {
+    return new RegExp(pattern.source, `${pattern.flags.replace(/[gy]/g, "")}y`);
   }
   function tokenizeMarkup(source) {
     const tokens = [];
