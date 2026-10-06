@@ -96,7 +96,7 @@
   <section class="org2-feature-section" id="external-sources" aria-labelledby="external-sources-title">
     <div class="org2-feature-heading">
       <h2 id="external-sources-title">Bring in context without surrendering control</h2>
-      <p>Connect systems such as Slack and Notion, keep a local copy of the selected material, and decide what becomes part of your lasting notes.</p>
+      <p>Connect systems such as Slack, Notion, and email, keep a local copy of the selected material, and decide what becomes part of your lasting notes.</p>
     </div>
     <div class="org2-feature-grid">
       <article><h3>Sync on your schedule</h3><p>Run a connector now, pause it, or choose a repeating interval or daily time.</p></article>

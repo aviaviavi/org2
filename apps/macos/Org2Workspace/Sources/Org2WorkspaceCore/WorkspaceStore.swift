@@ -2519,6 +2519,7 @@ public final class WorkspaceStore {
   public private(set) var isLoadingSources = false
   public var isSourceCredentialPresented = false
   public var sourceCredentialProfileID: String?
+  public var isAddEmailSourcePresented = false
   public var sourceCredentialDraft = ""
   public private(set) var processingMeetings: [MeetingProcessingItem] = []
   public var selectedMeetingID: String?
@@ -5855,10 +5856,32 @@ extension WorkspaceStore {
   }
 
   private func sourceEnvironment(for profile: WorkspaceSourceProfileStatus) -> [String: String] {
-    guard profile.type == "notion",
-          let token = SourceCredentialsKeychain.readToken(profileID: profile.id)
-    else { return [:] }
-    return ["NOTION_TOKEN": token]
+    guard let token = SourceCredentialsKeychain.readToken(profileID: profile.id) else { return [:] }
+    switch profile.type {
+    case "notion": return ["NOTION_TOKEN": token]
+    // Passed only to this sync's process; never written to the corpus.
+    case "email": return ["ORG2_EMAIL_PASSWORD": token]
+    default: return [:]
+    }
+  }
+
+  /// Adds an IMAP email source to `org2.json` and stores its password in Keychain.
+  @discardableResult
+  public func addEmailSource(_ draft: WorkspaceEmailSourceDraft) async -> String? {
+    guard let corpusRoot else { return "Open a corpus first." }
+    do {
+      let arguments = try draft.arguments(corpusRoot: corpusRoot.path)
+      let password = draft.password
+      if !password.isEmpty {
+        try SourceCredentialsKeychain.saveToken(password, profileID: draft.profileID.trimmingCharacters(in: .whitespacesAndNewlines))
+      }
+      _ = try await cli.run(arguments)
+      await refreshSourceConnections()
+      setSourceOperationMessage("Email source added. Use Check Setup to verify the connection.", profileID: draft.profileID)
+      return nil
+    } catch {
+      return error.localizedDescription
+    }
   }
 
   public func setSourceAutoSyncActive(

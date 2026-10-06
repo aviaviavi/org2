@@ -37,7 +37,7 @@ export type SourceImportFile = {
 export type SourceImportResult = {
   schema: typeof ORG2_SOURCE_IMPORT_SCHEMA;
   profile: string;
-  sourceType: "slack" | "notion";
+  sourceType: "slack" | "notion" | "email";
   apply: boolean;
   since?: string;
   inputCount: number;
@@ -209,6 +209,9 @@ function groupKey(record: AgentIngestRecord): string {
   if (record.source.kind === "slack") {
     return `${date.slice(0, 10)}--${safeSlug(record.source.channel || "channel")}`;
   }
+  if (record.source.kind === "email") {
+    return `${safeSlug(record.source.mailbox || "inbox")}--${date.slice(0, 7)}`;
+  }
   return `${safeSlug(record.source.workspace || "notion")}--${date.slice(0, 7)}`;
 }
 
@@ -225,7 +228,7 @@ function writeIfChanged(file: string, contents: string, apply: boolean): boolean
   return changed;
 }
 
-function managedRawFile(file: string, profileId: string, sourceType: "slack" | "notion"): boolean {
+function managedRawFile(file: string, profileId: string, sourceType: "slack" | "notion" | "email"): boolean {
   try {
     const value = object(JSON.parse(fs.readFileSync(file, "utf8")));
     return value.schema === ORG2_SOURCE_IMPORT_SCHEMA && value.profile === profileId && value.sourceType === sourceType;
@@ -240,7 +243,7 @@ function reconcileGeneratedFiles(options: {
   expectedRaw: Set<string>;
   expectedReview: Set<string>;
   profileId: string;
-  sourceType: "slack" | "notion";
+  sourceType: "slack" | "notion" | "email";
   apply: boolean;
 }): string[] {
   const removed: string[] = [];
@@ -263,19 +266,56 @@ function reconcileGeneratedFiles(options: {
 }
 
 export function importCrawlerArchive(options: SourceImportOptions): SourceImportResult {
+  if (options.profile.type === "email") throw new Error("email sources are fetched over IMAP; use importSourceRecords");
+  const now = options.now || new Date();
+  const configuredLimit = options.profile.ingestion?.maxItems;
+  const limit = Math.max(1, Math.min(options.limit || configuredLimit || 5_000, 50_000));
+  const scanLimit = options.profile.type === "slack" ? Math.min(Math.max(limit * 4, 5_000), 50_000) : limit;
+  const input = options.profile.type === "slack" ? slackRecords(options, scanLimit) : notionRecords(options, scanLimit);
+  return importSourceRecords({ ...options, now }, input);
+}
+
+/** Reads records already staged by earlier imports of an incremental source. */
+function stagedRecords(rawRoot: string, profileId: string, sourceType: "slack" | "notion" | "email"): AgentIngestRecord[] {
+  if (!fs.existsSync(rawRoot)) return [];
+  const records: AgentIngestRecord[] = [];
+  for (const name of fs.readdirSync(rawRoot)) {
+    if (!name.endsWith(".json")) continue;
+    const file = path.join(rawRoot, name);
+    if (!managedRawFile(file, profileId, sourceType)) continue;
+    try {
+      const value = object(JSON.parse(fs.readFileSync(file, "utf8")));
+      if (Array.isArray(value.records)) records.push(...(value.records as AgentIngestRecord[]));
+    } catch { /* unreadable packets are left for a person */ }
+  }
+  return records;
+}
+
+/**
+ * Stages records as raw captures plus review-required packets. Crawler
+ * archives are complete snapshots, so packets no longer produced are removed;
+ * incremental sources (email) merge new records into what is already staged.
+ */
+export function importSourceRecords(options: Omit<SourceImportOptions, "binary" | "configPath"> & { binary?: string; configPath?: string }, input: AgentIngestRecord[]): SourceImportResult {
   const now = options.now || new Date();
   const configuredLimit = options.profile.ingestion?.maxItems;
   const limit = Math.max(1, Math.min(options.limit || configuredLimit || 5_000, 50_000));
   const since = parseSince(options.since || options.profile.ingestion?.since, now);
-  const scanLimit = options.profile.type === "slack" ? Math.min(Math.max(limit * 4, 5_000), 50_000) : limit;
-  const input = options.profile.type === "slack" ? slackRecords(options, scanLimit) : notionRecords(options, scanLimit);
   const scopes = options.profile.scopes || [];
-  const accepted = input
+  const incremental = options.profile.type === "email";
+  const fresh = input
     .filter((record) => record.text.trim())
     .filter((record) => scopeAllowed(record, scopes))
     .filter((record) => since.timestamp === undefined || Date.parse(record.source.timestamp) >= since.timestamp)
     .sort((a, b) => a.source.timestamp.localeCompare(b.source.timestamp) || a.id.localeCompare(b.id))
     .slice(-limit);
+  const rawRootForMerge = resolveZone(options.root, options.profile.rawZone, `raw/connectors/${options.profile.type}/${options.profileId}`);
+  const merged = new Map<string, AgentIngestRecord>();
+  if (incremental) for (const record of stagedRecords(rawRootForMerge, options.profileId, options.profile.type)) merged.set(record.id, record);
+  for (const record of fresh) merged.set(record.id, record);
+  const accepted = incremental
+    ? [...merged.values()].sort((a, b) => a.source.timestamp.localeCompare(b.source.timestamp) || a.id.localeCompare(b.id))
+    : fresh;
 
   const groupedRecords = new Map<string, AgentIngestRecord[]>();
   for (const record of accepted) {
@@ -342,8 +382,8 @@ export function importCrawlerArchive(options: SourceImportOptions): SourceImport
     apply: Boolean(options.apply),
     ...(since.label ? { since: since.label } : {}),
     inputCount: input.length,
-    acceptedCount: accepted.length,
-    skippedCount: input.length - accepted.length,
+    acceptedCount: fresh.length,
+    skippedCount: input.length - fresh.length,
     groupCount: groups.size,
     changedFileCount: files.filter((file) => file.changed).length,
     removedFileCount: removedFiles.length,

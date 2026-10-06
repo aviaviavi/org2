@@ -61,7 +61,18 @@ export type Org2MetabaseDataSourceConfig = {
 export type Org2DataSourceConfig = Org2ClickHouseDataSourceConfig | Org2MetabaseDataSourceConfig;
 
 export type Org2ExternalSourceConfig = {
-  type: "slack" | "notion";
+  type: "slack" | "notion" | "email";
+  /** Non-secret IMAP account settings for `type: "email"`. Passwords stay machine-local. */
+  email?: {
+    host: string;
+    port?: number;
+    security?: "tls" | "starttls" | "none";
+    username: string;
+    mailboxes?: string[];
+    maxMessageBytes?: number;
+    /** The account's SMTP submission server, recorded for reference and future sending. */
+    smtp?: { host: string; port?: number; security?: "tls" | "starttls" | "none" };
+  };
   enabled?: boolean;
   scopes?: string[];
   workspaceId?: string;

@@ -249,7 +249,7 @@ These commands are read-only composition over the normal =agenda= and =search= e
 
 * External source mirrors
 
-The root =org2.json= can declare portable, non-secret Slack and Notion source intent. Org2 delegates crawling to the MIT-licensed =slacrawl= and =notcrawl= binaries instead of implementing provider APIs or desktop-cache parsing itself:
+The root =org2.json= can declare portable, non-secret Slack, Notion, and email source intent. For Slack and Notion, Org2 delegates crawling to the MIT-licensed =slacrawl= and =notcrawl= binaries instead of implementing provider APIs or desktop-cache parsing itself; email profiles read IMAP directly (see [[*Email sources][Email sources]]):
 
 #+begin_src json
 {
@@ -305,7 +305,41 @@ org2 source schedule team-slack --kind daily --time 08:30 --timezone America/Los
 
 The optional =schedule= declaration is portable source intent. =kind: "interval"= requires a positive integer =everyMinutes=; =kind: "daily"= requires a 24-hour =time= in =HH:MM= form. =timezone= accepts =local= or an IANA timezone name. =source list --json= validates and returns the normalized schedule. =source schedule= previews by default and atomically updates only that profile's schedule when applied. =--pause= and =--resume= preserve its cadence; setting =--kind interval= or =--kind daily= changes the cadence and wall-clock configuration.
 
-The Mac app's *Sources* surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs one connector immediately with *Run Now*, pauses or resumes scheduled sync, edits interval or daily cadence and time zone, reveals the review zone, and stores an optional Notion API token in macOS Keychain. A manual run refreshes only the connector that ran. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter =org2.json=, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.
+The Mac app's *Sources* surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs one connector immediately with *Run Now*, pauses or resumes scheduled sync, edits interval or daily cadence and time zone, reveals the review zone, adds email accounts with *Add Email Source…*, and stores an optional Notion API token or email password in macOS Keychain. A manual run refreshes only the connector that ran. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter =org2.json=, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.
+
+** Email sources
+
+=type: "email"= profiles sync an IMAP mailbox without a crawler binary. Mail providers list IMAP (for reading) next to SMTP (for sending); Org2 uses the IMAP settings to read new mail and records the SMTP submission server only for reference. The declaration stays non-secret:
+
+#+begin_src json
+{
+  "externalSources": {
+    "mail": {
+      "type": "email",
+      "email": {
+        "host": "imap.example.com",
+        "port": 993,
+        "security": "tls",
+        "username": "you@example.com",
+        "mailboxes": ["INBOX", "Clients"],
+        "smtp": { "host": "smtp.example.com", "port": 587 }
+      },
+      "ingestion": { "since": "14d", "maxItems": 2000 },
+      "schedule": { "enabled": true, "kind": "interval", "everyMinutes": 30 }
+    }
+  }
+}
+#+end_src
+
+#+begin_src sh
+org2 source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes          # preview
+org2 source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes --apply
+org2 source bind mail --password-command "security find-generic-password -s imap.example.com -a you@example.com -w" --dir ~/notes --apply
+ORG2_EMAIL_PASSWORD=... org2 source doctor mail --dir ~/notes --json
+org2 source sync mail --ingest --apply --dir ~/notes --json
+#+end_src
+
+The password comes from =ORG2_EMAIL_PASSWORD= (or the variable named by =bind --password-env=), a machine-local =bind --password-command= that prints it, or OpenOrg's Keychain, which passes it to one sync process. It is never written to =org2.json=, bindings, raw captures, or packets. =security= is =tls= (default, port 993) or =starttls= (port 143); certificates are verified, and unencrypted =none= is accepted only for a loopback test server. Sync opens each mailbox read-only (=EXAMINE=) and fetches with =BODY.PEEK=, so it never marks mail as read or changes flags. The first sync covers =ingestion.since= (default 14 days); later syncs fetch only messages above a machine-local UIDVALIDITY/UID cursor, and a changed UIDVALIDITY restarts from the window. Messages are decoded (MIME encoded words, quoted-printable, base64, charsets; text/plain preferred over HTML converted to text), bounded to =maxMessageBytes= (default 512 KB) and 20,000 characters of text, and staged as raw JSON plus review-required packets grouped by mailbox and month. Email packets accumulate: new mail merges into the staged month instead of replacing earlier messages. =import= previews without advancing the cursor; =sync --apply= (with or without =--ingest=) fetches and stages in one locked operation. =doctor= logs in and reports each mailbox's message count; =status= reports the cursor per mailbox.
 
 ** Command conventions and stability
 

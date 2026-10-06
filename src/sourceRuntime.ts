@@ -5,12 +5,26 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { findConfigFile, loadConfig, type Org2ExternalSourceConfig } from "./config.js";
 import { org2CorpusIndexDir } from "./indexPaths.js";
-import { importCrawlerArchive } from "./sourceIngestion.js";
+import { importCrawlerArchive, importSourceRecords } from "./sourceIngestion.js";
+import {
+  DEFAULT_EMAIL_PASSWORD_ENV,
+  checkEmailSource,
+  emailCredentialAvailable,
+  emailSourceSettings,
+  emailSourceStatePath,
+  fetchEmailRecords,
+  readEmailSourceState,
+  resolveEmailPassword,
+} from "./emailSource.js";
 
 export type SourceBinding = {
   binary?: string;
   configPath?: string;
   workingDirectory?: string;
+  /** Email: environment variable holding the account password (default ORG2_EMAIL_PASSWORD). */
+  passwordEnv?: string;
+  /** Email: machine-local shell command that prints the password (for example a Keychain lookup). */
+  passwordCommand?: string;
 };
 
 type SourceBindingsEnvelope = {
@@ -20,7 +34,7 @@ type SourceBindingsEnvelope = {
 
 type SourceStatus = {
   id: string;
-  type: "slack" | "notion";
+  type: "slack" | "notion" | "email";
   enabled: boolean;
   scopes: string[];
   workspaceId?: string;
@@ -43,6 +57,10 @@ type SourceStatus = {
   configPath?: string;
   configAvailable: boolean;
   ready: boolean;
+  /** Email: IMAP account summary and where the password will come from. */
+  email?: { host: string; port: number; security: string; username: string; mailboxes: string[]; smtp?: { host: string; port: number } };
+  credentialAvailable?: boolean;
+  setupError?: string;
 };
 
 const DEFAULT_CRAWLER_TIMEOUT_MS = 30 * 60_000;
@@ -210,7 +228,8 @@ function usage(): string {
   return `External source commands:
   org2 source list [--dir CORPUS] [--json]
   org2 source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
-  org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--dir CORPUS] [--apply] [--json]
+  org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--password-env VAR] [--password-command CMD] [--dir CORPUS] [--apply] [--json]
+  org2 source add-email PROFILE --host HOST --username USER [--port 993] [--security tls|starttls] [--mailbox INBOX]... [--smtp-host HOST --smtp-port 587] [--dir CORPUS] [--apply] [--json]
   org2 source schedule PROFILE (--pause|--resume) [--dir CORPUS] [--apply] [--json]
   org2 source schedule PROFILE --kind interval --every-minutes N [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
   org2 source schedule PROFILE --kind daily --time HH:MM [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
@@ -219,7 +238,10 @@ function usage(): string {
   org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
 
 The corpus declares non-secret externalSources in org2.json. Machine-local bindings are stored
-outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Sync delegates to slacrawl/notcrawl.`;
+outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Slack and Notion sync delegates to
+slacrawl/notcrawl. Email profiles read IMAP directly (read-only EXAMINE and BODY.PEEK, so mail is not
+marked read) and keep a machine-local UID cursor; the password comes from ORG2_EMAIL_PASSWORD, a
+--password-env or --password-command binding, or OpenOrg's Keychain, and never enters the corpus.`;
 }
 
 function optionValue(args: string[], index: number, option: string): string {
@@ -246,6 +268,15 @@ function parseArgs(args: string[]) {
   let scheduleTime: string | undefined;
   let timezone: string | undefined;
   let timeoutMs = DEFAULT_CRAWLER_TIMEOUT_MS;
+  let passwordEnv: string | undefined;
+  let passwordCommand: string | undefined;
+  let host: string | undefined;
+  let username: string | undefined;
+  let port: number | undefined;
+  let security: string | undefined;
+  const mailboxes: string[] = [];
+  let smtpHost: string | undefined;
+  let smtpPort: number | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     if (arg === "--dir") {
@@ -301,6 +332,34 @@ function parseArgs(args: string[]) {
       }
       timeoutMs = Math.max(1, Math.ceil(seconds * 1_000));
       i += 1;
+    } else if (arg === "--password-env") {
+      passwordEnv = optionValue(args, i, arg);
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(passwordEnv)) throw new Error("source --password-env must be an environment variable name");
+      i += 1;
+    } else if (arg === "--password-command") {
+      passwordCommand = args[i + 1];
+      if (!passwordCommand) throw new Error("--password-command requires a value");
+      i += 1;
+    } else if (arg === "--host") {
+      host = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--username") {
+      username = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--port" || arg === "--smtp-port") {
+      const value = Number(optionValue(args, i, arg));
+      if (!Number.isInteger(value) || value <= 0 || value > 65_535) throw new Error(`source ${arg} must be a TCP port`);
+      if (arg === "--port") port = value; else smtpPort = value;
+      i += 1;
+    } else if (arg === "--security") {
+      security = optionValue(args, i, arg);
+      i += 1;
+    } else if (arg === "--mailbox") {
+      mailboxes.push(optionValue(args, i, arg));
+      i += 1;
+    } else if (arg === "--smtp-host") {
+      smtpHost = optionValue(args, i, arg);
+      i += 1;
     } else if (arg === "--help" || arg === "-h") positional.push("help");
     else if (arg.startsWith("-")) throw new Error(`unknown source option: ${arg}`);
     else positional.push(arg);
@@ -308,6 +367,7 @@ function parseArgs(args: string[]) {
   return {
     positional, dir, json, apply, ingest, binary, configPath, workingDirectory, since, limit,
     pause, resume, scheduleKind, everyMinutes, scheduleTime, timezone, timeoutMs,
+    passwordEnv, passwordCommand, host, username, port, security, mailboxes, smtpHost, smtpPort,
   };
 }
 
@@ -361,6 +421,7 @@ function statuses(root: string, profiles: Record<string, Org2ExternalSourceConfi
   const bindings = readBindings(root).bindings;
   return Object.entries(profiles).sort(([a], [b]) => a.localeCompare(b)).map(([id, profile]) => {
     const binding = bindings[id] || {};
+    if (profile.type === "email") return emailStatus(id, profile, binding, bindingFile);
     const binary = binaryFor(profile, binding);
     const configPath = configFor(profile, binding);
     const binaryAvailable = commandAvailable(binary);
@@ -386,6 +447,94 @@ function statuses(root: string, profiles: Record<string, Org2ExternalSourceConfi
       ready: profile.enabled !== false && binaryAvailable && configAvailable,
     };
   });
+}
+
+function emailStatus(id: string, profile: Org2ExternalSourceConfig, binding: SourceBinding, bindingFile: string): SourceStatus {
+  let email: SourceStatus["email"];
+  let setupError: string | undefined;
+  try {
+    const settings = emailSourceSettings(id, profile);
+    email = {
+      host: settings.host,
+      port: settings.port,
+      security: settings.security,
+      username: settings.username,
+      mailboxes: settings.mailboxes,
+      ...(settings.smtp ? { smtp: { host: settings.smtp.host, port: settings.smtp.port } } : {}),
+    };
+  } catch (error) {
+    setupError = error instanceof Error ? error.message : String(error);
+  }
+  const credentialAvailable = emailCredentialAvailable(binding);
+  return {
+    id,
+    type: "email",
+    enabled: profile.enabled !== false,
+    scopes: profile.scopes || [],
+    rawZone: profile.rawZone || `raw/connectors/email/${id}`,
+    reviewZone: profile.ingestion?.reviewZone || `views/connectors/email/${id}`,
+    ...(profile.ingestion?.since ? { ingestionSince: profile.ingestion.since } : {}),
+    ingestionLimit: profile.ingestion?.maxItems || 5_000,
+    syncArgs: [],
+    media: profile.media || "metadata-only",
+    ...(profile.schedule ? { schedule: normalizedSchedule(id, profile) } : {}),
+    bindingPath: bindingFile,
+    binary: "org2 (built-in IMAP)",
+    binaryAvailable: true,
+    configAvailable: !setupError,
+    // The password may also arrive from OpenOrg's Keychain at sync time.
+    ready: profile.enabled !== false && !setupError,
+    ...(email ? { email } : {}),
+    credentialAvailable,
+    ...(setupError ? { setupError } : {}),
+  };
+}
+
+function emailPassword(id: string, binding: SourceBinding): string {
+  const resolved = resolveEmailPassword(binding);
+  if (!resolved.password) throw new Error(`email source ${id} has no password: ${resolved.source}`);
+  return resolved.password;
+}
+
+async function importEmailProfile(options: {
+  root: string;
+  id: string;
+  profile: Org2ExternalSourceConfig;
+  binding: SourceBinding;
+  since?: string;
+  limit?: number;
+  timeoutMs: number;
+  apply: boolean;
+}) {
+  const settings = emailSourceSettings(options.id, options.profile);
+  const limit = Math.max(1, Math.min(options.limit || options.profile.ingestion?.maxItems || 5_000, 50_000));
+  const sinceRaw = options.since || options.profile.ingestion?.since;
+  const relative = sinceRaw?.match(/^(\d+)([dhwm])$/i);
+  const sinceTimestamp = sinceRaw
+    ? relative
+      ? Date.now() - Number(relative[1]) * ({ m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[relative[2]!.toLowerCase() as "m" | "h" | "d" | "w"])
+      : Date.parse(sinceRaw)
+    : undefined;
+  if (sinceTimestamp !== undefined && !Number.isFinite(sinceTimestamp)) throw new Error(`invalid source --since value: ${sinceRaw}`);
+  const fetched = await fetchEmailRecords({
+    root: options.root,
+    profileId: options.id,
+    settings,
+    password: emailPassword(options.id, options.binding),
+    sinceTimestamp,
+    limit,
+    advanceCursor: options.apply,
+    timeoutMs: Math.min(options.timeoutMs, 120_000),
+  });
+  const imported = importSourceRecords({
+    root: options.root,
+    profileId: options.id,
+    profile: options.profile,
+    since: options.since,
+    limit: options.limit,
+    apply: options.apply,
+  }, fetched.records);
+  return { imported, mailboxes: fetched.mailboxes };
 }
 
 function emit(value: unknown, json: boolean): void {
@@ -422,13 +571,26 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
   const { root, configFile, profiles } = resolveCorpus(parsed.dir);
   const selected = parsed.positional;
   const select = <T extends { id: string }>(items: T[]) => selected.length ? items.filter((item) => selected.includes(item.id)) : items;
-  if (selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
+  if (action !== "add-email" && selected.some((id) => !profiles[id])) throw new Error(`unknown external source profile: ${selected.find((id) => !profiles[id])}`);
 
   if (action === "list" || action === "doctor") {
     const result = select(statuses(root, profiles));
     if (action === "list") emit(result, parsed.json);
     else {
-      const checked = result.map((item) => {
+      const bindingsForDoctor = readBindings(root).bindings;
+      const checked = [];
+      for (const item of result) {
+        if (item.type !== "email") continue;
+        if (!item.enabled || !item.ready) { checked.push({ ...item, doctorOk: false }); continue; }
+        try {
+          const settings = emailSourceSettings(item.id, profiles[item.id]!);
+          const check = await checkEmailSource(settings, emailPassword(item.id, bindingsForDoctor[item.id] || {}), Math.min(parsed.timeoutMs, 60_000));
+          checked.push({ ...item, doctorOk: true, mailboxes: check.mailboxes });
+        } catch (error) {
+          checked.push({ ...item, doctorOk: false, doctorError: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      checked.push(...result.filter((item) => item.type !== "email").map((item) => {
         if (!item.enabled || !item.ready) return { ...item, doctorOk: false };
         const child = spawnSync(item.binary, ["--config", item.configPath!, "doctor", "--json"], {
           encoding: "utf8",
@@ -444,7 +606,8 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
           ...(doctorError ? { doctorError } : {}),
           ...(parsed.json ? { doctorStdout: child.stdout, doctorStderr: child.stderr } : {}),
         };
-      });
+      }));
+      checked.sort((a, b) => a.id.localeCompare(b.id));
       const ok = checked.every((item) => !item.enabled || item.doctorOk);
       emit({ schema: "org2:source-doctor:v1", root, ok, sources: checked }, parsed.json);
       if (!ok) process.exitCode = 1;
@@ -455,6 +618,34 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
   if (action === "status") {
     const result = [];
     for (const item of select(statuses(root, profiles))) {
+      if (item.type === "email") {
+        if (!item.email) {
+          result.push({ id: item.id, type: "email", ok: false, error: item.setupError || "email settings are incomplete" });
+          continue;
+        }
+        const account = `${item.email.username}@${item.email.host}:${item.email.port}`;
+        const state = readEmailSourceState(root, item.id, account);
+        const cursors = Object.entries(state.mailboxes);
+        const lastSyncAt = cursors.map(([, cursor]) => cursor.syncedAt).sort().at(-1) ?? null;
+        result.push({
+          id: item.id,
+          type: "email",
+          ok: true,
+          status: 0,
+          crawlerStatus: {
+            app_id: "org2-imap",
+            state: cursors.length ? "synced" : "never-synced",
+            summary: cursors.length
+              ? `${item.email.username} · ${cursors.map(([mailbox, cursor]) => `${mailbox} through UID ${cursor.lastUid}`).join(", ")}`
+              : `${item.email.username} on ${item.email.host} has not synced on this machine`,
+            database_path: emailSourceStatePath(root, item.id),
+            database_bytes: 0,
+            last_sync_at: lastSyncAt,
+            counts: cursors.map(([mailbox, cursor]) => ({ id: mailbox, label: mailbox, value: cursor.lastUid })),
+          },
+        });
+        continue;
+      }
       if (!item.enabled || !item.ready) {
         result.push({ id: item.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
         continue;
@@ -555,6 +746,8 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       ...(parsed.binary !== undefined ? { binary: parsed.binary } : {}),
       ...(parsed.configPath !== undefined ? { configPath: path.resolve(parsed.configPath) } : {}),
       ...(parsed.workingDirectory !== undefined ? { workingDirectory: path.resolve(parsed.workingDirectory) } : {}),
+      ...(parsed.passwordEnv !== undefined ? { passwordEnv: parsed.passwordEnv } : {}),
+      ...(parsed.passwordCommand !== undefined ? { passwordCommand: parsed.passwordCommand } : {}),
     };
     const preview = { profile: id, bindingPath: sourceBindingsPath(root), binding: next, applied: parsed.apply };
     if (parsed.apply) {
@@ -567,10 +760,61 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
     return true;
   }
 
+  if (action === "add-email") {
+    const id = selected[0] ?? parsed.positional[0];
+    if (!id || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id)) throw new Error("org2 source add-email requires a PROFILE id (letters, digits, ., _, -)");
+    if (profiles[id]) throw new Error(`external source ${id} already exists`);
+    if (!parsed.host || !parsed.username) throw new Error("source add-email requires --host and --username");
+    const profile: Org2ExternalSourceConfig = {
+      type: "email",
+      enabled: true,
+      email: {
+        host: parsed.host,
+        ...(parsed.port ? { port: parsed.port } : {}),
+        ...(parsed.security ? { security: parsed.security as "tls" | "starttls" | "none" } : {}),
+        username: parsed.username,
+        mailboxes: parsed.mailboxes.length ? parsed.mailboxes : ["INBOX"],
+        ...(parsed.smtpHost ? { smtp: { host: parsed.smtpHost, ...(parsed.smtpPort ? { port: parsed.smtpPort } : {}) } } : {}),
+      },
+      ingestion: { since: parsed.since || "14d" },
+    };
+    emailSourceSettings(id, profile);
+    if (parsed.apply) {
+      const config = loadConfig(configFile);
+      config.externalSources = { ...(config.externalSources || {}), [id]: profile };
+      writeJSONAtomic(configFile, config);
+    }
+    emit({
+      schema: "org2:source-add:v1",
+      root,
+      configFile,
+      profile: id,
+      source: profile,
+      applied: parsed.apply,
+      next: `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, org2 source bind ${id} --password-command CMD --apply, or OpenOrg's Sources view; then org2 source doctor ${id}.`,
+    }, parsed.json);
+    return true;
+  }
+
   if (action === "import") {
     const allStatuses = statuses(root, profiles);
     const requested = select(allStatuses).filter((item) => item.enabled);
-    const results = requested.map((status) => {
+    const importBindings = readBindings(root).bindings;
+    const results = [];
+    for (const status of requested) {
+      if (status.type !== "email") continue;
+      if (!status.ready) { results.push({ id: status.id, ok: false, skipped: true, error: status.setupError || "email settings are incomplete" }); continue; }
+      try {
+        const { imported, mailboxes } = await importEmailProfile({
+          root, id: status.id, profile: profiles[status.id]!, binding: importBindings[status.id] || {},
+          since: parsed.since, limit: parsed.limit, timeoutMs: parsed.timeoutMs, apply: parsed.apply,
+        });
+        results.push({ id: status.id, ok: true, imported, mailboxes });
+      } catch (error) {
+        results.push({ id: status.id, ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    results.push(...requested.filter((status) => status.type !== "email").map((status) => {
       if (!status.ready) return { id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" };
       try {
         const imported = importCrawlerArchive({
@@ -588,7 +832,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       } catch (error) {
         return { id: status.id, ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-    });
+    }));
     emit({ schema: "org2:source-import-run:v1", root, applied: parsed.apply, results }, parsed.json);
     if (results.some((result) => !result.ok)) process.exitCode = 1;
     return true;
@@ -600,6 +844,33 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
     const bindings = readBindings(root).bindings;
     const results = [];
     for (const status of requested) {
+      if (status.type === "email") {
+        if (!status.ready) {
+          results.push({ id: status.id, ok: false, skipped: true, error: status.setupError || "email settings are incomplete" });
+          continue;
+        }
+        const lockDir = path.join(org2CorpusIndexDir(root), `source-${status.id}.lock`);
+        fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+        const syncLock = acquireSourceSyncLock(lockDir, status.id, root, parsed.timeoutMs);
+        if (!syncLock) {
+          results.push({ id: status.id, ok: true, skipped: true, reason: "sync-in-progress", message: "Sync already in progress on this machine." });
+          continue;
+        }
+        try {
+          // Email has no separate crawler archive: sync fetches new mail and
+          // stages it (with --apply) in one step.
+          const { imported, mailboxes } = await importEmailProfile({
+            root, id: status.id, profile: profiles[status.id]!, binding: bindings[status.id] || {},
+            since: parsed.since, limit: parsed.limit, timeoutMs: parsed.timeoutMs, apply: parsed.apply,
+          });
+          results.push({ id: status.id, ok: true, status: 0, imported, mailboxes, ...(syncLock.recoveredStaleLock ? { recoveredStaleLock: true } : {}) });
+        } catch (error) {
+          results.push({ id: status.id, ok: false, error: error instanceof Error ? error.message : String(error) });
+        } finally {
+          releaseSourceSyncLock(lockDir, syncLock.owner);
+        }
+        continue;
+      }
       if (!status.ready) {
         results.push({ id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
         continue;
