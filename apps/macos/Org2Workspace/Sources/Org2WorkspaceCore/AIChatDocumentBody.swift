@@ -250,7 +250,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     if !coordinator.loaded {
       if !coordinator.loading {
         coordinator.loading = true
-        view.loadHTMLString("<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'\"><style>\(AIChatDocumentHTML.style)</style></head><body><main></main></body></html>",
+        view.loadHTMLString("<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; frame-src about:; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'\"><style>\(AIChatDocumentHTML.style)</style></head><body><main></main></body></html>",
           baseURL: URL(fileURLWithPath: sourcePath).deletingLastPathComponent())
       }
     } else {

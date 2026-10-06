@@ -3197,6 +3197,7 @@ public final class WorkspaceStore {
   nonisolated private static let aiChatChangeSnapshotMaxFileBytes = 2_000_000
   nonisolated private static let aiChatChangeSnapshotAllowedExtensions = Set([
     "org", "org2", "md", "markdown", "txt",
+    "html", "htm", "xhtml",
     "json", "jsonl", "yaml", "yml", "toml",
     "csv", "tsv"
   ])

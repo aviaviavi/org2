@@ -65,6 +65,51 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     try await Task.sleep(for: .milliseconds(80))
   }
 
+  func testHTMLSnippetRendersInsideSandboxWithSourceDisclosure() async throws {
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML("""
+    #+begin_src html
+    <style>body { margin:0; background:rgb(255,0,128) }</style>
+    <div style="height:200px">Diagram → rendered</div>
+    <script>parent.document.body.dataset.escaped='yes'</script>
+    #+end_src
+    """, sourcePath: "/tmp/chat-html.org")
+    let view = try await document()
+    view.setFrameSize(NSSize(width: 460, height: 600))
+    try await view.evaluateJavaScript("window.violations=[];document.addEventListener('securitypolicyviolation',e=>violations.push({directive:e.effectiveDirective,blocked:e.blockedURI}));null")
+    try await update(view, payload([entry("html", html)]))
+    try await Task.sleep(for: .milliseconds(300))
+    let result = try await view.evaluateJavaScript("""
+      (() => {
+        const frame=document.querySelector('.org2-html-preview iframe');
+        let isolated=false;
+        try { void frame.contentWindow.document; } catch { isolated=true; }
+        return {violations:window.violations.length, frame:!!frame, sandbox:frame?.getAttribute('sandbox'), isolated,
+          escaped:document.body.dataset.escaped || '',
+          source:document.querySelector('.org2-html-source')?.textContent,
+          height:frame?.getBoundingClientRect().height};
+      })()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["violations"] as? Int, 0)
+    XCTAssertEqual(result?["frame"] as? Bool, true)
+    XCTAssertEqual(result?["sandbox"] as? String, "")
+    XCTAssertEqual(result?["isolated"] as? Bool, true)
+    XCTAssertEqual(result?["escaped"] as? String, "")
+    XCTAssertTrue((result?["source"] as? String)?.contains("Diagram → rendered") == true)
+    XCTAssertGreaterThan(try XCTUnwrap(result?["height"] as? Double), 100)
+    let image = try await view.takeSnapshot(configuration: nil)
+    let bitmap = try XCTUnwrap(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+    var pinkPixels = 0
+    for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+      for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+        if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+           color.redComponent > 0.85, color.greenComponent < 0.25,
+           color.blueComponent > 0.3, color.blueComponent < 0.8 { pinkPixels += 1 }
+      }
+    }
+    XCTAssertGreaterThan(pinkPixels, 100, "HTML CSS must actually paint inside the production chat shell")
+  }
+
   func testSelectableTranscriptDoesNotSuppressLiveActivityInSharedRooms() throws {
     let sourceURL = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()

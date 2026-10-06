@@ -180,3 +180,5 @@ OpenOrg renders portable =#+EMBED:= references to whole notes and stable-ID head
 * Browser article and selection clipping
 
 The OpenOrg Web Clipper saves articles or selected passages as portable =.org2clip= files. Choose a Reading note or Read later task template, preview the text, then import through the Mac Capture window. URL, available author and capture time are preserved alongside an immutable raw capture. See [[file:editors-macos.org][Mac installation and use]] and [[file:tooling-reference.org][the CLI import contract]].
+
+Completed HTML source blocks render as static, sandboxed HTML/CSS previews in AI chat and the document reader, with expandable source. Reviewed chat edits can save HTML files for opening as pages. See [[file:editors-macos.org][macOS workspace]].

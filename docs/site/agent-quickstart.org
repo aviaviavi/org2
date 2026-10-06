@@ -209,3 +209,7 @@ read them through the normal authorized corpus tools when needed.
 * Live source references
 
 Use =org2 embed resolve --target id:STABLE-ID --file notes/host.org --dir CORPUS --json= to validate a live note or heading reference. The read-only response supplies a portable =#+EMBED:= directive and source citation, without copying canonical content. =file:relative/note.org= embeds a whole note; ID resolution preserves compiled corpus semantics and rejects duplicates. OpenOrg renders and refreshes these references inside the active corpus. HTML and reading-layout PDF exports keep references without fetching source content, and =publish document= emits a target-free omission marker. See [[file:editors-macos.org][the Mac workspace guide]] for the insertion UI and bounded rendering behavior.
+
+* HTML diagrams in OpenOrg
+
+For a diagram directly in AI chat, use a completed =#+begin_src html= block containing self-contained HTML/CSS or inline SVG. The app renders a static sandboxed preview with expandable source; scripts and remote resources are disabled. For JavaScript interaction, use the reviewed workspace tools to create a =.html=, =.htm=, or =.xhtml= file and link it from chat. Existing files still require a read and SHA-bound replacement preview.

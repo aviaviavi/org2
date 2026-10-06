@@ -415,6 +415,50 @@ final class AIChatLocalEditBrokerTests: XCTestCase {
     }
   }
 
+  func testHTMLLocalEditPreviewApplyAndStaleGuard() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-html-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    let broker = AIChatLocalEditBroker(
+      documentReader: { _, path, _ in try store.aiChatLocalEditDocument(at: path) },
+      replacementApplier: { _, edits in try await store.applyAIChatLocalEditReplacements(edits) }
+    )
+    await broker.beginTurn("html")
+    for (index, ext) in ["html", "htm", "xhtml", "HTML"].enumerated() {
+      let path = "views/demo-\(index).\(ext)"
+      let text = "<!doctype html><p>Diagram → preview</p>\n"
+      let params = try JSONSerialization.data(withJSONObject: [
+        "turnId": "html", "edits": [["path": path, "createsFile": true, "replacementText": text]]
+      ])
+      let preview = await broker.handle(command: AIChatLocalEditBroker.previewCommand,
+        paramsJSON: String(decoding: params, as: UTF8.self))
+      XCTAssertTrue(preview.ok, preview.errorMessage ?? "Preview failed")
+      guard preview.ok else { continue }
+      XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+      let previewID = try XCTUnwrap(try jsonObject(preview.payloadJSON)["previewId"] as? String)
+      let apply = await broker.handle(command: AIChatLocalEditBroker.applyCommand,
+        paramsJSON: #"{"turnId":"html","previewId":"\#(previewID)"}"#)
+      XCTAssertTrue(apply.ok, apply.errorMessage ?? "Apply failed")
+      let read = try store.aiChatLocalEditDocument(at: path)
+      XCTAssertEqual(read.text, text)
+      XCTAssertEqual(read.origin, .disk)
+      try "Changed externally".write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)
+      do {
+        _ = try await store.applyAIChatLocalEditReplacements([
+          .init(relativePath: path, expectedSHA256: read.sha256, replacementText: "<p>Replacement</p>", createsFile: false)
+        ])
+        XCTFail("Stale HTML must not be overwritten")
+      } catch {
+        XCTAssertEqual(error as? AIChatLocalEditError, .staleDocument(path))
+      }
+    }
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "views/image.png"))
+    XCTAssertThrowsError(try store.aiChatLocalEditDocument(at: "../outside.html"))
+  }
+
   func testNestedLocalEditPreviewIsReadOnlyAndApplyCreatesParents() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-nested-edit-\(UUID().uuidString)", isDirectory: true)

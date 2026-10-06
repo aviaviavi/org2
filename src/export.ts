@@ -648,6 +648,8 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-family: var(-
 .org2-chart-tooltip-value { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.12rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .org2-chart-tooltip-swatch { flex: none; width: 8px; height: 8px; border-radius: 2px; }
 ${CHART_INTERACTION_STYLE}
+.org2-html-preview { width: 100%; min-width: 0; margin: 0.85rem 0 1.25rem; }
+.org2-html-source { margin-top: 0.5rem; }
 .org2-plugin-render { width: 100%; margin: 0.85rem 0 1.25rem; overflow: hidden; }
 .org2-plugin-render iframe { color-scheme: light dark; }
 .org2-plugin-render-error {
@@ -1928,6 +1930,13 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
     : escapeHtml(raw);
   const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
   const pre = `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+  if (context.profile === "app" && language === "html" && node.terminated) {
+    // HTML is untrusted source, not host markup. Keep it in an opaque-origin
+    // static frame; the earlier CSP also constrains full HTML documents.
+    const csp = "default-src 'none'; base-uri 'none'; connect-src 'none'; form-action 'none'; frame-src 'none'; img-src data:; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'";
+    const document = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html{color-scheme:light dark}body{margin:12px;font-family:system-ui}*{box-sizing:border-box}</style></head><body>${raw}</body></html>`;
+    return `<figure class="org2-html-preview"${renderSourceAttributes(node, context)}><iframe title="HTML preview" sandbox="" referrerpolicy="no-referrer" style="display:block;width:100%;height:320px;border:1px solid rgba(127,127,127,0.28);border-radius:10px" srcdoc="${escapeAttr(document)}"></iframe><details class="org2-html-source"><summary>HTML source</summary>${pre}</details></figure>`;
+  }
   // Large audit payloads can dwarf the readable document. A closed native
   // disclosure keeps their complete text available without laying out every
   // line on initial display. Published/exported documents remain expanded.
