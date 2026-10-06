@@ -2434,6 +2434,7 @@ private struct SidebarView: View {
   @State private var showsFileTree = false
   @State private var expandedSidebarFileDirectoryIDs: Set<String> = []
   @State private var projectSheet: WorkspaceProjectSheet?
+  @AppStorage(SidebarSectionCollapseState.defaultsKey) private var collapsedSidebarSectionsStorage = ""
 
   private let autoSettleChatTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
   private let chatSurface = WorkspaceSurface.aiChat
@@ -2447,6 +2448,10 @@ private struct SidebarView: View {
     chatThreads.filter { !store.isAIChatThreadRunning($0.id) }
   }
 
+  private func isSidebarSectionExpanded(_ section: SidebarSectionID) -> Bool {
+    !SidebarSectionCollapseState(storage: collapsedSidebarSectionsStorage).isCollapsed(section)
+  }
+
   var body: some View {
     let pinnedCorpusFiles = store.pinnedCorpusFiles
     VStack(spacing: 0) {
@@ -2457,112 +2462,118 @@ private struct SidebarView: View {
           experimentalFeaturesEnabled: store.experimentalFeaturesEnabled
         )
         Section {
-          ForEach(sidebarSurfaces.filter { !WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
-            sidebarSurfaceButton(surface)
-          }
+          if isSidebarSectionExpanded(.workspace) {
+            ForEach(sidebarSurfaces.filter { !WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
+              sidebarSurfaceButton(surface)
+            }
 
-          Button {
-            store.openReviewQueue()
-          } label: {
-            SidebarAgentWorkPageRow(
-              title: "Review Queue",
-              systemImage: "checkmark.seal",
-              shortcut: "⌘⇧R",
-              showsCommandShortcut: showsCommandShortcuts,
-              notificationCount: store.approvalItems.count
-            )
-            .modifier(ReadableListSelectionModifier(
-              isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .review,
-              verticalPadding: 4
-            ))
-          }
-          .buttonStyle(.plain)
-          .help("Review Queue (⌘⇧R)")
+            Button {
+              store.openReviewQueue()
+            } label: {
+              SidebarAgentWorkPageRow(
+                title: "Review Queue",
+                systemImage: "checkmark.seal",
+                shortcut: "⌘⇧R",
+                showsCommandShortcut: showsCommandShortcuts,
+                notificationCount: store.approvalItems.count
+              )
+              .modifier(ReadableListSelectionModifier(
+                isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .review,
+                verticalPadding: 4
+              ))
+            }
+            .buttonStyle(.plain)
+            .help("Review Queue (⌘⇧R)")
 
-          Button {
-            store.openAutomations()
-          } label: {
-            SidebarAgentWorkPageRow(
-              title: "Automations",
-              systemImage: "clock.arrow.circlepath",
-              shortcut: "⌥⌘A",
-              showsCommandShortcut: showsCommandShortcuts,
-              notificationCount: 0
-            )
-            .modifier(ReadableListSelectionModifier(
-              isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .workflows,
-              verticalPadding: 4
-            ))
-          }
-          .buttonStyle(.plain)
-          .help("Automations (⌥⌘A)")
+            Button {
+              store.openAutomations()
+            } label: {
+              SidebarAgentWorkPageRow(
+                title: "Automations",
+                systemImage: "clock.arrow.circlepath",
+                shortcut: "⌥⌘A",
+                showsCommandShortcut: showsCommandShortcuts,
+                notificationCount: 0
+              )
+              .modifier(ReadableListSelectionModifier(
+                isSelected: store.selectedSurface == .approvals && store.runsAndReviewPage == .workflows,
+                verticalPadding: 4
+              ))
+            }
+            .buttonStyle(.plain)
+            .help("Automations (⌥⌘A)")
 
-          ForEach(sidebarSurfaces.filter { WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
-            sidebarSurfaceButton(surface)
+            ForEach(sidebarSurfaces.filter { WorkspaceSurface.sidebarTrailingCases.contains($0) }) { surface in
+              sidebarSurfaceButton(surface)
+            }
           }
         } header: {
-          SidebarSectionLabel("Workspace")
+          SidebarSectionLabel("Workspace", section: .workspace)
         }
 
         if !pinnedCorpusFiles.isEmpty {
           Section {
-            ForEach(pinnedCorpusFiles) { file in
-              Button {
-                store.openSidebarFile(file)
-              } label: {
-                SidebarPinnedFileRow(
-                  file: file,
-                  isSelected: store.selectedLocation?.file == file.path
-                )
+            if isSidebarSectionExpanded(.pinned) {
+              ForEach(pinnedCorpusFiles) { file in
+                Button {
+                  store.openSidebarFile(file)
+                } label: {
+                  SidebarPinnedFileRow(
+                    file: file,
+                    isSelected: store.selectedLocation?.file == file.path
+                  )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                  CorpusFileContextMenu(file: file)
+                }
+                .help(file.relativePath)
               }
-              .buttonStyle(.plain)
-              .contextMenu {
-                CorpusFileContextMenu(file: file)
-              }
-              .help(file.relativePath)
             }
           } header: {
-            SidebarSectionLabel("Pinned")
+            SidebarSectionLabel("Pinned", section: .pinned)
           }
         }
 
         Section {
-          ForEach(DailyNoteTarget.allCases) { target in
+          if isSidebarSectionExpanded(.daily) {
+            ForEach(DailyNoteTarget.allCases) { target in
+              Button {
+                store.openDailyNoteFromSidebar(target)
+              } label: {
+                HStack(spacing: 8) {
+                  Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+                    .font(.callout.weight(.medium))
+                  Spacer(minLength: 0)
+                  if showsCommandShortcuts {
+                    KeyboardShortcutBadge(text: target.commandShortcutTitle)
+                      .transition(.opacity.combined(with: .move(edge: .trailing)))
+                  }
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .help("\(target.title) daily note (\(target.commandShortcutTitle))")
+            }
             Button {
-              store.openDailyNoteFromSidebar(target)
+              store.presentDailyNoteDatePicker()
             } label: {
               HStack(spacing: 8) {
-                Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+                Label("Choose Date…", systemImage: "calendar.badge.plus")
                   .font(.callout.weight(.medium))
                 Spacer(minLength: 0)
                 if showsCommandShortcuts {
-                  KeyboardShortcutBadge(text: target.commandShortcutTitle)
+                  KeyboardShortcutBadge(text: DailyNoteTarget.datePickerCommandShortcutTitle)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
               }
               .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("\(target.title) daily note (\(target.commandShortcutTitle))")
+            .help("Open a daily note for any date (\(DailyNoteTarget.datePickerCommandShortcutTitle))")
           }
-          Button {
-            store.presentDailyNoteDatePicker()
-          } label: {
-            HStack(spacing: 8) {
-              Label("Choose Date…", systemImage: "calendar.badge.plus")
-                .font(.callout.weight(.medium))
-              Spacer(minLength: 0)
-              if showsCommandShortcuts {
-                KeyboardShortcutBadge(text: DailyNoteTarget.datePickerCommandShortcutTitle)
-                  .transition(.opacity.combined(with: .move(edge: .trailing)))
-              }
-            }
-            .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .help("Open a daily note for any date (\(DailyNoteTarget.datePickerCommandShortcutTitle))")
         } header: {
-          SidebarSectionLabel("Daily")
+          SidebarSectionLabel("Daily", section: .daily)
         }
 
         Section {
@@ -2632,65 +2643,67 @@ private struct SidebarView: View {
         WorkspaceProjectSidebar(presentedSheet: $projectSheet) { summary in chatThreadRow(summary) }
 
         Section {
-          chatSurfaceRow
-            .listRowBackground(Color.clear)
+          if isSidebarSectionExpanded(.chat) {
+            chatSurfaceRow
+              .listRowBackground(Color.clear)
 
-          if isChatThreadListExpanded {
-            if chatThreads.isEmpty
-                && settledThreads.isEmpty {
-              Text("No chat threads")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
-                .padding(.vertical, 3)
-                .listRowBackground(Color.clear)
-            } else {
-              if !runningChatThreads.isEmpty {
-                SidebarChatThreadGroupLabel(title: "Running", count: runningChatThreads.count)
-              }
-
-              ForEach(runningChatThreads) { summary in
-                chatThreadRow(summary)
-                  .id(AIChatSidebarThreadRowIdentity(summary: summary))
+            if isChatThreadListExpanded {
+              if chatThreads.isEmpty
+                  && settledThreads.isEmpty {
+                Text("No chat threads")
+                  .font(.caption)
+                  .foregroundStyle(.tertiary)
+                  .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
+                  .padding(.vertical, 3)
                   .listRowBackground(Color.clear)
-              }
+              } else {
+                if !runningChatThreads.isEmpty {
+                  SidebarChatThreadGroupLabel(title: "Running", count: runningChatThreads.count)
+                }
 
-              if !runningChatThreads.isEmpty, !recentChatThreads.isEmpty {
-                SidebarChatThreadGroupLabel(title: "Recent", count: recentChatThreads.count)
-              }
-
-              ForEach(recentChatThreads) { summary in
-                chatThreadRow(summary)
-                  .id(AIChatSidebarThreadRowIdentity(summary: summary))
-                  .listRowBackground(Color.clear)
-              }
-
-              if !settledThreads.isEmpty {
-                settledChatThreadDisclosureRow
-                  .listRowBackground(Color.clear)
-              }
-
-              if showsSettledChatThreads {
-                ForEach(Array(
-                  settledThreads
-                    .prefix(settledChatThreadDisplayLimit)
-                )) { summary in
+                ForEach(runningChatThreads) { summary in
                   chatThreadRow(summary)
-                    .opacity(0.68)
                     .id(AIChatSidebarThreadRowIdentity(summary: summary))
                     .listRowBackground(Color.clear)
                 }
 
-                if settledChatThreadDisplayLimit
-                    < settledThreads.count {
-                  settledChatThreadShowMoreRow
+                if !runningChatThreads.isEmpty, !recentChatThreads.isEmpty {
+                  SidebarChatThreadGroupLabel(title: "Recent", count: recentChatThreads.count)
+                }
+
+                ForEach(recentChatThreads) { summary in
+                  chatThreadRow(summary)
+                    .id(AIChatSidebarThreadRowIdentity(summary: summary))
                     .listRowBackground(Color.clear)
+                }
+
+                if !settledThreads.isEmpty {
+                  settledChatThreadDisclosureRow
+                    .listRowBackground(Color.clear)
+                }
+
+                if showsSettledChatThreads {
+                  ForEach(Array(
+                    settledThreads
+                      .prefix(settledChatThreadDisplayLimit)
+                  )) { summary in
+                    chatThreadRow(summary)
+                      .opacity(0.68)
+                      .id(AIChatSidebarThreadRowIdentity(summary: summary))
+                      .listRowBackground(Color.clear)
+                  }
+
+                  if settledChatThreadDisplayLimit
+                      < settledThreads.count {
+                    settledChatThreadShowMoreRow
+                      .listRowBackground(Color.clear)
+                  }
                 }
               }
             }
           }
         } header: {
-          SidebarSectionLabel("Chat")
+          SidebarSectionLabel("Chat", section: .chat)
         }
       }
       .listStyle(.sidebar)
@@ -3113,16 +3126,22 @@ private struct SidebarCorpusFileTreeRow: View {
 
 private struct SidebarSectionLabel: View {
   let title: String
+  let section: SidebarSectionID?
 
-  init(_ title: String) {
+  init(_ title: String, section: SidebarSectionID? = nil) {
     self.title = title
+    self.section = section
   }
 
   var body: some View {
-    Text(title.uppercased())
-      .font(.system(size: 10, weight: .semibold, design: .monospaced))
-      .tracking(0.7)
-      .foregroundStyle(WorkspaceDesign.tertiaryText)
+    if let section {
+      SidebarCollapsibleSectionHeader(title: title, section: section)
+    } else {
+      Text(title.uppercased())
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .tracking(0.7)
+        .foregroundStyle(WorkspaceDesign.tertiaryText)
+    }
   }
 }
 

@@ -152,22 +152,23 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
   @Environment(WorkspaceStore.self) private var store
   @Binding var presentedSheet: WorkspaceProjectSheet?
   @State private var expandedProjects: Set<String> = []
+  @AppStorage(SidebarSectionCollapseState.defaultsKey) private var collapsedSidebarSectionsStorage = ""
   @ViewBuilder var threadRow: (AIChatSidebarThreadSummary) -> ThreadRow
 
   var body: some View {
     Section {
-      ForEach(sidebarItems) { item in
-        sidebarRow(item)
-          .id(item.id)
-          .listRowBackground(Color.clear)
-      }
-      if !store.projectStatus.isEmpty {
-        Text(store.projectStatus).font(.caption).foregroundStyle(.secondary)
+      if !SidebarSectionCollapseState(storage: collapsedSidebarSectionsStorage).isCollapsed(.projects) {
+        ForEach(sidebarItems) { item in
+          sidebarRow(item)
+            .id(item.id)
+            .listRowBackground(Color.clear)
+        }
+        if !store.projectStatus.isEmpty {
+          Text(store.projectStatus).font(.caption).foregroundStyle(.secondary)
+        }
       }
     } header: {
-      HStack(spacing: 2) {
-        Text("Projects")
-        Spacer()
+      SidebarCollapsibleSectionHeader(title: "Projects", section: .projects, usesSidebarLabelStyle: false) {
         WorkspaceProjectHeaderButton(
           title: "Refresh projects",
           systemImage: "arrow.clockwise",
