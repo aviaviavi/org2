@@ -2193,6 +2193,23 @@ public final class WorkspaceStore {
   /// Continue a conversation on the host that already runs it when that host
   /// is online and has the destination enabled.
   @ObservationIgnored public var aiChatRoutesTurnsToThreadHost = true
+  /// This host is finishing running turns before a restart or update; new
+  /// turns go to another online host (or wait for this one to return).
+  public private(set) var isAIChatDraining = false
+  /// A headless OpenOrg host that should own new local agent turns so this
+  /// Mac can quit, sleep, or update without interrupting them. Nil runs turns
+  /// here. Machine-local preference.
+  public var aiChatPreferredExecutionHostRef: String? {
+    didSet {
+      guard oldValue != aiChatPreferredExecutionHostRef else { return }
+      if let ref = aiChatPreferredExecutionHostRef, !ref.isEmpty {
+        defaults.set(ref, forKey: Self.aiChatPreferredExecutionHostKey)
+      } else {
+        defaults.removeObject(forKey: Self.aiChatPreferredExecutionHostKey)
+      }
+    }
+  }
+  nonisolated static let aiChatPreferredExecutionHostKey = "Org2Workspace.aiChat.preferredExecutionHostRef.v1"
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
   nonisolated public static let agendaOpenStatusFilter = "__open__"
@@ -3794,6 +3811,7 @@ public final class WorkspaceStore {
         resolveEmbeds: false
       )
     }
+    aiChatPreferredExecutionHostRef = defaults.string(forKey: Self.aiChatPreferredExecutionHostKey)
     openOrgServer = OpenOrgServerConnection(
       defaults: defaults,
       credentials: NSClassFromString("XCTestCase") == nil
@@ -41773,13 +41791,75 @@ extension WorkspaceStore {
     for thread: AIChatThread,
     destinationID: String
   ) -> AIChatLiveHostRecord? {
-    guard aiChatRoutesTurnsToThreadHost, !thread.isSharedRoom,
-          let ownerRef = aiChatExecutionHostRef(for: aiChatMessages(for: thread.id)),
-          ownerRef != aiChatHostIdentity.ref,
-          let owner = freshAIChatRemoteHost(ref: ownerRef),
-          owner.enabledDestinationIDs.contains(destinationID)
-    else { return nil }
-    return owner
+    guard aiChatRoutesTurnsToThreadHost, !thread.isSharedRoom else { return nil }
+    let now = Date()
+    func routable(_ ref: String) -> AIChatLiveHostRecord? {
+      aiChatRemoteLiveHosts.first {
+        $0.hostRef == ref && $0.isRoutable(now: now, within: aiChatLiveFreshnessInterval)
+          && $0.enabledDestinationIDs.contains(destinationID)
+      }
+    }
+    let ownerRef = aiChatExecutionHostRef(for: aiChatMessages(for: thread.id))
+    if let ownerRef, ownerRef != aiChatHostIdentity.ref, let owner = routable(ownerRef) {
+      return owner
+    }
+    // Detachable client: hand conversations this Mac would run (new, or
+    // already run here) to the preferred headless host while it is online.
+    if ownerRef == nil || ownerRef == aiChatHostIdentity.ref || ownerRef.map({ routable($0) == nil }) == true,
+       let preferred = aiChatPreferredExecutionHostRef, preferred != aiChatHostIdentity.ref,
+       let target = routable(preferred) {
+      return target
+    }
+    // While this host drains for a restart, any other online host with the
+    // destination takes new turns.
+    if isAIChatDraining {
+      return aiChatRemoteLiveHosts
+        .filter { $0.isRoutable(now: now, within: aiChatLiveFreshnessInterval) && $0.enabledDestinationIDs.contains(destinationID) }
+        .sorted { ($0.hostKind == .server ? 0 : 1, $0.hostName) < ($1.hostKind == .server ? 0 : 1, $1.hostName) }
+        .first
+    }
+    return nil
+  }
+
+  /// Online hosts that could own this Mac's new agent turns.
+  public var aiChatExecutionHostCandidates: [AIChatLiveHostRecord] {
+    let now = Date()
+    var seen = Set<String>()
+    return aiChatRemoteLiveHosts
+      .filter { $0.hostRef != aiChatHostIdentity.ref && $0.isFresh(now: now, within: aiChatLiveFreshnessInterval) }
+      .sorted { $0.updatedAt > $1.updatedAt }
+      .filter { seen.insert($0.hostRef).inserted }
+      .sorted { ($0.hostKind == .server ? 0 : 1, $0.hostName) < ($1.hostKind == .server ? 0 : 1, $1.hostName) }
+  }
+
+  /// Number of turns this host is running now.
+  public var aiChatRunningTurnCountOnCurrentHost: Int {
+    aiChatThreads.filter { isAIChatThreadRunningOnCurrentHost($0.id) }.count
+  }
+
+  /// Stops accepting new turns and announces it, so clients route new work to
+  /// another host while running turns finish. Used before restarts and updates.
+  public func beginAIChatDrain() {
+    guard !isAIChatDraining else { return }
+    isAIChatDraining = true
+    publishAIChatLivePresenceIfNeeded(force: true)
+  }
+
+  public func endAIChatDrain() {
+    guard isAIChatDraining else { return }
+    isAIChatDraining = false
+    publishAIChatLivePresenceIfNeeded(force: true)
+    processAIChatHandoffs()
+  }
+
+  /// Waits until this host runs no turns or `timeout` elapses. Returns the
+  /// number of turns still running.
+  public func waitForAIChatTurnsToFinish(timeout: TimeInterval, pollInterval: TimeInterval = 0.5) async -> Int {
+    let deadline = Date().addingTimeInterval(timeout)
+    while aiChatRunningTurnCountOnCurrentHost > 0, Date() < deadline, !Task.isCancelled {
+      try? await Task.sleep(nanoseconds: UInt64(max(0.05, pollInterval) * 1_000_000_000))
+    }
+    return aiChatRunningTurnCountOnCurrentHost
   }
 
   /// A turn currently running on another host, as published in its presence
@@ -41913,7 +41993,8 @@ extension WorkspaceStore {
       host: aiChatHostIdentity,
       enabledDestinationIDs: enabledAIChatDestinations.map(\.id).sorted(),
       turns: turns,
-      authenticationNeededDestinationIDs: authenticationNeeded.isEmpty ? nil : authenticationNeeded
+      authenticationNeededDestinationIDs: authenticationNeeded.isEmpty ? nil : authenticationNeeded,
+      isDraining: isAIChatDraining ? true : nil
     )
   }
 
@@ -42129,11 +42210,14 @@ extension WorkspaceStore {
               let target = provenance.executionHostRef
         else { continue }
         if target == hostRef {
-          accepted.append(message.id)
+          // A draining host leaves hand-offs for their sender to reclaim.
+          if !isAIChatDraining { accepted.append(message.id) }
         } else if provenance.receivedByHostRef == hostRef {
           let targetName = provenance.executionHostName ?? target
           if freshAIChatRemoteHost(ref: target, now: now) == nil {
             reclaimed.append((message.id, "\(targetName) is offline"))
+          } else if freshAIChatRemoteHost(ref: target, now: now)?.isDraining == true, !isAIChatDraining {
+            reclaimed.append((message.id, "\(targetName) is restarting"))
           } else if now.timeIntervalSince(message.createdAt) > aiChatHandoffTimeout {
             reclaimed.append((message.id, "\(targetName) did not pick it up"))
           }

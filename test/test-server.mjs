@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync, spawn } from "node:child_process";
-import { validateServerConfiguration, serverLaunchAgent, serverControl } from "../dist/serverCli.js";
+import { validateServerConfiguration, serverLaunchAgent, serverControl, drainServer } from "../dist/serverCli.js";
 import { acquireWorkflowDispatchLock, assignAutomationHost, automationHostRef } from "../dist/automationHost.js";
 import { initializeCorpusIdentity } from "../dist/corpusIdentity.js";
 import { loadAgentRun, saveAgentRun, transitionAgentRun } from "../dist/agentRun.js";
@@ -218,6 +218,60 @@ for await (const line of readline.createInterface({input:process.stdin})) {
       } finally {
         if (supervisor.exitCode === null) supervisor.kill();
       }
+    }
+  }
+  // Draining waits for running turns before a restart, and reports a timeout.
+  {
+    const calls = [];
+    let running = 2;
+    const control = async (command) => {
+      calls.push(command);
+      if (command === "drain") return { draining: true, runningThreads: running };
+      running = Math.max(0, running - 1);
+      return { runningThreads: running, draining: true };
+    };
+    assert.deepEqual(await drainServer("unused", 30, control, 5), { drained: true, remaining: 0, waitedSeconds: 0 });
+    assert.deepEqual(calls, ["drain", "status", "status"]);
+    const stuck = await drainServer("unused", 0.05, async (command) => ({ runningThreads: 1, draining: command === "drain" || true }), 10);
+    assert.equal(stuck.drained, false);
+    assert.equal(stuck.remaining, 1);
+    await assert.rejects(drainServer("unused", 1, async () => ({ error: "Server worker is starting or unavailable" })), /starting or unavailable/);
+  }
+  if (process.platform === "darwin") {
+    const worker = path.join(temporary, "draining-worker.mjs");
+    const log = path.join(temporary, "draining-worker.log");
+    fs.writeFileSync(worker, `#!/usr/bin/env node
+import fs from 'node:fs';
+import readline from 'node:readline';
+let running = 1;
+let draining = false;
+console.log(JSON.stringify({event:'ready'}));
+for await (const line of readline.createInterface({input:process.stdin})) {
+ const request=JSON.parse(line);
+ fs.appendFileSync(${JSON.stringify(log)}, request.command + (draining ? ':draining' : '') + '\\n');
+ if (request.command==='drain') { draining = true; console.log(JSON.stringify({id:request.id,result:{draining:true,runningThreads:running}})); continue; }
+ if (request.command==='status') { if (draining) running = 0; console.log(JSON.stringify({id:request.id,result:{listening:true,draining,runningThreads:running}})); continue; }
+ console.log(JSON.stringify({id:request.id,result:request.command==='stop'?{stopped:true}:{}}));
+ if(request.command==='stop') process.exit(0);
+}
+`, { mode: 0o700 });
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, executable: worker }));
+    const supervisor = spawn(process.execPath, [cli, "server", "start", "--config", configFile]);
+    const exited = new Promise((resolve) => supervisor.once("exit", resolve));
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Server did not start")), 10_000);
+        supervisor.stdout.on("data", (data) => { if (data.toString().includes('"event":"ready"')) { clearTimeout(timer); resolve(); } });
+      });
+      const stopped = await concurrent("server", "stop", "--drain", "--drain-timeout", "20", "--config", configFile);
+      assert.equal(stopped.code, 0, stopped.stderr);
+      const result = JSON.parse(stopped.stdout);
+      assert.equal(result.stopped, true);
+      assert.equal(result.drain.drained, true);
+      assert.equal(await exited, 0);
+      assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), ["drain", "status:draining", "stop:draining"]);
+    } finally {
+      if (supervisor.exitCode === null) supervisor.kill();
     }
   }
   console.log("server configuration, ownership, and concurrent dispatch tests passed");

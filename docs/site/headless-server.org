@@ -105,7 +105,7 @@ The desktop and the server share one chat history and behave as peers. Each host
 
 Each running host publishes a small presence record at =.org2/openclaw-chat.store/live/=, refreshed about once a second while it runs a turn and every 45 seconds otherwise. Other hosts show that turn's streaming reply, reasoning, and tool activity, and report it as running on that host. This covers scheduled automations and turns started from any client. A paired iPhone therefore sees the same progress whether it connects to the Mac or to the server. A record that stops refreshing for about two and a half minutes means the host is unavailable.
 
-A conversation continues on the host whose runtime last ran it, because Codex, OpenCode, Claude Code, and Pi sessions are local to that machine. When you send a message to a conversation another host runs, the receiving host records it and hands it to that host, which accepts it and runs the turn. This applies whether you typed it on the desktop or sent it from an iPhone connected to either host. If the owning host is offline, does not have the destination enabled, or has not accepted the message within two minutes, the receiving host runs the turn itself and says so. New conversations run on the host that created them. Stopping a turn works only on the host that runs it.
+A conversation continues on the host whose runtime last ran it, because Codex, OpenCode, Claude Code, and Pi sessions are local to that machine. When you send a message to a conversation another host runs, the receiving host records it and hands it to that host, which accepts it and runs the turn. This applies whether you typed it on the desktop or sent it from an iPhone connected to either host. If the owning host is offline, does not have the destination enabled, or has not accepted the message within two minutes, the receiving host runs the turn itself and says so. New conversations run on the host that created them, unless the desktop prefers a server for new turns (see [[*Upgrade or restart without interrupting turns][Upgrade or restart without interrupting turns]]). Stopping a turn works only on the host that runs it.
 
 Messages record where they came from and where they ran: the originating client (desktop, phone, automation, or a background =org2 thread post=), the phone's paired name, the host that received the message, and the host that executed the turn. The desktop shows this beside messages that did not both arrive and run on that Mac. iOS shows it on every message and names the host in the chat list and progress indicator.
 
@@ -136,6 +136,21 @@ node dist/cli.js server service --apply
 #+end_src
 
 The preview shows the complete launchd agent and the exact =launchctl bootstrap= command. Applying writes =~/Library/LaunchAgents/org.org.server.HOST.plist=; run the returned command to load it. The service starts at user login and restarts after failures. This is a user service, so the Mac must remain logged in. A deliberate =server stop= exits successfully and stays stopped until explicitly started again. After a reboot, sign in to make runtime logins and Keychain available.
+
+** Upgrade or restart without interrupting turns
+
+#+begin_src sh
+node dist/cli.js server drain                       # stop taking turns; wait for running ones
+node dist/cli.js server restart --drain             # drain, stop, and start the launchd service again
+node dist/cli.js server stop --drain --drain-timeout 1800
+node dist/cli.js server resume                      # cancel a drain
+#+end_src
+
+Draining makes a planned update or restart invisible to live conversations. The server publishes a draining presence record, accepts no new turns, hand-offs, or scheduled automations, and lets running turns finish (up to 900 seconds by default). Meanwhile desktops and phones send new turns to another online host that has the destination enabled, or the receiving host runs them itself; a hand-off already addressed to the draining server is taken back immediately instead of after the two-minute timeout. =stop --drain= and =restart --drain= stop only once no turn is running and report the turns that are still running otherwise. =server status= reports =draining= and =runningThreads=; =org2 activity hosts= marks the host as draining and excludes it from failover.
+
+The desktop app behaves the same way when it quits or installs an update with turns running: the quit prompt offers *Quit When Turns Finish*, which stops taking new local turns and quits once the running ones end.
+
+To make the Mac a detachable client, choose the server in *Settings → AI Chat → Execution → Run new agent turns on*. New conversations, and conversations this Mac would otherwise run, are handed to that server while it is online, draining-free, and has the destination enabled; the Mac shows the server's live progress and can quit, sleep, or update without interrupting the turn. When the server is offline or restarting, the Mac runs turns itself as before. Local agents chosen this way run on the server's machine with its files, logins, and filesystem policy.
 
 Logs live beside the server configuration as =server.log= and =server-error.log=. Pairing codes are returned through the private control socket, not written to service logs. Use stable checkout and executable paths for a persistent installation; do not remove the installed build directory.
 

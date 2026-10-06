@@ -163,7 +163,7 @@ extension WorkspaceStore {
       if let existing = remote[record.hostRef], existing.updatedAt >= record.updatedAt { continue }
       remote[record.hostRef] = record
     }
-    let liveRemote = remote.values.filter { $0.isFresh(now: now, within: WorkspaceActivityHostPolicy.freshness) }
+    let liveRemote = remote.values.filter { $0.isRoutable(now: now, within: WorkspaceActivityHostPolicy.freshness) }
     let localDestinations = enabledAIChatDestinations.map(\.id)
     func failover(for destinations: [String], excluding ref: String) -> [String] {
       var names: [String] = []
@@ -193,7 +193,11 @@ extension WorkspaceStore {
       name: aiChatHostIdentity.name,
       kind: aiChatHostIdentity.kind == .server ? .server : .desktop,
       state: localAuth.isEmpty ? .online : .authenticationNeeded,
-      stateReason: localAuth.isEmpty ? "This Mac" : "This Mac; a destination needs sign-in",
+      stateReason: isAIChatDraining
+        ? "This Mac is finishing running turns before quitting"
+        : localAuth.isEmpty
+          ? (aiChatPreferredExecutionHostRef.map { "This Mac; new turns run on \(remote[$0]?.hostName ?? $0)" } ?? "This Mac")
+          : "This Mac; a destination needs sign-in",
       lastSeen: now,
       isThisMac: true,
       isAutomationHost: activityHostMatchesAutomation(ref: aiChatHostIdentity.ref, kind: aiChatHostIdentity.kind),
@@ -214,6 +218,9 @@ extension WorkspaceStore {
         authenticationNeeded: !auth.isEmpty,
         now: now
       )
+      if record.isDraining == true, state.isLive {
+        reason = "Restarting: finishing \(record.turns.count) running turn\(record.turns.count == 1 ? "" : "s"); new turns go to other hosts"
+      }
       // The paired server's API refusing this Mac's credential means the
       // pairing needs to be renewed, even while presence is fresh.
       if let pairing, pairing.hostRef == record.hostRef, case .offline(let detail) = openOrgServer.reachability,

@@ -99,6 +99,8 @@ export interface ActivityHost {
   /** `live` while the presence record is fresh; otherwise its turns are a cached last-known view. */
   confidence: ActivityConfidence;
   isAutomationHost: boolean;
+  /** Finishing running turns before a restart or update; accepts no new turns. */
+  draining: boolean;
   enabledDestinationIDs: string[];
   authenticationNeededDestinationIDs: string[];
   turns: ActivityLiveTurn[];
@@ -285,6 +287,8 @@ export function loadActivityHosts(corpusRoot: string, now = new Date()): Activit
         : [];
       const isOnline = raw.isOnline !== false;
       const classified = classifyHostState({ isOnline, updatedAtMs, authenticationNeededDestinationIDs }, now);
+      const draining = raw.isDraining === true && (classified.state === "online" || classified.state === "authentication-needed");
+      if (draining) classified.reason = `Draining before a restart or update: finishing running turns and accepting no new ones (${classified.reason.toLowerCase()})`;
       const turns: ActivityLiveTurn[] = (Array.isArray(raw.turns) ? raw.turns : []).flatMap((turn) => {
         if (!isRecord(turn) || !str(turn.threadID)) return [];
         const activities = Array.isArray(turn.activities) ? turn.activities.filter(isRecord) : [];
@@ -320,6 +324,7 @@ export function loadActivityHosts(corpusRoot: string, now = new Date()): Activit
         lastSeenAgeSeconds: ageSeconds(now, updatedAtMs),
         confidence: classified.state === "online" || classified.state === "authentication-needed" ? "live" : "cached",
         isAutomationHost: hostMatchesAutomationRef(hostRef, hostKind, automationRef),
+        draining,
         enabledDestinationIDs: Array.isArray(raw.enabledDestinationIDs)
           ? raw.enabledDestinationIDs.filter((item): item is string => typeof item === "string").sort()
           : [],
@@ -355,6 +360,7 @@ export function failoverHosts(hosts: ActivityHost[], host: ActivityHost, destina
   const wanted = destinationIDs?.length ? destinationIDs : host.enabledDestinationIDs;
   return hosts.filter((candidate) => candidate.hostRef !== host.hostRef
     && isHostLive(candidate)
+    && !candidate.draining
     && wanted.some((id) => candidate.enabledDestinationIDs.includes(id)));
 }
 
@@ -633,6 +639,17 @@ export function explainThread(thread: OpenClawChatThreadRecord, context: ThreadC
   const unresolved = thread.storedHasUnresolvedLatestDelivery === true || latest?.deliveryStatus === "sending";
   if (unresolved) {
     const hostName = executionHost?.hostName ?? userProvenance.executionHostName ?? userProvenance.executionHostRef;
+    if (executionHost && isHostLive(executionHost) && executionHost.draining) {
+      evidence.push({ source: "presence", ref: executionHost.file, at: executionHost.lastSeenAt, detail: `${executionHost.hostName} is draining for a restart` });
+      return result(
+        "queued",
+        "host-restarting",
+        `${hostName} is restarting and accepts no new turns; the sending host will run this message instead`,
+        "uncertain",
+        executionHost.stateReason,
+        transcriptSignal,
+      );
+    }
     if (executionHost && isHostLive(executionHost)) {
       const acceptedMs = userProvenance.acceptedAt !== undefined ? openClawDateMilliseconds(userProvenance.acceptedAt) : Number.NaN;
       const handoffPending = !Number.isFinite(acceptedMs) || Date.parse(executionHost.lastSeenAt) < acceptedMs + 20_000;
@@ -1160,7 +1177,7 @@ export function renderActivityExplanationText(result: ActivityExplainResult): st
   if (result.hosts.length) {
     lines.push("Hosts");
     for (const host of result.hosts) {
-      lines.push(`  ${host.hostName} [${host.hostKind}] ${host.state} — ${host.stateReason}${host.turns.length ? `; ${host.turns.length} turn(s)${host.confidence === "cached" ? " (cached)" : ""}` : ""}${host.isAutomationHost ? "; automation host" : ""}`);
+      lines.push(`  ${host.hostName} [${host.hostKind}] ${host.state}${host.draining ? " (draining)" : ""} — ${host.stateReason}${host.turns.length ? `; ${host.turns.length} turn(s)${host.confidence === "cached" ? " (cached)" : ""}` : ""}${host.isAutomationHost ? "; automation host" : ""}`);
     }
     lines.push("");
   }

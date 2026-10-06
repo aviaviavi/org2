@@ -104,6 +104,9 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
   /// authentication reason (sign-in expired, token rejected). Absent in
   /// records from older builds.
   public var authenticationNeededDestinationIDs: [String]?
+  /// The host is finishing its running turns before a restart or update and
+  /// accepts no new turns. Absent in records from older builds.
+  public var isDraining: Bool?
 
   public init(
     writerID: String,
@@ -112,7 +115,8 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
     isOnline: Bool = true,
     enabledDestinationIDs: [String] = [],
     turns: [AIChatLiveTurnRecord] = [],
-    authenticationNeededDestinationIDs: [String]? = nil
+    authenticationNeededDestinationIDs: [String]? = nil,
+    isDraining: Bool? = nil
   ) {
     schema = Self.schemaValue
     self.writerID = writerID
@@ -124,6 +128,12 @@ public struct AIChatLiveHostRecord: Codable, Sendable, Equatable {
     self.enabledDestinationIDs = enabledDestinationIDs
     self.turns = turns
     self.authenticationNeededDestinationIDs = authenticationNeededDestinationIDs
+    self.isDraining = isDraining
+  }
+
+  /// Fresh and accepting new turns.
+  public func isRoutable(now: Date = Date(), within interval: TimeInterval) -> Bool {
+    isFresh(now: now, within: interval) && isDraining != true
   }
 
   public var host: AIChatHostIdentity {

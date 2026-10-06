@@ -4,7 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { assignAutomationHost } from "./automationHost.js";
@@ -90,6 +90,9 @@ const help = `OpenOrg headless server (macOS 14 or later)
   org2 server mcp enable|disable [--mcp-port PORT] [--allow-origin ORIGIN ...] [--config FILE] [--apply]
   org2 server start [--config FILE]
   org2 server status|pair|stop [--config FILE]
+  org2 server drain [--drain-timeout SECONDS] [--config FILE]
+  org2 server resume [--config FILE]
+  org2 server stop|restart --drain [--drain-timeout SECONDS] [--config FILE]
   org2 server revoke --device-id ID [--config FILE]
   org2 server push-config --team-id ID --key-id ID --key-file FILE [--apply] [--config FILE]
   org2 server assign --dir CORPUS --host-ref HOST [--apply]
@@ -106,6 +109,12 @@ off disables it); restart the server after applying a change.
 Creating a token enables a read-only Streamable HTTP MCP endpoint and prints the
 credential once. Only token hashes are stored. Token, MCP, and permission changes
 require a restart. Browser origins are rejected unless explicitly allowed.
+drain prepares for an upgrade or restart without interrupting live turns: the server
+accepts no new turns, hand-offs, or scheduled automations (clients route new turns to
+another online host or wait for it), and drain waits for running turns to finish
+(900 seconds by default). stop --drain stops only after they finish; restart --drain
+then starts the launchd service again (for example after updating the build); resume
+cancels a drain.
 The private control socket permits only this OS user; the relay binds only to Tailscale.
 Build the native worker with npm run build:server before starting from a checkout.
 Use --config for separate hosts. --executable PATH overrides the native worker at init.
@@ -291,7 +300,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
       client.removeAllListeners("data");
       try {
         const request = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
-        if (!["status", "pair", "revoke", "stop", "push-config"].includes(request.command)) throw new Error("Unknown control command");
+        if (!["status", "pair", "revoke", "stop", "push-config", "drain", "resume"].includes(request.command)) throw new Error("Unknown control command");
         if (!child?.stdin?.writable) throw new Error("Server worker is starting or unavailable");
         const id = crypto.randomUUID();
         const timer = setTimeout(() => { pending.delete(id); client.end('{"error":"Worker timed out"}\n'); }, 30_000);
@@ -353,6 +362,36 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
   }
 }
 
+function drainTimeoutSeconds(raw: string | undefined): number {
+  if (raw === undefined) return 900;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86_400) throw new Error("--drain-timeout must be between 0 and 86400 seconds");
+  return seconds;
+}
+
+/**
+ * Asks the worker to stop accepting turns and polls until its running turns
+ * finish (or the timeout elapses). Clients route new turns elsewhere meanwhile.
+ */
+export async function drainServer(
+  configFile: string,
+  timeoutSeconds: number,
+  control: (command: string) => Promise<Record<string, unknown>> = (command) => serverControl(configFile, command),
+  pollMs = 1000,
+): Promise<{ drained: boolean; remaining: number; waitedSeconds: number }> {
+  const started = Date.now();
+  const first = await control("drain");
+  if (first.error) throw new Error(String(first.error));
+  let remaining = Number(first.runningThreads ?? 0);
+  while (remaining > 0 && Date.now() - started < timeoutSeconds * 1000) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    const status = await control("status");
+    if (status.error) throw new Error(String(status.error));
+    remaining = Number(status.runningThreads ?? 0);
+  }
+  return { drained: remaining === 0, remaining, waitedSeconds: Math.round((Date.now() - started) / 1000) };
+}
+
 function xml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -383,6 +422,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     "filesystem-access": { type: "string" }, "chat-repair-interval": { type: "string" }, interval: { type: "string" },
     "team-id": { type: "string" }, "key-id": { type: "string" }, "key-file": { type: "string" },
     apply: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
+    drain: { type: "boolean" }, "drain-timeout": { type: "string" },
   } });
   const command = positionals[0];
   if (!command || values.help) { process.stdout.write(help); return; }
@@ -546,6 +586,43 @@ export async function runServerCommand(args: string[]): Promise<void> {
     const result = await serverControl(configFile, "push-config", { teamID: values["team-id"], keyID: values["key-id"], privateKey });
     if (result.error) throw new Error(String(result.error));
     print(result); return;
+  }
+  if (command === "drain" || command === "resume" || command === "restart" || (command === "stop" && values.drain)) {
+    if (command === "resume") {
+      const result = await serverControl(configFile, "resume");
+      if (result.error) throw new Error(String(result.error));
+      print(result); return;
+    }
+    const drained = await drainServer(configFile, drainTimeoutSeconds(values["drain-timeout"]));
+    if (command === "drain") { print(drained); return; }
+    if (!drained.drained) {
+      throw new Error(`${drained.remaining} turn(s) are still running after ${drained.waitedSeconds}s; run org2 server resume, wait, or stop without --drain to interrupt them`);
+    }
+    const result = await serverControl(configFile, "stop");
+    if (result.error) throw new Error(String(result.error));
+    let restart: Record<string, unknown> | undefined;
+    if (command === "restart") {
+      // A deliberate stop leaves the launchd service stopped; start it again
+      // (with the newly installed build) through launchctl.
+      const label = `org.org2.server.${config.hostRef}`;
+      const plist = path.join(os.homedir(), "Library/LaunchAgents", `${label}.plist`);
+      if (process.platform === "darwin" && fs.existsSync(plist)) {
+        if (typeof result.supervisorPID === "number") {
+          const deadline = Date.now() + 30_000;
+          for (;;) {
+            try { process.kill(result.supervisorPID, 0); } catch { break; }
+            if (Date.now() >= deadline) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
+        const kick = spawnSync("launchctl", ["kickstart", `gui/${process.getuid?.()}/${label}`], { encoding: "utf8" });
+        restart = { service: label, started: kick.status === 0, ...(kick.status === 0 ? {} : { error: (kick.stderr || kick.stdout || "").trim() }) };
+      } else {
+        restart = { started: false, next: "No launchd service is installed; run org2 server start" };
+      }
+    }
+    print({ ...result, drain: drained, ...(restart ? { restart } : {}) });
+    return;
   }
   if (["status", "pair", "revoke", "stop"].includes(command)) {
     if (command === "revoke" && !values["device-id"]) throw new Error("revoke requires --device-id");

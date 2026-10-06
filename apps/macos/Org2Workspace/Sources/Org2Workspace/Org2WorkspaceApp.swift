@@ -37,6 +37,12 @@ struct Org2WorkspaceApp: App {
         .background(WorkspaceWindowConfigurator())
         .onAppear {
           appDelegate.hasActiveWork = { [store] in store.hasWorkInProgressForTermination }
+          appDelegate.runningAgentTurnCount = { [store] in store.aiChatRunningTurnCountOnCurrentHost }
+          appDelegate.drainAgentTurns = { [store] in
+            store.beginAIChatDrain()
+            store.statusText = "Quitting when running agent turns finish…"
+            _ = await store.waitForAIChatTurnsToFinish(timeout: 3_600)
+          }
           appDelegate.prepareForTermination = { [store] in
             await store.prepareForTermination()
           }
@@ -486,6 +492,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
   private let diagnosticsHeartbeat = WorkspaceDiagnosticsHeartbeatResponder()
   var prepareForTermination: (() async -> Bool)?
   var hasActiveWork: (() -> Bool)?
+  /// Agent turns running on this Mac, for "Quit When Turns Finish".
+  var runningAgentTurnCount: (() -> Int)?
+  /// Stops accepting new local turns and waits for running ones to finish.
+  var drainAgentTurns: (() async -> Void)?
+  private var drainTask: Task<Void, Never>?
   private var mayTerminate = false
   private var quitAlert: NSAlert?
   private var quitKeyMonitor: Any?
@@ -590,6 +601,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     alert.addButton(withTitle: "Quit")
     alert.addButton(withTitle: prompt == .saveTakingTooLong ? "Keep Waiting" : "Keep Open")
+    let runningTurns = prompt == .activeWork ? (runningAgentTurnCount?() ?? 0) : 0
+    if runningTurns > 0, drainAgentTurns != nil {
+      // Updates and restarts need not interrupt live turns: stop taking new
+      // ones here (they go to an online server) and quit once these finish.
+      alert.addButton(withTitle: "Quit When Turns Finish")
+      alert.informativeText += " Or let \(runningTurns) running agent turn\(runningTurns == 1 ? "" : "s") finish first; new turns go to an online OpenOrg server meanwhile."
+    }
     alert.buttons[0].keyEquivalent = ""
     alert.buttons[1].keyEquivalent = "\r"
     quitAlert = alert
@@ -619,6 +637,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.beginSheetModal(for: parent) { [weak self, weak alert] response in
       guard let self, let alert, self.quitAlert === alert else { return }
       self.dismissQuitPrompt()
+      if response == .alertThirdButtonReturn, let drain = self.drainAgentTurns {
+        self.quitCoordinator.respond(to: prompt, quit: false)
+        self.drainTask?.cancel()
+        self.drainTask = Task { @MainActor [weak self] in
+          await drain()
+          guard let self, !Task.isCancelled else { return }
+          self.quitCoordinator.requestQuit(hasActiveWork: self.hasActiveWork?() ?? false)
+        }
+        return
+      }
       self.quitCoordinator.respond(to: prompt, quit: response == .alertFirstButtonReturn)
     }
   }

@@ -95,6 +95,27 @@ struct AIChatSettingsView: View {
       }
 
       Section {
+        Picker("Run new agent turns on", selection: Binding(
+          get: { store.aiChatPreferredExecutionHostRef ?? "" },
+          set: { store.aiChatPreferredExecutionHostRef = $0.isEmpty ? nil : $0 }
+        )) {
+          Text("This Mac").tag("")
+          ForEach(store.aiChatExecutionHostCandidates, id: \.hostRef) { host in
+            Text(host.hostKind == .server ? "\(host.hostName) (server)" : host.hostName).tag(host.hostRef)
+          }
+          if let preferred = store.aiChatPreferredExecutionHostRef,
+             !store.aiChatExecutionHostCandidates.contains(where: { $0.hostRef == preferred }) {
+            Text("\(preferred) (offline)").tag(preferred)
+          }
+        }
+        Text("A headless OpenOrg server can own conversations this Mac would run, so quitting, sleeping, or updating OpenOrg never interrupts a turn. This Mac shows the server's live progress and takes over automatically whenever the server is offline, restarting, or lacks the conversation's destination. Local agents then run on the server's machine with its files and permissions.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } header: {
+        Label("Execution", systemImage: "server.rack")
+      }
+
+      Section {
         Toggle("Start node briefs in a new chat thread", isOn: $store.aiChatBriefsStartNewThread)
         Picker("Settle inactive threads", selection: Binding(
           get: { store.aiChatThreadSettlementSettings.interval },

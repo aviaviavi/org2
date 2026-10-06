@@ -103,6 +103,19 @@ try {
   assert.equal(byRef["desktop-mac"].turns.length, 1, "a silent host keeps its last-known turns as cached state");
   assert.deepEqual(byRef["desktop-mac"].failoverHostRefs.sort(), ["desktop-live", "press"]);
 
+  // A draining host is not a failover candidate, and hand-offs to it are explained.
+  writeHost("w-press", { hostRef: "press", hostName: "OpenOrg on press", hostKind: "server", updatedAt: minutesAgo(0.5).toISOString(), isDraining: true });
+  {
+    const drainingHosts = activityHosts(root, now).hosts;
+    const pressHost = drainingHosts.find((host) => host.hostRef === "press");
+    assert.equal(pressHost.draining, true);
+    assert.match(pressHost.stateReason, /Draining/u);
+    assert.ok(!drainingHosts.find((host) => host.hostRef === "desktop-mac").failoverHostRefs.includes("press"));
+    const restarting = explainActivity(root, { now, thread: "EEEEEEEE-0000-4000-8000-000000000005" }).items[0];
+    assert.equal(restarting.reason.code, "host-restarting");
+  }
+  writeHost("w-press", { hostRef: "press", hostName: "OpenOrg on press", hostKind: "server", updatedAt: minutesAgo(0.5).toISOString() });
+
   // Threads.
   const explain = (options) => explainActivity(root, { now, ...options }).items[0];
   const live = explain({ thread: "AAAAAAAA-0000-4000-8000-000000000001" });

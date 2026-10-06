@@ -155,9 +155,8 @@ struct OpenOrgServer {
                     "chatRepairError": store.aiChatRepairError ?? "",
                     "filesystemAccess": store.codexSandboxAccess.rawValue,
                     "threads": store.aiChatThreads.count,
-                    "runningThreads": store.aiChatThreads.filter {
-                      store.isAIChatThreadRunningOnCurrentHost($0.id)
-                    }.count,
+                    "runningThreads": store.aiChatRunningTurnCountOnCurrentHost,
+                    "draining": store.isAIChatDraining,
                     "peerHosts": store.aiChatRemoteLiveHosts.map {
                       ["hostRef": $0.hostRef, "name": $0.hostName, "kind": $0.hostKind.rawValue,
                        "online": $0.isFresh(within: 150), "updatedAt": ISO8601DateFormatter().string(from: $0.updatedAt),
@@ -185,6 +184,17 @@ struct OpenOrgServer {
               result = remote.pushProviderConfigured ? ["configured": true] : ["error": remote.pushStatusText]
             } else { result = ["error": remote.pushStatusText] }
           } else { result = ["error": "Missing APNs configuration"] }
+        case "drain":
+          // Finish running turns before a restart or update: accept no new
+          // turns or hand-offs (clients route them to another online host)
+          // and start no scheduled automations.
+          store.setAutomationSchedulerActive(false)
+          store.beginAIChatDrain()
+          result = ["draining": true, "runningThreads": store.aiChatRunningTurnCountOnCurrentHost]
+        case "resume":
+          store.endAIChatDrain()
+          store.setAutomationSchedulerActive(config.schedulesEnabled)
+          result = ["draining": false, "runningThreads": store.aiChatRunningTurnCountOnCurrentHost]
         case "stop":
           store.setAutomationSchedulerActive(false)
           remote.setEnabled(false)
