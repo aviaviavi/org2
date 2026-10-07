@@ -4,34 +4,31 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.7</title>
-            <pubDate>Fri, 02 Oct 2026 23:49:56 -0700</pubDate>
+            <title>0.8.8</title>
+            <pubDate>Wed, 07 Oct 2026 11:41:36 -0700</pubDate>
             <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.7</sparkle:version>
-            <sparkle:shortVersionString>0.8.7</sparkle:shortVersionString>
+            <sparkle:version>0.8.8</sparkle:version>
+            <sparkle:shortVersionString>0.8.8</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## Highlights
+            <description sparkle:format="markdown"><![CDATA[## OpenOrg 0.8.8
 
-- Write in the new macOS Prose mode: keep alternate wording, ghost and revive text, and park fragments in Overflow while retaining ordinary Org source.
-- Reply to a specific AI chat message, share threads as live local links, and use server-hosted shared chats.
-- Improve chat recovery and synchronization across Mac, iPhone, and remote agents, including queued replies, early steers, and notification deduplication.
-- Create files from the sidebar or File menu with Command-Shift-N, and use configured daily-note paths.
-- Render linked images inline, insert image links with the source editor's /image command, and highlight code in rendered documents.
-- Extend saved views with date variables, date comparisons, and regular expressions; expose experimental Canvases navigation.
-- Improve agenda edits, checked-list rendering, chat layout, and settings navigation.
+- Browse web links and HTML files directly in the workspace, with find, zoom, copy-link, and expand controls.
+- See interactive charts in AI chat and documents, with updated styling, tooltips, and series controls.
+- Configure Slack, Notion, and IMAP email sources from a single setup form.
+- Understand running work through Activity status explanations, host visibility, and clearer Reply & Resume progress.
+- Start agent work from TODOs, settle completed chats, and keep active turns recoverable across app and server upgrades.
+- Enjoy collapsible sidebar sections, consistent theme surfaces, document @ file suggestions, and syntax highlighting for more than 60 formats.
+- Fix stuck chats, stale synced turns, navigation delays during source sync, and OpenClaw steering compatibility.
+- On iOS, improve shared chart rendering and syntax highlighting in documents.
 
-## Installation
+Install the Apple Silicon or Intel DMG for your Mac. Both builds require macOS 14 or later and are Developer ID signed and Apple notarized. The iOS build is distributed separately through TestFlight.
 
-macOS 14 or later. Choose OpenOrg.dmg for Apple Silicon or OpenOrg-Intel.dmg for Intel. Both installers are Developer ID signed, notarized by Apple, and stapled. The iOS client is distributed separately through TestFlight as version 0.8.7, build 43.
-
-## Validation
-
-The coordinated release validates the shared runtime, documentation, Node suite, VS Code extension, and macOS Swift suite before publication. Artifact checksums and the complete changelog are included below.
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.7...0.8.8
 ]]></description>
-            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.7/OpenOrg-Intel.dmg" length="242179664" type="application/octet-stream" sparkle:edSignature="kkQkwMjRgOrYPMKlgq7N5BE0BDPYqW7lkno6q9fLoMlUkadrN3nFzisy3K6a7tmRyAZABLoBoLn57cO9hba8Bw=="></enclosure>
+            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg-Intel.dmg" length="243812327" type="application/octet-stream" sparkle:edSignature="c9Kr+vLS0Yi4wQgPiCiDAdX+3/xVMFKrQ5R3SD/pguPrHKvylbsHJrDJZ/pegnptYFysTAbW2BZR1B4FnmESCA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: ogCm8DdWXyKLJGfgFCngnH7Dw4Az/fDOvazaIruOrDKPrNbaHVxtgDt3KboPnRctn6FU7bKAQRDvWbhHxucyDA==
-length: 2539
+edSignature: JVvg4YugGW92Zu8CZivg8Zxh+DaRWGXscLSPpE3a1XXe9nBjco2f1F12UsVCjHPdHuyMf0Ad/pnlluDRO/1mAA==
+length: 2324
 -->
