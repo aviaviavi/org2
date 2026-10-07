@@ -1,6 +1,6 @@
 #+TITLE: Reference
 
-Org2 reference is split into two detailed sections:
+Celorga reference is split into two detailed sections:
 
 - [[file:agent-quickstart.org][Agent quickstart]]
   - installed capability discovery
@@ -43,8 +43,8 @@ Org2 reference is split into two detailed sections:
   - mixing ID links and title links
 - [[file:features.org][Features]]
 - [[file:agentic-workspace-roadmap.org][Agentic workspace roadmap]]
-- [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]]
-- [[file:celorga-vs-markdown.org][Org2 vs Markdown]]
+- [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]]
+- [[file:celorga-vs-markdown.org][Celorga vs Markdown]]
 
 For the independently implementable language standard, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]], [[https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]], and [[https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org][PARSING.org]].
 

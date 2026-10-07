@@ -1,9 +1,9 @@
 #+TITLE: Shared corpora and collaboration
 #+SUBTITLE: Ordinary folders as explicit trust boundaries
 
-Org2 collaboration starts with a small rule: do not share a person's entire private corpus merely because one project or teammate needs shared context. Put routinely shared notes, tasks, meetings, decisions, workflows, and review records in a separately mounted shared corpus.
+Celorga collaboration starts with a small rule: do not share a person's entire private corpus merely because one project or teammate needs shared context. Put routinely shared notes, tasks, meetings, decisions, workflows, and review records in a separately mounted shared corpus.
 
-A corpus remains an ordinary folder or repository. Transport and membership can come from Git, a file-sync provider, or operating-system permissions. Org2 does not present descriptive metadata as a replacement for those enforcement layers.
+A corpus remains an ordinary folder or repository. Transport and membership can come from Git, a file-sync provider, or operating-system permissions. Celorga does not present descriptive metadata as a replacement for those enforcement layers.
 
 * Portable corpus identity
 
@@ -49,7 +49,7 @@ Applying creates the standard visible zones when missing and merges the identity
 
 * Mac workspace mounts and federated reads
 
-Org2 Workspace remembers every corpus you open. The compact switcher at the bottom of the sidebar shows the active corpus name and switches among mounted local paths; full identity and path metadata stay out of the navigation until needed. *Create a shared team corpus* makes a starter folder with a portable shared identity.
+Celorga remembers every corpus you open. The compact switcher at the bottom of the sidebar shows the active corpus name and switches among mounted local paths; full identity and path metadata stay out of the navigation until needed. *Create a shared team corpus* makes a starter folder with a portable shared identity.
 
 The Agenda and text Search surfaces can read either the active corpus or all mounted corpora. Federated rows carry the portable corpus identity and show the corpus name beside the source path. Opening a row from another corpus activates that corpus before loading the entry.
 
@@ -80,7 +80,7 @@ For an initial small-team rollout:
 1. Create one shared corpus for one real workflow or project.
 2. Put only the context collaborators routinely need in that corpus.
 3. Share the folder or repository using infrastructure the team already trusts.
-4. Have each collaborator mount both their personal corpus and the shared corpus in Org2 Workspace.
+4. Have each collaborator mount both their personal corpus and the shared corpus in Celorga.
 5. Use all-corpora Agenda and Search for awareness. Keep personal quick capture in the personal corpus's daily note; switch to the shared corpus before creating shared tasks, notes, runs, or workflows.
 6. Give an agent only the shared corpus path when it should not receive personal context.
 
@@ -101,7 +101,7 @@ The next collaboration layers build on this identity, mount, and federated-read 
 
 - previewable handoff from a private corpus into a shared corpus;
 - explicit workspace profiles for people, agents, and automation;
-- coarse read, proposal, generated-zone, and direct-write policies at Org2 command boundaries.
+- coarse read, proposal, generated-zone, and direct-write policies at Celorga command boundaries.
 
 Real-time collaborative editing and hosted identity are not prerequisites. The near-term goal is coherent ownership, handoff, review, and agent scoping over files the team already controls.
 

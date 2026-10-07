@@ -1,22 +1,24 @@
-#+TITLE: OpenOrg and Org2
+#+TITLE: Architecture
 #+SUBTITLE: A local-first workspace built on ordinary files and an open toolkit.
 
 * The boundary
 
-OpenOrg is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.
+Celorga has two layers under one name.
 
-Org2 is the independently specified compiler/runtime and semantic profile underneath OpenOrg, together with its CLI, npm package, schemas, and editor tooling. Documents are ordinary =.org= files.
+The *Celorga app* is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.
+
+The *Celorga runtime* is the independently specified compiler, CLI, and semantic Org profile underneath the app, together with its npm package, schemas, and editor tooling. Documents are ordinary =.org= files.
 
 * Portability
 
 - Ordinary =.org= files are the source of truth for documents.
-- The command-line tools are =org2= and =celorga-lsp=.
-- The npm package is =@aviaviavi/org2=.
+- The command-line tools are =celorga= and =celorga-lsp=; =org2= and =org2-lsp= remain compatibility aliases.
+- The npm package is =celorga= (releases before the rename were published as =@aviaviavi/org2=).
 - VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.
 - Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.
-- Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Org2 compiler.
+- Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Celorga runtime.
 
-* What OpenOrg adds
+* What the Celorga app adds
 
 - A native Mac workspace for capture, Agenda, files, meetings, agents, and review.
 - A five-minute first-run path from a folder to a cited agent result.
@@ -24,4 +26,4 @@ Org2 is the independently specified compiler/runtime and semantic profile undern
 - Local configuration of agent destinations and explicitly authorized context.
 - Packaging, updates, diagnostics, and a coherent product experience.
 
-See [[file:language-reference.org][Org2 language reference]] for the format and [[file:editors-macos.org][OpenOrg for macOS]] for the product client.
+See [[file:language-reference.org][Celorga language reference]] for the format and [[file:editors-macos.org][Celorga for macOS]] for the product client.

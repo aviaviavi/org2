@@ -1,7 +1,7 @@
-#+TITLE: Headless OpenOrg server
+#+TITLE: Headless Celorga server
 #+SUBTITLE: Keep chats and scheduled work available on a dedicated Mac
 
-=celorga server start= runs OpenOrg's chat relay and automation scheduler without opening the desktop app. It can also host an optional read-only Streamable HTTP MCP endpoint for external corpus retrieval. This implementation requires macOS 14 or later and reuses the desktop's chat engine, Mobile Remote protocol, corpus operations, and runtime adapters. The TypeScript runtime continues to own workflow scheduling, durable run semantics, and MCP retrieval.
+=celorga server start= runs Celorga's chat relay and automation scheduler without opening the desktop app. It can also host an optional read-only Streamable HTTP MCP endpoint for external corpus retrieval. This implementation requires macOS 14 or later and reuses the desktop's chat engine, Mobile Remote protocol, corpus operations, and runtime adapters. The TypeScript runtime continues to own workflow scheduling, durable run semantics, and MCP retrieval.
 
 The host needs its own accessible corpus, configured agent runtimes, and Tailscale connection. A phone can use the server while a different Mac is asleep or disconnected. The server holds a process-scoped assertion against idle system sleep while running; it cannot override a closed laptop lid, loss of power, or logout.
 
@@ -93,7 +93,7 @@ The desktop refreshes its chat list and messages when synchronized transcript fi
 
 * Pair a Mac and host shared thread links
 
-A desktop can pair with the server the same way an iPhone does. Run =server pair=, then open *Settings → Sharing → OpenOrg Server* in OpenOrg on the Mac. Paste the pairing link, or enter the endpoint and code. The Mac keeps its device credential in its Keychain. Forgetting the server revokes that credential through the relay.
+A desktop can pair with the server the same way an iPhone does. Run =server pair=, then open *Settings → Sharing → Celorga Server* in Celorga on the Mac. Paste the pairing link, or enter the endpoint and code. The Mac keeps its device credential in its Keychain. Forgetting the server revokes that credential through the relay.
 
 A paired Mac can choose the server when it shares an AI chat thread. The Mac sends only the thread ID and its appearance settings. The server renders the read-only page from its own copy of the synced transcript and keeps it current while the Mac is asleep or offline. The page server binds only to the configured Tailscale address. It listens on its own port, which persists with its links in =publications-HOST= beside the server configuration, so URLs survive restarts. =server status= reports =sharedThreads=. If the thread has not synced to the server yet, the request fails with a message instead of creating an empty page.
 
@@ -109,7 +109,7 @@ A conversation continues on the host whose runtime last ran it, because Codex, O
 
 Messages record where they came from and where they ran: the originating client (desktop, phone, automation, or a background =celorga thread post=), the phone's paired name, the host that received the message, and the host that executed the turn. The desktop shows this beside messages that did not both arrive and run on that Mac. iOS shows it on every message and names the host in the chat list and progress indicator.
 
-Hand-offs and presence travel through the synchronized corpus. When a local Syncthing instance shares the corpus, OpenOrg asks it to rescan the changed chat files immediately instead of waiting for Syncthing's filesystem-watcher delay (ten seconds by default). This uses the API key from that machine's own Syncthing configuration at request time, sends it only to Syncthing's loopback GUI address, and never stores it. Set the =OpenOrgSyncthingScanHints= default to =false= to turn it off. Other synchronization tools work with their own propagation delay. Agents on the server can use =celorga thread post= to deliver idempotent background results to the same conversation.
+Hand-offs and presence travel through the synchronized corpus. When a local Syncthing instance shares the corpus, Celorga asks it to rescan the changed chat files immediately instead of waiting for Syncthing's filesystem-watcher delay (ten seconds by default). This uses the API key from that machine's own Syncthing configuration at request time, sends it only to Syncthing's loopback GUI address, and never stores it. Set the =OpenOrgSyncthingScanHints= default to =false= to turn it off. Other synchronization tools work with their own propagation delay. Agents on the server can use =celorga thread post= to deliver idempotent background results to the same conversation.
 
 * Choose the automation owner
 

@@ -1,13 +1,13 @@
 # Cited local search
 
-`org2 search` provides a local-first cited retrieval surface for humans and agents working over an Org2 corpus. It is a literal, case-insensitive full-text line scan over `.org` and `.org2` files. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
+`celorga search` provides a local-first cited retrieval surface for humans and agents working over an Org2 corpus. It is a literal, case-insensitive full-text line scan over `.org` and `.org2` files. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
 
 ## Examples
 
 ```sh
-org2 search "open loops" --dir notes --recursive
-org2 search "waiting on me" --dir notes --recursive --todo TODO --tag project --format json
-org2 query "decision record" --file notes/decisions.org2 --context 2 --limit 10 --format json
+celorga search "open loops" --dir notes --recursive
+celorga search "waiting on me" --dir notes --recursive --todo TODO --tag project --format json
+celorga query "decision record" --file notes/decisions.org2 --context 2 --limit 10 --format json
 ```
 
 Human-readable output is citation-first:
@@ -50,25 +50,25 @@ JSON output uses the `org2:search:v1` schema:
 
 ## Local index storage
 
-`org2 index` and `org2 search --index rebuild` write disposable search indexes outside the corpus by default:
+`celorga index` and `celorga search --index rebuild` write disposable search indexes outside the corpus by default:
 
 ```text
 ~/.org2/index/<corpus-slug>-<hash>/search-v1.json
 ```
 
-`org2 compile corpus --incremental` uses the same per-corpus local index directory for its incremental cache. This keeps derived data out of synced note folders and avoids cross-machine merge conflicts. Set `ORG2_INDEX_HOME=/path/to/index-root` to override the base directory.
+`celorga compile corpus --incremental` uses the same per-corpus local index directory for its incremental cache. This keeps derived data out of synced note folders and avoids cross-machine merge conflicts. Set `ORG2_INDEX_HOME=/path/to/index-root` to override the base directory.
 
 ## Recency and salience tuning
 
-`org2 agent search`, `org2 agent context`, and `org2 context` rank matched notes with configurable recency and salience signals in addition to keyword/title/tag matches. Defaults are `--recency-weight 1` and `--salience-weight 1`; set either weight to `0` to disable that signal.
+`celorga agent search`, `celorga agent context`, and `celorga context` rank matched notes with configurable recency and salience signals in addition to keyword/title/tag matches. Defaults are `--recency-weight 1` and `--salience-weight 1`; set either weight to `0` to disable that signal.
 
 Recency uses `UPDATED`, `DATE`, `CREATED`, `CLOSED`, or planning timestamps when present. Salience uses explicit `ORG2_SALIENCE`/`SALIENCE`/`IMPORTANCE`, pinned or important metadata, active TODO/SCHEDULED/DEADLINE state, backlinks/mentions, and project/entity scope proximity. JSON results include `ranking` and per-result `selectionReason`; rendered context packs include a “Selected because” line so agents can explain why each item was selected.
 
 Examples:
 
 ```bash
-org2 context "scarf support triage" --dir notes --recursive --recency-weight 2 --salience-weight 1
-org2 agent search --query "pricing policy" --dir notes --salience-weight 3 --recency-weight 0 --format json
+celorga context "scarf support triage" --dir notes --recursive --recency-weight 2 --salience-weight 1
+celorga agent search --query "pricing policy" --dir notes --salience-weight 3 --recency-weight 0 --format json
 ```
 
 ## Agent consumption guidance

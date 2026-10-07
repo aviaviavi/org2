@@ -1,12 +1,12 @@
-#+TITLE: Org2 vs Markdown
+#+TITLE: Celorga vs Markdown
 
-Markdown and Org2 both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Org2 adds a shared semantic runtime for planning, linked knowledge, data, publishing, and agent work across a corpus.
+Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a shared semantic runtime for planning, linked knowledge, data, publishing, and agent work across a corpus.
 
 The practical question is how much behavior the files need to carry.
 
 * At a glance
 
-| Concern | Markdown | Org2 |
+| Concern | Markdown | Celorga |
 |---+---+---|
 | Natural starting point | Documents, messages, READMEs, and web content | Notes, tasks, sources, and workflows that form a corpus |
 | Plain-text storage | Yes | Yes |
@@ -28,23 +28,23 @@ The practical question is how much behavior the files need to carry.
 
 READMEs, help pages, blog posts, chat messages, and most repository documentation remain natural Markdown territory.
 
-* Org2 becomes useful as the folder becomes a system
+* Celorga becomes useful as the folder becomes a system
 
 ** Planning spans many files
 
-An Org2 task carries state that the parser understands directly: TODO status, scheduled and deadline timestamps, repeaters, priority, effort, tags, assignments, and properties. The CLI, VS Code integration, agenda TUI, and Mac Workspace derive their planning views from the same model.
+A Celorga task carries state that the parser understands directly: TODO status, scheduled and deadline timestamps, repeaters, priority, effort, tags, assignments, and properties. The CLI, VS Code integration, agenda TUI, and Mac Workspace derive their planning views from the same model.
 
-A Markdown application can define comparable conventions. Org2 ships one coherent interpretation so the files behave consistently outside a particular application.
+A Markdown application can define comparable conventions. Celorga ships one coherent interpretation so the files behave consistently outside a particular application.
 
 ** Notes need durable identity and health checks
 
 File links work well for page-oriented collections. Longer-lived knowledge often needs stable IDs, links to individual headings, backlinks, aliases, graph queries, and diagnostics for broken or ambiguous references.
 
-Org2 treats those relationships as compiler input. Link maintenance, cited search, refactoring, and editor navigation can therefore share the same source ranges and resolved graph.
+Celorga treats those relationships as compiler input. Link maintenance, cited search, refactoring, and editor navigation can therefore share the same source ranges and resolved graph.
 
 ** Rich views remain connected to their declarations
 
-Org2 data notebooks keep dataset and SQL declarations in plain text, materialize explicit results, record freshness and provenance, and render tables or interactive charts in the Mac app. Meeting recordings and transcripts, agenda items, graph reports, and published pages follow the same source-backed pattern.
+Celorga data notebooks keep dataset and SQL declarations in plain text, materialize explicit results, record freshness and provenance, and render tables or interactive charts in the Mac app. Meeting recordings and transcripts, agenda items, graph reports, and published pages follow the same source-backed pattern.
 
 HTML is used where a richer presentation helps; the durable declaration and result metadata remain inspectable files.
 
@@ -52,7 +52,7 @@ HTML is used where a richer presentation helps; the durable declaration and resu
 
 Plain Markdown is a perfectly good prompt and response format. A workspace that delegates consequential work also needs bounded context, citations, durable state, outputs, validation, clarification, and approval boundaries.
 
-Org2 represents those parts as portable run and workflow records. The current native integration is OpenClaw, while the CLI, context interfaces, run files, MCP surface, and artifact conventions are available to other agents and scripts.
+Celorga represents those parts as portable run and workflow records. The current native integration is OpenClaw, while the CLI, context interfaces, run files, MCP surface, and artifact conventions are available to other agents and scripts.
 
 * A small example
 
@@ -62,7 +62,7 @@ Markdown can express a lightweight task clearly:
 - [ ] Follow up with design by Friday #product
 #+end_src
 
-An Org2 entry can make the same work directly available to agenda, query, link, and agent workflows:
+A Celorga entry can make the same work directly available to agenda, query, link, and agent workflows:
 
 #+begin_src org
 * TODO Follow up with design :product:
@@ -76,27 +76,27 @@ An Org2 entry can make the same work directly available to agenda, query, link, 
   Review [[id:design-review][the design decision]] before replying.
 #+end_src
 
-The added fields are useful only when something consumes them. Org2 is a good trade when agendas, queries, editors, automation, or agents do.
+The added fields are useful only when something consumes them. Celorga is a good trade when agendas, queries, editors, automation, or agents do.
 
 * Costs and current limits
 
-Org2 asks contributors to learn more syntax and a more opinionated semantic model. Its ecosystem is young, and its long-tail renderer and integration coverage is much smaller than Markdown's. The Mac and iOS clients are early, and editor depth is uneven outside VS Code and the native Mac workspace.
+Celorga asks contributors to learn more syntax and a more opinionated semantic model. Its ecosystem is young, and its long-tail renderer and integration coverage is much smaller than Markdown's. The Mac and iOS clients are early, and editor depth is uneven outside VS Code and the native Mac workspace.
 
 Markdown also remains easier when a document must render predictably across many unrelated services.
 
 * Using both
 
-Many Org2 workspaces include Markdown files for repository-facing prose and Org/Org2 files for structured work. The Mac app can browse Markdown alongside the corpus, and Org2 can publish HTML documentation from its own source tree.
+Many Celorga workspaces include Markdown files for repository-facing prose and Org files for structured work. The Mac app can browse Markdown alongside the corpus, and Celorga can publish HTML documentation from its own source tree.
 
-There is no need to convert a README merely to make it part of an Org2 workspace. Choose the format per file based on the semantics it needs.
+There is no need to convert a README merely to make it part of a Celorga workspace. Choose the format per file based on the semantics it needs.
 
 * Practical choice
 
-Choose Markdown for broadly portable documents and lightweight conventions. Choose Org2 when the files need to support shared planning, graph, data, review, agent, and publishing behavior across a local workspace.
+Choose Markdown for broadly portable documents and lightweight conventions. Choose Celorga when the files need to support shared planning, graph, data, review, agent, and publishing behavior across a local workspace.
 
 * Related
 
-- [[file:features.org][Org2 features]]
+- [[file:features.org][Celorga features]]
 - [[file:getting-started.org][Getting started]]
-- [[file:celorga-vs-obsidian.org][Org2 vs Obsidian]]
-- [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]]
+- [[file:celorga-vs-obsidian.org][Celorga vs Obsidian]]
+- [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]]

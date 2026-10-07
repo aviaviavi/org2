@@ -4,31 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>External LLM consumer pattern</title>
-<meta name="subtitle" content="Cited Org2 context without provider calls in core" />
+<meta name="subtitle" content="Cited Celorga context without provider calls in core" />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Cited Org2 context without provider calls in core" />
-<link rel="canonical" href="https://openorg.so/llm-consumers.html" />
+<meta name="description" content="Cited Celorga context without provider calls in core" />
+<link rel="canonical" href="https://celorga.io/llm-consumers.html" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="OpenOrg" />
+<meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="External LLM consumer pattern" />
-<meta property="og:description" content="Cited Org2 context without provider calls in core" />
-<meta property="og:url" content="https://openorg.so/llm-consumers.html" />
-<meta property="og:image" content="https://openorg.so/assets/og/llm-consumers.png" />
-<meta property="og:image:secure_url" content="https://openorg.so/assets/og/llm-consumers.png" />
+<meta property="og:description" content="Cited Celorga context without provider calls in core" />
+<meta property="og:url" content="https://celorga.io/llm-consumers.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/llm-consumers.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/llm-consumers.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="External LLM consumer pattern: Cited Org2 context without provider calls in core" />
+<meta property="og:image:alt" content="External LLM consumer pattern: Cited Celorga context without provider calls in core" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="External LLM consumer pattern" />
-<meta name="twitter:description" content="Cited Org2 context without provider calls in core" />
-<meta name="twitter:url" content="https://openorg.so/llm-consumers.html" />
-<meta name="twitter:image" content="https://openorg.so/assets/og/llm-consumers.png" />
-<meta name="twitter:image:alt" content="External LLM consumer pattern: Cited Org2 context without provider calls in core" />
+<meta name="twitter:description" content="Cited Celorga context without provider calls in core" />
+<meta name="twitter:url" content="https://celorga.io/llm-consumers.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/llm-consumers.png" />
+<meta name="twitter:image:alt" content="External LLM consumer pattern: Cited Celorga context without provider calls in core" />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -61,18 +61,18 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">External LLM consumer pattern</h1>
-<p class="org2-document-subtitle" role="doc-subtitle">Cited Org2 context without provider calls in core</p>
+<p class="org2-document-subtitle" role="doc-subtitle">Cited Celorga context without provider calls in core</p>
 </header>
-<p>Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI stays deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.</p>
+<p>Celorga is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Celorga CLI stays deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.</p>
 <p>This page describes the recommended boundary for OpenClaw, Claude, Codex, local models, or any other external agent. For the proposed in-repo AI job architecture, see <a href="ai-processing-architecture.html">AI processing architecture</a>.</p>
 <section class="org2-headline level-1">
 <h1 id="boundary">Boundary</h1>
-<p>Org2 guarantees local compiler outputs:</p>
+<p>Celorga guarantees local compiler outputs:</p>
 <ul>
-<li><p>stable command outputs such as <code>org2 query --format json</code> and <code>org2 compile corpus</code></p></li>
+<li><p>stable command outputs such as <code>celorga query --format json</code> and <code>celorga compile corpus</code></p></li>
 <li><p>source files, line ranges, heading ancestry, matched lines, and snippets for citations</p></li>
 <li><p>artifact roles, provenance metadata, graph links, backlinks, agenda state, and lint diagnostics</p></li>
 <li><p>no network or provider dependency for non-AI commands</p></li>
@@ -88,8 +88,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="query-to-context-workflow">Query-to-context workflow</h1>
-<p>Use <code>org2 query</code> to fetch grounded context before asking an LLM to answer a question.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query &quot;What did we decide about Project Alpha?&quot; \
+<p>Use <code>celorga query</code> to fetch grounded context before asking an LLM to answer a question.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga query &quot;What did we decide about Project Alpha?&quot; \
   --dir ~/notes \
   --recursive \
   --subtree \
@@ -99,14 +99,14 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 
 node examples/external-llm-context.mjs --limit=6 &lt; /tmp/org2-query.json \
   &gt; /tmp/org2-llm-context.txt</code></pre>
-<p>The formatter is intentionally tiny and provider-free. It turns Org2 query JSON into a context packet with source markers such as <code>[S1]</code> and explicit <code>file:line</code> citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as <code>[S1]</code>, <code>[S2]</code>.”</p>
+<p>The formatter is intentionally tiny and provider-free. It turns Celorga query JSON into a context packet with source markers such as <code>[S1]</code> and explicit <code>file:line</code> citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as <code>[S1]</code>, <code>[S2]</code>.”</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="prompt-skeleton">Prompt skeleton</h1>
-<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">You answer questions from an Org2 knowledge base.
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">You answer questions from a Celorga knowledge base.
 
 Rules:
-- Use only the supplied Org2 context packet.
+- Use only the supplied Celorga context packet.
 - Cite every factual claim with [S1], [S2], etc.
 - If the evidence is missing or contradictory, say so.
 - Do not invent file paths, dates, people, or decisions.
@@ -120,13 +120,13 @@ Question: What did we decide about Project Alpha?</code></pre>
 <section class="org2-headline level-1">
 <h1 id="compiled-corpus-workflow">Compiled-corpus workflow</h1>
 <p>For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+celorga lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json</code></pre>
 <p>The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in <a href="corpus-flow.html">Corpus flow</a>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="agent-thread-records">Agent thread records</h1>
-<p>Agent conversations that matter should be represented as durable Org2 headings instead of only living in an external chat transcript. Use <code>KIND: agent-thread</code> for a thread record and keep the remote session reference separate from selected context.</p>
+<p>Agent conversations that matter should be represented as durable Org headings instead of only living in an external chat transcript. Use <code>KIND: agent-thread</code> for a thread record and keep the remote session reference separate from selected context.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Thread: Firebolt report help
 :PROPERTIES:
 :ID: thread-1
@@ -145,14 +145,14 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 
 ** Durable outputs
 - [ ] Follow up on validation notes.</code></pre>
-<p>The <code>agent</code> and <code>session</code> fields identify the external worker/session. <code>context</code> is a comma- or semicolon-separated list of typed references such as <code>id:</code>, <code>file:</code>, <code>ticket:</code>, <code>report:</code>, <code>entity:</code>, <code>artifact:</code>, or <code>url:</code>. The body can also include normal Org2 links under a <code>Context attachments</code> section for readable labels and editor navigation.</p>
-<p><code>org2 agent fetch --id thread-1 --format json</code> exposes this as <code>thread.contextAttachments</code> along with <code>thread.agent</code>, <code>thread.session</code>, <code>thread.status</code>, <code>thread.transcript</code>, and <code>thread.storage</code>. Attachments that point at known <code>id:</code>, <code>file:</code>, wiki/note targets, or exact typed refs such as <code>report:report-1</code> include a <code>target</code> object with the resolved title, file, line range, and citation.</p>
-<p>Fetching the selected context object goes the other direction: <code>org2 agent fetch --id report-1 --format json</code> includes <code>relatedThreads</code> when agent-thread records attach to that node. Each related thread carries its id/title/session/status/citation plus <code>matchingAttachments</code>, so a Workspace or Agenda client can show “open existing thread” from a TODO/report/entity without scanning every thread itself. This preserves citations and avoids raw transcript storage unless the user chooses it.</p>
-<p>For prompt-ready context, <code>org2 context --id report-1 --format markdown</code> renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a <code>Related agent threads</code> section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one. Selecting the thread itself with <code>org2 context --id thread-1</code> renders a <code>Selected agent threads</code> section with agent/session/status/storage/transcript metadata plus each resolved context attachment, so OpenClaw handoffs can recover what the thread is about without scraping the thread body.</p>
+<p>The <code>agent</code> and <code>session</code> fields identify the external worker/session. <code>context</code> is a comma- or semicolon-separated list of typed references such as <code>id:</code>, <code>file:</code>, <code>ticket:</code>, <code>report:</code>, <code>entity:</code>, <code>artifact:</code>, or <code>url:</code>. The body can also include normal Org links under a <code>Context attachments</code> section for readable labels and editor navigation.</p>
+<p><code>celorga agent fetch --id thread-1 --format json</code> exposes this as <code>thread.contextAttachments</code> along with <code>thread.agent</code>, <code>thread.session</code>, <code>thread.status</code>, <code>thread.transcript</code>, and <code>thread.storage</code>. Attachments that point at known <code>id:</code>, <code>file:</code>, wiki/note targets, or exact typed refs such as <code>report:report-1</code> include a <code>target</code> object with the resolved title, file, line range, and citation.</p>
+<p>Fetching the selected context object goes the other direction: <code>celorga agent fetch --id report-1 --format json</code> includes <code>relatedThreads</code> when agent-thread records attach to that node. Each related thread carries its id/title/session/status/citation plus <code>matchingAttachments</code>, so a Workspace or Agenda client can show “open existing thread” from a TODO/report/entity without scanning every thread itself. This preserves citations and avoids raw transcript storage unless the user chooses it.</p>
+<p>For prompt-ready context, <code>celorga context --id report-1 --format markdown</code> renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a <code>Related agent threads</code> section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one. Selecting the thread itself with <code>celorga context --id thread-1</code> renders a <code>Selected agent threads</code> section with agent/session/status/storage/transcript metadata plus each resolved context attachment, so OpenClaw handoffs can recover what the thread is about without scraping the thread body.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="collaboration-and-workflow-state">Collaboration and workflow state</h1>
-<p>Shared human/agent work should keep enough routing and policy state in the Org2 document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.</p>
+<p>Shared human/agent work should keep enough routing and policy state in the Celorga document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Send support follow-up
 :PROPERTIES:
 :ID: support-followup-1
@@ -181,7 +181,7 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 <li><p>run/session metadata: <code>SESSION</code>, <code>RUN_ID</code>, <code>RUN_STARTED_AT</code>, <code>RUN_FINISHED_AT</code>, <code>RUN_LOG</code>, <code>SOURCE_ARTIFACTS</code></p></li>
 <li><p>handoff metadata: <code>HANDOFF_SUMMARY</code>, <code>HANDOFF_NEXT_ACTION</code>, <code>HANDOFF_LINKS</code></p></li>
 </ul>
-<p><code>org2 agent fetch --id support-followup-1 --format json</code> exposes these fields under <code>collaboration</code>. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known <code>id:</code>, <code>file:</code>, <code>report:</code>, <code>entity:</code>, and related refs when possible. <code>org2 context --id support-followup-1</code> renders a <code>Collaboration state</code> section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.</p>
+<p><code>celorga agent fetch --id support-followup-1 --format json</code> exposes these fields under <code>collaboration</code>. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known <code>id:</code>, <code>file:</code>, <code>report:</code>, <code>entity:</code>, and related refs when possible. <code>celorga context --id support-followup-1</code> renders a <code>Collaboration state</code> section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.</p>
 <p>These conventions define the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.</p>
 </section>
 <section class="org2-headline level-1">
@@ -233,7 +233,7 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 :BACKFILL_STATUS: complete
 :FRESHNESS: live
 :REFRESH_REF: query-data:package_fetches_by_company
-:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
+:REFRESH_COMMAND: celorga query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
 :REFRESH_STATUS: ready
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-06-13T12:30:00-07:00
@@ -258,10 +258,10 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 :QUALITY_NOTE: Latest warehouse checks passed before materialization.
 :END:</code></pre>
 <p>Keep credentials and secrets outside org2 files. Store only stable query IDs, non-secret query text or params, relation shape metadata such as <code>DATABASE</code>, <code>SCHEMA</code>, <code>TABLE</code>, <code>VIEW</code>, <code>COLUMNS</code>, <code>PRIMARY_KEY</code>, <code>PARTITION_BY</code>, <code>SORT_BY</code>, <code>DIMENSIONS</code>, <code>MEASURES</code>, <code>GRAIN</code>, <code>FILTERS</code>, <code>GROUP_BY</code>, <code>TIME_COLUMN</code>, and <code>TIMEZONE</code>, safe credential/config handles such as <code>env:SCARF_ANALYTICS_TOKEN</code> or <code>profile:product-analytics</code>, source paths/URIs, row counts, result limit/window/sampling metadata, operational readiness metadata such as <code>WATERMARK</code>, <code>DATA_LATENCY</code>, <code>AVAILABILITY</code>, and <code>BACKFILL_STATUS</code>, freshness, artifact references, query hashes, materialization state, provenance refs, source hashes, lineage refs, data contracts/schema versions, non-secret refresh handles, validation/confidence notes, quality status/checks, and lightweight ownership/access metadata such as <code>DATA_OWNER</code>, <code>DATA_STEWARD</code>, <code>SENSITIVITY</code>, <code>VISIBILITY</code>, <code>ACCESS_POLICY</code>, and <code>RETENTION</code>. This lets agents trace claims back to data and understand handling constraints without embedding warehouse-scale rows in notes or leaking inline secrets.</p>
-<p><code>org2 agent fetch --id query-fetches-by-company --format json</code> exposes this as <code>dataLink</code> metadata, including <code>kind</code>, <code>system</code>, <code>database</code>, <code>schema</code>, <code>table</code>, <code>view</code>, parsed <code>columns</code>, <code>primaryKey</code>, <code>partitionBy</code>, <code>sortBy</code>, <code>dimensions</code>, and <code>measures</code> arrays, <code>grain</code>, <code>filters</code>, <code>groupBy</code>, <code>timeColumn</code>, <code>timezone</code>, <code>source</code> / <code>path</code>, <code>queryId</code>, <code>query</code>, <code>queryHash</code>, parsed JSON <code>params</code> when possible, safe <code>credentialRef</code> / <code>configRef</code> values, <code>artifact</code>, <code>rowCount</code>, <code>resultLimit</code>, <code>resultOffset</code>, <code>sampleSize</code>, <code>sampleRate</code>, <code>samplingMethod</code>, <code>coverage</code>, <code>windowStart</code>, <code>windowEnd</code>, <code>lastRun</code>, <code>watermark</code>, <code>dataLatency</code>, <code>availability</code>, <code>backfillStatus</code>, <code>freshness</code>, <code>materialized</code>, optional refresh metadata (<code>refreshRef</code>, <code>refreshCommand</code>, <code>refreshStatus</code>, <code>refreshAfter</code>, and <code>nextRefresh</code>), validation metadata (<code>validationStatus</code>, <code>validationAt</code>, <code>validationBy</code>, <code>validationNote</code>, <code>confidence</code>, and <code>validationRefs</code>), ownership/access metadata (<code>dataOwner</code>, <code>dataSteward</code>, <code>sensitivity</code>, <code>visibility</code>, <code>accessPolicy</code>, and <code>retention</code>), optional <code>lineageRefs</code> from <code>LINEAGE_REFS</code> / <code>DATA_LINEAGE</code> / <code>UPSTREAM_REFS</code>, <code>dataContract</code>, <code>schemaVersion</code>, quality metadata (<code>qualityStatus</code>, <code>qualityScore</code>, <code>qualityChecks</code>, and <code>qualityNote</code>), optional <code>provenance</code> refs from <code>ORG2_PROVENANCE</code>, and optional <code>sourceHashes</code> from <code>ORG2_SOURCE_HASHES</code>. A local DuckDB-style dataset can use <code>KIND: dataset</code> with <code>ENGINE</code>, <code>PATH</code>, <code>TABLE</code>, <code>COLUMNS</code>, <code>PARAMS</code>, and <code>RESULTS</code>, and the same <code>dataLink</code> field is returned for Workspace/search clients.</p>
-<p>Fetching a parent report or file also exposes descendant data/query records as <code>relatedDataLinks</code>. For example, <code>org2 agent fetch --id report-fetches --format json</code> includes child <code>warehouse-query</code> and <code>dataset</code> headings with their citations, <code>claimState</code> review/freshness metadata, and compact <code>dataLink</code> metadata. The prompt-ready renderer mirrors this with a <code>Related data links</code> section, so a Workspace client can show the report's evidence, relation shape, partition/sort hints, semantic dimensions/measures/grain, filters/grouping/time-bucket hints, source path/URI, non-secret query text and params, artifacts, row counts, result limits/windows/sampling notes, data freshness/watermark/latency/availability/backfill state, materialization state, refresh status, validation/confidence state, lineage/contract/quality state, access/retention constraints, claim review state, and source-hash snapshot next to the selected note without reparsing the org2 file.</p>
+<p><code>celorga agent fetch --id query-fetches-by-company --format json</code> exposes this as <code>dataLink</code> metadata, including <code>kind</code>, <code>system</code>, <code>database</code>, <code>schema</code>, <code>table</code>, <code>view</code>, parsed <code>columns</code>, <code>primaryKey</code>, <code>partitionBy</code>, <code>sortBy</code>, <code>dimensions</code>, and <code>measures</code> arrays, <code>grain</code>, <code>filters</code>, <code>groupBy</code>, <code>timeColumn</code>, <code>timezone</code>, <code>source</code> / <code>path</code>, <code>queryId</code>, <code>query</code>, <code>queryHash</code>, parsed JSON <code>params</code> when possible, safe <code>credentialRef</code> / <code>configRef</code> values, <code>artifact</code>, <code>rowCount</code>, <code>resultLimit</code>, <code>resultOffset</code>, <code>sampleSize</code>, <code>sampleRate</code>, <code>samplingMethod</code>, <code>coverage</code>, <code>windowStart</code>, <code>windowEnd</code>, <code>lastRun</code>, <code>watermark</code>, <code>dataLatency</code>, <code>availability</code>, <code>backfillStatus</code>, <code>freshness</code>, <code>materialized</code>, optional refresh metadata (<code>refreshRef</code>, <code>refreshCommand</code>, <code>refreshStatus</code>, <code>refreshAfter</code>, and <code>nextRefresh</code>), validation metadata (<code>validationStatus</code>, <code>validationAt</code>, <code>validationBy</code>, <code>validationNote</code>, <code>confidence</code>, and <code>validationRefs</code>), ownership/access metadata (<code>dataOwner</code>, <code>dataSteward</code>, <code>sensitivity</code>, <code>visibility</code>, <code>accessPolicy</code>, and <code>retention</code>), optional <code>lineageRefs</code> from <code>LINEAGE_REFS</code> / <code>DATA_LINEAGE</code> / <code>UPSTREAM_REFS</code>, <code>dataContract</code>, <code>schemaVersion</code>, quality metadata (<code>qualityStatus</code>, <code>qualityScore</code>, <code>qualityChecks</code>, and <code>qualityNote</code>), optional <code>provenance</code> refs from <code>ORG2_PROVENANCE</code>, and optional <code>sourceHashes</code> from <code>ORG2_SOURCE_HASHES</code>. A local DuckDB-style dataset can use <code>KIND: dataset</code> with <code>ENGINE</code>, <code>PATH</code>, <code>TABLE</code>, <code>COLUMNS</code>, <code>PARAMS</code>, and <code>RESULTS</code>, and the same <code>dataLink</code> field is returned for Workspace/search clients.</p>
+<p>Fetching a parent report or file also exposes descendant data/query records as <code>relatedDataLinks</code>. For example, <code>celorga agent fetch --id report-fetches --format json</code> includes child <code>warehouse-query</code> and <code>dataset</code> headings with their citations, <code>claimState</code> review/freshness metadata, and compact <code>dataLink</code> metadata. The prompt-ready renderer mirrors this with a <code>Related data links</code> section, so a Workspace client can show the report's evidence, relation shape, partition/sort hints, semantic dimensions/measures/grain, filters/grouping/time-bucket hints, source path/URI, non-secret query text and params, artifacts, row counts, result limits/windows/sampling notes, data freshness/watermark/latency/availability/backfill state, materialization state, refresh status, validation/confidence state, lineage/contract/quality state, access/retention constraints, claim review state, and source-hash snapshot next to the selected note without reparsing the org2 file.</p>
 <p>Data/query records can also live outside the selected report subtree, such as in a central data catalog. Point them at the selected note with <code>CONTEXT: id:report-fetches</code>, <code>TARGET_ID: report-fetches</code>, <code>REPORT_ID: report-fetches</code>, or a normal <code>[[id:report-fetches]]</code> link. <code>relatedDataLinks</code> includes those referenced records with <code>matchingAttachments</code> so clients can explain why the query belongs with the selected report/entity.</p>
-<p>When the selected node is itself a <code>warehouse-query</code>, <code>dataset</code>, or other data-link record, <code>org2 context --id query-fetches-by-company</code> also includes that selected record in <code>Related data links</code>. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.</p>
+<p>When the selected node is itself a <code>warehouse-query</code>, <code>dataset</code>, or other data-link record, <code>celorga context --id query-fetches-by-company</code> also includes that selected record in <code>Related data links</code>. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.</p>
 <p>Event-backed records use the same <code>dataLink</code> envelope, but emphasize timeline provenance instead of result rows. Use <code>KIND: event-stream</code> for an append-only external stream and <code>KIND: timeline-link</code> for a curated projection over one or more streams.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Event stream: support state changes
 :PROPERTIES:
@@ -282,7 +282,7 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 :CHANGE_ID: change-42
 :CONTEXT: id:support-followup-1
 :END:</code></pre>
-<p><code>org2 agent fetch</code> exposes event/timeline metadata as <code>eventStream</code>, <code>timeline</code>, <code>eventType</code>, <code>entity</code>, <code>actor</code>, <code>occurredAt</code>, <code>capturedAt</code>, <code>sourceCursor</code>, <code>streamPosition</code>, <code>partitionKey</code>, <code>correlationId</code>, <code>causationId</code>, <code>changeId</code>, and <code>changeHash</code> when present. This lets Workspace and OpenClaw clients answer &quot;what changed and why?&quot;, replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.</p>
+<p><code>celorga agent fetch</code> exposes event/timeline metadata as <code>eventStream</code>, <code>timeline</code>, <code>eventType</code>, <code>entity</code>, <code>actor</code>, <code>occurredAt</code>, <code>capturedAt</code>, <code>sourceCursor</code>, <code>streamPosition</code>, <code>partitionKey</code>, <code>correlationId</code>, <code>causationId</code>, <code>changeId</code>, and <code>changeHash</code> when present. This lets Workspace and OpenClaw clients answer &quot;what changed and why?&quot;, replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="what-to-save-back">What to save back</h1>
@@ -293,13 +293,13 @@ org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json<
 <li><p><code>compiled/retrieval-index.json</code> for a derived machine artifact</p></li>
 <li><p>patch files or draft notes for proposed canonical changes</p></li>
 </ul>
-<p>Generated Org files should include properties such as <code>ORG2_ARTIFACT_ROLE</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_GENERATOR</code>, and <code>ORG2_GENERATED_AT</code>. Run <code>org2 lint</code> before trusting or publishing generated outputs.</p>
+<p>Generated Org files should include properties such as <code>ORG2_ARTIFACT_ROLE</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_GENERATOR</code>, and <code>ORG2_GENERATED_AT</code>. Run <code>celorga lint</code> before trusting or publishing generated outputs.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="minimal-answer-contract">Minimal answer contract</h1>
-<p>When an external agent answers from Org2 data, require:</p>
+<p>When an external agent answers from Celorga data, require:</p>
 <ul>
-<li><p>cited claims using Org2 source markers</p></li>
+<li><p>cited claims using Org source markers</p></li>
 <li><p>a short list of source files or IDs used</p></li>
 <li><p>a caveat when the answer came from stale or generated artifacts</p></li>
 <li><p>no automatic write to canonical notes unless the user explicitly applies/promotes it</p></li>

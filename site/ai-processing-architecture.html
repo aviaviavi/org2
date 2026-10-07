@@ -4,31 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AI processing architecture</title>
-<meta name="subtitle" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<meta name="subtitle" content="Provider-agnostic jobs on top of compiled Celorga corpus data" />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
-<link rel="canonical" href="https://openorg.so/ai-processing-architecture.html" />
+<meta name="description" content="Provider-agnostic jobs on top of compiled Celorga corpus data" />
+<link rel="canonical" href="https://celorga.io/ai-processing-architecture.html" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="OpenOrg" />
+<meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="AI processing architecture" />
-<meta property="og:description" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
-<meta property="og:url" content="https://openorg.so/ai-processing-architecture.html" />
-<meta property="og:image" content="https://openorg.so/assets/og/ai-processing-architecture.png" />
-<meta property="og:image:secure_url" content="https://openorg.so/assets/og/ai-processing-architecture.png" />
+<meta property="og:description" content="Provider-agnostic jobs on top of compiled Celorga corpus data" />
+<meta property="og:url" content="https://celorga.io/ai-processing-architecture.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/ai-processing-architecture.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/ai-processing-architecture.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="AI processing architecture: Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<meta property="og:image:alt" content="AI processing architecture: Provider-agnostic jobs on top of compiled Celorga corpus data" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="AI processing architecture" />
-<meta name="twitter:description" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
-<meta name="twitter:url" content="https://openorg.so/ai-processing-architecture.html" />
-<meta name="twitter:image" content="https://openorg.so/assets/og/ai-processing-architecture.png" />
-<meta name="twitter:image:alt" content="AI processing architecture: Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<meta name="twitter:description" content="Provider-agnostic jobs on top of compiled Celorga corpus data" />
+<meta name="twitter:url" content="https://celorga.io/ai-processing-architecture.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/ai-processing-architecture.png" />
+<meta name="twitter:image:alt" content="AI processing architecture: Provider-agnostic jobs on top of compiled Celorga corpus data" />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -61,13 +61,13 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">AI processing architecture</h1>
-<p class="org2-document-subtitle" role="doc-subtitle">Provider-agnostic jobs on top of compiled Org2 corpus data</p>
+<p class="org2-document-subtitle" role="doc-subtitle">Provider-agnostic jobs on top of compiled Celorga corpus data</p>
 </header>
-<p>Org2 can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.</p>
-<p>This page is the design boundary for future <code>org2 ai ...</code> commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.</p>
+<p>Celorga can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.</p>
+<p>This page is the design boundary for future <code>celorga ai ...</code> commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.</p>
 <section class="org2-headline level-1">
 <h1 id="layer-model">Layer model</h1>
 <pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">raw/ + notes/
@@ -81,9 +81,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h2 id="compiler-core">Compiler core</h2>
 <p>The core stays deterministic and local. It owns:</p>
 <ul>
-<li><p>parsing Org2 files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties</p></li>
+<li><p>parsing Org files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties</p></li>
 <li><p>resolving graph data, backlinks, source ranges, and corpus zones</p></li>
-<li><p>emitting <code>org2 compile corpus</code> and <code>org2 query --format json</code> artifacts</p></li>
+<li><p>emitting <code>celorga compile corpus</code> and <code>celorga query --format json</code> artifacts</p></li>
 <li><p>linting artifact metadata, provenance, generated-output boundaries, and graph health</p></li>
 <li><p>powering editor integrations through CLI/LSP commands</p></li>
 </ul>
@@ -97,10 +97,10 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>selecting source files, headings, query results, graph nodes, or compiled corpus outputs</p></li>
 <li><p>building structured prompt/context payloads with citations</p></li>
 <li><p>invoking a configured provider adapter by symbolic name</p></li>
-<li><p>validating model output shape when a workflow expects JSON or Org2 sections</p></li>
+<li><p>validating model output shape when a workflow expects JSON or Org sections</p></li>
 <li><p>writing reviewable generated artifacts with provenance metadata</p></li>
 </ul>
-<p>This layer can live behind <code>org2 ai ...</code> commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.</p>
+<p>This layer can live behind <code>celorga ai ...</code> commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="provider-adapter-boundary">Provider adapter boundary</h2>
@@ -133,10 +133,10 @@ export interface AiGenerateResult {
 <section class="org2-headline level-1">
 <h1 id="cli-surface">CLI surface</h1>
 <p>The command family is:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --task summarize-meeting --file raw/team-sync.org --out views/team-sync-summary.org
-org2 ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
-org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org
-org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga ai run --task summarize-meeting --file raw/team-sync.org --out views/team-sync-summary.org
+celorga ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+celorga ai suggest-links --dir notes --recursive --out views/link-suggestions.org
+celorga ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
 <p>Implemented pieces so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, <a href="ai-adapters.html">AI adapter interface</a>, <code>spec/v0/ai-job-manifest.schema.json</code>, and <code>src/aiAdapter.ts</code>.</p>
 <p>Command responsibilities:</p>
 <table>
@@ -161,14 +161,14 @@ org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
 <li><p>Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.</p></li>
 <li><p>Validate the returned output against the workflow contract.</p></li>
 <li><p>Write a generated artifact under <code>views/</code> or <code>compiled/</code> with <code>ORG2_ARTIFACT_ROLE</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_GENERATOR</code>, <code>ORG2_GENERATED_AT</code>, optional <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS</code> (<code>generated</code>, <code>review-required</code>, <code>reviewed</code>, or <code>promoted</code>).</p></li>
-<li><p>Run <code>org2 lint</code> so missing provenance or unsafe generated/canonical boundaries become visible.</p></li>
+<li><p>Run <code>celorga lint</code> so missing provenance or unsafe generated/canonical boundaries become visible.</p></li>
 <li><p>Promote only the human-approved parts into <code>notes/</code> through an explicit patch, editor command, or future promote workflow.</p></li>
 </ol>
 </section>
 <section class="org2-headline level-1">
 <h1 id="end-to-end-example">End-to-end example</h1>
 <p>Meeting summary flow:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query &quot;team sync&quot; \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga query &quot;team sync&quot; \
   --dir raw \
   --recursive \
   --subtree \
@@ -177,13 +177,13 @@ org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
   &gt; compiled/team-sync-context.json
 
 # Proposed future command: consumes the cited context and configured provider alias.
-org2 ai run \
+celorga ai run \
   --task summarize-meeting \
   --context compiled/team-sync-context.json \
   --provider work-summary \
   --out views/team-sync-summary.org
 
-org2 lint --dir . --recursive</code></pre>
+celorga lint --dir . --recursive</code></pre>
 <p>The generated summary should include:</p>
 <ul>
 <li><p>a short summary</p></li>
@@ -201,7 +201,7 @@ org2 lint --dir . --recursive</code></pre>
 <li><p>No hardcoded provider in compiler core.</p></li>
 <li><p>No provider secrets in notes, manifests, compiled corpus artifacts, or generated Org files.</p></li>
 <li><p>No automatic canonical edits from AI output.</p></li>
-<li><p>Every factual generated claim should trace to cited Org2 source ranges or say that evidence is missing.</p></li>
+<li><p>Every factual generated claim should trace to cited Org source ranges or say that evidence is missing.</p></li>
 <li><p>Generated artifacts should be overwriteable and lintable; canonical notes should require review.</p></li>
 <li><p>Editor integrations should call the same CLI surfaces rather than reimplementing provider behavior.</p></li>
 </ul>
@@ -215,7 +215,7 @@ org2 lint --dir . --recursive</code></pre>
 <li><p>meeting/transcript summarization</p></li>
 <li><p>link/entity suggestion reports</p></li>
 </ul>
-<p>Each feature should remain useful without forcing every Org2 user to configure an AI provider.</p>
+<p>Each feature should remain useful without forcing every Celorga user to configure an AI provider.</p>
 </section>
 </main>
 </div>

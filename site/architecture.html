@@ -3,31 +3,32 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Agent ingestion pipeline</title>
+<title>Architecture</title>
+<meta name="subtitle" content="A local-first workspace built on ordinary files and an open toolkit." />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes." />
-<link rel="canonical" href="https://celorga.io/ingestion-pipeline.html" />
+<meta name="description" content="A local-first workspace built on ordinary files and an open toolkit." />
+<link rel="canonical" href="https://celorga.io/architecture.html" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
-<meta property="og:title" content="Agent ingestion pipeline" />
-<meta property="og:description" content="Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes." />
-<meta property="og:url" content="https://celorga.io/ingestion-pipeline.html" />
-<meta property="og:image" content="https://celorga.io/assets/og/ingestion-pipeline.png" />
-<meta property="og:image:secure_url" content="https://celorga.io/assets/og/ingestion-pipeline.png" />
+<meta property="og:title" content="Architecture" />
+<meta property="og:description" content="A local-first workspace built on ordinary files and an open toolkit." />
+<meta property="og:url" content="https://celorga.io/architecture.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/architecture.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/architecture.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Agent ingestion pipeline: Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes." />
+<meta property="og:image:alt" content="Architecture: A local-first workspace built on ordinary files and an open toolkit." />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Agent ingestion pipeline" />
-<meta name="twitter:description" content="Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes." />
-<meta name="twitter:url" content="https://celorga.io/ingestion-pipeline.html" />
-<meta name="twitter:image" content="https://celorga.io/assets/og/ingestion-pipeline.png" />
-<meta name="twitter:image:alt" content="Agent ingestion pipeline: Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes." />
+<meta name="twitter:title" content="Architecture" />
+<meta name="twitter:description" content="A local-first workspace built on ordinary files and an open toolkit." />
+<meta name="twitter:url" content="https://celorga.io/architecture.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/architecture.png" />
+<meta name="twitter:image:alt" content="Architecture: A local-first workspace built on ordinary files and an open toolkit." />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -62,56 +63,36 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <main class="org2-document">
 <div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
-<h1 class="org2-document-title">Agent ingestion pipeline</h1>
+<h1 class="org2-document-title">Architecture</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">A local-first workspace built on ordinary files and an open toolkit.</p>
 </header>
-<p>Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes.</p>
 <section class="org2-headline level-1">
-<h1 id="data-model">Data model</h1>
-<p>Raw connector output uses <code>org2-ingestion/v1</code> and is stored in a raw/source zone such as <code>raw/slack/</code>, <code>raw/gmail/</code>, or a configured equivalent.</p>
-<p>Required raw capture fields:</p>
-<dl class="org2-description-list">
-<dt><code>sourceType</code></dt><dd><p><code>slack</code>, <code>gmail</code>, <code>meeting</code>, <code>linear</code>, <code>github</code>, <code>note</code>, or <code>demo</code></p></dd>
-<dt><code>externalId</code></dt><dd><p>stable upstream id, e.g. Slack timestamp or GitHub issue id</p></dd>
-<dt><code>authors</code></dt><dd><p>one or more source authors</p></dd>
-<dt><code>capturedAt</code> / <code>occurredAt</code></dt><dd><p>ingestion time and source event time</p></dd>
-<dt><code>visibility</code> and <code>sensitivity</code></dt><dd><p>source access/safety hints</p></dd>
-<dt><code>contentHash</code></dt><dd><p>SHA-256 of normalized raw content</p></dd>
-<dt><code>sourceRef</code></dt><dd><p>source URL/ref when available</p></dd>
-<dt><code>rawRef</code></dt><dd><p>stable provenance ref, <code>sourceType:externalId@sha256:contentHash</code></p></dd>
-<dt><code>content</code></dt><dd><p>normalized raw text/body</p></dd>
-</dl>
-<p>Derived review artifacts are generated beside, not over, durable notes. They include:</p>
+<h1 id="the-boundary">The boundary</h1>
+<p>Celorga has two layers under one name.</p>
+<p>The <strong>Celorga app</strong> is the native workspace, onboarding, integrations, and overall experience for building knowledge locally and putting it to work with people and agents.</p>
+<p>The <strong>Celorga runtime</strong> is the independently specified compiler, CLI, and semantic Org profile underneath the app, together with its npm package, schemas, and editor tooling. Documents are ordinary <code>.org</code> files.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="portability">Portability</h1>
 <ul>
-<li><p>summary candidates</p></li>
-<li><p>decisions</p></li>
-<li><p>TODO candidates</p></li>
-<li><p>entity candidates</p></li>
-<li><p>claims</p></li>
-<li><p>source citations back to <code>rawRef</code></p></li>
-<li><p><code>ORG2_REVIEW_STATUS</code> / artifact metadata so promotion is explicit</p></li>
+<li><p>Ordinary <code>.org</code> files are the source of truth for documents.</p></li>
+<li><p>The command-line tools are <code>celorga</code> and <code>celorga-lsp</code>; <code>org2</code> and <code>org2-lsp</code> remain compatibility aliases.</p></li>
+<li><p>The npm package is <code>celorga</code> (releases before the rename were published as <code>@aviaviavi/org2</code>).</p></li>
+<li><p>VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.</p></li>
+<li><p>Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.</p></li>
+<li><p>Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Celorga runtime.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
-<h1 id="pipeline">Pipeline</h1>
-<ol>
-<li><p>A source connector emits a raw capture.</p></li>
-<li><p>Celorga writes the raw capture under the raw/source zone using a deterministic filename derived from <code>sourceType</code>, <code>externalId</code>, and <code>contentHash</code>.</p></li>
-<li><p>Celorga generates a review artifact under a review zone with provenance and review status.</p></li>
-<li><p>A human or agent reviews selected facts and promotes only intentional durable notes/TODOs.</p></li>
-</ol>
-</section>
-<section class="org2-headline level-1">
-<h1 id="idempotency">Idempotency</h1>
-<p>Re-ingesting the same <code>sourceType</code> + <code>externalId</code> + normalized content hash writes the same raw and review paths, so repeated runs update/dedupe instead of duplicating files. If the upstream item changes, the content hash changes and a new capture/review artifact preserves the source version boundary.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="demo-fixture">Demo fixture</h1>
-<p>The provider-free demo implementation lives in <code>src/ingestionPipeline.ts</code>. It accepts one raw capture input and produces:</p>
+<h1 id="what-the-celorga-app-adds">What the Celorga app adds</h1>
 <ul>
-<li><p><code>raw/&lt;source&gt;-&lt;external-id&gt;-&lt;hash&gt;.json</code></p></li>
-<li><p><code>review/&lt;source&gt;-&lt;external-id&gt;-&lt;hash&gt;.org</code></p></li>
+<li><p>A native Mac workspace for capture, Agenda, files, meetings, agents, and review.</p></li>
+<li><p>A five-minute first-run path from a folder to a cited agent result.</p></li>
+<li><p>Clear approval boundaries for consequential actions.</p></li>
+<li><p>Local configuration of agent destinations and explicitly authorized context.</p></li>
+<li><p>Packaging, updates, diagnostics, and a coherent product experience.</p></li>
 </ul>
-<p>The review artifact contains <code>ORG2_ARTIFACT_SCHEMA</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS: review-required</code>.</p>
+<p>See <a href="language-reference.html">Celorga language reference</a> for the format and <a href="editors-macos.html">Celorga for macOS</a> for the product client.</p>
 </section>
 </main>
 </div>

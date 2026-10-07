@@ -1,13 +1,13 @@
 #+TITLE: External LLM consumer pattern
-#+SUBTITLE: Cited Org2 context without provider calls in core
+#+SUBTITLE: Cited Celorga context without provider calls in core
 
-Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI stays deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.
+Celorga is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Celorga CLI stays deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.
 
 This page describes the recommended boundary for OpenClaw, Claude, Codex, local models, or any other external agent. For the proposed in-repo AI job architecture, see [[file:ai-processing-architecture.org][AI processing architecture]].
 
 * Boundary
 
-Org2 guarantees local compiler outputs:
+Celorga guarantees local compiler outputs:
 
 - stable command outputs such as =celorga query --format json= and =celorga compile corpus=
 - source files, line ranges, heading ancestry, matched lines, and snippets for citations
@@ -40,15 +40,15 @@ node examples/external-llm-context.mjs --limit=6 < /tmp/org2-query.json \
   > /tmp/org2-llm-context.txt
 #+end_src
 
-The formatter is intentionally tiny and provider-free. It turns Org2 query JSON into a context packet with source markers such as =[S1]= and explicit =file:line= citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as =[S1]=, =[S2]=.”
+The formatter is intentionally tiny and provider-free. It turns Celorga query JSON into a context packet with source markers such as =[S1]= and explicit =file:line= citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as =[S1]=, =[S2]=.”
 
 * Prompt skeleton
 
 #+begin_src text
-You answer questions from an Org2 knowledge base.
+You answer questions from a Celorga knowledge base.
 
 Rules:
-- Use only the supplied Org2 context packet.
+- Use only the supplied Celorga context packet.
 - Cite every factual claim with [S1], [S2], etc.
 - If the evidence is missing or contradictory, say so.
 - Do not invent file paths, dates, people, or decisions.
@@ -73,7 +73,7 @@ The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, 
 
 * Agent thread records
 
-Agent conversations that matter should be represented as durable Org2 headings instead of only living in an external chat transcript. Use =KIND: agent-thread= for a thread record and keep the remote session reference separate from selected context.
+Agent conversations that matter should be represented as durable Org headings instead of only living in an external chat transcript. Use =KIND: agent-thread= for a thread record and keep the remote session reference separate from selected context.
 
 #+begin_src org
 * Thread: Firebolt report help
@@ -96,7 +96,7 @@ Agent conversations that matter should be represented as durable Org2 headings i
 - [ ] Follow up on validation notes.
 #+end_src
 
-The =agent= and =session= fields identify the external worker/session. =context= is a comma- or semicolon-separated list of typed references such as =id:=, =file:=, =ticket:=, =report:=, =entity:=, =artifact:=, or =url:=. The body can also include normal Org2 links under a =Context attachments= section for readable labels and editor navigation.
+The =agent= and =session= fields identify the external worker/session. =context= is a comma- or semicolon-separated list of typed references such as =id:=, =file:=, =ticket:=, =report:=, =entity:=, =artifact:=, or =url:=. The body can also include normal Org links under a =Context attachments= section for readable labels and editor navigation.
 
 =celorga agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. Attachments that point at known =id:=, =file:=, wiki/note targets, or exact typed refs such as =report:report-1= include a =target= object with the resolved title, file, line range, and citation.
 
@@ -106,7 +106,7 @@ For prompt-ready context, =celorga context --id report-1 --format markdown= rend
 
 * Collaboration and workflow state
 
-Shared human/agent work should keep enough routing and policy state in the Org2 document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.
+Shared human/agent work should keep enough routing and policy state in the Celorga document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.
 
 #+begin_src org
 * TODO Send support follow-up
@@ -269,9 +269,9 @@ Generated Org files should include properties such as =ORG2_ARTIFACT_ROLE=, =ORG
 
 * Minimal answer contract
 
-When an external agent answers from Org2 data, require:
+When an external agent answers from Celorga data, require:
 
-- cited claims using Org2 source markers
+- cited claims using Org source markers
 - a short list of source files or IDs used
 - a caveat when the answer came from stale or generated artifacts
 - no automatic write to canonical notes unless the user explicitly applies/promotes it

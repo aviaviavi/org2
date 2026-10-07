@@ -1,7 +1,7 @@
 #+TITLE: AI processing architecture
-#+SUBTITLE: Provider-agnostic jobs on top of compiled Org2 corpus data
+#+SUBTITLE: Provider-agnostic jobs on top of compiled Celorga corpus data
 
-Org2 can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.
+Celorga can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.
 
 This page is the design boundary for future =celorga ai ...= commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.
 
@@ -21,7 +21,7 @@ raw/ + notes/
 
 The core stays deterministic and local. It owns:
 
-- parsing Org2 files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties
+- parsing Org files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties
 - resolving graph data, backlinks, source ranges, and corpus zones
 - emitting =celorga compile corpus= and =celorga query --format json= artifacts
 - linting artifact metadata, provenance, generated-output boundaries, and graph health
@@ -37,7 +37,7 @@ The AI layer is optional orchestration around compiler outputs. It owns:
 - selecting source files, headings, query results, graph nodes, or compiled corpus outputs
 - building structured prompt/context payloads with citations
 - invoking a configured provider adapter by symbolic name
-- validating model output shape when a workflow expects JSON or Org2 sections
+- validating model output shape when a workflow expects JSON or Org sections
 - writing reviewable generated artifacts with provenance metadata
 
 This layer can live behind =celorga ai ...= commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.
@@ -149,7 +149,7 @@ A user can then review =views/team-sync-summary.org= and copy, rewrite, or expli
 - No hardcoded provider in compiler core.
 - No provider secrets in notes, manifests, compiled corpus artifacts, or generated Org files.
 - No automatic canonical edits from AI output.
-- Every factual generated claim should trace to cited Org2 source ranges or say that evidence is missing.
+- Every factual generated claim should trace to cited Org source ranges or say that evidence is missing.
 - Generated artifacts should be overwriteable and lintable; canonical notes should require review.
 - Editor integrations should call the same CLI surfaces rather than reimplementing provider behavior.
 
@@ -162,4 +162,4 @@ This design sets the boundary. Follow-up issues can implement it incrementally:
 - meeting/transcript summarization
 - link/entity suggestion reports
 
-Each feature should remain useful without forcing every Org2 user to configure an AI provider.
+Each feature should remain useful without forcing every Celorga user to configure an AI provider.

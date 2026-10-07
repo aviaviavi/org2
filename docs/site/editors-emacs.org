@@ -1,16 +1,16 @@
 #+TITLE: Emacs
 
-OpenOrg uses ordinary Org files for new human-facing documents, so Emacs can edit them directly today. Existing legacy files remain supported; there is not yet a dedicated Org2 Emacs package in this repository.
+Celorga uses ordinary Org files for new human-facing documents, so Emacs can edit them directly today. Existing legacy files remain supported; there is not yet a dedicated Celorga Emacs package in this repository.
 
 * Use org-mode for editing
 
-OpenOrg documents are ordinary =.org= files, so they open in Org Mode without extra configuration.
+Celorga documents are ordinary =.org= files, so they open in Org Mode without extra configuration.
 
-That gives you mature Org editing, outline navigation, folding, timestamps, TODO keywords, and tables while Org2 continues to own the standalone parser, CLI, publishing, and compiler semantics.
+That gives you mature Org editing, outline navigation, folding, timestamps, TODO keywords, and tables while Celorga continues to own the standalone parser, CLI, publishing, and compiler semantics.
 
 * Use the CLI beside Emacs
 
-Run Org2 commands from a shell, =compile=, =async-shell-command=, or your own Emacs wrapper:
+Run Celorga commands from a shell, =compile=, =async-shell-command=, or your own Emacs wrapper:
 
 #+begin_src sh
 celorga agenda --dir ~/notes --recursive
@@ -23,10 +23,10 @@ Mutating commands preview by default and require =--apply= to write files, which
 
 * Coexistence notes
 
-- Existing =.org= files can remain in place; Org2 scans them directly.
-- Org2 is not a bug-for-bug Org Mode clone. It keeps common Org-shaped constructs but chooses clearer behavior where portability needs it.
-- OpenOrg and its writers canonicalize accepted source-block sugar before saving =.org=. Compiler/provenance properties remain readable even when Emacs does not assign them Org2 semantics.
-- If you rely on advanced Org Mode packages, keep using them; Org2 can act as a parallel compiler/runtime over the same text where the semantics overlap.
+- Existing =.org= files can remain in place; Celorga scans them directly.
+- Celorga is not a bug-for-bug Org Mode clone. It keeps common Org-shaped constructs but chooses clearer behavior where portability needs it.
+- The Celorga app and its writers canonicalize accepted source-block sugar before saving =.org=. Compiler/provenance properties remain readable even when Emacs does not assign them Celorga semantics.
+- If you rely on advanced Org Mode packages, keep using them; Celorga can act as a parallel compiler/runtime over the same text where the semantics overlap.
 
 * Current status
 

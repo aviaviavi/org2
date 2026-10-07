@@ -1,7 +1,7 @@
 #+TITLE: AI adapter interface
 #+SUBTITLE: Provider boundaries for optional model calls
 
-Org2's core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation work without an LLM provider. AI workflows that need model output call a small adapter boundary, keeping vendor SDKs out of the rest of Org2.
+Celorga's core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation work without an LLM provider. AI workflows that need model output call a small adapter boundary, keeping vendor SDKs out of the rest of Celorga.
 
 The TypeScript contract lives in =src/aiAdapter.ts=. It defines:
 
@@ -12,7 +12,7 @@ The TypeScript contract lives in =src/aiAdapter.ts=. It defines:
 
 * Request contract
 
-An adapter request packages context already selected and prepared by Org2:
+An adapter request packages context already selected and prepared by Celorga:
 
 #+begin_src js
 {
@@ -24,7 +24,7 @@ An adapter request packages context already selected and prepared by Org2:
     instructions: "Summarize decisions with citations."
   },
   prompt: [
-    { role: "system", content: "Use only the supplied Org2 context." },
+    { role: "system", content: "Use only the supplied Celorga context." },
     { role: "user", content: "Create a weekly summary." }
   ],
   context: [
@@ -73,7 +73,7 @@ Adapters should:
 - keep provider credentials in local config/environment, never in notes, manifests, or generated artifacts
 - report provider/model metadata needed for provenance
 - support deterministic mock behavior in tests
-- avoid changing non-AI Org2 command behavior
+- avoid changing non-AI Celorga command behavior
 
 Adapters should not:
 

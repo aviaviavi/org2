@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Celorga vs Obsidian</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta name="description" content="Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga…" />
+<link rel="canonical" href="https://celorga.io/celorga-vs-obsidian.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Celorga" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:title" content="Celorga vs Obsidian" />
+<meta property="og:description" content="Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga…" />
+<meta property="og:url" content="https://celorga.io/celorga-vs-obsidian.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/celorga-vs-obsidian.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/celorga-vs-obsidian.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Celorga vs Obsidian: Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga…" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Celorga vs Obsidian" />
+<meta name="twitter:description" content="Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga…" />
+<meta name="twitter:url" content="https://celorga.io/celorga-vs-obsidian.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/celorga-vs-obsidian.png" />
+<meta name="twitter:image:alt" content="Celorga vs Obsidian: Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga…" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Celorga vs Obsidian</h1>
+</header>
+<p>Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga is developing an open-source compiler/runtime and a set of clients around Org-shaped files.</p>
+<p>Both can support serious knowledge work. The main difference is where each system places its shared runtime and how much workflow state it defines.</p>
+<section class="org2-headline level-1">
+<h1 id="at-a-glance">At a glance</h1>
+<table>
+<thead>
+<tr><th>Concern</th><th>Obsidian</th><th>Celorga</th></tr>
+</thead>
+<tbody>
+<tr><td>Primary experience</td><td>Polished Markdown knowledge application</td><td>Shared knowledge runtime with Mac, VS Code, CLI, and other clients</td></tr>
+<tr><td>Source files</td><td>Local Markdown, properties, Bases files, and open JSON Canvas files</td><td>Local <code>.org</code> files, JSON Canvas files, portable property-view JSON definitions, and explicit generated artifacts</td></tr>
+<tr><td>Runtime and license</td><td>Proprietary desktop/mobile app with public plugin APIs</td><td>Apache-2.0 parser, CLI, compiler, clients, and integrations</td></tr>
+<tr><td>Maturity</td><td>Established desktop and mobile products with a large community</td><td>Early alpha with working CLI, Mac app, VS Code integration, and a private-TestFlight or source-built iOS app</td></tr>
+<tr><td>Linked knowledge</td><td>Backlinks, outgoing links, graph, local graph, Canvas</td><td>IDs, wiki/file links, backlinks, live note/heading embeds, interactive local graphs, explicit unlinked-mention linking, JSON Canvas, cited queries, and link-health operations</td></tr>
+<tr><td>Structured views</td><td>Bases tables, lists, cards, maps, formulas, and community views</td><td>Saved editable property tables/cards with filtering, sorting and grouping; agenda/query outputs, data notebooks, materialized SQL views and charts</td></tr>
+<tr><td>Planning</td><td>Markdown tasks, properties, Bases, core features, and plugins</td><td>Parser-defined TODO, planning, repeater, priority, effort, habit, clock, and agenda semantics</td></tr>
+<tr><td>Command line</td><td>First-party CLI controlling a running Obsidian app</td><td>Standalone CLI and JSON/compiler outputs that do not require a GUI client</td></tr>
+<tr><td>Agent workflow</td><td>Core and plugin features can operate on the vault</td><td>Cited context, durable runs, approvals, validation, workflows, and artifact provenance</td></tr>
+<tr><td>Hosted services</td><td>Optional Sync and Publish services</td><td>Bring-your-own file sync and site hosting</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-1">
+<h1 id="obsidians-established-strengths">Obsidian's established strengths</h1>
+<section class="org2-headline level-2">
+<h2 id="a-mature-daily-application">A mature daily application</h2>
+<p>Obsidian offers refined desktop and mobile editing, fast search, backlinks, graph views, Canvas, themes, embeds, PDF and media handling, and a large body of learning material. Optional Sync and Publish services provide supported paths for cross-device use and hosted sites.</p>
+<p>That completeness matters. Someone who wants a polished personal knowledge app can assemble a sophisticated workflow with little infrastructure work.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="bases-and-visual-organization">Bases and visual organization</h2>
+<p>Bases stores database-like views over Markdown properties. Current core layouts include tables, lists, cards, and maps, with filtering, sorting, grouping, and formulas. Canvas supplies a visual workspace saved in the open JSON Canvas format.</p>
+<p>Celorga offers saved table and card views over note and heading properties, with a no-SQL filter/sort/group builder and revision-guarded source editing in the Mac app. Portable view definitions live in corpus-relative JSON files. Data notebooks also cover explicit datasets, SQL materialization, freshness, and report evidence. Celorga also edits JSON Canvas boards for notes, images, text, groups, and connections, with revision-guarded saves and portable import/export.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="plugins-and-customization">Plugins and customization</h2>
+<p>Obsidian's community ecosystem covers task management, calendars, diagrams, spaced repetition, data views, imports, publishing, and many specialized interfaces. Celorga has a much smaller integration surface today.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="a-real-command-line-surface">A real command-line surface</h2>
+<p>Obsidian's first-party CLI can search and edit files, inspect tasks and links, query Bases, manage properties and plugins, and invoke application commands. The old version of this page understated Obsidian's automation support.</p>
+<p>The architectural distinction is narrower now: Obsidian CLI controls the Obsidian runtime and requires the app to be running, while Celorga's CLI is the shared standalone runtime used by its clients and automation.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="celorgas-current-strengths">Celorga's current strengths</h1>
+<section class="org2-headline level-2">
+<h2 id="one-semantic-layer-across-clients">One semantic layer across clients</h2>
+<p>Celorga parsing, source ranges, agenda behavior, links, IDs, context retrieval, and artifact metadata live in the TypeScript compiler/runtime. The Mac app, VS Code integration, publishing pipeline, CLI, and agents consume that shared model.</p>
+<p>This is useful when deterministic behavior outside the desktop app matters: CI checks, batch publishing, editor tooling, scripts, or an agent can operate on the same semantics through commands and JSON outputs.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="planning-and-review-are-part-of-the-corpus-model">Planning and review are part of the corpus model</h2>
+<p>Celorga defines TODO and planning behavior directly, then builds agenda views and mutations on top. It also keeps delegated work in durable run records with plans, citations, outputs, validation, clarifications, comments, retries, cancellation, and approvals.</p>
+<p>The Mac <strong>Agent Work</strong> surface presents that state as a workflow for coordinating with agents. OpenClaw is the current end-to-end integration; the underlying records and interfaces are provider-independent.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="data-meetings-and-generated-work-keep-an-evidence-trail">Data, meetings, and generated work keep an evidence trail</h2>
+<p>Data notebook declarations, materialized query results, charts, meeting transcripts, generated drafts, and published output can all carry explicit provenance and review state. Files under <code>views/</code> or <code>compiled/</code> remain inspectable before a result is promoted into durable notes.</p>
+<p>That structure is helpful when the workspace holds operational context as well as personal notes.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="the-complete-stack-is-open-source">The complete stack is open source</h2>
+<p>Obsidian keeps vault content portable and publishes several open formats and developer interfaces. Celorga additionally makes the parser, runtime, Mac client, editor integration, and agent workflow implementation available under Apache-2.0.</p>
+<p>This matters for teams that need to audit, fork, embed, or run the knowledge layer without a proprietary application dependency.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="current-tradeoffs">Current tradeoffs</h1>
+<p>Celorga is early alpha. Its Mac app is useful but still evolving, the iOS app is available through a private TestFlight beta or as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.</p>
+<p>Obsidian's rich behavior often comes from the application, installed plugins, and vault configuration. Its files remain portable, but reproducing a complete workflow elsewhere may require reproducing those conventions and extensions as well.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="a-practical-choice">A practical choice</h1>
+<p>Obsidian is a strong choice for a mature local Markdown application, broad visual tools, mobile polish, and a deep plugin ecosystem.</p>
+<p>Celorga fits workspaces that need an open standalone semantic layer, Org-style planning, source-backed data and meeting artifacts, and durable agent runs with explicit review and approval boundaries.</p>
+<p>The projects also point toward each other in useful ways: Obsidian demonstrates how approachable local-file knowledge software can be, while Celorga explores how much shared behavior can live below any individual client.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="related">Related</h1>
+<ul>
+<li><p><a href="https://obsidian.md/help">Obsidian Help</a></p></li>
+<li><p><a href="https://obsidian.md/help/bases">Obsidian Bases</a></p></li>
+<li><p><a href="https://obsidian.md/help/plugins/canvas">Obsidian Canvas</a></p></li>
+<li><p><a href="https://obsidian.md/help/cli">Obsidian CLI</a></p></li>
+<li><p><a href="https://obsidian.md/license">Obsidian license overview</a></p></li>
+<li><p><a href="celorga-vs-markdown.html">Celorga vs Markdown</a></p></li>
+<li><p><a href="celorga-vs-org-mode.html">Celorga vs Org Mode</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

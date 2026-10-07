@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Celorga vs Markdown</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta name="description" content="Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a…" />
+<link rel="canonical" href="https://celorga.io/celorga-vs-markdown.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Celorga" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:title" content="Celorga vs Markdown" />
+<meta property="og:description" content="Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a…" />
+<meta property="og:url" content="https://celorga.io/celorga-vs-markdown.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/celorga-vs-markdown.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/celorga-vs-markdown.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Celorga vs Markdown: Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a…" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Celorga vs Markdown" />
+<meta name="twitter:description" content="Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a…" />
+<meta name="twitter:url" content="https://celorga.io/celorga-vs-markdown.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/celorga-vs-markdown.png" />
+<meta name="twitter:image:alt" content="Celorga vs Markdown: Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a…" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Celorga vs Markdown</h1>
+</header>
+<p>Markdown and Celorga both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Celorga adds a shared semantic runtime for planning, linked knowledge, data, publishing, and agent work across a corpus.</p>
+<p>The practical question is how much behavior the files need to carry.</p>
+<section class="org2-headline level-1">
+<h1 id="at-a-glance">At a glance</h1>
+<table>
+<thead>
+<tr><th>Concern</th><th>Markdown</th><th>Celorga</th></tr>
+</thead>
+<tbody>
+<tr><td>Natural starting point</td><td>Documents, messages, READMEs, and web content</td><td>Notes, tasks, sources, and workflows that form a corpus</td></tr>
+<tr><td>Plain-text storage</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Structure</td><td>Headings, links, lists, code, and implementation-specific extensions</td><td>Org-shaped headings plus TODOs, planning lines, properties, IDs, blocks, tables, and artifact metadata</td></tr>
+<tr><td>Planning</td><td>Checklists and tool-specific conventions</td><td>Shared TODO, schedule, deadline, repeater, priority, effort, habit, clock, and agenda semantics</td></tr>
+<tr><td>Links and identity</td><td>File paths, anchors, and wiki-link extensions</td><td>File links, wiki links, stable IDs, backlinks, graph operations, and link-health checks</td></tr>
+<tr><td>Data views</td><td>Usually supplied by a site generator, notebook, or app</td><td>Declared datasets and SQL, materialized results, provenance, and deterministic charts</td></tr>
+<tr><td>Automation</td><td>Excellent libraries, with semantics chosen by each tool</td><td>Standalone CLI, JSON outputs, compiler artifacts, MCP, and shared editor/runtime behavior</td></tr>
+<tr><td>Agent coordination</td><td>Built from conventions or application features</td><td>Cited context, durable runs, approvals, validation, workflows, and reviewable artifacts</td></tr>
+<tr><td>Publishing</td><td>Very broad ecosystem</td><td>Built-in HTML export and multi-file project publishing</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-1">
+<h1 id="markdown-is-a-good-fit-when">Markdown is a good fit when</h1>
+<ul>
+<li><p>the document is the main unit of work,</p></li>
+<li><p>broad renderer and platform compatibility matters most,</p></li>
+<li><p>a checklist is enough task structure,</p></li>
+<li><p>a framework or application already supplies the metadata model,</p></li>
+<li><p>contributors should need almost no syntax beyond headings, links, lists, and code fences.</p></li>
+</ul>
+<p>READMEs, help pages, blog posts, chat messages, and most repository documentation remain natural Markdown territory.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="celorga-becomes-useful-as-the-folder-becomes-a-system">Celorga becomes useful as the folder becomes a system</h1>
+<section class="org2-headline level-2">
+<h2 id="planning-spans-many-files">Planning spans many files</h2>
+<p>A Celorga task carries state that the parser understands directly: TODO status, scheduled and deadline timestamps, repeaters, priority, effort, tags, assignments, and properties. The CLI, VS Code integration, agenda TUI, and Mac Workspace derive their planning views from the same model.</p>
+<p>A Markdown application can define comparable conventions. Celorga ships one coherent interpretation so the files behave consistently outside a particular application.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="notes-need-durable-identity-and-health-checks">Notes need durable identity and health checks</h2>
+<p>File links work well for page-oriented collections. Longer-lived knowledge often needs stable IDs, links to individual headings, backlinks, aliases, graph queries, and diagnostics for broken or ambiguous references.</p>
+<p>Celorga treats those relationships as compiler input. Link maintenance, cited search, refactoring, and editor navigation can therefore share the same source ranges and resolved graph.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="rich-views-remain-connected-to-their-declarations">Rich views remain connected to their declarations</h2>
+<p>Celorga data notebooks keep dataset and SQL declarations in plain text, materialize explicit results, record freshness and provenance, and render tables or interactive charts in the Mac app. Meeting recordings and transcripts, agenda items, graph reports, and published pages follow the same source-backed pattern.</p>
+<p>HTML is used where a richer presentation helps; the durable declaration and result metadata remain inspectable files.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="agents-need-more-than-a-text-box">Agents need more than a text box</h2>
+<p>Plain Markdown is a perfectly good prompt and response format. A workspace that delegates consequential work also needs bounded context, citations, durable state, outputs, validation, clarification, and approval boundaries.</p>
+<p>Celorga represents those parts as portable run and workflow records. The current native integration is OpenClaw, while the CLI, context interfaces, run files, MCP surface, and artifact conventions are available to other agents and scripts.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="a-small-example">A small example</h1>
+<p>Markdown can express a lightweight task clearly:</p>
+<pre class="org2-src language-markdown" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-markdown">- [ ] Follow up with design by Friday #product</code></pre>
+<p>A Celorga entry can make the same work directly available to agenda, query, link, and agent workflows:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Follow up with design :product:
+  DEADLINE: &lt;2026-06-05 Fri&gt;
+  :PROPERTIES:
+  :ID: design-followup
+  :EFFORT: 30m
+  :ASSIGNEE: avi
+  :END:
+
+  Review [[id:design-review][the design decision]] before replying.</code></pre>
+<p>The added fields are useful only when something consumes them. Celorga is a good trade when agendas, queries, editors, automation, or agents do.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="costs-and-current-limits">Costs and current limits</h1>
+<p>Celorga asks contributors to learn more syntax and a more opinionated semantic model. Its ecosystem is young, and its long-tail renderer and integration coverage is much smaller than Markdown's. The Mac and iOS clients are early, and editor depth is uneven outside VS Code and the native Mac workspace.</p>
+<p>Markdown also remains easier when a document must render predictably across many unrelated services.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="using-both">Using both</h1>
+<p>Many Celorga workspaces include Markdown files for repository-facing prose and Org files for structured work. The Mac app can browse Markdown alongside the corpus, and Celorga can publish HTML documentation from its own source tree.</p>
+<p>There is no need to convert a README merely to make it part of a Celorga workspace. Choose the format per file based on the semantics it needs.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="practical-choice">Practical choice</h1>
+<p>Choose Markdown for broadly portable documents and lightweight conventions. Choose Celorga when the files need to support shared planning, graph, data, review, agent, and publishing behavior across a local workspace.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="related">Related</h1>
+<ul>
+<li><p><a href="features.html">Celorga features</a></p></li>
+<li><p><a href="getting-started.html">Getting started</a></p></li>
+<li><p><a href="celorga-vs-obsidian.html">Celorga vs Obsidian</a></p></li>
+<li><p><a href="celorga-vs-org-mode.html">Celorga vs Org Mode</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><div class="org2-footer-incubator"><span>Incubated at</span><a href="https://scarf.sh" target="_blank" rel="noopener noreferrer"><img class="org2-footer-scarf-logo" src="assets/scarf-logo.svg" alt="Scarf" /></a></div><p class="org2-footer-tagline">Build your knowledge locally and put it to work.</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

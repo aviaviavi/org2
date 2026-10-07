@@ -17,7 +17,7 @@ Native recordings are mono 16 kHz WAV files so local providers can transcribe th
 
 ## Meeting object
 
-Each meeting note is an org2 node with `:kind: meeting` and links to its audio and transcript artifacts:
+Each meeting note is an celorga node with `:kind: meeting` and links to its audio and transcript artifacts:
 
 ```org
 #+TITLE: Meeting: Scarf reporting sync
@@ -53,7 +53,7 @@ The summary, decisions, and TODO sections are intentionally review placeholders 
 
 ## Transcript artifact
 
-The transcript artifact is also org2 so it is searchable and easy for agents to cite:
+The transcript artifact is also celorga so it is searchable and easy for agents to cite:
 
 ```org
 #+TITLE: Transcript: Scarf reporting sync

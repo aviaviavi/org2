@@ -1,6 +1,6 @@
 #+TITLE: Language reference
 
-This is the practical language reference for Org2 v0.
+This is the practical language reference for Celorga's Org profile, v0.
 
 For the normative draft standard, start with [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]]. The standard is independently implementable: its surface grammar, contextual parsing algorithms, canonical AST schema, and executable conformance cases are all public.
 
@@ -40,7 +40,7 @@ Headline TODO states parsed into the canonical AST:
 
 Workflow tools may accept aliases such as =PROG= or =WAITING= and normalize them to one of the canonical TODO keywords above.
 
-Corpus defaults live in =org2.json= under =todo.sequences=, for example ={"todo":{"sequences":["TODO WAITING | DONE SKIPPED"]}}=. OpenOrg exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.
+Corpus defaults live in =org2.json= under =todo.sequences=, for example ={"todo":{"sequences":["TODO WAITING | DONE SKIPPED"]}}=. Celorga exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.
 
 Files may also declare their own Org-compatible vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. Fast-selection suffixes such as =WAITING(w)= are recognized and omitted from the stored headline state:
 
@@ -53,7 +53,7 @@ File-local declarations replace the corpus sequences for that file. Without a fi
 
 States before =|= are active; states after it are terminal (no further action required). Without =|=, the last keyword is terminal. Multiple declarations define independent sequences. Keywords retain their spelling and case. Built-in states remain available. Declarations inside source/example blocks and drawers do not change the workflow.
 
-Custom states work in TODO mutations, agenda filtering, and OpenOrg heading controls. Terminal states do not become overdue tasks; reopening clears =CLOSED=. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.
+Custom states work in TODO mutations, agenda filtering, and Celorga heading controls. Terminal states do not become overdue tasks; reopening clears =CLOSED=. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.
 
 Example:
 
@@ -87,7 +87,7 @@ Priority is stored as the dedicated =priority= headline field. Org's =COMMENT= h
 
 - Drawer delimiters: =:PROPERTIES:= ... =:END:=
 - Consistently space-indented property drawers are accepted for legacy files. =celorga fmt= canonicalizes their delimiter and property lines to column zero.
-- Common keys used by Org2 workflows:
+- Common keys used by Celorga workflows:
   - =:ID:=
   - =:CUSTOM_ID:=
   - =:EFFORT:=
@@ -151,7 +151,7 @@ Supported link forms:
 - Angle links: =<mailto:hello@example.com>=
 - Targets: =<<name>>= and radio targets =<<<name>>>=
 
-Both ID links and Wiki links are first-class in Org2 roam workflows.
+Both ID links and Wiki links are first-class in Celorga roam workflows.
 
 Link abbreviations are supported with built-ins, config, and =#+LINK= directives.
 
@@ -184,7 +184,7 @@ Precedence (highest to lowest):
 2) =org2.json= links.abbreviations
 3) built-ins
 
-Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.
+Celorga expands abbreviation targets when rendering/exporting and for LSP document-link targets.
 
 * Corpus identity
 
@@ -214,7 +214,7 @@ The root =org2.json= may identify the corpus independently of its local path:
 
 * Rich inline objects
 
-Org2 also parses the everyday publishing and scholarly inline objects used by Org:
+Celorga also parses the everyday publishing and scholarly inline objects used by Org:
 
 - Footnote references: =[fn:label]=, =[fn:label:inline definition]=, and =[fn::anonymous definition]=
 - Citations: =[cite:@key]= and multi-reference/style forms such as =[cite/t:@doe; see @roe p. 4]=
@@ -245,7 +245,7 @@ Recognized block forms include:
 - Center blocks: =#+begin_center ... #+end_center=
 - Comment blocks: =#+begin_comment ... #+end_comment=
 - Arbitrary special blocks: =#+begin_NAME ... #+end_NAME=
-- Dynamic blocks: =#+begin: NAME ... #+end:= (parsed and preserved; Org2 does not execute dynamic-block writers)
+- Dynamic blocks: =#+begin: NAME ... #+end:= (parsed and preserved; Celorga does not execute dynamic-block writers)
 - LaTeX environments: =\begin{equation} ... \end{equation}=
 - Fixed-width lines beginning with a colon followed by one space
 - Horizontal rules of five or more hyphens
@@ -253,7 +253,7 @@ Recognized block forms include:
 
 ** Syntactic sugar / aliases
 
-OpenOrg accepts a friendlier fenced-code typing alias for source blocks:
+Celorga accepts a friendlier fenced-code typing alias for source blocks:
 
 #+begin_example
 ```ts
@@ -269,7 +269,7 @@ const x = 1
 #+end_src
 #+end_example
 
-New =.org= documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to =#+begin_src= / =#+end_src= and backtick inline code to ordinary Org inline markup whenever edited =.org= source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax.
+New =.org= documents use the ordinary Org form on disk. Celorga, file-based CLI formatting, the LSP, and editor integrations rewrite fences to =#+begin_src= / =#+end_src= and backtick inline code to ordinary Org inline markup whenever edited =.org= source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted =.org= files stay valid Org syntax.
 
 File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:
 
@@ -284,7 +284,7 @@ Fenced source blocks use exactly three backticks for the opener and closer. Four
 
 - Pipe table rows: =| a | b |=
 
-Org2 defines the custom link type =color:= as explicit, non-navigating presentation markup. Use =[[color:red][urgent]]= for foreground color, =[[color:bg=yellow][review]]= for background color, or =[[color:fg=white;bg=#b42318][blocked]]= for both. Keys may be abbreviated as =fg=/=bg= or written as =foreground=/=background=; =text= is also accepted for foreground. Values may be supported names or three/six-digit hex literals.
+Celorga defines the custom link type =color:= as explicit, non-navigating presentation markup. Use =[[color:red][urgent]]= for foreground color, =[[color:bg=yellow][review]]= for background color, or =[[color:fg=white;bg=#b42318][blocked]]= for both. Keys may be abbreviated as =fg=/=bg= or written as =foreground=/=background=; =text= is also accepted for foreground. Values may be supported names or three/six-digit hex literals.
 
 The portable named palette is =black=, =blue=, =brown=, =gray=/=grey=, =green=, =indigo=, =mint=, =orange=, =pink=, =purple=, =red=, =teal=, =white=, and =yellow=. Hex literals provide exact custom colors without allowing arbitrary CSS.
 
@@ -306,11 +306,11 @@ Org table formulas are attached to their preceding table as structured =TableFor
 
 The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative =@row$column= references; A1 references; arithmetic, comparisons, and boolean operators; =vsum=, =vmean=, =vmin=, =vmax=, =vmedian=, =vcount=, common numeric functions; printf/Calc-style numeric formats; and =T=, =U=, and =t= duration modes. Later assignments override earlier assignments for the same cell. Empty-field =N= mode is supported. Formula lines, including unsupported forms, remain lossless.
 
-Org2 deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.
+Celorga deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.
 
 * Deliberate compatibility boundary
 
-Org2 now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.
+Celorga now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.
 
 Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:
 
@@ -393,7 +393,7 @@ source: quarterly_metrics
 #+end_src
 #+end_example
 
-Each line receives a stable color from the =--org2-chart-mark= and =--org2-chart-series-2= … =--org2-chart-series-8= style variables, which OpenOrg sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
+Each line receives a stable color from the =--org2-chart-mark= and =--org2-chart-series-2= … =--org2-chart-series-8= style variables, which Celorga sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
 
 Charts are drawn in a clean, modern style. Lines are smooth (monotone, so they never overshoot the data); a one- or two-series line chart gets a soft gradient fill; and each line ends in a dot labeled with its latest value, with the series name when there are several. Line charts fit the value axis to the data rather than always starting at zero, while bar charts always include zero and label each bar when there is room. Axis labels stay horizontal: long category names are shortened (the full name stays available as a tooltip) or thinned out. Values use compact units such as =95.9k= or =24M=; a currency prefix appears when every cell starts with =$= or the column name contains =usd=, and a percent suffix appears when every cell ends in =%= or the name contains =pct= or =percent=. Cells such as =$1,200= and =12%= are read as numbers. Tooltips show the full value, for example =$95,880=.
 
@@ -409,7 +409,7 @@ celorga render-chart --file report.org --block-id quarterly_revenue --format svg
 
 * Local datasets and SQL views
 
-Org2 can describe local/ad hoc data workflows with =dataset= and =sql= source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:
+Celorga can describe local/ad hoc data workflows with =dataset= and =sql= source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:
 
 #+begin_example
 #+begin_src dataset fetches
@@ -549,7 +549,7 @@ query: |
 
 Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with =celorga query-data=, then attach a =#+begin_src chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
 
-For notebooks with multiple remote sources, declare each result's dependency edge explicitly with =sources=DATASET_ID[,DATASET_ID...]=. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:
+For notebooks with multiple remote sources, declare each result's dependency edge explicitly with =sources=DATASET_ID[,DATASET_ID...]=. Celorga validates the named sources, loads only those datasets for that result, and records them in materialization provenance:
 
 #+begin_example
 #+begin_src sql results=recent_organizations sources=recent_organizations_source freshness=24h
@@ -581,11 +581,11 @@ FROM fetches
 #+end_src
 #+end_example
 
-This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
+This is deliberately scoped to explicit local/ad hoc data sources. Celorga stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
 
 * Presentations
 
-Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:
+Celorga can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:
 
 #+begin_src sh
 celorga export beamer --file talk.org
@@ -628,7 +628,7 @@ Document metadata and Beamer compatibility keywords include:
 
 Headlines below a slide become presentation groups. Legacy properties remain accepted so existing Org Beamer talks can move over incrementally:
 
-| Org2 property | Legacy alias | Meaning |
+| Celorga property | Legacy alias | Meaning |
 |---------------+--------------+---------|
 | =SLIDE_ENV= | =BEAMER_ENV= | =block=, =note=, =ignoreheading=, or =plain= |
 | =SLIDE_COLUMN= | =BEAMER_COL= | column width such as =0.45= or =45%= |
@@ -653,7 +653,7 @@ The macOS Workspace exposes the same pipeline as an embedded *View → Slides* P
 
 * Keyword/directive lines
 
-Org2 parses keyword lines in =#+KEY: VALUE= form.
+Celorga parses keyword lines in =#+KEY: VALUE= form.
 
 Commonly used in export/publish:
 
@@ -679,5 +679,5 @@ Unknown directives are preserved for round-tripping.
 
 * Losslessness goal
 
-Org2 aims for practical round-tripping of supported constructs.
+Celorga aims for practical round-tripping of supported constructs.
 When behavior is ambiguous, defer to the current implementation and spec fixtures.

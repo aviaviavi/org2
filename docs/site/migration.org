@@ -1,17 +1,23 @@
 #+TITLE: Practical migration
 
-This page keeps migration simple: keep existing notes working while you adopt Org2 workflow improvements incrementally.
+This page keeps migration simple: keep existing notes working while you adopt Celorga workflow improvements incrementally.
+
+* Commands and compatibility
+
+- Install with =npm install -g celorga=.
+- The commands are =celorga= and =celorga-lsp=. =org2= and =org2-lsp= remain installed as compatibility aliases, so existing scripts, MCP configurations, and editor settings keep working.
+- Existing =.org2= files, =org2.json=, and =ORG2_*= environment variables and properties keep working; no rename is required.
 
 * Existing Org notes
 
 - Keep your current =.org= files.
-- Point Org2 CLI/editor tooling at your existing notes directory.
+- Point Celorga CLI/editor tooling at your existing notes directory.
 - No bulk rewrite is required.
 
 * New files
 
 - Use =.org= for notes and other documents.
-- OpenOrg, the CLI, LSP, and editor integrations save accepted shorthand in ordinary Org syntax when the target file ends in =.org=.
+- The Celorga app, CLI, LSP, and editor integrations save accepted shorthand in ordinary Org syntax when the target file ends in =.org=.
 
 * Roam link migration
 
@@ -27,6 +33,6 @@ This page keeps migration simple: keep existing notes working while you adopt Or
 
 * Compatibility caveats
 
-- Org2 targets practical parity, not bug-for-bug GNU Org behavior.
+- Celorga targets practical parity, not bug-for-bug GNU Org behavior.
 - Some extension-specific editor UX differs from Emacs org-mode/org-roam.
 - Re-run CI/automation commands after migration changes (=agenda=, =roam db-sync=, =publish=) to validate behavior in your environment.

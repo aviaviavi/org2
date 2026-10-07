@@ -1,11 +1,11 @@
 #+TITLE: Getting started
-#+SUBTITLE: Install OpenOrg, write today's note, capture a task, and see it in Agenda.
+#+SUBTITLE: Install Celorga, write today's note, capture a task, and see it in Agenda.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro">
-  <p>Start with a small loop: open the app, write in today's note, capture one task, and see it appear in Agenda. You do not need to connect an agent, know Org mode, or create an OpenOrg account.</p>
+  <p>Start with a small loop: open the app, write in today's note, capture one task, and see it appear in Agenda. You do not need to connect an agent, know Org mode, or create a Celorga account.</p>
   <div class="org2-page-summary org2-page-summary-sequence" aria-label="Getting started overview">
-    <div><strong>Install OpenOrg.</strong><span>Download the Mac app and open the starter workspace.</span></div>
+    <div><strong>Install Celorga.</strong><span>Download the Mac app and open the starter workspace.</span></div>
     <div><strong>Write today's note.</strong><span>Capture an idea in an ordinary local plain-text file.</span></div>
     <div><strong>See one task in Agenda.</strong><span>Add a scheduled commitment and find it without copying it anywhere else.</span></div>
   </div>
@@ -15,13 +15,13 @@
 * 1) Install the Mac app
 
 1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
-2. Open the disk image and drag =OpenOrg.app= into =Applications=.
+2. Open the disk image and drag the app (=OpenOrg.app=) into =Applications=.
 3. Open the app. Connect an agent you already use, or choose to continue without one.
 4. Choose *Continue to Home*.
 
-OpenOrg creates a small workspace automatically, then opens Home with today's note and an optional chat box. Everything is plain text that you can inspect in Finder, Git, or another editor. OpenOrg never requires an app-specific canonical database.
+Celorga creates a small workspace automatically, then opens Home with today's note and an optional chat box. Everything is plain text that you can inspect in Finder, Git, or another editor. Celorga never requires an app-specific canonical database.
 
-If you already keep notes in another folder, expand *Workspace options* during setup or open it later. Use *OpenOrg → Settings… → General* to rename the corpus identity, reveal its folder, or switch locations.
+If you already keep notes in another folder, expand *Workspace options* during setup or open it later. Use *Celorga → Settings… → General* to rename the corpus identity, reveal its folder, or switch locations.
 
 * 2) Write today's note
 
@@ -35,13 +35,13 @@ Help me turn today's rough notes into a short plan. Show me the proposed structu
 
 * 3) Capture one scheduled commitment
 
-Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. OpenOrg appends the task to today's daily note and refreshes Agenda.
+Open *Capture*, keep *Task* selected, give the commitment a concrete title, and leave *Scheduled* enabled for today. Celorga appends the task to today's daily note and refreshes Agenda.
 
 Open *Agenda* and select the task. The task stays connected to the source file and any surrounding decision, meeting, or project context.
 
 You can also click *New Note* and write normally. A note might be a project, meeting, person, recipe, decision, or anything else you want to remember.
 
-Under the rendered view, Org2 stores a simple outline. The same note in source form can look like this:
+Under the rendered view, the note is a simple Org outline. The same note in source form can look like this:
 
 #+begin_src org
 * Plan the launch
@@ -68,26 +68,26 @@ You can use the app's controls for everyday work and open the readable source wh
 
 * 4) Use Today and Agenda
 
-Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; OpenOrg opens the existing note or creates it in the configured daily folder. If an external job creates your daily files, enable *Disable automatic daily note creation* in *Settings → General*. A missing date will then show a message and a *Create Daily Note* button without writing anything automatically.
+Open *Today* for a lightweight daily note. Use it for quick thoughts, a running log, or tasks that do not yet need their own file. To revisit another day, choose *Daily → Choose Date…* in the sidebar or press =Cmd-Shift-7=; Celorga opens the existing note or creates it in the configured daily folder. If an external job creates your daily files, enable *Disable automatic daily note creation* in *Settings → General*. A missing date will then show a message and a *Create Daily Note* button without writing anything automatically.
 
 Open *Agenda* to see actionable items collected across the entire corpus. Mark an item done, reschedule it, assign a priority, or open its source note. You do not need to manually copy tasks into a separate task manager.
 
 * When you're ready: the mental model
 
-OpenOrg is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus* (the ordinary folder of =.org= and related files) is the durable memory and source of truth. OpenOrg turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
+Celorga is the shared workspace that holds and coordinates work; it is not one autonomous agent that is always awake inside your notes. Your *corpus* (the ordinary folder of =.org= and related files) is the durable memory and source of truth. Celorga turns those files into useful views, gives configured agents bounded access to them, and keeps delegated work and decisions inspectable across every agent you use.
 
-The agent harness you connect is a *runtime*: the engine that actually reasons and acts. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the runtimes OpenOrg supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Org2 interfaces as adapters are added.
+The agent harness you connect is a *runtime*: the engine that actually reasons and acts. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the runtimes Celorga supports out of the box today, but they are examples rather than the architecture. Other local, remote, hosted, or self-hosted harnesses can use the same files and Celorga interfaces as adapters are added.
 
-A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools OpenOrg exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.
+A runtime sees the current conversation, the context you selected or authorized, the active corpus's instructions and capabilities, and the tools Celorga exposes for that turn or run. It does not silently absorb the whole workspace or keep watching it after the turn ends.
 
-That leads to a useful rule: *put durable intent in the corpus, not only in chat*. Chat is a good place to explore and ask for help setting something up, but the result should become the appropriate inspectable record when you want OpenOrg to remember or repeat it.
+That leads to a useful rule: *put durable intent in the corpus, not only in chat*. Chat is a good place to explore and ask for help setting something up, but the result should become the appropriate inspectable record when you want Celorga to remember or repeat it.
 
 | If you mean... | Put it here | Think of it as... |
 |---+---+---|
 | Something you need to remember or do | A note or =TODO= in the relevant project or daily note | Durable knowledge or a human commitment |
 | Work that should appear on a particular day | A =SCHEDULED:= date on that =TODO= | An Agenda item, not an agent invocation |
 | A conversation or exploratory request | AI Chat with the relevant files or headings selected | An interactive session with a runtime |
-| Something that should wake an agent | A runtime schedule, an OpenOrg event trigger, or a workflow trigger | The clock or event that launches work |
+| Something that should wake an agent | A runtime schedule, a Celorga event trigger, or a workflow trigger | The clock or event that launches work |
 | Instructions the agent should reuse | A packaged skill or a workflow in =workflows/= | The playbook |
 | One bounded piece of delegated work worth tracking | A run under *Agent Work* | The durable attempt, with context, status, outputs, and review |
 | A stable role such as /Customer Support/ or /Research/ | An agent profile in =agent-profiles/= | A portable job description that may bind to a runtime |
@@ -100,19 +100,19 @@ Agent profiles are not background processes, and a goal does not execute itself.
 
 Do not force the trigger, instructions, and durable record to have the same owner:
 
-1. The *trigger* answers /what wakes the agent?/. It might be a schedule owned by the runtime, an OpenOrg event such as a completed meeting, a workflow schedule, an external event, or a person clicking *Run Now*.
-2. The *instructions* answer /what should this execution do?/. They might live in the scheduled prompt, a prepackaged skill, or an authored Org2 workflow. A skill can teach any compatible runtime how to discover the installed =org2= capabilities and follow the same lifecycle correctly.
-3. The *durable record* answers /where can everyone see what happened?/. The scheduled agent can call the Org2 CLI directly, or follow a skill that does so, to create or instantiate a run, record its runtime and progress, attach artifacts and validation, request approvals, and complete it with a reviewer-facing summary.
+1. The *trigger* answers /what wakes the agent?/. It might be a schedule owned by the runtime, a Celorga event such as a completed meeting, a workflow schedule, an external event, or a person clicking *Run Now*.
+2. The *instructions* answer /what should this execution do?/. They might live in the scheduled prompt, a prepackaged skill, or an authored Celorga workflow. A skill can teach any compatible runtime how to discover the installed =celorga= capabilities and follow the same lifecycle correctly.
+3. The *durable record* answers /where can everyone see what happened?/. The scheduled agent can call the Celorga CLI directly, or follow a skill that does so, to create or instantiate a run, record its runtime and progress, attach artifacts and validation, request approvals, and complete it with a reviewer-facing summary.
 
-These layers deliberately compose. OpenOrg can own the clock and send the prompt to any configured AI destination, or an advanced deployment can let a harness-native scheduler invoke the same workflow. In either case =.org2/runs/= remains the shared, runtime-neutral record rendered by OpenOrg.
+These layers deliberately compose. Celorga can own the clock and send the prompt to any configured AI destination, or an advanced deployment can let a harness-native scheduler invoke the same workflow. In either case =.org2/runs/= remains the shared, runtime-neutral record rendered by Celorga.
 
 ** How dates and automation fit
 
-Org-style entries and =TODO= headings can carry =SCHEDULED:= dates and =DEADLINE:= values. Those values are ordinary structured data in the corpus. OpenOrg uses them to build Agenda and other views; setting a date does not, by itself, invoke an agent.
+Org-style entries and =TODO= headings can carry =SCHEDULED:= dates and =DEADLINE:= values. Those values are ordinary structured data in the corpus. Celorga uses them to build Agenda and other views; setting a date does not, by itself, invoke an agent.
 
-What an AI does with that data depends on the instructions and triggers you configure. You might tell an interactive agent to review today's Agenda, let a runtime-owned scheduled task generate a morning brief, or have OpenOrg send a prompt when a meeting finishes ingesting. In each case the same entries remain the shared data underneath the view and the agent's work.
+What an AI does with that data depends on the instructions and triggers you configure. You might tell an interactive agent to review today's Agenda, let a runtime-owned scheduled task generate a morning brief, or have Celorga send a prompt when a meeting finishes ingesting. In each case the same entries remain the shared data underneath the view and the agent's work.
 
-OpenOrg's *Automations* view binds a plain Org2 prompt and schedule to any configured AI destination, including Codex, Claude Code, Pi, OpenCode, OpenClaw, or a direct provider. The selected desktop or [[file:headless-server.org][headless host]] owns the portable clock while it is running and catches up the latest missed occurrence after sleep or relaunch. Harness-native clocks remain optional adapters; keeping the instructions and run history in the corpus makes that implementation detail replaceable.
+Celorga's *Automations* view binds a plain-text prompt and schedule to any configured AI destination, including Codex, Claude Code, Pi, OpenCode, OpenClaw, or a direct provider. The selected desktop or [[file:headless-server.org][headless host]] owns the portable clock while it is running and catches up the latest missed occurrence after sleep or relaunch. Harness-native clocks remain optional adapters; keeping the instructions and run history in the corpus makes that implementation detail replaceable.
 
 For example, if you want a reminder at 8:30, put a scheduled =TODO= on your Agenda. If you want an agent to prepare the brief, create an automation with that prompt, time, and AI destination. If the recipe needs inputs, checks, artifacts, or approvals, extend the same file into a fuller workflow.
 
@@ -121,36 +121,36 @@ For example, if you want a reminder at 8:30, put a scheduled =TODO= on your Agen
 You do not need to design a metaharness on day one. Use this order:
 
 1. *Choose the corpus.* Confirm which folder should hold the work and give it a portable identity in *Settings → General*. Writes always belong to one active corpus, even when Search or Agenda can read several.
-2. *Connect a runtime.* Start with any supported harness that can access the corpus and the Org2 CLI or MCP tools. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the current out-of-the-box choices, not a limit on the model.
+2. *Connect a runtime.* Start with any supported harness that can access the corpus and the Celorga CLI or MCP tools. Codex, Claude Code, Pi, OpenCode, and OpenClaw are the current out-of-the-box choices, not a limit on the model.
 3. *Work the process once.* Keep the source notes and tasks where they naturally belong, select the relevant context, and ask the runtime to help with one concrete outcome.
 4. *Track consequential delegation.* Use a durable run when the work needs status, artifacts, validation, approvals, or a reviewer-facing outcome. Casual questions do not need one.
-5. *Package proven repetition.* Put runtime operating instructions in a skill, or generalize the process into an Org2 workflow with inputs, steps, expected outputs, checks, and approval boundaries. Keep generated material in =views/= or =compiled/= until reviewed.
+5. *Package proven repetition.* Put runtime operating instructions in a skill, or generalize the process into a Celorga workflow with inputs, steps, expected outputs, checks, and approval boundaries. Keep generated material in =views/= or =compiled/= until reviewed.
 6. *Name stable responsibility only when useful.* Create an agent profile and goal when the same role or outcome should survive a change of model, runtime, or chat thread.
-7. *Test before scheduling.* First run the prompt, skill, or workflow manually and inspect both its output and its Org2 run. Then choose the trigger independently: a runtime schedule, an OpenOrg event, or another scheduler can wake the agent as long as it follows the same corpus lifecycle. Sending messages, publishing, deleting, or other consequential actions should still stop for explicit approval.
+7. *Test before scheduling.* First run the prompt, skill, or workflow manually and inspect both its output and its Celorga run. Then choose the trigger independently: a runtime schedule, a Celorga event, or another scheduler can wake the agent as long as it follows the same corpus lifecycle. Sending messages, publishing, deleting, or other consequential actions should still stop for explicit approval.
 
 Back up the corpus like any important folder, and keep tokens, runtime credentials, machine paths, and scheduler job IDs outside its files.
 
-For a client connecting outside OpenOrg, use [[file:mcp-and-skills.org][MCP and agent skills]] to configure the local stdio server, connect to a headless server's read-only Streamable HTTP endpoint, or install the general Org2 skill. New OpenOrg starter workspaces already include that skill for external agents. OpenOrg itself supplies the equivalent core guidance ambiently in every AI chat rather than exposing a separate =/org2= command.
+For a client connecting outside Celorga, use [[file:mcp-and-skills.org][MCP and agent skills]] to configure the local stdio server, connect to a headless server's read-only Streamable HTTP endpoint, or install the general Celorga skill. New Celorga starter workspaces already include that skill for external agents. Celorga itself supplies the equivalent core guidance ambiently in every AI chat rather than exposing a separate =/org2= command.
 
 ** One queue for decisions that need you
 
-Approval requests, clarifying questions, failed checks, and review-ready artifacts recorded in Org2 appear in *Agent Work*, no matter which configured runtime created them. Instead of visiting each harness to discover what is blocked, you get one queue over the shared corpus records.
+Approval requests, clarifying questions, failed checks, and review-ready artifacts recorded in Celorga appear in *Agent Work*, no matter which configured runtime created them. Instead of visiting each harness to discover what is blocked, you get one queue over the shared corpus records.
 
 A run can pause at a clear boundary, show the context and evidence behind the proposed action, and wait for you to approve, reject, or request a revision. After the decision, the runtime can continue the same durable run. The underlying queue belongs to the corpus, so changing the agent harness does not erase the history of what needed a decision or who made it.
 
-** Ask OpenOrg to help with setup
+** Ask Celorga to help with setup
 
-“Teach OpenOrg our flow” is a reasonable starting request, but make the desired durable result explicit. For example:
+“Teach Celorga our flow” is a reasonable starting request, but make the desired durable result explicit. For example:
 
 #+begin_quote
-Help me set up a weekday startup review. First inspect this corpus and the installed Org2 capabilities. Separate the trigger, reusable instructions, and durable run record. Recommend whether the instructions should be a packaged skill or an Org2 workflow, and show how each execution will create and update its Org2 run. Propose the inputs, outputs, approval boundaries, and best available trigger without activating anything. Then help me test one manual run; only after I review its corpus record should we enable the trigger.
+Help me set up a weekday startup review. First inspect this corpus and the installed Celorga capabilities. Separate the trigger, reusable instructions, and durable run record. Recommend whether the instructions should be a packaged skill or a Celorga workflow, and show how each execution will create and update its Celorga run. Propose the inputs, outputs, approval boundaries, and best available trigger without activating anything. Then help me test one manual run; only after I review its corpus record should we enable the trigger.
 #+end_quote
 
 This uses chat as the setup conversation while making the corpus records, not the agent's memory, the lasting configuration.
 
 * Review approvals and agent work
 
-For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. OpenOrg records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
+For a bounded delegated task, select the relevant note or commitment and ask for one concrete outcome. Celorga records the selected files, thread, run, citations, and resulting artifact as durable workspace context.
 
 Open *Agent Work* for one queue across every configured runtime. Inspect what is blocked, answer clarifying questions, and review the run status, cited inputs, artifacts, and validation before you approve, revise, or reject consequential work.
 
@@ -158,7 +158,7 @@ Finally, reveal the workspace in Finder and open the resulting =.org= file in an
 
 * Know what leaves your Mac
 
-Your workspace is an ordinary folder on your Mac. OpenOrg does not require a hosted corpus account. Context leaves the Mac when you send it to an agent, model, or source provider you configured, so choose destinations whose retention and data-use policies fit your work.
+Your workspace is an ordinary folder on your Mac. Celorga does not require a hosted corpus account. Context leaves the Mac when you send it to an agent, model, or source provider you configured, so choose destinations whose retention and data-use policies fit your work.
 
 - Provider tokens and other credentials belong in macOS Keychain or another machine-local protected store.
 - External messages, publication, deletion, and other consequential actions require an explicit approval.
@@ -170,9 +170,9 @@ Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisi
 
 Use =Command-K= to quickly open any file or heading. Global search finds text, tasks, agent work, and other indexed workspace records.
 
-When two ideas belong together, add a link. Org2 keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
+When two ideas belong together, add a link. Celorga keeps source locations and backlinks, so a person, project, meeting, or decision stays connected to the work that came from it.
 
-OpenOrg's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces: local stdio MCP or the headless server's read-only Streamable HTTP MCP endpoint. Codex, Claude Code, Pi, OpenCode, and OpenClaw are convenient built-in starting points, not requirements. A hosted service still needs a reachable authenticated HTTPS path to the private endpoint.
+Celorga's agent connection is provider-neutral. Other local, remote, hosted, or self-hosted tools can work with the same corpus through CLI JSON and MCP interfaces: local stdio MCP or the headless server's read-only Streamable HTTP MCP endpoint. Codex, Claude Code, Pi, OpenCode, and OpenClaw are convenient built-in starting points, not requirements. A hosted service still needs a reachable authenticated HTTPS path to the private endpoint.
 
 Do not try to design the perfect folder structure on day one. A few notes plus daily capture are enough; reorganize later as useful patterns emerge.
 
@@ -196,7 +196,7 @@ See [[file:agent-quickstart.org][Agent quickstart]] when you are ready for permi
 
 * Create useful outputs
 
-The same corpus can produce more than notes and task lists. As your work grows, Org2 can render or export:
+The same corpus can produce more than notes and task lists. As your work grows, Celorga can render or export:
 
 - filtered and sortable data tables,
 - charts backed by explicit datasets and queries,
@@ -208,7 +208,7 @@ These outputs stay connected to inspectable source and provenance, including whe
 
 * Prefer an editor? Start there instead
 
-The Mac app is the easiest onramp. You can also install the Org2 extension in VS Code and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
+The Mac app is the easiest onramp. You can also install the Celorga extension in VS Code and open or create a corpus folder there. VS Code provides a strong source-editing workflow with Agenda, TODO and planning edits, capture, backlinks, formatting, navigation, and export commands.
 
 The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:
 
@@ -229,9 +229,9 @@ See [[file:editors.org][Editor integrations]] and [[file:editors-vscode.org][VS 
 
 * iOS app
 
-OpenOrg for iOS is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
+Celorga for iOS is available as a private TestFlight beta and as source. To join the beta, [[mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight][email Avi for an invitation]] and include the email address you use with TestFlight. It is not currently distributed through the public App Store.
 
-The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. Corpus-backed projects appear in that sidebar with their active chats; project menus create a chat in-place, and thread menus add or remove project membership through the canonical project note on the host. Settled chats remain available under Settled without cluttering their project groups. The selected host remains responsible for model access and corpus context. You can also pair with a [[file:headless-server.org][headless OpenOrg server]] to keep chats available without the laptop. Updated iOS builds save multiple hosts under Host Connection.
+The iOS app can open a Files-visible local corpus for capture, Agenda, approvals, and file viewing. Its AI sidebar can also control Mac-hosted chats over Tailscale: enable *Mobile Remote* in the Mac app's settings, create a one-time pairing code, then open *Settings → Connect a Mac* from the iOS sidebar and scan it. Corpus-backed projects appear in that sidebar with their active chats; project menus create a chat in-place, and thread menus add or remove project membership through the canonical project note on the host. Settled chats remain available under Settled without cluttering their project groups. The selected host remains responsible for model access and corpus context. You can also pair with a [[file:headless-server.org][headless Celorga server]] to keep chats available without the laptop. Updated iOS builds save multiple hosts under Host Connection.
 
 Long chats display a page of messages at a time. Use *Earlier messages*, *Newer messages*, or *Back to latest messages* to navigate the complete history. Large messages show a preview with *Read full message*; copying a message always includes its complete text.
 
@@ -241,7 +241,7 @@ Developers can also [[https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2M
 
 * Coming from Emacs Org mode?
 
-You can use your existing Org directory directly. Org2 accepts =.org= as a first-class input format, so there is no required bulk conversion and no need to rename files before trying Org2.
+You can use your existing Org directory directly. Celorga accepts =.org= as a first-class input format, so there is no required bulk conversion and no need to rename files before trying Celorga.
 
 Point the Mac app at the existing folder with *Open an existing corpus*, or try the CLI without changing anything:
 
@@ -249,9 +249,9 @@ Point the Mac app at the existing folder with *Open an existing corpus*, or try 
 celorga agenda --dir /path/to/your/org-directory --recursive
 #+end_src
 
-Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
+Celorga supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Celorga behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
 
-See [[file:editors-emacs.org][Using Org2 from Emacs]], [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]], and [[file:migration.org][Migration guidance]].
+See [[file:editors-emacs.org][Using Celorga from Emacs]], [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]], and [[file:migration.org][Migration guidance]].
 
 * Build from source
 
@@ -284,7 +284,7 @@ under =~/Library/Caches/OpenOrg/release-build/=. Override the cache root with
 For a local dogfooding loop, =make macos-app-restart= (or
 =npm run build:macos-app:restart=) leaves the current daily app open while it compiles
 and verifies a staged replacement. It requests a graceful quit only when the
-new bundle is ready, swaps the bundle atomically, and reopens OpenOrg. A failed
+new bundle is ready, swaps the bundle atomically, and reopens Celorga. A failed
 build leaves the running app untouched. This is a short restart rather than
 hot reload; finish active recordings or provider turns before invoking it.
 
@@ -292,8 +292,8 @@ Side-by-side development uses =npm run build:macos-app:codex= for debug or =npm 
 
 * Next steps
 
-- [[file:features.org][See what OpenOrg can do]]
-- [[file:editors-macos.org][Learn OpenOrg for macOS]]
+- [[file:features.org][See what Celorga can do]]
+- [[file:editors-macos.org][Learn Celorga for macOS]]
 - [[file:agent-quickstart.org][Connect agents and models]]
 - [[file:language-reference.org][Learn more of the file format]]
 - [[file:tooling-reference.org][Explore the CLI]]

@@ -4,31 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Corpus flow</title>
-<meta name="subtitle" content="Canonical zones for Org2 knowledge corpora" />
+<meta name="subtitle" content="Canonical zones for Celorga knowledge corpora" />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Canonical zones for Org2 knowledge corpora" />
-<link rel="canonical" href="https://openorg.so/corpus-flow.html" />
+<meta name="description" content="Canonical zones for Celorga knowledge corpora" />
+<link rel="canonical" href="https://celorga.io/corpus-flow.html" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="OpenOrg" />
+<meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="Corpus flow" />
-<meta property="og:description" content="Canonical zones for Org2 knowledge corpora" />
-<meta property="og:url" content="https://openorg.so/corpus-flow.html" />
-<meta property="og:image" content="https://openorg.so/assets/og/corpus-flow.png" />
-<meta property="og:image:secure_url" content="https://openorg.so/assets/og/corpus-flow.png" />
+<meta property="og:description" content="Canonical zones for Celorga knowledge corpora" />
+<meta property="og:url" content="https://celorga.io/corpus-flow.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/corpus-flow.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/corpus-flow.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Corpus flow: Canonical zones for Org2 knowledge corpora" />
+<meta property="og:image:alt" content="Corpus flow: Canonical zones for Celorga knowledge corpora" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Corpus flow" />
-<meta name="twitter:description" content="Canonical zones for Org2 knowledge corpora" />
-<meta name="twitter:url" content="https://openorg.so/corpus-flow.html" />
-<meta name="twitter:image" content="https://openorg.so/assets/og/corpus-flow.png" />
-<meta name="twitter:image:alt" content="Corpus flow: Canonical zones for Org2 knowledge corpora" />
+<meta name="twitter:description" content="Canonical zones for Celorga knowledge corpora" />
+<meta name="twitter:url" content="https://celorga.io/corpus-flow.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/corpus-flow.png" />
+<meta name="twitter:image:alt" content="Corpus flow: Canonical zones for Celorga knowledge corpora" />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -61,15 +61,15 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">Corpus flow</h1>
-<p class="org2-document-subtitle" role="doc-subtitle">Canonical zones for Org2 knowledge corpora</p>
+<p class="org2-document-subtitle" role="doc-subtitle">Canonical zones for Celorga knowledge corpora</p>
 </header>
-<p>Org2 treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.</p>
+<p>Celorga treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.</p>
 <p>The canonical flow is:</p>
 <pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">raw/ -&gt; notes/ -&gt; compiled/ -&gt; views/ -&gt; publish/</code></pre>
-<p>Start with the zones your corpus needs. Once a corpus adopts these names, Org2 lint can check the trust boundary without relying on convention alone.</p>
+<p>Start with the zones your corpus needs. Once a corpus adopts these names, Celorga lint can check the trust boundary without relying on convention alone.</p>
 <section class="org2-headline level-1">
 <h1 id="zones">Zones</h1>
 <table>
@@ -110,7 +110,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 :ID: project-alpha-dashboard
 :ORG2_ARTIFACT_ROLE: view
 :ORG2_PROVENANCE: id:project-alpha, query:todo-status-open
-:ORG2_GENERATOR: org2 query --format org
+:ORG2_GENERATOR: celorga query --format org
 :ORG2_GENERATED_AT: 2026-05-10T22:30:00Z
 :ORG2_SOURCE_HASHES: file:notes/project-alpha.org=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: review-required
@@ -145,7 +145,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-1">
 <h1 id="lint-workflow">Lint workflow</h1>
 <p>Run lint over the corpus root:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 lint --dir /path/to/corpus --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga lint --dir /path/to/corpus --recursive</code></pre>
 <p>When files live under the conventional directories, lint checks that their declared <code>ORG2_ARTIFACT_ROLE</code> matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.</p>
 <p>A minimal corpus can start like this:</p>
 <pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">corpus/

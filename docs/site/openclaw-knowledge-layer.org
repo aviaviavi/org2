@@ -1,19 +1,19 @@
 #+TITLE: OpenClaw knowledge layer
 #+SUBTITLE: Corpus layout, safe writes, and review-gated memory promotion
 
-OpenClaw can use an Org2 corpus as a local-first knowledge layer: raw observations stay auditable, deterministic Org2 commands derive indexes and views, and AI or external integrations write reviewable artifacts before anything becomes durable memory.
+OpenClaw can use a Celorga corpus as a local-first knowledge layer: raw observations stay auditable, deterministic Celorga commands derive indexes and views, and AI or external integrations write reviewable artifacts before anything becomes durable memory.
 
-This page is the integration contract. An OpenClaw integration should be able to implement the layout and safety rules here without reaching into Org2 internals.
+This page is the integration contract. An OpenClaw integration should be able to implement the layout and safety rules here without reaching into Celorga internals.
 
 * Corpus zones
 
-Use predictable top-level zones so humans, Org2, and automation agree on what each file means:
+Use predictable top-level zones so humans, Celorga, and automation agree on what each file means:
 
 | Zone | Example paths | Owner | Meaning |
 |---+---+---+---|
 | =raw/= | =raw/meetings/2026-05-20-team-sync.transcript.org=, =raw/imports/slack/2026-05-20.json= | capture/import tools | Source material and append-only observations. Prefer minimal rewriting. |
 | =notes/= and =daily/= | =daily/2026-05-20.org=, =notes/people/alex.org=, =notes/projects/openclaw.org= | humans plus safe agent edits | Canonical working notes, TODOs, durable memory, and curated entities. |
-| =compiled/= | =compiled/corpus.json=, =compiled/team-sync-context.json= | deterministic Org2 commands | Machine artifacts derived from =raw/= and =notes/=. Safe to regenerate. |
+| =compiled/= | =compiled/corpus.json=, =compiled/team-sync-context.json= | deterministic Celorga commands | Machine artifacts derived from =raw/= and =notes/=. Safe to regenerate. |
 | =views/= | =views/meeting-summaries/2026-05-20-team-sync.org=, =views/link-suggestions.org= | deterministic reports or generated drafts | Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical. |
 | =publish/= | =publish/team-handbook/=, =publish/openclaw-memory.html= | publish/export jobs | Shareable output created from reviewed source material. |
 
@@ -243,11 +243,11 @@ Use normal Org property drawers. Recommended properties:
 | =ORG2_GENERATED= | generated sections | =true= when a section remains machine-generated and uncurated. |
 | =ORG2_CURATED_AT= | promoted notes | Review/promotion timestamp. |
 
-Never store API keys, OAuth tokens, cookies, or private provider credentials in Org2 properties, job manifests, compiled artifacts, or published output.
+Never store API keys, OAuth tokens, cookies, or private provider credentials in Org properties, job manifests, compiled artifacts, or published output.
 
 * Deterministic transforms vs review-gated side effects
 
-Org2 deterministic transforms are local, reproducible operations over files:
+Celorga deterministic transforms are local, reproducible operations over files:
 
 - parse, format, lint, agenda, query, compile corpus
 - generate backlinks and linkify previews
@@ -265,7 +265,7 @@ Review-gated AI or external side effects require a human approval boundary:
 - sending email/chat, opening or updating Linear/GitHub tickets, calendar changes, or other third-party writes
 - publishing externally visible output if it contains private or newly generated claims
 
-Rule of thumb: deterministic Org2 transforms can build and check the map; AI and external tools can propose changes; reviewed promotion decides what becomes territory.
+Rule of thumb: deterministic Celorga transforms can build and check the map; AI and external tools can propose changes; reviewed promotion decides what becomes territory.
 
 * Meeting processing flow
 

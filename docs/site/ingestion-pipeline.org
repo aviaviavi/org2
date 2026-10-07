@@ -1,6 +1,6 @@
 #+TITLE: Agent ingestion pipeline
 
-Org2 ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes.
+Celorga ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes.
 
 * Data model
 
@@ -31,8 +31,8 @@ Derived review artifacts are generated beside, not over, durable notes. They inc
 * Pipeline
 
 1. A source connector emits a raw capture.
-2. Org2 writes the raw capture under the raw/source zone using a deterministic filename derived from =sourceType=, =externalId=, and =contentHash=.
-3. Org2 generates a review artifact under a review zone with provenance and review status.
+2. Celorga writes the raw capture under the raw/source zone using a deterministic filename derived from =sourceType=, =externalId=, and =contentHash=.
+3. Celorga generates a review artifact under a review zone with provenance and review status.
 4. A human or agent reviews selected facts and promotes only intentional durable notes/TODOs.
 
 * Idempotency

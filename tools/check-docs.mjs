@@ -83,13 +83,16 @@ const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/archi
 const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
 const parsedPublishConfig = JSON.parse(publishConfig);
+// Docs may show either the celorga command or its org2 compatibility alias.
+const mentionsCommand = (text, rest) => text.includes(`celorga ${rest}`) || text.includes(`org2 ${rest}`);
 const retiredPublicPages = ["privacy-and-data.org", "known-limitations.org", "launch-demo.org"];
 for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms]]) {
-  if (!text.includes("org2 agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
+  if (!mentionsCommand(text, "agent capabilities")) fail(`${label} does not point agents to the installed capability manifest`);
+}
+for (const command of ["mcp serve", "skill install"]) {
+  if (!mentionsCommand(mcpAndSkills, command)) fail(`MCP and skills guide is missing 'celorga ${command}'`);
 }
 for (const required of [
-  "org2 mcp serve",
-  "org2 skill install",
   "org2_agent_profile_resolve",
   "org2_search",
   "org2_fetch",
@@ -103,7 +106,7 @@ for (const required of [
 ]) {
   if (!mcpAndSkills.includes(required)) fail(`MCP and skills guide is missing '${required}'`);
 }
-if (!readme.includes("mcp-and-skills.html") || !readme.includes("org2 skill install")) {
+if (!readme.includes("mcp-and-skills.html") || !mentionsCommand(readme, "skill install")) {
   fail("README is missing the MCP and general-skill entry point");
 }
 for (const [label, text] of [
@@ -117,7 +120,7 @@ for (const [label, text] of [
     if (!text.includes(required)) fail(`${label} is missing native-tool guidance: ${required}`);
   }
 }
-if (!generalSkill.includes("name: org2") || !generalSkill.includes("org2 agent capabilities")) {
+if (!generalSkill.includes("name: org2") || !mentionsCommand(generalSkill, "agent capabilities")) {
   fail("general Org2 skill is missing required discovery guidance");
 }
 if (!(packageJson.files || []).includes("skills/org2/SKILL.md")) {
@@ -206,11 +209,11 @@ if (
 }
 if (
   !homepage.includes("#+TITLE: Your notes, your files, and your AI agents, working together.")
-  || !homepage.includes("Org2 provides the independently specified compiler/runtime")
+  || !homepage.includes("The Celorga runtime provides the independently specified compiler")
   || !productArchitecture.includes("A local-first workspace built on ordinary files and an open toolkit.")
-  || !productArchitecture.includes("=@aviaviavi/org2=")
+  || !productArchitecture.includes("The npm package is =celorga=")
 ) {
-  fail("product site must distinguish OpenOrg from the Org2 substrate");
+  fail("product site must distinguish the Celorga app from the Celorga runtime");
 }
 const installStart = gettingStarted.indexOf("* 1) Install the Mac app");
 const noteStart = gettingStarted.indexOf("* 2) Write today's note");
@@ -242,7 +245,7 @@ for (const page of retiredPublicPages) {
   }
 }
 if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
-  fail("OpenOrg for macOS must place screenshots beside the sections they illustrate");
+  fail("Celorga for macOS must place screenshots beside the sections they illustrate");
 }
 if (
   !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
@@ -252,27 +255,27 @@ if (
   || publishConfig.includes('href=\\"privacy-and-data.html\\"')
   || publishConfig.includes('href=\\"known-limitations.html\\"')
   || publishConfig.includes('href=\\"launch-demo.html\\"')
-  || !publishConfig.includes('"baseUrl": "https://openorg.so"')
+  || !publishConfig.includes('"baseUrl": "https://celorga.io"')
   || publishConfig.includes('href=\\"openclaw-knowledge-layer.html\\">OpenClaw knowledge layer')
 ) {
-  fail("primary site navigation must expose the OpenOrg product boundary and portable agent integration");
+  fail("primary site navigation must expose the Celorga product boundary and portable agent integration");
 }
 if (!downloads.includes("https://org2.gateway.scarf.sh/downloads/")) {
   fail("downloads page is missing Scarf Gateway release links");
 }
-if (!downloads.includes("OpenOrg disk images are hosted by GitHub Releases")) {
+if (!downloads.includes("Celorga disk images are hosted by GitHub Releases")) {
   fail("downloads page must disclose that GitHub Releases hosts the artifacts");
 }
 if (
   !downloads.includes("https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode")
-  || !downloads.includes("https://www.npmjs.com/package/@aviaviavi/org2")
+  || !downloads.includes("https://www.npmjs.com/package/celorga")
 ) {
   fail("downloads page must link developer tools to their canonical registry pages");
 }
 if (/org2\.gateway\.scarf\.sh\/downloads\/[^\s\]]+\.(?:vsix|tgz)/i.test(downloads)) {
   fail("downloads page must not link VS Code or npm cards to release artifacts");
 }
-if (!downloads.includes("* OpenOrg for iOS") || !downloads.includes("Request TestFlight access")) {
+if (!downloads.includes("* Celorga for iOS") || !downloads.includes("Request TestFlight access")) {
   fail("downloads page is missing the iOS TestFlight and source-install surface");
 }
 if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8"))).includes("downloads.html")) {
@@ -285,7 +288,7 @@ if (!siteStyles.includes(".org2-download-grid") || !siteStyles.includes(".org2-d
 const siteProject = parsedPublishConfig.publish?.projects?.["docs-site"];
 if (
   siteProject?.openGraph?.imageFormat !== "png"
-  || siteProject?.openGraph?.siteName !== "OpenOrg"
+  || siteProject?.openGraph?.siteName !== "Celorga"
   || siteProject?.openGraph?.locale !== "en_US"
 ) {
   fail("docs-site publishing must retain branded PNG Open Graph output");
@@ -297,13 +300,13 @@ if (
   || !siteStyles.includes(".org2-footer-incubator")
   || !fs.existsSync(path.join(repoRoot, "docs", "site", "assets", "scarf-logo.svg"))
 ) {
-  fail("OpenOrg site footer must retain the styled Scarf incubation credit");
+  fail("Celorga site footer must retain the styled Scarf incubation credit");
 }
 const scarfLogoPath = path.join(repoRoot, "docs", "site", "assets", "scarf-logo.svg");
 if (fs.existsSync(scarfLogoPath)) {
   const scarfLogoDigest = crypto.createHash("sha256").update(fs.readFileSync(scarfLogoPath)).digest("hex");
   if (scarfLogoDigest !== "d31bcbd3fbd1a8c96addc55a86f4c454eff3744837e4357aa247b4ef4fe7eb00") {
-    fail("OpenOrg site footer must use Scarf's official full-color wordmark");
+    fail("Celorga site footer must use Scarf's official full-color wordmark");
   }
 }
 
@@ -325,12 +328,12 @@ for (const sourcePage of publicSourcePages) {
     continue;
   }
   const html = fs.readFileSync(htmlPath, "utf8");
-  const expectedPageUrl = slug === "index" ? "https://openorg.so/" : `https://openorg.so/${slug}.html`;
-  const expectedImageUrl = `https://openorg.so/assets/og/${slug}.png`;
+  const expectedPageUrl = slug === "index" ? "https://celorga.io/" : `https://celorga.io/${slug}.html`;
+  const expectedImageUrl = `https://celorga.io/assets/og/${slug}.png`;
   const requiredHeadEntries = [
     `<meta name="description"`,
     `<link rel="canonical" href="${expectedPageUrl}" />`,
-    `<meta property="og:site_name" content="OpenOrg" />`,
+    `<meta property="og:site_name" content="Celorga" />`,
     `<meta property="og:locale" content="en_US" />`,
     `<meta property="og:url" content="${expectedPageUrl}" />`,
     `<meta property="og:image" content="${expectedImageUrl}" />`,

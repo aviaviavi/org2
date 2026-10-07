@@ -1,20 +1,20 @@
 #+TITLE: Your notes, your files, and your AI agents, working together.
-#+SUBTITLE: OpenOrg is a Mac and iPhone workspace for notes, tasks, meetings, and data. Bring in the agents you choose, approve what matters from anywhere, and share polished results, all from plain-text files you own.
+#+SUBTITLE: Celorga is a Mac and iPhone workspace for notes, tasks, meetings, and data. Bring in the agents you choose, approve what matters from anywhere, and share polished results, all from plain-text files you own.
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-home-hero">
-  <nav class="org2-hero-actions" aria-label="Start with OpenOrg">
+  <nav class="org2-hero-actions" aria-label="Start with Celorga">
     <a class="org2-hero-action org2-hero-action-primary" href="downloads.html">Download for Mac <span aria-hidden="true">→</span></a>
     <a class="org2-hero-action" href="features.html">See how it works <span aria-hidden="true">→</span></a>
   </nav>
   <p class="org2-home-hero-note">Open source · No account required · Works without AI until you connect an agent</p>
   <figure class="org2-home-hero-shot">
-    <img src="assets/screenshots/home-agents-room.png" alt="A shared OpenOrg conversation where one AI agent summarizes a note that only it can decrypt, and a second agent uses that summary to update a data notebook" loading="eager" />
+    <img src="assets/screenshots/home-agents-room.png" alt="A shared Celorga conversation where one AI agent summarizes a note that only it can decrypt, and a second agent uses that summary to update a data notebook" loading="eager" />
     <figcaption>One agent reads a note only it can decrypt and hands off a redacted summary. A second agent builds on it, and the change waits for your approval.</figcaption>
   </figure>
 </section>
 
-<nav class="org2-home-pillars" aria-label="What OpenOrg does">
+<nav class="org2-home-pillars" aria-label="What Celorga does">
   <a href="#home-agents"><strong>Many agents, one workspace</strong><span>Use the AI tools you already have, together.</span></a>
   <a href="#home-approvals"><strong>You approve what matters</strong><span>One review queue on your Mac and phone.</span></a>
   <a href="#home-data"><strong>Data notebooks</strong><span>Queries, tables, and charts inside your notes.</span></a>
@@ -71,7 +71,7 @@
       <figcaption>On your Mac</figcaption>
     </figure>
     <figure class="org2-home-phone">
-      <img src="assets/screenshots/ios-mobile-approvals.png" alt="OpenOrg approvals list on iPhone with items that need review" loading="lazy" />
+      <img src="assets/screenshots/ios-mobile-approvals.png" alt="Celorga approvals list on iPhone with items that need review" loading="lazy" />
       <figcaption>On your iPhone</figcaption>
     </figure>
   </div>
@@ -96,7 +96,7 @@
 <section class="org2-home-story org2-home-story-reverse" id="home-share" aria-labelledby="home-share-title">
   <div class="org2-home-story-copy">
     <h2 id="home-share-title">Share a note with anyone, in the format they use.</h2>
-    <p>Pick a note or one section of it and choose where it goes. OpenOrg removes the private parts first: tasks, internal IDs, comments, and anything else that should stay in your notes.</p>
+    <p>Pick a note or one section of it and choose where it goes. Celorga removes the private parts first: tasks, internal IDs, comments, and anything else that should stay in your notes.</p>
     <ul>
       <li><strong>Private link.</strong> A secret web page, PDF, or slide deck served from your Mac to anyone on your network.</li>
       <li><strong>Google Drive.</strong> An editable Google Doc, Slides deck, or Sheets workbook, or a PDF.</li>
@@ -109,8 +109,8 @@
       <li>Local link</li><li>Web page</li><li>Google Docs</li><li>Google Slides</li><li>Google Sheets</li><li>PDF</li>
     </ul>
     <figure class="org2-home-browser">
-      <div class="org2-home-browserbar" aria-hidden="true"><i></i><i></i><i></i><span>Shared from OpenOrg</span></div>
-      <img src="assets/screenshots/home-published-page.png" alt="A published OpenOrg note as a clean web page, with the chart included and private task details removed" loading="lazy" />
+      <div class="org2-home-browserbar" aria-hidden="true"><i></i><i></i><i></i><span>Shared from Celorga</span></div>
+      <img src="assets/screenshots/home-published-page.png" alt="A published Celorga note as a clean web page, with the chart included and private task details removed" loading="lazy" />
       <figcaption>What your reader sees: the published page, with private details removed.</figcaption>
     </figure>
   </div>
@@ -141,7 +141,7 @@
     <article><h3>Local by default</h3><p>Nothing leaves your Mac unless you connect an agent or publish something. There's no account to create.</p></article>
     <article><h3>Sync your way</h3><p>Use iCloud, Git, Syncthing, or any folder sync. Share a workspace with teammates the same way.</p></article>
     <article><h3>Encrypt what's sensitive</h3><p>Encrypt a single section to yourself, a device, or one agent, and keep the rest of the file readable.</p></article>
-    <article><h3>Edit anywhere</h3><p>Open the same files in VS Code, Vim, or Emacs, or script them with the Org2 command line.</p></article>
+    <article><h3>Edit anywhere</h3><p>Open the same files in VS Code, Vim, or Emacs, or script them with the Celorga command line.</p></article>
   </div>
 </section>
 #+END_EXPORT
@@ -150,11 +150,11 @@
 <section class="org2-sample" aria-labelledby="org2-sample-title">
   <aside class="org2-lineage-note" aria-labelledby="org2-lineage-title">
     <p class="org2-lineage-label" id="org2-lineage-title">For Org mode users</p>
-    <p><strong>OpenOrg brings Org's durable plain-text model to native apps, editors, CLIs, and AI agents.</strong> It uses ordinary <code>.org</code> documents by default while providing one independently specified runtime for links, planning, publishing, data, and agent workflows outside Emacs.</p>
-    <a href="celorga-vs-org-mode.html">How Org2 compares <span aria-hidden="true">→</span></a>
+    <p><strong>Celorga brings Org's durable plain-text model to native apps, editors, CLIs, and AI agents.</strong> It uses ordinary <code>.org</code> documents by default while providing one independently specified runtime for links, planning, publishing, data, and agent workflows outside Emacs.</p>
+    <a href="celorga-vs-org-mode.html">How Celorga compares <span aria-hidden="true">→</span></a>
   </aside>
   <div class="org2-sample-intro">
-    <h2 id="org2-sample-title">What an OpenOrg document looks like</h2>
+    <h2 id="org2-sample-title">What a Celorga document looks like</h2>
     <p>One plain-text document can carry notes, tasks, dates, links, data records, source provenance, and agent handoff boundaries while staying readable in any editor.</p>
   </div>
   <div class="org2-sample-layout">
@@ -246,13 +246,13 @@
 <section class="org2-home-start" aria-labelledby="home-start-title">
   <div class="org2-sample-intro">
     <h2 id="home-start-title">Start with your day. Add agents when you're ready.</h2>
-    <p>OpenOrg Alpha is useful on its own for notes, tasks, and planning. Connect an agent whenever you want help. Org2 provides the independently specified compiler/runtime, CLI, and editor tooling underneath the workspace, so the same files also work in VS Code, Vim, and Emacs.</p>
+    <p>Celorga Alpha is useful on its own for notes, tasks, and planning. Connect an agent whenever you want help. The Celorga runtime provides the independently specified compiler, CLI, and editor tooling underneath the app, so the same files also work in VS Code, Vim, and Emacs.</p>
   </div>
   <nav class="org2-home-start-links" aria-label="Next steps">
     <a href="downloads.html"><strong>Download</strong><span>Mac app, iPhone beta, CLI, and editor plugins</span></a>
     <a href="getting-started.html"><strong>Getting started</strong><span>Your first useful day in ten minutes</span></a>
-    <a href="features.html"><strong>All features</strong><span>A tour of everything OpenOrg does</span></a>
-    <a href="architecture.html"><strong>Architecture</strong><span>How OpenOrg and Org2 fit together</span></a>
+    <a href="features.html"><strong>All features</strong><span>A tour of everything Celorga does</span></a>
+    <a href="architecture.html"><strong>Architecture</strong><span>How the Celorga app and runtime fit together</span></a>
   </nav>
   <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="celorga-vs-obsidian.html">Obsidian</a>, <a href="celorga-vs-markdown.html">Markdown</a>, or <a href="celorga-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/org2">GitHub</a>.</p>
 </section>

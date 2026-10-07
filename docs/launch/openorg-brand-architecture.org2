@@ -2,6 +2,12 @@
 #+subtitle: Product boundary, compatibility contract, and launch gates
 #+date: 2026-08-22
 
+* Superseded
+
+The product is being renamed to *Celorga*, one brand for the app and the
+runtime. See =docs/rename/celorga.org= for the current naming and
+compatibility contract. The compatibility invariants below still apply.
+
 * Decision state
 
 =OpenOrg= is the proposed user-facing product name. =Org2= remains the open substrate.

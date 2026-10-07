@@ -1,6 +1,6 @@
 # Ingest pipeline
 
-`org2 ingest` captures local external context into corpus zones without promoting it directly into durable notes.
+`celorga ingest` captures local external context into corpus zones without promoting it directly into durable notes.
 
 Flow:
 
@@ -13,8 +13,8 @@ By default, the command is a dry-run. Add `--apply` to write artifacts.
 ## Human-driven capture
 
 ```sh
-org2 ingest --file meeting-notes.txt --corpus ~/notes --author Ada
-org2 ingest --file meeting-notes.txt --corpus ~/notes --author Ada --apply
+celorga ingest --file meeting-notes.txt --corpus ~/notes --author Ada
+celorga ingest --file meeting-notes.txt --corpus ~/notes --author Ada --apply
 ```
 
 Example output:
@@ -31,8 +31,8 @@ review: pending (generated artifact remains review-required before promotion to 
 Agents can pass bounded local context through stdin or structured JSON fixtures:
 
 ```sh
-cat context.txt | org2 ingest --stdin --corpus ./corpus --source-type note --apply --format json
-org2 ingest --json scoped-export.json --corpus ./corpus --apply --format json
+cat context.txt | celorga ingest --stdin --corpus ./corpus --source-type note --apply --format json
+celorga ingest --json scoped-export.json --corpus ./corpus --apply --format json
 ```
 
 Structured JSON may be:

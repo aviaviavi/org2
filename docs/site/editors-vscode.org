@@ -1,6 +1,6 @@
 #+TITLE: VS Code
 
-Org2's most complete editor integration today is VS Code.
+Celorga's most complete editor integration today is VS Code.
 
 * Install instructions
 
@@ -17,9 +17,9 @@ Then install the VS Code extension from the Marketplace:
 code --install-extension AviPress.org2-vscode
 #+end_src
 
-Marketplace page: [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 for VS Code]]
+Marketplace page: [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Celorga for VS Code]]
 
-Open your notes folder and run =Org2: Open Agenda= from the command palette.
+Open your notes folder and run =Celorga: Open Agenda= from the command palette.
 
 In =.org= files, formatting and save-time shorthand handling rewrite fenced blocks and backtick inline code to ordinary Org syntax.
 
@@ -27,7 +27,7 @@ In =.org= files, formatting and save-time shorthand handling rewrite fenced bloc
 
 For extension development or unreleased builds, use the repository copy at =editors/vscode-org2/=.
 
-1. Build Org2 CLI and repository artifacts:
+1. Build Celorga CLI and repository artifacts:
 
 #+begin_src sh
 git clone https://github.com/aviaviavi/org2.git
@@ -48,10 +48,10 @@ npm ci
 - Use VS Code Extension Development Host from this folder, or
 - Package to VSIX and install via =Install from VSIX...=.
 
-4. Ensure =org2= CLI is available:
+4. Ensure the =celorga= CLI (or its =org2= compatibility alias) is available:
 
 - Repo-built fallback is supported, or
-- Provide =org2= on your =PATH=.
+- Provide =celorga= on your =PATH=.
 
 For settings and command behavior details, see =editors/vscode-org2/README.md= and [[file:tooling-reference.org][Tooling reference]].
 
@@ -185,10 +185,10 @@ For selective sharing, put recipients on the subtree itself instead of in global
 :PROPERTIES:
 :CRYPT_RECIPIENT_FILE: keys/agent-public.asc
 :END:
-This body is encrypted to the listed recipient file when you run Org2: Encrypt Subtree.
+This body is encrypted to the listed recipient file when you run Celorga: Crypt Encrypt Subtree.
 #+end_src
 
-=:CRYPT_RECIPIENT:= / =:CRYPT_RECIPIENTS:= accept GPG recipient identifiers. =:CRYPT_RECIPIENT_FILE:= / =:CRYPT_RECIPIENT_FILES:= accept armored public-key files. Relative file paths are resolved from the Org2 file containing the subtree, which keeps shared corpora portable across devices.
+=:CRYPT_RECIPIENT:= / =:CRYPT_RECIPIENTS:= accept GPG recipient identifiers. =:CRYPT_RECIPIENT_FILE:= / =:CRYPT_RECIPIENT_FILES:= accept armored public-key files. Relative file paths are resolved from the Org file containing the subtree, which keeps shared corpora portable across devices.
 - =org2.refileSubtree=
 - =org2.roamOpenTitle=
 - =org2.roamShowBacklinks=

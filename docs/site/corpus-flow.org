@@ -1,7 +1,7 @@
 #+TITLE: Corpus flow
-#+SUBTITLE: Canonical zones for Org2 knowledge corpora
+#+SUBTITLE: Canonical zones for Celorga knowledge corpora
 
-Org2 treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.
+Celorga treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.
 
 The canonical flow is:
 
@@ -9,7 +9,7 @@ The canonical flow is:
 raw/ -> notes/ -> compiled/ -> views/ -> publish/
 #+end_src
 
-Start with the zones your corpus needs. Once a corpus adopts these names, Org2 lint can check the trust boundary without relying on convention alone.
+Start with the zones your corpus needs. Once a corpus adopts these names, Celorga lint can check the trust boundary without relying on convention alone.
 
 * Zones
 

@@ -1,63 +1,63 @@
 #+TITLE: Downloads
-#+SUBTITLE: Install OpenOrg and its developer tools
+#+SUBTITLE: Install Celorga and its developer tools
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. OpenOrg disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
+  <p>Celorga is a local-first workspace app with an open runtime, CLI, and developer toolkit. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT
 
-* OpenOrg 0.8.8
+* Celorga 0.8.8
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="OpenOrg 0.8.8 downloads">
+<section class="org2-download-grid" aria-label="Celorga 0.8.8 downloads">
     <article class="org2-download-card org2-download-card-macos-apple-silicon">
       <p class="org2-download-kicker">macOS</p>
-      <h3>OpenOrg for macOS (Apple Silicon DMG)</h3>
+      <h3>Celorga for macOS (Apple Silicon DMG)</h3>
       <p>Native Apple Silicon workspace app. Developer ID signed, notarized, and stapled.</p>
       <p class="org2-download-meta">0.8.8 · 230.3 MB</p>
       <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-macos-intel">
       <p class="org2-download-kicker">macOS</p>
-      <h3>OpenOrg for macOS (Intel DMG)</h3>
+      <h3>Celorga for macOS (Intel DMG)</h3>
       <p>Native Intel workspace app. Developer ID signed, notarized, and stapled.</p>
       <p class="org2-download-meta">0.8.8 · 232.5 MB</p>
       <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
     <article class="org2-download-card org2-download-card-vscode">
       <p class="org2-download-kicker">VS Code</p>
-      <h3>Org2 for VS Code</h3>
-      <p>Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.</p>
+      <h3>Celorga for VS Code</h3>
+      <p>Editor integration with syntax, agenda, navigation, formatting, and Celorga commands.</p>
       <p class="org2-download-meta">VS Code Marketplace</p>
       <a class="org2-download-button" href="https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode">View in Marketplace <span aria-hidden="true">↗</span></a>
     </article>
     <article class="org2-download-card org2-download-card-npm">
       <p class="org2-download-kicker">npm / CLI</p>
-      <h3>Org2 npm package</h3>
+      <h3>Celorga npm package</h3>
       <p>CLI, compiler, language server, publishing runtime, and agent-facing tools.</p>
       <p class="org2-download-meta">npm registry</p>
-      <a class="org2-download-button" href="https://www.npmjs.com/package/@aviaviavi/org2">View on npm <span aria-hidden="true">↗</span></a>
+      <a class="org2-download-button" href="https://www.npmjs.com/package/celorga">View on npm <span aria-hidden="true">↗</span></a>
     </article>
 </section>
 #+END_EXPORT
 
-The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
+The Celorga disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper.
 
-For registry-managed installation, use [[https://www.npmjs.com/package/@aviaviavi/org2][the Org2 package on npm]] or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+For registry-managed installation, use [[https://www.npmjs.com/package/celorga][the celorga package on npm]] or install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Celorga from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
-* OpenOrg for iOS
+* Celorga for iOS
 
-OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
+Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid org2-download-grid-mobile" aria-label="OpenOrg for iOS installation options">
+<section class="org2-download-grid org2-download-grid-mobile" aria-label="Celorga for iOS installation options">
   <article class="org2-download-card org2-download-card-ios">
     <p class="org2-download-kicker">TestFlight</p>
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
     <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
   <article class="org2-download-card org2-download-card-source">
     <p class="org2-download-kicker">Open source</p>
@@ -71,15 +71,15 @@ OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
 
 The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
 
-* Stable OpenOrg download URL
+* Stable Celorga download URL
 
-OpenOrg release automation uses one permanent template for versioned disk images:
+Celorga release automation uses one permanent template for versioned disk images:
 
 #+begin_src text
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 #+end_src
 
-For example, the current OpenOrg builds are:
+For example, the current Celorga builds are:
 
 #+begin_src text
 https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg

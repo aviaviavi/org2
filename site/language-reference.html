@@ -8,26 +8,26 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="This is the practical language reference for Org2 v0." />
-<link rel="canonical" href="https://openorg.so/language-reference.html" />
+<meta name="description" content="This is the practical language reference for Celorga's Org profile, v0." />
+<link rel="canonical" href="https://celorga.io/language-reference.html" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="OpenOrg" />
+<meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="Language reference" />
-<meta property="og:description" content="This is the practical language reference for Org2 v0." />
-<meta property="og:url" content="https://openorg.so/language-reference.html" />
-<meta property="og:image" content="https://openorg.so/assets/og/language-reference.png" />
-<meta property="og:image:secure_url" content="https://openorg.so/assets/og/language-reference.png" />
+<meta property="og:description" content="This is the practical language reference for Celorga's Org profile, v0." />
+<meta property="og:url" content="https://celorga.io/language-reference.html" />
+<meta property="og:image" content="https://celorga.io/assets/og/language-reference.png" />
+<meta property="og:image:secure_url" content="https://celorga.io/assets/og/language-reference.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Language reference: This is the practical language reference for Org2 v0." />
+<meta property="og:image:alt" content="Language reference: This is the practical language reference for Celorga's Org profile, v0." />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Language reference" />
-<meta name="twitter:description" content="This is the practical language reference for Org2 v0." />
-<meta name="twitter:url" content="https://openorg.so/language-reference.html" />
-<meta name="twitter:image" content="https://openorg.so/assets/og/language-reference.png" />
-<meta name="twitter:image:alt" content="Language reference: This is the practical language reference for Org2 v0." />
+<meta name="twitter:description" content="This is the practical language reference for Celorga's Org profile, v0." />
+<meta name="twitter:url" content="https://celorga.io/language-reference.html" />
+<meta name="twitter:image" content="https://celorga.io/assets/og/language-reference.png" />
+<meta name="twitter:image:alt" content="Language reference: This is the practical language reference for Celorga's Org profile, v0." />
 <style id="org2-chart-style">
 :root {
   --org2-chart-axis: #475569;
@@ -98,11 +98,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="OpenOrg"><a href="index.html">OpenOrg</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="openorg-and-org2.html">Architecture</a><details class="org2-nav-dropdown"><summary>Org2 developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">OpenOrg for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search OpenOrg and Org2 docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search OpenOrg and Org2 docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Celorga"><a href="index.html">Celorga</a><a href="features.html">How it works</a><a href="getting-started.html">Getting started</a><a href="downloads.html">Downloads</a><a href="architecture.html">Architecture</a><details class="org2-nav-dropdown"><summary>Developer docs</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="mcp-and-skills.html">MCP and agent skills</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="agent-quickstart.html">Agents and models</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">Celorga for macOS</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open site search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search Celorga docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search Celorga docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">Language reference</h1>
 </header>
-<p>This is the practical language reference for Org2 v0.</p>
+<p>This is the practical language reference for Celorga's Org profile, v0.</p>
 <p>For the normative draft standard, start with <a href="https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org">SPEC.org</a>. The standard is independently implementable: its surface grammar, contextual parsing algorithms, canonical AST schema, and executable conformance cases are all public.</p>
 <section class="org2-headline level-1">
 <h1 id="spec-map">Spec map</h1>
@@ -140,13 +140,13 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>CANCELLED</code> / <code>CANCELED</code></p></li>
 </ul>
 <p>Workflow tools may accept aliases such as <code>PROG</code> or <code>WAITING</code> and normalize them to one of the canonical TODO keywords above.</p>
-<p>Corpus defaults live in <code>org2.json</code> under <code>todo.sequences</code>, for example <code>{&quot;todo&quot;:{&quot;sequences&quot;:[&quot;TODO WAITING | DONE SKIPPED&quot;]}}</code>. OpenOrg exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.</p>
+<p>Corpus defaults live in <code>org2.json</code> under <code>todo.sequences</code>, for example <code>{&quot;todo&quot;:{&quot;sequences&quot;:[&quot;TODO WAITING | DONE SKIPPED&quot;]}}</code>. Celorga exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.</p>
 <p>Files may also declare their own Org-compatible vocabulary with <code>#+TODO:</code>, <code>#+SEQ_TODO:</code>, or <code>#+TYP_TODO:</code>. Fast-selection suffixes such as <code>WAITING(w)</code> are recognized and omitted from the stored headline state:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+TODO: IDEA(i) WAITING(w) | SHIPPED(s)
 * WAITING Publish the package</code></pre>
 <p>File-local declarations replace the corpus sequences for that file. Without a file-local declaration, parsing, editing, agendas, and compiled context use the nearest corpus configuration.</p>
 <p>States before <code>|</code> are active; states after it are terminal (no further action required). Without <code>|</code>, the last keyword is terminal. Multiple declarations define independent sequences. Keywords retain their spelling and case. Built-in states remain available. Declarations inside source/example blocks and drawers do not change the workflow.</p>
-<p>Custom states work in TODO mutations, agenda filtering, and OpenOrg heading controls. Terminal states do not become overdue tasks; reopening clears <code>CLOSED</code>. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.</p>
+<p>Custom states work in TODO mutations, agenda filtering, and Celorga heading controls. Terminal states do not become overdue tasks; reopening clears <code>CLOSED</code>. Shortcut and logging annotations are accepted, but their Emacs-specific interactive prompts/keybindings are not implemented.</p>
 <p>Example:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Ship docs
 * IN_PROGRESS Implement parser tests
@@ -173,9 +173,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h2 id="property-drawers">Property drawers</h2>
 <ul>
 <li><p>Drawer delimiters: <code>:PROPERTIES:</code> ... <code>:END:</code></p></li>
-<li><p>Consistently space-indented property drawers are accepted for legacy files. <code>org2 fmt</code> canonicalizes their delimiter and property lines to column zero.</p></li>
+<li><p>Consistently space-indented property drawers are accepted for legacy files. <code>celorga fmt</code> canonicalizes their delimiter and property lines to column zero.</p></li>
 <li>
-<p>Common keys used by Org2 workflows:</p>
+<p>Common keys used by Celorga workflows:</p>
 <ul>
 <li><p><code>:ID:</code></p></li>
 <li><p><code>:CUSTOM_ID:</code></p></li>
@@ -225,8 +225,8 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Unordered markers: <code>-</code>, <code>+</code>, <code>*</code></p></li>
 <li><p>Ordered markers: <code>1.</code>, <code>1)</code></p></li>
 <li><p>Checkboxes: <code>[ ]</code>, <code>[X]</code>, <code>[x]</code>, <code>[-]</code></p></li>
-<li><p>Cycle a list checkbox with <code>org2 checkbox --file FILE --line N --apply</code>: <code>[ ]</code> → <code>[-]</code> → <code>[X]</code> → <code>[ ]</code>. The CLI and LSP code action change only the selected marker; see <a href="tooling-reference.html">Tooling reference</a>.</p></li>
-<li><p>Checkbox progress cookies: <code>[n/m]</code> and <code>[p%]</code> may appear in headings or list items; <code>[/]</code> and <code>[%]</code> are empty placeholders. Compile output and lint compare each cookie with its innermost containing heading total. Checked items count as completed; unchecked and indeterminate items count only toward the total. <code>org2 checkbox fix-cookies --file FILE --apply</code> writes corrected values, while <code>org2 checkbox cycle --file FILE --line N --fix-cookies --apply</code> changes a marker and refreshes cookies atomically.</p></li>
+<li><p>Cycle a list checkbox with <code>celorga checkbox --file FILE --line N --apply</code>: <code>[ ]</code> → <code>[-]</code> → <code>[X]</code> → <code>[ ]</code>. The CLI and LSP code action change only the selected marker; see <a href="tooling-reference.html">Tooling reference</a>.</p></li>
+<li><p>Checkbox progress cookies: <code>[n/m]</code> and <code>[p%]</code> may appear in headings or list items; <code>[/]</code> and <code>[%]</code> are empty placeholders. Compile output and lint compare each cookie with its innermost containing heading total. Checked items count as completed; unchecked and indeterminate items count only toward the total. <code>celorga checkbox fix-cookies --file FILE --apply</code> writes corrected values, while <code>celorga checkbox cycle --file FILE --line N --fix-cookies --apply</code> changes a marker and refreshes cookies atomically.</p></li>
 <li><p>Nested lists via indentation.</p></li>
 <li><p>Counter cookies such as <code>[@3]</code> are stored separately from the written ordered-list marker.</p></li>
 <li><p>Descriptive items use <code>term :: definition</code> and render as description lists.</p></li>
@@ -244,7 +244,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Angle links: <code>&lt;mailto:hello@example.com&gt;</code></p></li>
 <li><p>Targets: <code>&lt;&lt;name&gt;&gt;</code> and radio targets <code>&lt;&lt;&lt;name&gt;&gt;&gt;</code></p></li>
 </ul>
-<p>Both ID links and Wiki links are first-class in Org2 roam workflows.</p>
+<p>Both ID links and Wiki links are first-class in Celorga roam workflows.</p>
 <p>Link abbreviations are supported with built-ins, config, and <code>#+LINK</code> directives.</p>
 <p>Built-in abbreviations:</p>
 <ul>
@@ -274,7 +274,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p><code>org2.json</code> links.abbreviations</p></li>
 <li><p>built-ins</p></li>
 </ol>
-<p>Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.</p>
+<p>Celorga expands abbreviation targets when rendering/exporting and for LSP document-link targets.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-identity">Corpus identity</h1>
@@ -302,7 +302,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="rich-inline-objects">Rich inline objects</h1>
-<p>Org2 also parses the everyday publishing and scholarly inline objects used by Org:</p>
+<p>Celorga also parses the everyday publishing and scholarly inline objects used by Org:</p>
 <ul>
 <li><p>Footnote references: <code>[fn:label]</code>, <code>[fn:label:inline definition]</code>, and <code>[fn::anonymous definition]</code></p></li>
 <li><p>Citations: <code>[cite:@key]</code> and multi-reference/style forms such as <code>[cite/t:@doe; see @roe p. 4]</code></p></li>
@@ -329,7 +329,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 <li><p>Center blocks: <code>#+begin_center ... #+end_center</code></p></li>
 <li><p>Comment blocks: <code>#+begin_comment ... #+end_comment</code></p></li>
 <li><p>Arbitrary special blocks: <code>#+begin_NAME ... #+end_NAME</code></p></li>
-<li><p>Dynamic blocks: <code>#+begin: NAME ... #+end:</code> (parsed and preserved; Org2 does not execute dynamic-block writers)</p></li>
+<li><p>Dynamic blocks: <code>#+begin: NAME ... #+end:</code> (parsed and preserved; Celorga does not execute dynamic-block writers)</p></li>
 <li><p>LaTeX environments: <code>\begin{equation} ... \end{equation}</code></p></li>
 <li><p>Fixed-width lines beginning with a colon followed by one space</p></li>
 <li><p>Horizontal rules of five or more hyphens</p></li>
@@ -337,7 +337,7 @@ CLOSED: [2026-02-20 Fri]</code></pre>
 </ul>
 <section class="org2-headline level-2">
 <h2 id="syntactic-sugar-aliases">Syntactic sugar / aliases</h2>
-<p>OpenOrg accepts a friendlier fenced-code typing alias for source blocks:</p>
+<p>Celorga accepts a friendlier fenced-code typing alias for source blocks:</p>
 <pre class="org2-example">```ts
 const x = 1
 ```</pre>
@@ -345,11 +345,11 @@ const x = 1
 <pre class="org2-example">#+begin_src ts
 const x = 1
 #+end_src</pre>
-<p>New <code>.org</code> documents use the ordinary Org form on disk. OpenOrg, file-based CLI formatting, the LSP, and editor integrations rewrite fences to <code>#+begin_src</code> / <code>#+end_src</code> and backtick inline code to ordinary Org inline markup whenever edited <code>.org</code> source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted <code>.org</code> files stay valid Org syntax.</p>
+<p>New <code>.org</code> documents use the ordinary Org form on disk. Celorga, file-based CLI formatting, the LSP, and editor integrations rewrite fences to <code>#+begin_src</code> / <code>#+end_src</code> and backtick inline code to ordinary Org inline markup whenever edited <code>.org</code> source is persisted or formatted. This syntax canonicalization still occurs when general format-on-save is disabled: the input remains quick to type, while persisted <code>.org</code> files stay valid Org syntax.</p>
 <p>File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --stdin --canonical-org
-org2 fmt --file note.org --apply</code></pre>
-<p>Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga fmt --stdin --canonical-org
+celorga fmt --file note.org --apply</code></pre>
+<p>Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote celorga fences from accidentally becoming executable celorga source, chart, dataset, or SQL blocks.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
@@ -357,7 +357,7 @@ org2 fmt --file note.org --apply</code></pre>
 <ul>
 <li><p>Pipe table rows: <code>| a | b |</code></p></li>
 </ul>
-<p>Org2 defines the custom link type <code>color:</code> as explicit, non-navigating presentation markup. Use <code>[[color:red][urgent]]</code> for foreground color, <code>[[color:bg=yellow][review]]</code> for background color, or <code>[[color:fg=white;bg</code>#b42318][blocked]]= for both. Keys may be abbreviated as <code>fg</code><em>=bg= or written as =foreground=</em><code>background</code>; <code>text</code> is also accepted for foreground. Values may be supported names or three/six-digit hex literals.</p>
+<p>Celorga defines the custom link type <code>color:</code> as explicit, non-navigating presentation markup. Use <code>[[color:red][urgent]]</code> for foreground color, <code>[[color:bg=yellow][review]]</code> for background color, or <code>[[color:fg=white;bg</code>#b42318][blocked]]= for both. Keys may be abbreviated as <code>fg</code><em>=bg= or written as =foreground=</em><code>background</code>; <code>text</code> is also accepted for foreground. Values may be supported names or three/six-digit hex literals.</p>
 <p>The portable named palette is <code>black</code>, <code>blue</code>, <code>brown</code>, <code>gray</code>/<code>grey</code>, <code>green</code>, <code>indigo</code>, <code>mint</code>, <code>orange</code>, <code>pink</code>, <code>purple</code>, <code>red</code>, <code>teal</code>, <code>white</code>, and <code>yellow</code>. Hex literals provide exact custom colors without allowing arbitrary CSS.</p>
 <p>The binding works anywhere links are parsed, including prose, headings, and table cells. In ordinary inline content, background color applies to the labeled span. When one color binding occupies an entire table cell, rendered clients apply its foreground and background to the whole cell. It remains a normal bracket link in the canonical AST and round-trips byte-for-byte, so standard Org tools preserve the label even when they do not interpret the <code>color:</code> type. Invalid color declarations remain ordinary links rather than accepting arbitrary CSS.</p>
 <ul>
@@ -370,13 +370,13 @@ org2 fmt --file note.org --apply</code></pre>
 | A    |   2 |  3.50 |       |
 | B    |   4 |  2.00 |       |
 #+TBLFM: $4=$2*$3;%.2f</code></pre>
-<p><code>org2 table recalculate --file report.org</code> previews the changed cells; add <code>--apply</code> to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.</p>
+<p><code>celorga table recalculate --file report.org</code> previews the changed cells; add <code>--apply</code> to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.</p>
 <p>The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative <code>@row$column</code> references; A1 references; arithmetic, comparisons, and boolean operators; <code>vsum</code>, <code>vmean</code>, <code>vmin</code>, <code>vmax</code>, <code>vmedian</code>, <code>vcount</code>, common numeric functions; printf/Calc-style numeric formats; and <code>T</code>, <code>U</code>, and <code>t</code> duration modes. Later assignments override earlier assignments for the same cell. Empty-field <code>N</code> mode is supported. Formula lines, including unsupported forms, remain lossless.</p>
-<p>Org2 deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.</p>
+<p>Celorga deliberately does not execute Emacs Lisp formulas, remote-table references, or arbitrary Calc extensions. An unsupported or invalid formula produces a diagnostic and leaves the source unchanged rather than partially updating a table.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="deliberate-compatibility-boundary">Deliberate compatibility boundary</h1>
-<p>Org2 now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.</p>
+<p>Celorga now covers most Org syntax used for notes, planning, publishing, linking, and scholarly prose. It deliberately does not implement macro expansion, Babel execution, inline source/call evaluation, or dynamic-block execution. Inline tasks remain ordinary deep headlines rather than a separate execution construct. Unsupported execution-oriented forms remain losslessly preserved as text or directives.</p>
 <p>Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: quarterly_revenue
 #+chart: line x=quarter y=revenue
@@ -436,16 +436,16 @@ x: quarter
 y: revenue, cost, profit
 source: quarterly_metrics
 #+end_src</pre>
-<p>Each line receives a stable color from the <code>--org2-chart-mark</code> and <code>--org2-chart-series-2</code> … <code>--org2-chart-series-8</code> style variables, which OpenOrg sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A <code>y-asc</code> or <code>y-desc</code> sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.</p>
+<p>Each line receives a stable color from the <code>--org2-chart-mark</code> and <code>--org2-chart-series-2</code> … <code>--org2-chart-series-8</code> style variables, which Celorga sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A <code>y-asc</code> or <code>y-desc</code> sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.</p>
 <p>Charts are drawn in a clean, modern style. Lines are smooth (monotone, so they never overshoot the data); a one- or two-series line chart gets a soft gradient fill; and each line ends in a dot labeled with its latest value, with the series name when there are several. Line charts fit the value axis to the data rather than always starting at zero, while bar charts always include zero and label each bar when there is room. Axis labels stay horizontal: long category names are shortened (the full name stays available as a tooltip) or thinned out. Values use compact units such as <code>95.9k</code> or <code>24M</code>; a currency prefix appears when every cell starts with <code>$</code> or the column name contains <code>usd</code>, and a percent suffix appears when every cell ends in <code>%</code> or the name contains <code>pct</code> or <code>percent</code>. Cells such as <code>$1,200</code> and <code>12%</code> are read as numbers. Tooltips show the full value, for example <code>$95,880</code>.</p>
 <p>The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use <code>size</code> and <code>height</code> when the desired dimensions should remain deterministic in source.</p>
 <p>Chart SVG uses CSS custom properties with opinionated defaults: <code>--org2-chart-mark</code>, <code>--org2-chart-series-2</code> through <code>--org2-chart-series-8</code>, <code>--org2-chart-surface</code>, <code>--org2-chart-axis</code>, <code>--org2-chart-grid</code>, <code>--org2-chart-label</code>, and <code>--org2-chart-title</code>. The first series retains <code>--org2-chart-mark</code> for compatibility. Set them on <code>.org2-chart</code> in a published stylesheet or the Mac app's <code>.org2/app.css</code> to customize the visual theme without changing the data declaration.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org --block-id quarterly_revenue --format svg</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga render-chart --file report.org --block-id quarterly_revenue --format svg</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-datasets-and-sql-views">Local datasets and SQL views</h1>
-<p>Org2 can describe local/ad hoc data workflows with <code>dataset</code> and <code>sql</code> source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:</p>
+<p>Celorga can describe local/ad hoc data workflows with <code>dataset</code> and <code>sql</code> source blocks. Equivalent fences remain accepted as typing sugar. This is intended for notebook-like reports over explicit local files, read-only URLs, and named Org tables, with DuckDB as the first execution bridge:</p>
 <pre class="org2-example">#+begin_src dataset fetches
 type: csv
 path: ./data/package-fetches.csv
@@ -464,12 +464,12 @@ source: fetches_by_state
 x: state
 y: fetches
 #+end_src</pre>
-<p><code>org2 query-data</code> reads these blocks, creates DuckDB views for local files, URL-backed sources, named org2 tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a <code>#+query-data:</code> provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org --results fetches_by_state --out report.fetches.org
-org2 query-data --file report.org --results fetches_by_state --apply
-org2 query-data --file report.org --line 42 --format json
-org2 query-data --file report.org --inspect --include-script
-cat report.org | org2 query-data --stdin --results fetches_by_state --format json</code></pre>
+<p><code>celorga query-data</code> reads these blocks, creates DuckDB views for local files, URL-backed sources, named celorga tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a <code>#+query-data:</code> provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga query-data --file report.org --results fetches_by_state --out report.fetches.org
+celorga query-data --file report.org --results fetches_by_state --apply
+celorga query-data --file report.org --line 42 --format json
+celorga query-data --file report.org --inspect --include-script
+cat report.org | celorga query-data --stdin --results fetches_by_state --format json</code></pre>
 <p>Use <code>--stdin</code> when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use <code>--line N</code> to select the SQL result block containing or after the cursor line. JSON output includes <code>resultBlocks</code> with each available SQL result id and source range. Use <code>--inspect</code> to return parsed datasets, SQL views, result metadata, diagnostics, and selected-query provenance without running DuckDB; <code>--include-script</code> also returns generated DuckDB SQL. Relative file paths are resolved from the working directory for stdin input. SQL result ids must be unique, and dataset ids and SQL view ids must be distinct because they become DuckDB relation names. Local URL/table datasets may carry metadata-only credential/config references such as <code>env:SCARF_API_TOKEN</code> or <code>profile:product-analytics</code>; remote analytics datasets use their named profile operationally but never insert credentials into generated SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include <code>artifact=PATH</code> and <code>freshness=24h</code> / <code>ttl=24h</code> / <code>max-age=24h</code> metadata. Executed results stamp <code>ranAt</code> so clients can evaluate freshness.</p>
 <p>Use <code>sql view=NAME</code> when a report needs a reusable local projection before the final result table:</p>
 <pre class="org2-example">#+begin_src sql view=california_fetches
@@ -550,13 +550,13 @@ query: |
   ORDER BY created_at DESC
   LIMIT 25
 #+end_src</pre>
-<p>Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with <code>org2 query-data</code>, then attach a <code>#+begin_src chart</code> block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.</p>
-<p>For notebooks with multiple remote sources, declare each result's dependency edge explicitly with <code>sources=DATASET_ID[,DATASET_ID...]</code>. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:</p>
+<p>Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with <code>celorga query-data</code>, then attach a <code>#+begin_src chart</code> block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.</p>
+<p>For notebooks with multiple remote sources, declare each result's dependency edge explicitly with <code>sources=DATASET_ID[,DATASET_ID...]</code>. Celorga validates the named sources, loads only those datasets for that result, and records them in materialization provenance:</p>
 <pre class="org2-example">#+begin_src sql results=recent_organizations sources=recent_organizations_source freshness=24h
 SELECT * FROM recent_organizations_source
 ORDER BY created_at DESC
 #+end_src</pre>
-<p>Refreshing data is always explicit. Use <code>org2 query-data --apply</code> to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.</p>
+<p>Refreshing data is always explicit. Use <code>celorga query-data --apply</code> to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.</p>
 <p>Use <code>type: table</code> with <code>source: NAME</code> when the source data already lives in a named Org table:</p>
 <pre class="org2-example">#+name: raw_fetches
 | state | fetches |
@@ -574,15 +574,15 @@ engine: duckdb
 SELECT sum(fetches) AS fetches
 FROM fetches
 #+end_src</pre>
-<p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
+<p>This is deliberately scoped to explicit local/ad hoc data sources. Celorga stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="presentations">Presentations</h1>
-<p>Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export beamer --file talk.org
-org2 export beamer --file talk.org --out talk.tex --apply
-org2 export beamer --file talk.org --out talk.pdf --pdf --apply</code></pre>
+<p>Celorga can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">celorga export beamer --file talk.org
+celorga export beamer --file talk.org --out talk.tex --apply
+celorga export beamer --file talk.org --out talk.pdf --pdf --apply</code></pre>
 <p>Export previews by default. <code>--pdf</code> invokes <code>pdflatex</code> twice; use <code>--latex-engine COMMAND</code> to select another installed LaTeX engine.</p>
 <p>For pdfLaTeX compatibility, common Unicode arrows, comparison operators, checkmarks, bullets, dashes, and related symbols are translated to equivalent LaTeX commands in prose, headings, metadata, and literal/source blocks. This includes symbols such as <code>→</code>, <code>↘</code>, <code>≥</code>, and <code>✓</code> that pdfLaTeX's default UTF-8 layer does not define directly.</p>
 <p>The frame level defaults to 2 and follows the familiar Org convention in <code>#+OPTIONS: H:2</code>: level-one headlines become sections and level-two headlines become slides. <code>#+ORG2_SLIDE_LEVEL:</code>, <code>#+SLIDE_LEVEL:</code>, and legacy <code>#+BEAMER_FRAME_LEVEL:</code> can set the level explicitly. <code>toc:t</code> adds an outline frame.</p>
@@ -612,7 +612,7 @@ The compiler parses once and renders each target from the same structure.</code>
 <p>Headlines below a slide become presentation groups. Legacy properties remain accepted so existing Org Beamer talks can move over incrementally:</p>
 <table>
 <thead>
-<tr><th>Org2 property</th><th>Legacy alias</th><th>Meaning</th></tr>
+<tr><th>Celorga property</th><th>Legacy alias</th><th>Meaning</th></tr>
 </thead>
 <tbody>
 <tr><td><code>SLIDE_ENV</code></td><td><code>BEAMER_ENV</code></td><td><code>block</code>, <code>note</code>, <code>ignoreheading</code>, or <code>plain</code></td></tr>
@@ -633,7 +633,7 @@ The compiler parses once and renders each target from the same structure.</code>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>
-<p>Org2 parses keyword lines in <code>#+KEY: VALUE</code> form.</p>
+<p>Celorga parses keyword lines in <code>#+KEY: VALUE</code> form.</p>
 <p>Commonly used in export/publish:</p>
 <ul>
 <li><p><code>#+TITLE:</code></p></li>
@@ -660,7 +660,7 @@ The compiler parses once and renders each target from the same structure.</code>
 </section>
 <section class="org2-headline level-1">
 <h1 id="losslessness-goal">Losslessness goal</h1>
-<p>Org2 aims for practical round-tripping of supported constructs.
+<p>Celorga aims for practical round-tripping of supported constructs.
 When behavior is ambiguous, defer to the current implementation and spec fixtures.</p>
 </section>
 </main>

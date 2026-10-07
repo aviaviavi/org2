@@ -1,6 +1,6 @@
 # Scoped agent ingestion connectors
 
-Org2's agent-memory pipeline treats Slack, Gmail, messages, meetings, and other external sources as scoped inputs, not as unbounded history dumps. Core stays source-agnostic: API credentials, OAuth, device export tools, crawlers, and service-specific rate limits belong in optional connectors/plugins outside org2 core.
+Org2's agent-memory pipeline treats Slack, Gmail, messages, meetings, and other external sources as scoped inputs, not as unbounded history dumps. Core stays source-agnostic: API credentials, OAuth, device export tools, crawlers, and service-specific rate limits belong in optional connectors/plugins outside celorga core.
 
 ## Connector contract
 
@@ -32,7 +32,7 @@ Connector output is normalized to `AgentIngestRecord` values with:
 - cursor/timestamp for incremental sync;
 - source metadata such as authors, recipients, channel/mailbox/labels/thread, subject, unread/starred state, URL, timestamp, and sensitivity;
 - raw payload kept as connector provenance, not promoted into durable notes;
-- text content that can be converted into `Org2RawCaptureInput` and fed to the unified `org2 ingest` pipeline.
+- text content that can be converted into `Org2RawCaptureInput` and fed to the unified `celorga ingest` pipeline.
 
 ## Principles
 
@@ -54,14 +54,14 @@ The fixture connectors support bounded export ingestion for Slack-like, Gmail-li
 - Message filtering can be scoped by service, conversation ID/title, participant, date windows, capture policy, and `limit`.
 - Email filtering can be scoped by labels, exact senders, sender/recipient domains, unread/starred state, date windows, and `limit`.
 - `previewConnectorIngest()` validates manifests, applies privacy policy, and reports skipped duplicates.
-- `connectorRecordsToRawCaptureInputs()` adapts connector records into the same raw capture shape used by `org2 ingest`.
+- `connectorRecordsToRawCaptureInputs()` adapts connector records into the same raw capture shape used by `celorga ingest`.
 - `renderIngestReviewArtifact()` marks generated summaries and TODO candidates as review-required before promotion.
 
 These connectors intentionally do not call external APIs. Live API sync should build on the same interface and keep the same defaults: bounded, allowlisted, review-gated, idempotent, and privacy-aware.
 
 ## Capture policy layer
 
-Connector previews can accept a `policy` object before any raw capture inputs or review artifacts are written. The policy layer is source-agnostic and is intended for connector/plugin code to apply after external auth/export and before org2 core ingestion.
+Connector previews can accept a `policy` object before any raw capture inputs or review artifacts are written. The policy layer is source-agnostic and is intended for connector/plugin code to apply after external auth/export and before celorga core ingestion.
 
 Supported controls:
 

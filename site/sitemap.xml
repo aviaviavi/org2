@@ -1,108 +1,108 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://openorg.so/</loc>
+    <loc>https://celorga.io/</loc>
   </url>
   <url>
-    <loc>https://openorg.so/agent-quickstart.html</loc>
+    <loc>https://celorga.io/agent-quickstart.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/agentic-workspace-roadmap.html</loc>
+    <loc>https://celorga.io/agentic-workspace-roadmap.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/ai-adapters.html</loc>
+    <loc>https://celorga.io/ai-adapters.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/ai-draft-artifacts.html</loc>
+    <loc>https://celorga.io/ai-draft-artifacts.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/ai-job-manifests.html</loc>
+    <loc>https://celorga.io/ai-job-manifests.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/ai-processing-architecture.html</loc>
+    <loc>https://celorga.io/ai-processing-architecture.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/collaboration.html</loc>
+    <loc>https://celorga.io/architecture.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/corpus-flow.html</loc>
+    <loc>https://celorga.io/celorga-vs-markdown.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/downloads.html</loc>
+    <loc>https://celorga.io/celorga-vs-obsidian.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/editors-emacs.html</loc>
+    <loc>https://celorga.io/celorga-vs-org-mode.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/editors-macos.html</loc>
+    <loc>https://celorga.io/collaboration.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/editors-vim.html</loc>
+    <loc>https://celorga.io/corpus-flow.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/editors-vscode.html</loc>
+    <loc>https://celorga.io/downloads.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/editors.html</loc>
+    <loc>https://celorga.io/editors-emacs.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/features.html</loc>
+    <loc>https://celorga.io/editors-macos.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/getting-started.html</loc>
+    <loc>https://celorga.io/editors-vim.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/headless-server.html</loc>
+    <loc>https://celorga.io/editors-vscode.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/ingestion-pipeline.html</loc>
+    <loc>https://celorga.io/editors.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/knowledge-compiler-roadmap.html</loc>
+    <loc>https://celorga.io/features.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/language-reference.html</loc>
+    <loc>https://celorga.io/getting-started.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/llm-consumers.html</loc>
+    <loc>https://celorga.io/headless-server.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/macos-diagnostics.html</loc>
+    <loc>https://celorga.io/ingestion-pipeline.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/maintenance-workflows.html</loc>
+    <loc>https://celorga.io/knowledge-compiler-roadmap.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/mcp-and-skills.html</loc>
+    <loc>https://celorga.io/language-reference.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/migration.html</loc>
+    <loc>https://celorga.io/llm-consumers.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/openclaw-knowledge-layer.html</loc>
+    <loc>https://celorga.io/macos-diagnostics.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/openorg-and-org2.html</loc>
+    <loc>https://celorga.io/maintenance-workflows.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/org2-vs-markdown.html</loc>
+    <loc>https://celorga.io/mcp-and-skills.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/org2-vs-obsidian.html</loc>
+    <loc>https://celorga.io/migration.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/org2-vs-org-mode.html</loc>
+    <loc>https://celorga.io/openclaw-knowledge-layer.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/reference.html</loc>
+    <loc>https://celorga.io/reference.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/semantics-status.html</loc>
+    <loc>https://celorga.io/semantics-status.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/tooling-reference.html</loc>
+    <loc>https://celorga.io/tooling-reference.html</loc>
   </url>
   <url>
-    <loc>https://openorg.so/workflows.html</loc>
+    <loc>https://celorga.io/workflows.html</loc>
   </url>
 </urlset>

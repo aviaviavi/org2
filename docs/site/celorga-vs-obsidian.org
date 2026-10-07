@@ -1,12 +1,12 @@
-#+TITLE: Org2 vs Obsidian
+#+TITLE: Celorga vs Obsidian
 
-Obsidian and Org2 share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Org2 is developing an open-source compiler/runtime and a set of clients around Org-shaped files.
+Obsidian and Celorga share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Celorga is developing an open-source compiler/runtime and a set of clients around Org-shaped files.
 
 Both can support serious knowledge work. The main difference is where each system places its shared runtime and how much workflow state it defines.
 
 * At a glance
 
-| Concern | Obsidian | Org2 |
+| Concern | Obsidian | Celorga |
 |---+---+---|
 | Primary experience | Polished Markdown knowledge application | Shared knowledge runtime with Mac, VS Code, CLI, and other clients |
 | Source files | Local Markdown, properties, Bases files, and open JSON Canvas files | Local =.org= files, JSON Canvas files, portable property-view JSON definitions, and explicit generated artifacts |
@@ -31,29 +31,29 @@ That completeness matters. Someone who wants a polished personal knowledge app c
 
 Bases stores database-like views over Markdown properties. Current core layouts include tables, lists, cards, and maps, with filtering, sorting, grouping, and formulas. Canvas supplies a visual workspace saved in the open JSON Canvas format.
 
-Org2 offers saved table and card views over note and heading properties, with a no-SQL filter/sort/group builder and revision-guarded source editing in the Mac app. Portable view definitions live in corpus-relative JSON files. Data notebooks also cover explicit datasets, SQL materialization, freshness, and report evidence. OpenOrg also edits JSON Canvas boards for notes, images, text, groups, and connections, with revision-guarded saves and portable import/export.
+Celorga offers saved table and card views over note and heading properties, with a no-SQL filter/sort/group builder and revision-guarded source editing in the Mac app. Portable view definitions live in corpus-relative JSON files. Data notebooks also cover explicit datasets, SQL materialization, freshness, and report evidence. Celorga also edits JSON Canvas boards for notes, images, text, groups, and connections, with revision-guarded saves and portable import/export.
 
 ** Plugins and customization
 
-Obsidian's community ecosystem covers task management, calendars, diagrams, spaced repetition, data views, imports, publishing, and many specialized interfaces. Org2 has a much smaller integration surface today.
+Obsidian's community ecosystem covers task management, calendars, diagrams, spaced repetition, data views, imports, publishing, and many specialized interfaces. Celorga has a much smaller integration surface today.
 
 ** A real command-line surface
 
 Obsidian's first-party CLI can search and edit files, inspect tasks and links, query Bases, manage properties and plugins, and invoke application commands. The old version of this page understated Obsidian's automation support.
 
-The architectural distinction is narrower now: Obsidian CLI controls the Obsidian runtime and requires the app to be running, while Org2's CLI is the shared standalone runtime used by its clients and automation.
+The architectural distinction is narrower now: Obsidian CLI controls the Obsidian runtime and requires the app to be running, while Celorga's CLI is the shared standalone runtime used by its clients and automation.
 
-* Org2's current strengths
+* Celorga's current strengths
 
 ** One semantic layer across clients
 
-Org2 parsing, source ranges, agenda behavior, links, IDs, context retrieval, and artifact metadata live in the TypeScript compiler/runtime. The Mac app, VS Code integration, publishing pipeline, CLI, and agents consume that shared model.
+Celorga parsing, source ranges, agenda behavior, links, IDs, context retrieval, and artifact metadata live in the TypeScript compiler/runtime. The Mac app, VS Code integration, publishing pipeline, CLI, and agents consume that shared model.
 
 This is useful when deterministic behavior outside the desktop app matters: CI checks, batch publishing, editor tooling, scripts, or an agent can operate on the same semantics through commands and JSON outputs.
 
 ** Planning and review are part of the corpus model
 
-Org2 defines TODO and planning behavior directly, then builds agenda views and mutations on top. It also keeps delegated work in durable run records with plans, citations, outputs, validation, clarifications, comments, retries, cancellation, and approvals.
+Celorga defines TODO and planning behavior directly, then builds agenda views and mutations on top. It also keeps delegated work in durable run records with plans, citations, outputs, validation, clarifications, comments, retries, cancellation, and approvals.
 
 The Mac *Agent Work* surface presents that state as a workflow for coordinating with agents. OpenClaw is the current end-to-end integration; the underlying records and interfaces are provider-independent.
 
@@ -65,13 +65,13 @@ That structure is helpful when the workspace holds operational context as well a
 
 ** The complete stack is open source
 
-Obsidian keeps vault content portable and publishes several open formats and developer interfaces. Org2 additionally makes the parser, runtime, Mac client, editor integration, and agent workflow implementation available under Apache-2.0.
+Obsidian keeps vault content portable and publishes several open formats and developer interfaces. Celorga additionally makes the parser, runtime, Mac client, editor integration, and agent workflow implementation available under Apache-2.0.
 
 This matters for teams that need to audit, fork, embed, or run the knowledge layer without a proprietary application dependency.
 
 * Current tradeoffs
 
-Org2 is early alpha. Its Mac app is useful but still evolving, the iOS app is available through a private TestFlight beta or as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.
+Celorga is early alpha. Its Mac app is useful but still evolving, the iOS app is available through a private TestFlight beta or as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.
 
 Obsidian's rich behavior often comes from the application, installed plugins, and vault configuration. Its files remain portable, but reproducing a complete workflow elsewhere may require reproducing those conventions and extensions as well.
 
@@ -79,9 +79,9 @@ Obsidian's rich behavior often comes from the application, installed plugins, an
 
 Obsidian is a strong choice for a mature local Markdown application, broad visual tools, mobile polish, and a deep plugin ecosystem.
 
-Org2 fits workspaces that need an open standalone semantic layer, Org-style planning, source-backed data and meeting artifacts, and durable agent runs with explicit review and approval boundaries.
+Celorga fits workspaces that need an open standalone semantic layer, Org-style planning, source-backed data and meeting artifacts, and durable agent runs with explicit review and approval boundaries.
 
-The projects also point toward each other in useful ways: Obsidian demonstrates how approachable local-file knowledge software can be, while Org2 explores how much shared behavior can live below any individual client.
+The projects also point toward each other in useful ways: Obsidian demonstrates how approachable local-file knowledge software can be, while Celorga explores how much shared behavior can live below any individual client.
 
 * Related
 
@@ -90,5 +90,5 @@ The projects also point toward each other in useful ways: Obsidian demonstrates 
 - [[https://obsidian.md/help/plugins/canvas][Obsidian Canvas]]
 - [[https://obsidian.md/help/cli][Obsidian CLI]]
 - [[https://obsidian.md/license][Obsidian license overview]]
-- [[file:celorga-vs-markdown.org][Org2 vs Markdown]]
-- [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]]
+- [[file:celorga-vs-markdown.org][Celorga vs Markdown]]
+- [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]]

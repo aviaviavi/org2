@@ -1,6 +1,6 @@
 #+TITLE: Vim / Neovim
 
-Org2 has a small Vim runtime plugin today. It is intentionally modest: filetype detection, syntax highlighting, heading/list/property folding, and a =<Tab>= fold toggle for the current item.
+Celorga has a small Vim runtime plugin today. It is intentionally modest: filetype detection, syntax highlighting, heading/list/property folding, and a =<Tab>= fold toggle for the current item.
 
 * Install
 
@@ -39,7 +39,7 @@ Then read =:help org2=.
 
 * CLI pairing
 
-The Vim plugin does not yet wrap the Org2 CLI. Use the CLI directly for agenda, roam, formatting, lint, export, and publishing workflows:
+The Vim plugin does not yet wrap the Celorga CLI. Use the CLI directly for agenda, roam, formatting, lint, export, and publishing workflows:
 
 #+begin_src sh
 celorga agenda --dir /path/to/notes --recursive

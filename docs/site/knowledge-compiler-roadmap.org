@@ -2,4 +2,4 @@
 #+HTML_HEAD: <meta name="robots" content="noindex" />
 #+HTML_HEAD_EXTRA: <meta http-equiv="refresh" content="0; url=corpus-flow.html" />
 
-This material now lives in [[file:corpus-flow.org][Corpus flow]], which documents the concrete source, generated-artifact, provenance, and trust-boundary model used by Org2 today.
+This material now lives in [[file:corpus-flow.org][Corpus flow]], which documents the concrete source, generated-artifact, provenance, and trust-boundary model used by Celorga today.

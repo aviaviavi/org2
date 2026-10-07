@@ -1,9 +1,9 @@
 #+TITLE: Agentic workspace roadmap
 #+SUBTITLE: A local-first operating environment for delegated knowledge work
 
-Org2 is growing from a knowledge compiler into an agentic workspace: a system where documents, meetings, tasks, data, decisions, and agents share one inspectable source of truth.
+Celorga is growing from a knowledge compiler into an agentic workspace: a system where documents, meetings, tasks, data, decisions, and agents share one inspectable source of truth.
 
-The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Org2 an outcome, Org2 assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.
+The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Celorga an outcome, Celorga assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.
 
 This roadmap builds on the concrete [[file:corpus-flow.org][corpus flow and trust boundaries]]. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.
 
@@ -11,11 +11,11 @@ This roadmap builds on the concrete [[file:corpus-flow.org][corpus flow and trus
 
 The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Agent Work surface, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.
 
-The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned execution schemas are =org2:agent-run:v1= and =org2:workflow:v1=; workflow packages declare their compatible Org2 and schema ranges. Account-oriented recurring work can additionally use =org2:work-ledger-account:v1= records so stable subject history does not have to live in a workflow prompt or one monolithic agent note.
+The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned execution schemas are =org2:agent-run:v1= and =org2:workflow:v1=; workflow packages declare their compatible Celorga and schema ranges. Account-oriented recurring work can additionally use =org2:work-ledger-account:v1= records so stable subject history does not have to live in a workflow prompt or one monolithic agent note.
 
 * Product thesis
 
-Org2 should become a local-first operating environment for knowledge work.
+Celorga should become a local-first operating environment for knowledge work.
 
 Its durable value does not come from one editor, chat interface, or model provider. It comes from keeping the complete work lifecycle connected:
 
@@ -33,7 +33,7 @@ The model should be replaceable compute. The corpus, workflow state, provenance,
 
 The architecture should preserve clear ownership boundaries:
 
-| Layer | Org2 responsibility |
+| Layer | Celorga responsibility |
 |-------+---------------------|
 | Corpus | Durable, inspectable work state in ordinary files |
 | Compiler/runtime | Parsing, IDs, links, planning, provenance, queries, lint, context, data, charts, and publishing |
@@ -62,7 +62,7 @@ An agent run should have a portable semantic model containing:
 - clarification and approval requests,
 - resumable, retryable, cancelable, and forkable state.
 
-The model should be representable in normal Org2 text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.
+The model should be representable in normal Org text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.
 
 ** Agent Work
 
@@ -82,7 +82,7 @@ This should unify background agents, explicit chat commands, scheduled workflows
 
 A successful one-off run should be convertible into a reusable workflow.
 
-The user-facing action can be as simple as *Save as workflow*. Org2 should propose a parameterized recipe containing:
+The user-facing action can be as simple as *Save as workflow*. Celorga should propose a parameterized recipe containing:
 
 - required inputs,
 - context-selection rules,
@@ -94,7 +94,7 @@ The user-facing action can be as simple as *Save as workflow*. Org2 should propo
 - approval boundaries,
 - optional schedule or event triggers.
 
-The user reviews and edits the proposal before it becomes durable. This lets nontechnical users teach Org2 a process by completing it once rather than writing an automation from scratch.
+The user reviews and edits the proposal before it becomes durable. This lets nontechnical users teach Celorga a process by completing it once rather than writing an automation from scratch.
 
 Workflows should be ordinary, versionable packages that agents can discover quickly. They should declare their capabilities, inputs, writes, safety boundaries, and expected artifacts. A workflow must remain understandable without depending on one hosted model or proprietary chat history.
 
@@ -115,7 +115,7 @@ The review experience should unify:
 
 Users should be able to approve, revise, reject, reassign, or narrow the requested action. Risk classes should distinguish read-only retrieval, local drafts, canonical local writes, external communications, production or account changes, and financial or otherwise high-impact actions.
 
-Org2 should prefer one meaningful approval at the correct boundary over a stream of low-value permission prompts. The approval record should state exactly what will happen and preserve a receipt of what actually happened.
+Celorga should prefer one meaningful approval at the correct boundary over a stream of low-value permission prompts. The approval record should state exactly what will happen and preserve a receipt of what actually happened.
 
 * Artifact pipelines
 
@@ -130,7 +130,7 @@ meetings + notes + source files + live or materialized data
   -> memo + PDF + slides + dashboard + site
 #+end_src
 
-Org2 should not attempt to replace every general-purpose office editor. It should excel at source-backed artifacts whose dependencies, assumptions, citations, and freshness are visible.
+Celorga should not attempt to replace every general-purpose office editor. It should excel at source-backed artifacts whose dependencies, assumptions, citations, and freshness are visible.
 
 Priority artifact capabilities include:
 
@@ -157,15 +157,15 @@ Workflows should request capabilities and constraints rather than hardcoding a v
 - =regulated-cloud=,
 - =offline=.
 
-A policy layer can select an eligible provider or runtime based on privacy, model capability, latency, cost, context size, and tool-use requirements. Org2 should support hosted providers, local inference, and external agent runtimes without requiring the compiler core to make network calls.
+A policy layer can select an eligible provider or runtime based on privacy, model capability, latency, cost, context size, and tool-use requirements. Celorga should support hosted providers, local inference, and external agent runtimes without requiring the compiler core to make network calls.
 
 Provider secrets stay outside corpus files and generated artifacts. Run records may preserve provider aliases, model metadata, and cost or latency observations without storing credentials.
 
-Org2 should not invest in building a foundation model. It should make models replaceable while improving the structured environment in which they work.
+Celorga should not invest in building a foundation model. It should make models replaceable while improving the structured environment in which they work.
 
 * MCP and connectors
 
-Org2 should support the Model Context Protocol in both directions:
+Celorga should support the Model Context Protocol in both directions:
 
 - as a server exposing cited resources, user-invoked workflows, and typed tools,
 - as a client discovering external resources and tools that a workflow may use.
@@ -177,7 +177,7 @@ The boundary should remain explicit:
 - tools retrieve information or perform actions,
 - approval policy governs consequential effects.
 
-Connectors for communication, project management, files, CRM, support, data warehouses, and other systems should create local snapshots or cited references when their contents become part of durable work. External services remain systems that Org2 observes or acts upon, not silent replacements for the canonical corpus.
+Connectors for communication, project management, files, CRM, support, data warehouses, and other systems should create local snapshots or cited references when their contents become part of durable work. External services remain systems that Celorga observes or acts upon, not silent replacements for the canonical corpus.
 
 Integration results should record source, retrieval time, identity, and freshness. Secrets must remain in the operating system keychain, environment, or another dedicated credential store.
 
@@ -185,7 +185,7 @@ Integration results should record source, retrieval time, identity, and freshnes
 
 Reliable recurring work requires more than prompt iteration.
 
-Org2 should be able to replay important workflows against fixture corpora and evaluate outcomes such as:
+Celorga should be able to replay important workflows against fixture corpora and evaluate outcomes such as:
 
 - whether the correct sources were selected,
 - whether claims carry valid citations,
@@ -202,7 +202,7 @@ A completed run may become both a reusable workflow example and a regression fix
 
 * Multiplayer work
 
-Org2 should support teams without abandoning local-first principles.
+Celorga should support teams without abandoning local-first principles.
 
 The first collaboration model should build on durable assignments and review queues:
 
@@ -233,7 +233,7 @@ This pattern should generalize to customer calls, research, legal or compliance 
 
 * Adoption posture
 
-Org2 should build a broad substrate while proving it through narrow, complete workflows.
+Celorga should build a broad substrate while proving it through narrow, complete workflows.
 
 The open-source experience should serve individuals and small teams that want powerful local automation without surrendering their files or accumulated memory. Deeper organizational deployments should begin with one concrete workflow, one responsible owner, one measurable outcome, and explicit data and approval boundaries.
 
@@ -270,7 +270,7 @@ Product development should favor capabilities that meet at least one of these te
 
 ** Phase 4: portable tools and models
 
-- Expose Org2 resources, workflows, and tools through MCP.
+- Expose Celorga resources, workflows, and tools through MCP.
 - Add an MCP client and a small number of provenance-preserving connectors.
 - Complete capability-based provider/runtime selection.
 - Validate at least one hosted and one local/private execution path.
@@ -300,6 +300,6 @@ Telemetry must be local and opt-in by default. Users should be able to inspect t
 
 * Done means knowledge becomes controlled outcomes
 
-A mature Org2 workspace should let a person capture ordinary work, delegate a meaningful outcome, observe the run, review the evidence and changes, approve consequential actions, receive a finished artifact, and reuse the process later.
+A mature Celorga workspace should let a person capture ordinary work, delegate a meaningful outcome, observe the run, review the evidence and changes, approve consequential actions, receive a finished artifact, and reuse the process later.
 
 The result should remain understandable in plain files, executable through shared semantics, portable across models and clients, and safe to inspect with tools that know nothing about the original app session.

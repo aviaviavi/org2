@@ -1,8 +1,8 @@
 #+TITLE: Maintenance and health workflows
 
-Org2 treats corpus maintenance as a core compiler capability: cleanup, graph repair, and review become part of the normal workflow.
+Celorga treats corpus maintenance as a core compiler capability: cleanup, graph repair, and review become part of the normal workflow.
 
-A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Org2 one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.
+A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Celorga one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.
 
 * Core maintenance passes
 
@@ -35,7 +35,7 @@ Use =celorga roam graph --format report= for an inspectable local maintenance vi
 
 * Repository generated artifact hygiene
 
-The Org2 repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:
+The Celorga repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:
 
 | Path | Source-controlled? | Why |
 |---+---+---|
@@ -54,7 +54,7 @@ This rebuilds =dist/=, validates fixture pairs with =tools/fixture-runner.mjs --
 
 * Trust boundaries
 
-Org2 preserves a clear distinction between source files and generated artifacts.
+Celorga preserves a clear distinction between source files and generated artifacts.
 
 - Source notes are edited by people and tools.
 - Compiled views, publish outputs, and generated reports carry artifact role/provenance metadata when they live in the corpus.

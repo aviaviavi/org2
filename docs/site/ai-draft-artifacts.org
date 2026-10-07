@@ -3,7 +3,7 @@
 
 AI commands write into generated zones first. The goal is to make model output useful without letting it silently become canonical truth.
 
-=celorga ai run= currently provides a provider-free draft writer for manifest-selected source files. It reads local Org2 source files, records source hashes, stamps artifact metadata, and writes a review-required draft under =views/= or =compiled/=.
+=celorga ai run= currently provides a provider-free draft writer for manifest-selected source files. It reads local Org source files, records source hashes, stamps artifact metadata, and writes a review-required draft under =views/= or =compiled/=.
 
 #+begin_src sh
 celorga ai run --job jobs/team-sync.org2-ai.json --apply
@@ -14,7 +14,7 @@ Without =--apply=, the command prints a safe preview and writes nothing.
 
 * Meeting/transcript summarization
 
-=summarize-meeting= is the first concrete AI workflow. A manifest such as =examples/jobs/meeting-summary.org2-ai.json= turns raw meeting or transcript material into a reviewable Org2 artifact:
+=summarize-meeting= is the first concrete AI workflow. A manifest such as =examples/jobs/meeting-summary.org2-ai.json= turns raw meeting or transcript material into a reviewable Celorga artifact:
 
 #+begin_src sh
 celorga ai run \
@@ -40,7 +40,7 @@ The built-in deterministic mock adapter keeps tests and local examples provider-
 
 * Draft format
 
-A generated draft starts with an Org2 property drawer:
+A generated draft starts with an Org property drawer:
 
 #+begin_src org
 :PROPERTIES:
