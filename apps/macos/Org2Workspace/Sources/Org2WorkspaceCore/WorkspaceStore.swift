@@ -4368,7 +4368,20 @@ extension WorkspaceStore {
   ) -> URL {
     let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
       ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
-    return documents.appendingPathComponent("OpenOrg", isDirectory: true).standardizedFileURL
+    return starterCorpusURL(inDocuments: documents, fileManager: fileManager)
+  }
+
+  /// New workspaces go in `Documents/Celorga`. A workspace an earlier OpenOrg
+  /// release created in `Documents/OpenOrg` is reused instead of starting a second one.
+  nonisolated static func starterCorpusURL(
+    inDocuments documents: URL,
+    fileManager: FileManager = .default
+  ) -> URL {
+    let legacy = documents.appendingPathComponent("OpenOrg", isDirectory: true)
+    if fileManager.fileExists(atPath: legacy.appendingPathComponent("org2.json").path) {
+      return legacy.standardizedFileURL
+    }
+    return documents.appendingPathComponent("Celorga", isDirectory: true).standardizedFileURL
   }
 
   nonisolated static func prepareAutomaticStarterCorpus(
@@ -4377,7 +4390,7 @@ extension WorkspaceStore {
   ) throws -> URL {
     let preferred = preferredRoot.standardizedFileURL
     let parent = preferred.deletingLastPathComponent()
-    let baseName = preferred.lastPathComponent.isEmpty ? "OpenOrg" : preferred.lastPathComponent
+    let baseName = preferred.lastPathComponent.isEmpty ? "Celorga" : preferred.lastPathComponent
 
     for suffix in 1...100 {
       let candidate = suffix == 1

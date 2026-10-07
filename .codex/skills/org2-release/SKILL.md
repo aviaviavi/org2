@@ -76,7 +76,7 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 2. Add a concise VS Code changelog entry. Avoid npm serialization noise unrelated to the version.
 3. Validate `npm pack --dry-run --json` and package the VSIX from `editors/vscode-org2`.
 4. The orchestrator packages both architectures concurrently with `tools/package-openorg-macos.mjs`. Each package gets its own temporary app staging and Swift scratch directory. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, shared Google OAuth desktop client, and notarytool Keychain profile through the environment variables in the release contract. The command fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch the daily app at `~/Applications/OpenOrg.app` or its historical `~/Applications/Org2Workspace.app` path during release packaging.
-5. Require `OpenOrg.dmg` for Apple Silicon and `OpenOrg-Intel.dmg` for Intel. Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
+5. Require `Celorga.dmg` for Apple Silicon and `Celorga-Intel.dmg` for Intel (releases up to 0.8.8 used `OpenOrg*.dmg`; the app inside is still `OpenOrg.app`). Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
 
 ## 4. Publish
 

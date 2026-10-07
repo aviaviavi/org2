@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectNodeArchitecture } from "./macos-runtime-node.mjs";
+import { MAC_DMG_ARM64, MAC_DMG_INTEL, MAC_DMG_VOLUME_NAME } from "./openorg-sparkle.mjs";
 import { releaseBuildCacheRoot } from "./openorg-build-cache.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,8 +85,8 @@ function parseOptions(args) {
   if (!["arm64", "x86_64"].includes(parsed.architecture)) {
     throw new Error("--architecture must be arm64 or x86_64");
   }
-  const suffix = parsed.architecture === "arm64" ? "" : "-Intel";
-  parsed.output = resolve(parsed.output || join(repoRoot, "artifacts", `OpenOrg${suffix}.dmg`));
+  const defaultDMG = parsed.architecture === "arm64" ? MAC_DMG_ARM64 : MAC_DMG_INTEL;
+  parsed.output = resolve(parsed.output || join(repoRoot, "artifacts", defaultDMG));
   parsed.swiftScratchPath = resolve(parsed.swiftScratchPath
     || join(releaseBuildCacheRoot(), `swift-release-${parsed.architecture}`));
   return parsed;
@@ -94,7 +95,8 @@ function parseOptions(args) {
 function usage() {
   return `Usage: node tools/package-openorg-macos.mjs [options]
 
-Build, Developer-ID sign, package, and optionally notarize an isolated OpenOrg DMG.
+Build, Developer-ID sign, package, and optionally notarize an isolated Celorga DMG
+(the app inside keeps the OpenOrg.app file name so Sparkle updates in place).
 
 Options:
   --architecture ARCH       arm64 or x86_64
@@ -215,6 +217,7 @@ function printPlan() {
   console.log(JSON.stringify({
     appName: "OpenOrg",
     displayName: "Celorga",
+    volumeName: MAC_DMG_VOLUME_NAME,
     architecture: options.architecture,
     bundleIdentifier: "org.org2.workspace",
     dailyAppUntouched: "/Users/avi/Applications/Org2Workspace.app",
@@ -268,7 +271,7 @@ function main() {
   const workingDirectory = mkdtempSync(join(tmpdir(), "openorg-release-"));
   const builtApp = join(workingDirectory, "OpenOrg.app");
   const dmgRoot = join(workingDirectory, "dmg-root");
-  const unsignedDMG = join(workingDirectory, "OpenOrg.dmg");
+  const unsignedDMG = join(workingDirectory, `${MAC_DMG_VOLUME_NAME}.dmg`);
   let completed = false;
 
   try {
@@ -312,7 +315,7 @@ function main() {
     symlinkSync("/Applications", join(dmgRoot, "Applications"));
     run("hdiutil", [
       "create",
-      "-volname", "OpenOrg",
+      "-volname", MAC_DMG_VOLUME_NAME,
       "-srcfolder", dmgRoot,
       "-ov",
       "-format", "UDZO",

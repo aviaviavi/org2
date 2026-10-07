@@ -131,8 +131,8 @@ final class AIProviderChatClientTests: XCTestCase {
     AIProviderTestURLProtocol.setHandler { request in
       XCTAssertEqual(request.url?.absoluteString, "https://api.example.test/v1/chat/completions")
       XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer router-secret")
-      XCTAssertEqual(request.value(forHTTPHeaderField: "HTTP-Referer"), "https://org2.avi.press")
-      XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "OpenOrg")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "HTTP-Referer"), "https://celorga.io")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Celorga")
       return (200, ["choices": [["message": ["content": "Router reply"]]]])
     }
 

@@ -746,10 +746,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OrgDocumentDefaults.url(in: root, baseName: "existing"), preferred)
   }
 
+  func testStarterCorpusDefaultsToCelorgaAndReusesAnExistingOpenOrgWorkspace() throws {
+    let documents = FileManager.default.temporaryDirectory
+      .appendingPathComponent("celorga-documents-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: documents) }
+
+    XCTAssertEqual(WorkspaceStore.starterCorpusURL(inDocuments: documents).lastPathComponent, "Celorga")
+
+    // A folder named OpenOrg without a workspace in it is not reused.
+    let legacy = documents.appendingPathComponent("OpenOrg", isDirectory: true)
+    try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+    XCTAssertEqual(WorkspaceStore.starterCorpusURL(inDocuments: documents).lastPathComponent, "Celorga")
+
+    try "{}\n".write(to: legacy.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+    XCTAssertEqual(
+      WorkspaceStore.starterCorpusURL(inDocuments: documents).path,
+      legacy.standardizedFileURL.path
+    )
+  }
+
   func testAutomaticStarterCorpusUsesPreferredEmptyFolderAndAvoidsUnrelatedFiles() throws {
     let parent = FileManager.default.temporaryDirectory
       .appendingPathComponent("openorg-automatic-corpus-\(UUID().uuidString)", isDirectory: true)
-    let preferred = parent.appendingPathComponent("OpenOrg", isDirectory: true)
+    let preferred = parent.appendingPathComponent("Celorga", isDirectory: true)
     try FileManager.default.createDirectory(at: preferred, withIntermediateDirectories: true)
     try "keep me\n".write(
       to: preferred.appendingPathComponent("unrelated.txt"),
@@ -760,7 +780,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let created = try WorkspaceStore.prepareAutomaticStarterCorpus(preferredRoot: preferred)
 
-    XCTAssertEqual(created.lastPathComponent, "OpenOrg 2")
+    XCTAssertEqual(created.lastPathComponent, "Celorga 2")
     XCTAssertTrue(FileManager.default.fileExists(atPath: created.appendingPathComponent("org2.json").path))
     XCTAssertEqual(
       try String(contentsOf: preferred.appendingPathComponent("unrelated.txt"), encoding: .utf8),

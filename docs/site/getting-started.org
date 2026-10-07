@@ -14,7 +14,7 @@
 
 * 1) Install the Mac app
 
-1. Download the latest =OpenOrg.dmg= from the [[file:downloads.org][downloads page]].
+1. Download the latest =Celorga.dmg= from the [[file:downloads.org][downloads page]].
 2. Open the disk image and drag the app (=OpenOrg.app=) into =Applications=.
 3. Open the app. Connect an agent you already use, or choose to continue without one.
 4. Choose *Continue to Home*.

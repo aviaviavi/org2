@@ -6,10 +6,10 @@ final class OpenOrgLaunchTelemetryTests: XCTestCase {
   @MainActor
   func testLaunchRequestContainsOnlyDeclaredMetadata() throws {
     let request = OpenOrgLaunchTelemetry.request(version: "0.9.0", osVersion: "26.0.1", architecture: "arm64")
-    XCTAssertEqual(request.url?.absoluteString, "https://org2.gateway.scarf.sh/telemetry/openorg/launch")
+    XCTAssertEqual(request.url?.absoluteString, "https://org2.gateway.scarf.sh/telemetry/celorga/launch")
     XCTAssertEqual(request.httpMethod, "POST")
     XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
-    XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "OpenOrg/0.9.0")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Celorga/0.9.0")
     XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: String])
     // Gateway uses "version"; "$version" is reserved for bulk event imports.

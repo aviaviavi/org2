@@ -24,6 +24,9 @@ import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  MAC_DMG_ARM64,
+  MAC_DMG_ARTIFACTS,
+  MAC_DMG_INTEL,
   OPENORG_SPARKLE_ACCOUNT,
   OPENORG_SPARKLE_FEED_BASE,
   OPENORG_SPARKLE_LEGACY_FEED_BASES,
@@ -176,7 +179,7 @@ export function buildReleasePlan(options, baseVersion = currentVersion()) {
       { name: "preflight", parallel: ["GitHub auth", "npm registry", "Apple/signing configuration", "Sparkle signing key"] },
       { name: "stamp", parallel: false },
       { name: "validate", once: ["Build shared runtime"], parallel: ["Docs", "Node/full", "VS Code", "Swift"], overlapsWith: "package" },
-      { name: "package", after: "Build shared runtime", parallel: ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ], overlapsWith: "validate" },
+      { name: "package", after: "Build shared runtime", parallel: ["Celorga arm64 DMG", "Celorga Intel DMG", ...(options.skipIOS ? [] : ["iOS archive"]) ], overlapsWith: "validate" },
       { name: "publish", parallel: ["Git tag workflow + DMGs", ...(options.skipIOS ? [] : ["TestFlight upload + groups"]) ] },
       { name: "sync", parallel: false },
       { name: "verify", parallel: ["npm", "VS Code Marketplace", "GitHub assets", "Scarf redirects", ...(options.skipIOS ? [] : ["TestFlight groups"]) ] },
@@ -575,22 +578,22 @@ async function packageArtifacts(plan, options, state) {
     plan, state, "package", fingerprint, key, name,
     () => runJob(plan, name, command, args), reusable,
   );
-  const armDMG = join(plan.artifactsDir, "OpenOrg.dmg");
-  const intelDMG = join(plan.artifactsDir, "OpenOrg-Intel.dmg");
+  const armDMG = join(plan.artifactsDir, MAC_DMG_ARM64);
+  const intelDMG = join(plan.artifactsDir, MAC_DMG_INTEL);
   const jobs = [
-    () => packageJob("arm64", "OpenOrg arm64 DMG", process.execPath, [
+    () => packageJob("arm64", "Celorga arm64 DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "arm64", "--output", armDMG,
       "--require-notarization", "--force", "--skip-runtime-build",
       "--swift-scratch-path", join(plan.buildCache, "swift-release-arm64"),
     ], () => reusableMacArtifact(armDMG, plan.version, "arm64")),
-    () => packageJob("intel", "OpenOrg Intel DMG", process.execPath, [
+    () => packageJob("intel", "Celorga Intel DMG", process.execPath, [
       "tools/package-openorg-macos.mjs", "--architecture", "x86_64", "--output", intelDMG,
       "--require-notarization", "--force", "--skip-runtime-build",
       "--swift-scratch-path", join(plan.buildCache, "swift-release-x86_64"),
     ], () => reusableMacArtifact(intelDMG, plan.version, "x86_64")),
   ];
   if (!options.skipIOS) {
-    const archivePath = join(plan.artifactsDir, "OpenOrg.xcarchive");
+    const archivePath = join(plan.artifactsDir, "Celorga.xcarchive");
     jobs.push(() => packageJob("ios", "iOS release archive", "xcodebuild", [
       "-project", iosProjectPath,
       "-scheme", "Org2Mobile",
@@ -627,9 +630,9 @@ function ensureReleaseCommitAndTag(plan, options) {
   if (!tag.ok) {
     capture("git", ["add", "--", ...releaseFiles(options)]);
     const staged = capture("git", ["diff", "--cached", "--quiet"], { allowFailure: true });
-    if (!staged.ok) capture("git", ["commit", "-m", `Release OpenOrg ${plan.version}`]);
+    if (!staged.ok) capture("git", ["commit", "-m", `Release Celorga ${plan.version}`]);
     capture("git", ["push", "origin", "main"]);
-    capture("git", ["tag", "-a", plan.version, "-m", `OpenOrg ${plan.version}`]);
+    capture("git", ["tag", "-a", plan.version, "-m", `Celorga ${plan.version}`]);
     capture("git", ["push", "origin", plan.version]);
   } else {
     capture("git", ["push", "origin", "main"]);
@@ -653,7 +656,7 @@ async function waitForGitHubWorkflow(plan) {
 
 function releaseBody(plan, options) {
   const notes = readFileSync(resolve(options.notesFile), "utf8").trim();
-  const manifests = ["OpenOrg.json", "OpenOrg-Intel.json"].map((name) => {
+  const manifests = MAC_DMG_ARTIFACTS.map((dmg) => dmg.replace(/\.dmg$/, ".json")).map((name) => {
     const manifest = JSON.parse(readFileSync(join(plan.artifactsDir, name), "utf8"));
     return `- \`${manifest.sha256}  ${name.replace(".json", ".dmg")}\``;
   });
@@ -722,7 +725,7 @@ async function publishGitHub(plan, options, state) {
   await waitForGitHubWorkflow(plan);
   // Each ~240 MB DMG uploads independently with bounded retry and its own
   // checkpoint, so a transient GitHub 5xx on one asset never repeats the other.
-  await runParallel(["OpenOrg.dmg", "OpenOrg-Intel.dmg"].map((artifact) => () => runCheckpointedStep(
+  await runParallel(MAC_DMG_ARTIFACTS.map((artifact) => () => runCheckpointedStep(
     plan, state, "publish", plan.version, `upload-${artifact}`, `Upload ${artifact}`,
     () => withRetry(`Upload ${artifact}`, 4, () => runJob(plan, `Upload ${artifact}`, "gh", [
       "release", "upload", plan.version, join(plan.artifactsDir, artifact), "--clobber",
@@ -864,7 +867,7 @@ async function publishTestFlight(plan, options, state) {
     if (existing) return;
     await runJob(plan, "Upload iOS build", "xcodebuild", [
       "-exportArchive",
-      "-archivePath", join(plan.artifactsDir, "OpenOrg.xcarchive"),
+      "-archivePath", join(plan.artifactsDir, "Celorga.xcarchive"),
       "-exportPath", join(plan.artifactsDir, "ios-export"),
       "-exportOptionsPlist", join(plan.artifactsDir, "ExportOptions.plist"),
       "-allowProvisioningUpdates",
@@ -913,12 +916,12 @@ async function synchronize(plan) {
     "site",
   ]);
   const staged = capture("git", ["diff", "--cached", "--quiet"], { allowFailure: true });
-  if (!staged.ok) capture("git", ["commit", "-m", `Publish OpenOrg ${plan.version} download surfaces`]);
+  if (!staged.ok) capture("git", ["commit", "-m", `Publish Celorga ${plan.version} download surfaces`]);
   capture("git", ["push", "origin", "main"]);
 }
 
 async function verifyScarf(plan) {
-  for (const artifact of ["OpenOrg.dmg", "OpenOrg-Intel.dmg"]) {
+  for (const artifact of MAC_DMG_ARTIFACTS) {
     const expected = `https://github.com/aviaviavi/org2/releases/download/${plan.version}/${artifact}`;
     const response = await fetch(`https://org2.gateway.scarf.sh/downloads/${plan.version}/${artifact}`, { redirect: "manual" });
     if (response.status < 300 || response.status >= 400 || response.headers.get("location") !== expected) {
@@ -986,7 +989,7 @@ async function verify(plan, options) {
     async () => {
       const release = JSON.parse(capture("gh", ["release", "view", plan.version, "--json", "assets,tagName,url"]).stdout);
       const names = new Set(release.assets.map((asset) => asset.name));
-      for (const expected of ["OpenOrg.dmg", "OpenOrg-Intel.dmg", `${npmTarballBaseName}-${plan.version}.tgz`, `org2-vscode-${plan.version}.vsix`]) {
+      for (const expected of [...MAC_DMG_ARTIFACTS, `${npmTarballBaseName}-${plan.version}.tgz`, `org2-vscode-${plan.version}.vsix`]) {
         if (!names.has(expected)) throw new Error(`GitHub Release is missing ${expected}`);
       }
       console.log(`✓ GitHub Release ${release.url}`);

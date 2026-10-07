@@ -9,7 +9,8 @@
 - GitHub Release assets:
   - `celorga-{version}.tgz` (historical releases: `aviaviavi-org2-{version}.tgz`)
   - `org2-vscode-{version}.vsix`
-  - OpenOrg `0.5.0+`: `OpenOrg.dmg` and `OpenOrg-Intel.dmg`
+  - OpenOrg `0.5.0`–`0.8.8`: `OpenOrg.dmg` and `OpenOrg-Intel.dmg`
+  - Celorga (from the rename release): `Celorga.dmg` and `Celorga-Intel.dmg`
   - Historical Org2 Workspace releases: `Org2Workspace.dmg` and `Org2Workspace-Intel.dmg`
 
 The iOS client is distributed separately through TestFlight. Its marketing version is coordinated with the desktop/CLI release, while its monotonically increasing build number remains separate.
@@ -63,7 +64,7 @@ Configure macOS release inputs outside the repository:
 
 Environment variable names and non-secret paths may be recorded in local operator configuration; secret contents stay in the Keychain or protected files. The release command must receive the configuration explicitly rather than guessing or logging candidate secrets.
 
-- Build `OpenOrg.dmg` for Apple Silicon and `OpenOrg-Intel.dmg` for Intel (`x86_64`) with `tools/package-openorg-macos.mjs`.
+- Build `Celorga.dmg` for Apple Silicon and `Celorga-Intel.dmg` for Intel (`x86_64`) with `tools/package-openorg-macos.mjs`.
 - Bundle a native whisper.cpp executable and the verified English `base.en` model so dictation does not require Homebrew, a model download, or runtime environment variables. Keep macOS Speech only as a fallback.
 - Require Developer ID signing, hardened runtime, Apple notarization, ticket stapling, and Gatekeeper verification for every OpenOrg DMG. The package command fails closed without a configured notarytool Keychain profile.
 - Historical Org2 Workspace DMGs remain developer-signed but not notarized; say so plainly on their download page.

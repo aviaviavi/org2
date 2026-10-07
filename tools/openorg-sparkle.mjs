@@ -8,9 +8,17 @@ export const OPENORG_SPARKLE_FEED_BASE = "https://celorga.io/assets";
 export const OPENORG_SPARKLE_LEGACY_FEED_BASES = Object.freeze(["https://openorg.so/assets"]);
 export const OPENORG_SPARKLE_DOWNLOAD_BASE = "https://org2.gateway.scarf.sh/downloads";
 
+// Disk images are named Celorga*.dmg from the first Celorga release. Releases
+// 0.5.0 through 0.8.8 shipped OpenOrg*.dmg; their GitHub assets keep that name.
+// The app inside stays OpenOrg.app so Sparkle updates existing installs in place.
+export const MAC_DMG_ARM64 = "Celorga.dmg";
+export const MAC_DMG_INTEL = "Celorga-Intel.dmg";
+export const MAC_DMG_ARTIFACTS = Object.freeze([MAC_DMG_ARM64, MAC_DMG_INTEL]);
+export const MAC_DMG_VOLUME_NAME = "Celorga";
+
 export const OPENORG_SPARKLE_TARGETS = Object.freeze([
-  { architecture: "arm64", artifact: "OpenOrg.dmg", output: "appcast-arm64.xml" },
-  { architecture: "x86_64", artifact: "OpenOrg-Intel.dmg", output: "appcast-intel.xml" },
+  { architecture: "arm64", artifact: MAC_DMG_ARM64, output: "appcast-arm64.xml" },
+  { architecture: "x86_64", artifact: MAC_DMG_INTEL, output: "appcast-intel.xml" },
 ]);
 
 export function openOrgSparkleFeedURL(architecture) {

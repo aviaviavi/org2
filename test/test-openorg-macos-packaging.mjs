@@ -70,7 +70,8 @@ assert.equal(plan.swiftBuild, "persistent architecture-specific cache");
 assert.equal(plan.swiftScratch, join(releaseBuildCacheRoot(packagingTestEnvironment), "swift-release-arm64"));
 assert.equal(plan.targetRuntimeSelection, "architecture-verified at execution");
 assert.equal(plan.staging, "isolated temporary directory");
-assert.match(plan.output, /OpenOrg\.dmg$/);
+assert.equal(plan.volumeName, "Celorga");
+assert.match(plan.output, /\/Celorga\.dmg$/);
 
 // Standalone packaging shares the coordinated release cache, keeps target
 // architectures separate, and preserves explicit scratch-directory overrides.

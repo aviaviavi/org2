@@ -25,6 +25,8 @@ import {
 
 import { notarizationAuthentication } from "../tools/openorg-notarization.mjs";
 import {
+  MAC_DMG_ARTIFACTS,
+  OPENORG_SPARKLE_TARGETS,
   OPENORG_SPARKLE_DOWNLOAD_BASE,
   openOrgSparkleDownloadPrefix,
   openOrgSparkleDownloadURL,
@@ -59,7 +61,7 @@ assert.equal(plan.phases.find((phase) => phase.name === "validate").overlapsWith
 assert.equal(plan.phases.find((phase) => phase.name === "package").after, "Build shared runtime");
 assert.deepEqual(
   plan.phases.find((phase) => phase.name === "package").parallel,
-  ["OpenOrg arm64 DMG", "OpenOrg Intel DMG", "iOS archive"]
+  ["Celorga arm64 DMG", "Celorga Intel DMG", "iOS archive"]
 );
 assert.equal(TESTFLIGHT.internalGroupId, "f7462891-5b0e-4ccf-a3bc-2c2ea2f2540d");
 assert.equal(TESTFLIGHT.externalGroupId, "566e8d38-3c80-442c-8b9a-4f7916181149");
@@ -142,6 +144,10 @@ assert.ok(
 assert.match(releaseSource, /appcast-arm64\.xml/);
 assert.match(releaseSource, /appcast-intel\.xml/);
 assert.equal(OPENORG_SPARKLE_DOWNLOAD_BASE, "https://org2.gateway.scarf.sh/downloads");
+// From the Celorga rename, new releases ship Celorga*.dmg; the app inside stays OpenOrg.app.
+assert.deepEqual([...MAC_DMG_ARTIFACTS], ["Celorga.dmg", "Celorga-Intel.dmg"]);
+assert.deepEqual(OPENORG_SPARKLE_TARGETS.map((target) => target.artifact), ["Celorga.dmg", "Celorga-Intel.dmg"]);
+assert.doesNotMatch(releaseSource, /"OpenOrg(?:-Intel)?\.dmg"/);
 assert.equal(
   openOrgSparkleDownloadPrefix("0.8.5"),
   "https://org2.gateway.scarf.sh/downloads/0.8.5/"

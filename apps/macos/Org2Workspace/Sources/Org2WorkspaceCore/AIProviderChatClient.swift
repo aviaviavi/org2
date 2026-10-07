@@ -183,8 +183,8 @@ public struct AIProviderChatClient: Sendable {
       request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
     case .openRouter:
       request.setValue("Bearer \(settings.apiKey ?? "")", forHTTPHeaderField: "Authorization")
-      request.setValue("https://org2.avi.press", forHTTPHeaderField: "HTTP-Referer")
-      request.setValue("OpenOrg", forHTTPHeaderField: "X-Title")
+      request.setValue("https://celorga.io", forHTTPHeaderField: "HTTP-Referer")
+      request.setValue("Celorga", forHTTPHeaderField: "X-Title")
     case .ollama:
       if let apiKey = settings.apiKey {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

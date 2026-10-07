@@ -13,6 +13,13 @@ checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
   as legacy hosts that redirect pages and keep serving the Sparkle appcasts.
 - Files: ordinary =.org=. Existing =.org2= files stay fully supported.
 - Pronunciation: "sell-OR-guh".
+- Mac downloads: =Celorga.dmg= and =Celorga-Intel.dmg= from the cutover release;
+  the app inside stays =OpenOrg.app= for now so Sparkle updates in place.
+- New workspaces: =~/Documents/Celorga=. An existing =~/Documents/OpenOrg=
+  workspace (one with =org2.json=) is reused instead.
+- Launch telemetry: =org2.gateway.scarf.sh/telemetry/celorga/launch=, a new
+  route on the existing Scarf package; the old route keeps counting older builds.
+- VS Code: the marketplace ID stays =AviPress.org2-vscode=.
 - Positioning: an independent workspace for structured plain text. Do not
   imply that Celorga succeeds, replaces, or is endorsed by GNU Org mode. Do not
   use the Org mode unicorn.
@@ -45,7 +52,7 @@ later migration explicitly adds an alias first.
 | =org2= / =org2-lsp= executables | Scripts, MCP configs, editor plugins, agent skills. |
 | Source identifiers (=Org2Workspace=, =OpenOrgServer=, =src/*.ts= names, CSS classes such as =org2-nav=) | Internal; renaming them is churn with no user value. Optional later. |
 | Application Support / cache paths (for example =~/Library/Application Support/org2=) | Existing data. Migrate only with an explicit copy-and-fallback. |
-| Release artifact names already published (=OpenOrg.dmg=, =OpenOrg-Intel.dmg=) | Old appcast entries reference them. New releases may add =Celorga*.dmg=. |
+| Release artifact names already published (=OpenOrg.dmg=, =OpenOrg-Intel.dmg=) | Old appcast entries and GitHub assets reference them. Releases from the cutover on ship =Celorga.dmg= and =Celorga-Intel.dmg= (volume name "Celorga"); the app inside stays =OpenOrg.app=. |
 | GitHub repo URL =github.com/aviaviavi/org2= | Until the repo is renamed; GitHub redirects afterwards. |
 
 * Audit

@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 public final class OpenOrgLaunchTelemetry: ObservableObject {
   public static let enabledKey = "OpenOrg.launchTelemetry.enabled.v1"
-  public static let endpoint = URL(string: "https://org2.gateway.scarf.sh/telemetry/openorg/launch")!
+  public static let endpoint = URL(string: "https://org2.gateway.scarf.sh/telemetry/celorga/launch")!
 
   @Published public var enabled: Bool {
     didSet {
@@ -58,7 +58,7 @@ public final class OpenOrgLaunchTelemetry: ObservableObject {
     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("OpenOrg/\(version)", forHTTPHeaderField: "User-Agent")
+    request.setValue("Celorga/\(version)", forHTTPHeaderField: "User-Agent")
     request.httpBody = try? JSONSerialization.data(withJSONObject: [
       "event": "app_launch",
       "version": version,
