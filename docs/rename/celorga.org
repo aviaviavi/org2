@@ -1,0 +1,56 @@
+#+TITLE: Celorga rename contract
+
+This file is the engineering contract for renaming OpenOrg and Org2 to
+*Celorga*. It lives on the =rename/celorga= branch until cutover. The tracking
+checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
+
+* Decided
+
+- Product: *Celorga* (one brand for the app, the runtime, and the CLI).
+- CLI: =celorga= (and =celorga-lsp=). =org2= and =org2-lsp= stay as permanent
+  compatibility aliases.
+- Website: =https://celorga.io=. =openorg.so= and =org2.avi.press= keep working
+  as legacy hosts that redirect pages and keep serving the Sparkle appcasts.
+- Files: ordinary =.org=. Existing =.org2= files stay fully supported.
+- Pronunciation: "sell-OR-guh".
+- Positioning: an independent workspace for structured plain text. Do not
+  imply that Celorga succeeds, replaces, or is endorsed by GNU Org mode. Do not
+  use the Org mode unicorn.
+
+* Naming rules for prose and UI
+
+| Old | New | Notes |
+|-----+-----+-------|
+| OpenOrg (the app) | Celorga | "OpenOrg for macOS" becomes "Celorga for macOS". |
+| Org2 (runtime, CLI, compiler, profile) | Celorga | "the Org2 runtime" becomes "the Celorga runtime"; "Org2 CLI" becomes "Celorga CLI". |
+| OpenOrg vs. Org2 layers | the Celorga app / the Celorga runtime | Keep the two-layer explanation, but under one name. |
+| Org2 documents, Org2 syntax | Org documents, Celorga's Org profile | The format is ordinary Org text plus Celorga semantics. |
+| =org2 agenda= (commands in prose/docs) | =celorga agenda= | Mention once per reference page that =org2= remains an alias. |
+| =org2-lsp= | =celorga-lsp= | |
+| openorg.so, org2.avi.press | celorga.io | |
+
+* Compatibility surface: do not rename
+
+These identifiers are persisted in user corpora, installed apps, scripts, or
+agent configurations. They keep their current spelling indefinitely unless a
+later migration explicitly adds an alias first.
+
+| Identifier | Why it stays |
+|------------+--------------|
+| =org.org2.workspace=, =org.org2.mobile= and other bundle IDs | Sparkle updates, Keychain items, TCC grants, iCloud and App Group containers. |
+| Sparkle EdDSA key and the =openorg.so/assets/appcast-*.xml= URLs | Every shipped build polls these. The legacy host must keep serving them. |
+| =.org2= extension, =org2.json=, =.org2/= state directory | Present in every existing corpus. New aliases (for example =celorga.json=) may be added later; never drop the old names. |
+| =ORG2_*= environment variables and =:ORG2_*:= properties | Written into user documents and agent configs. |
+| Schema IDs (=org2:agent-run:v1=, =org2:graph-audit:v1=, …) | Versioned wire formats. |
+| =org2= / =org2-lsp= executables | Scripts, MCP configs, editor plugins, agent skills. |
+| Source identifiers (=Org2Workspace=, =OpenOrgServer=, =src/*.ts= names, CSS classes such as =org2-nav=) | Internal; renaming them is churn with no user value. Optional later. |
+| Application Support / cache paths (for example =~/Library/Application Support/org2=) | Existing data. Migrate only with an explicit copy-and-fallback. |
+| Release artifact names already published (=OpenOrg.dmg=, =OpenOrg-Intel.dmg=) | Old appcast entries reference them. New releases may add =Celorga*.dmg=. |
+| GitHub repo URL =github.com/aviaviavi/org2= | Until the repo is renamed; GitHub redirects afterwards. |
+
+* Audit
+
+=node tools/celorga-rename-audit.mjs= counts remaining legacy brand mentions
+by area, ignoring the compatibility identifiers above. Use =--list AREA= to see
+individual lines. The goal before cutover is zero unexplained user-facing hits,
+not zero total hits.
