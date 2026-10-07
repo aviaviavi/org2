@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,11 @@ const defaultTheme = "spacemacs-light";
 const scenarios = [
   {
     mode: "agenda",
-    target: "launch readiness",
+    target: "review launch plan",
+    agendaMode: "range",
+    width: 1600,
+    height: 900,
+    scale: 2,
     fileName: "macos-workspace-agenda.png",
   },
   {
@@ -139,6 +143,7 @@ function captureScenario(scenario, theme) {
       ORG2_WORKSPACE_SCREENSHOT_CORPUS: renderCorpusRoot,
       ORG2_WORKSPACE_SCREENSHOT_MODE: scenario.mode,
       ORG2_WORKSPACE_SCREENSHOT_TARGET: scenario.target ?? "",
+      ORG2_WORKSPACE_SCREENSHOT_AGENDA_MODE: scenario.agendaMode ?? "",
       ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB: scenario.contextTab ?? "",
       ORG2_WORKSPACE_SCREENSHOT_WIDTH: String(scenario.width ?? 1400),
       ORG2_WORKSPACE_SCREENSHOT_HEIGHT: String(scenario.height ?? 900),
@@ -157,6 +162,71 @@ function captureScenario(scenario, theme) {
     rmSync(renderPath, { force: true });
   }
   console.log(`Rendered ${outputPath}`);
+}
+
+// Keep the agenda useful whenever it is recaptured. Only the disposable copy
+// gets date-relative planning examples; the checked-in demo remains untouched.
+function prepareAgendaDemo() {
+  const stamp = (offset) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + offset);
+    const iso = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+    const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
+    return `<${iso} ${day}>`;
+  };
+  writeFileSync(join(renderCorpusRoot, "notes/projects/launch.org"), `#+TITLE: Beacon launch
+
+* TODO [#A] Review launch plan
+SCHEDULED: ${stamp(0)}
+
+Keep the first release small: a clear welcome, a useful sample dashboard, and a direct way to send feedback.
+
+** Ready for review
+- [X] Welcome email and setup guide
+- [X] Sample data and dashboard walkthrough
+- [ ] Confirm the support handoff with Maya
+- [ ] Send the final checklist to the pilot team
+
+** Decisions from the team
+Start with five teams. Review their first week together before opening the next group.
+
+* TODO [#A] Confirm pilot invitations
+DEADLINE: ${stamp(-1)}
+
+Check the final team list before sending the welcome email.
+
+* IN_PROGRESS Polish setup guide
+SCHEDULED: ${stamp(0)}
+
+Walk through a fresh installation and tighten the first-run instructions.
+
+* TODO Send pilot welcome email
+SCHEDULED: ${stamp(1)}
+
+Include the setup guide and a link to the feedback note.
+
+* TODO Review first-week feedback
+SCHEDULED: ${stamp(3)}
+
+Collect the pilot team's questions and prioritize the next improvements.
+`);
+  writeFileSync(join(renderCorpusRoot, "notes/projects/website.org"), `#+TITLE: Website refresh
+
+* TODO Choose homepage screenshots
+SCHEDULED: ${stamp(0)}
+
+Show the current app with readable, realistic examples.
+
+* TODO Publish the product update
+SCHEDULED: ${stamp(2)}
+
+Link the refreshed tour from the release notes.
+`);
+  const configPath = join(renderCorpusRoot, "org2.json");
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  config.agendaFiles = ["notes/projects/launch.org", "notes/projects/website.org"];
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
 function main() {
@@ -182,7 +252,14 @@ function main() {
   }
   const theme = process.argv.find((arg) => arg.startsWith("--theme="))?.slice("--theme=".length) || defaultTheme;
   for (const scenario of selected) {
+    if (scenario.mode === "agenda") prepareAgendaDemo();
     captureScenario(scenario, theme);
+    if (scenario.mode === "agenda") {
+      // Other scenarios continue to use their established demo records.
+      rmSync(join(renderCorpusRoot, "notes/projects/launch.org"));
+      rmSync(join(renderCorpusRoot, "notes/projects/website.org"));
+      cpSync(join(corpusRoot, "org2.json"), join(renderCorpusRoot, "org2.json"));
+    }
   }
 
   run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);

@@ -48,6 +48,10 @@ struct Org2WorkspaceScreenshotRenderer {
       }
       await store.bootstrap()
       await MainActor.run {
+        if let rawAgendaMode = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_AGENDA_MODE"],
+           let agendaMode = AgendaMode(rawValue: rawAgendaMode) {
+          store.agendaMode = agendaMode
+        }
         let rawContextTab = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB"]?
           .trimmingCharacters(in: .whitespacesAndNewlines)
           .lowercased()

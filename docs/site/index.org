@@ -33,7 +33,7 @@
     <p class="org2-home-links"><a href="getting-started.html">Plan your first day</a><a href="features.html#planning-knowledge">Planning and linked notes</a></p>
   </div>
   <figure class="org2-home-story-media">
-    <img src="assets/screenshots/macos-workspace-agenda.png" alt="OpenOrg agenda showing scheduled and overdue tasks beside the selected launch readiness task and its project note" width="1400" height="900" loading="lazy" />
+    <img src="assets/screenshots/macos-workspace-agenda.png?v=20261007" alt="OpenOrg agenda showing overdue, today, and upcoming tasks beside a launch plan and its checklist" width="1600" height="900" loading="lazy" />
     <figcaption>Your task list and the note behind the selected task, together in the agenda.</figcaption>
   </figure>
 </section>
