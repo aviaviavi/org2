@@ -248,7 +248,12 @@ try {
   assert.deepEqual(streamed.map((event) => event.type), ["run.created", "run.running"]);
 
   // Following from the CLI emits NDJSON.
-  const child = spawn(process.execPath, [cli, "activity", "events", "--follow", "--type", "run.completed", "--limit", "1", "--interval-ms", "100", "--json", "--dir", root], { stdio: ["ignore", "pipe", "pipe"] });
+  // Anchor before spawning so a slow CLI startup can replay the transition.
+  const since = new Date().toISOString();
+  const child = spawn(process.execPath, [cli, "activity", "events", "--follow", "--since", since, "--type", "run.completed", "--limit", "1", "--interval-ms", "100", "--json", "--dir", root], { stdio: ["ignore", "pipe", "pipe"] });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  const deadline = setTimeout(() => child.kill("SIGTERM"), 20_000);
+  child.once("exit", () => clearTimeout(deadline));
   let output = "";
   child.stdout.on("data", (chunk) => { output += chunk; });
   await new Promise((resolve) => setTimeout(resolve, 600));
@@ -256,7 +261,7 @@ try {
     const snapshot = loadAgentRunSnapshot(root, "run-new");
     saveAgentRun(root, transitionAgentRun(snapshot.run, "completed", { actor: "Codex", summary: "ok" }), { expectedRevision: snapshot.revision });
   }
-  const exitCode = await new Promise((resolve) => child.on("exit", resolve));
+  const exitCode = await exited;
   assert.equal(exitCode, 0);
   const streamedEvent = JSON.parse(output.trim());
   assert.equal(streamedEvent.type, "run.completed");
