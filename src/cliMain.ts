@@ -10957,6 +10957,15 @@ Flags:
     const ogImageFormat = ogImageFormatRaw as "svg" | "png";
     const ogSiteName = String(project.openGraph?.siteName || "").trim();
     const ogLocale = String(project.openGraph?.locale || "").trim();
+    // The social card header shows the configured site name and the site's host.
+    const ogCardBrand = ogSiteName || "Celorga";
+    const ogCardHost = (() => {
+      try {
+        return ogBaseUrlRaw ? new URL(ogBaseUrlRaw).host.toUpperCase() : "";
+      } catch {
+        return "";
+      }
+    })();
     let resvgModulePromise: Promise<typeof import("@resvg/resvg-js")> | null = null;
     const renderOpenGraphPng = async (svg: string): Promise<Buffer> => {
       resvgModulePromise ||= import("@resvg/resvg-js");
@@ -11041,8 +11050,8 @@ Flags:
         '  </defs>',
         '  <rect width="1200" height="630" fill="#f2f0e9" />',
         '  <rect x="35" y="31" width="1130" height="568" rx="10" fill="#fcfbf7" stroke="#d7d6ce" filter="url(#paper-shadow)" />',
-        '  <text x="75" y="83" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="600" letter-spacing="-0.35" fill="#18201e">OpenOrg</text>',
-        '  <text x="1125" y="82" text-anchor="end" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="600" letter-spacing="0.7" fill="#2854d7">OPENORG.SO</text>',
+        `  <text x="75" y="83" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="22" font-weight="600" letter-spacing="-0.35" fill="#18201e">${escapeHeadAttr(ogCardBrand)}</text>`,
+        ogCardHost ? `  <text x="1125" y="82" text-anchor="end" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="600" letter-spacing="0.7" fill="#2854d7">${escapeHeadAttr(ogCardHost)}</text>` : "",
         '  <line x1="75" y1="111" x2="1125" y2="111" stroke="#d7d6ce" />',
         `  <text x="75" y="${titleStartY - 29}" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="24" font-weight="600" fill="#c2472c">*</text>`,
         ...titleSvg,

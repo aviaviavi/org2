@@ -104,6 +104,8 @@ try {
   assert.match(homeSvg, /fill="#fcfbf7"/, "social cards should use the site's paper surface");
   assert.match(homeSvg, /fill="#18201e"/, "social cards should use the site's ink color");
   assert.match(homeSvg, /fill="#c2472c">\*<\/text>/, "social cards should use the site's coral Org heading mark");
+  assert.match(homeSvg, />OpenOrg<\/text>/, "social cards should show the configured site name");
+  assert.match(homeSvg, />OPENORG\.EXAMPLE<\/text>/, "social cards should show the configured site host");
   assert.match(homeSvg, />Capture<\/text>/);
   assert.match(homeSvg, />Delegate<\/text>/);
   assert.match(homeSvg, />Review<\/text>/);
