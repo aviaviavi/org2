@@ -1,6 +1,6 @@
 # org2 Language Server Protocol (LSP)
 
-This is the Language Server Protocol implementation for org-mode files using the org2 parser. It enables editor integrations for VS Code, Emacs, Vim, and other editors that support LSP.
+This is the Language Server Protocol implementation for org-mode files using the celorga parser. It enables editor integrations for VS Code, Emacs, Vim, and other editors that support LSP.
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ Content-Length: 87
     - Cycle the list checkbox on the requested line: `[ ] -> [-] -> [X] -> [ ]` (`refactor.rewrite`), using the current unsaved buffer
     - Convert CRLF documents to LF line endings
     - Replace tab characters with two spaces
-  - `textDocument/formatting` - Canonical Org formatting via the org2 printer
+  - `textDocument/formatting` - Canonical Org formatting via the celorga printer
   - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
   - `textDocument/onTypeFormatting` - Table-aware canonical Org formatting while typing (`|` / newline triggers)
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
@@ -110,7 +110,7 @@ export function activate(context: vscode.ExtensionContext) {
     documentSelector: [{ scheme: 'file', language: 'org' }]
   };
 
-  const client = new LanguageClient('org2-lsp', 'org2 Language Server', serverOptions, clientOptions);
+  const client = new LanguageClient('celorga-lsp', 'org2 Language Server', serverOptions, clientOptions);
   context.subscriptions.push(client.start());
 }
 ```
@@ -124,7 +124,7 @@ export function activate(context: vscode.ExtensionContext) {
     (make-lsp-client
       :new-connection (lsp-stdio-connection '("npm" "run" "lsp"))
       :major-modes '(org-mode)
-      :server-id 'org2-lsp)))
+      :server-id 'celorga-lsp)))
 ```
 
 ### Vim/Neovim (vim-lsp)
@@ -132,7 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
 ```vim
 if executable('npm')
   au User lsp_setup call lsp#register_server({
-        \ 'name': 'org2-lsp',
+        \ 'name': 'celorga-lsp',
         \ 'cmd': {server_info -> ['npm', 'run', 'lsp']},
         \ 'whitelist': ['org'],
         \ })
