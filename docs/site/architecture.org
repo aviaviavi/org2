@@ -10,7 +10,7 @@ Org2 is the independently specified compiler/runtime and semantic profile undern
 * Portability
 
 - Ordinary =.org= files are the source of truth for documents.
-- The command-line tools are =org2= and =org2-lsp=.
+- The command-line tools are =org2= and =celorga-lsp=.
 - The npm package is =@aviaviavi/org2=.
 - VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.
 - Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.

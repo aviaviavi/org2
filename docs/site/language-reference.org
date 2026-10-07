@@ -86,7 +86,7 @@ Priority is stored as the dedicated =priority= headline field. Org's =COMMENT= h
 ** Property drawers
 
 - Drawer delimiters: =:PROPERTIES:= ... =:END:=
-- Consistently space-indented property drawers are accepted for legacy files. =org2 fmt= canonicalizes their delimiter and property lines to column zero.
+- Consistently space-indented property drawers are accepted for legacy files. =celorga fmt= canonicalizes their delimiter and property lines to column zero.
 - Common keys used by Org2 workflows:
   - =:ID:=
   - =:CUSTOM_ID:=
@@ -133,8 +133,8 @@ Supported timestamp forms:
 - Unordered markers: =-=, =+=, =*=
 - Ordered markers: =1.=, =1)=
 - Checkboxes: =[ ]=, =[X]=, =[x]=, =[-]=
-- Cycle a list checkbox with =org2 checkbox --file FILE --line N --apply=: =[ ]= → =[-]= → =[X]= → =[ ]=. The CLI and LSP code action change only the selected marker; see [[file:tooling-reference.org][Tooling reference]].
-- Checkbox progress cookies: =[n/m]= and =[p%]= may appear in headings or list items; =[/]= and =[%]= are empty placeholders. Compile output and lint compare each cookie with its innermost containing heading total. Checked items count as completed; unchecked and indeterminate items count only toward the total. =org2 checkbox fix-cookies --file FILE --apply= writes corrected values, while =org2 checkbox cycle --file FILE --line N --fix-cookies --apply= changes a marker and refreshes cookies atomically.
+- Cycle a list checkbox with =celorga checkbox --file FILE --line N --apply=: =[ ]= → =[-]= → =[X]= → =[ ]=. The CLI and LSP code action change only the selected marker; see [[file:tooling-reference.org][Tooling reference]].
+- Checkbox progress cookies: =[n/m]= and =[p%]= may appear in headings or list items; =[/]= and =[%]= are empty placeholders. Compile output and lint compare each cookie with its innermost containing heading total. Checked items count as completed; unchecked and indeterminate items count only toward the total. =celorga checkbox fix-cookies --file FILE --apply= writes corrected values, while =celorga checkbox cycle --file FILE --line N --fix-cookies --apply= changes a marker and refreshes cookies atomically.
 - Nested lists via indentation.
 - Counter cookies such as =[@3]= are stored separately from the written ordered-list marker.
 - Descriptive items use =term :: definition= and render as description lists.
@@ -274,11 +274,11 @@ New =.org= documents use the ordinary Org form on disk. OpenOrg, file-based CLI 
 File-based CLI formatting selects the profile automatically from the extension. Stdin has no filename, so buffer-oriented callers select it explicitly:
 
 #+begin_src sh
-org2 fmt --stdin --canonical-org
-org2 fmt --file note.org --apply
+celorga fmt --stdin --canonical-org
+celorga fmt --file note.org --apply
 #+end_src
 
-Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.
+Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote celorga fences from accidentally becoming executable celorga source, chart, dataset, or SQL blocks.
 
 * Tables
 
@@ -302,7 +302,7 @@ Org table formulas are attached to their preceding table as structured =TableFor
 #+TBLFM: $4=$2*$3;%.2f
 #+end_src
 
-=org2 table recalculate --file report.org= previews the changed cells; add =--apply= to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.
+=celorga table recalculate --file report.org= previews the changed cells; add =--apply= to write them atomically. The Mac rendered view evaluates supported formulas for display and offers the same explicit recalculation action for editable files. HTML export uses the shared evaluator without rewriting source.
 
 The safe formula subset includes field, row, column, and rectangular-range assignments; absolute and relative =@row$column= references; A1 references; arithmetic, comparisons, and boolean operators; =vsum=, =vmean=, =vmin=, =vmax=, =vmedian=, =vcount=, common numeric functions; printf/Calc-style numeric formats; and =T=, =U=, and =t= duration modes. Later assignments override earlier assignments for the same cell. Empty-field =N= mode is supported. Formula lines, including unsupported forms, remain lossless.
 
@@ -404,7 +404,7 @@ Chart SVG uses CSS custom properties with opinionated defaults: =--org2-chart-ma
 The CLI can render chart-affiliated tables directly:
 
 #+begin_src sh
-org2 render-chart --file report.org --block-id quarterly_revenue --format svg
+celorga render-chart --file report.org --block-id quarterly_revenue --format svg
 #+end_src
 
 * Local datasets and SQL views
@@ -432,14 +432,14 @@ y: fetches
 #+end_src
 #+end_example
 
-=org2 query-data= reads these blocks, creates DuckDB views for local files, URL-backed sources, named org2 tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a =#+query-data:= provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and =ran_at= timestamp:
+=celorga query-data= reads these blocks, creates DuckDB views for local files, URL-backed sources, named celorga tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a =#+query-data:= provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and =ran_at= timestamp:
 
 #+begin_src sh
-org2 query-data --file report.org --results fetches_by_state --out report.fetches.org
-org2 query-data --file report.org --results fetches_by_state --apply
-org2 query-data --file report.org --line 42 --format json
-org2 query-data --file report.org --inspect --include-script
-cat report.org | org2 query-data --stdin --results fetches_by_state --format json
+celorga query-data --file report.org --results fetches_by_state --out report.fetches.org
+celorga query-data --file report.org --results fetches_by_state --apply
+celorga query-data --file report.org --line 42 --format json
+celorga query-data --file report.org --inspect --include-script
+cat report.org | celorga query-data --stdin --results fetches_by_state --format json
 #+end_src
 
 Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use =--line N= to select the SQL result block containing or after the cursor line. JSON output includes =resultBlocks= with each available SQL result id and source range. Use =--inspect= to return parsed datasets, SQL views, result metadata, diagnostics, and selected-query provenance without running DuckDB; =--include-script= also returns generated DuckDB SQL. Relative file paths are resolved from the working directory for stdin input. SQL result ids must be unique, and dataset ids and SQL view ids must be distinct because they become DuckDB relation names. Local URL/table datasets may carry metadata-only credential/config references such as =env:SCARF_API_TOKEN= or =profile:product-analytics=; remote analytics datasets use their named profile operationally but never insert credentials into generated SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include =artifact=PATH= and =freshness=24h= / =ttl=24h= / =max-age=24h= metadata. Executed results stamp =ranAt= so clients can evaluate freshness.
@@ -547,7 +547,7 @@ query: |
 #+end_src
 #+end_example
 
-Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with =org2 query-data=, then attach a =#+begin_src chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
+Use either dataset in ordinary DuckDB SQL, materialize the result as an Org table with =celorga query-data=, then attach a =#+begin_src chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
 
 For notebooks with multiple remote sources, declare each result's dependency edge explicitly with =sources=DATASET_ID[,DATASET_ID...]=. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:
 
@@ -558,7 +558,7 @@ ORDER BY created_at DESC
 #+end_src
 #+end_example
 
-Refreshing data is always explicit. Use =org2 query-data --apply= to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.
+Refreshing data is always explicit. Use =celorga query-data --apply= to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.
 
 Use =type: table= with =source: NAME= when the source data already lives in a named Org table:
 
@@ -588,9 +588,9 @@ This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores t
 Org2 can compile an Org-shaped outline into a backend-neutral presentation model and render that model as Beamer LaTeX or PDF:
 
 #+begin_src sh
-org2 export beamer --file talk.org
-org2 export beamer --file talk.org --out talk.tex --apply
-org2 export beamer --file talk.org --out talk.pdf --pdf --apply
+celorga export beamer --file talk.org
+celorga export beamer --file talk.org --out talk.tex --apply
+celorga export beamer --file talk.org --out talk.pdf --pdf --apply
 #+end_src
 
 Export previews by default. =--pdf= invokes =pdflatex= twice; use =--latex-engine COMMAND= to select another installed LaTeX engine.

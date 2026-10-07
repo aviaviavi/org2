@@ -25,20 +25,20 @@ The ID is stable across clones and local mount paths. The name is human-facing. 
 Inspect or validate an existing corpus with:
 
 #+begin_src sh
-org2 corpus show --dir ~/notes --json
-org2 corpus validate --dir ~/notes
+celorga corpus show --dir ~/notes --json
+celorga corpus validate --dir ~/notes
 #+end_src
 
 Add identity to a new or existing corpus with a preview-first command:
 
 #+begin_src sh
-org2 corpus init --dir ~/team-operations \
+celorga corpus init --dir ~/team-operations \
   --id team-operations \
   --name "Team Operations" \
   --kind shared
 
 # After reviewing the preview:
-org2 corpus init --dir ~/team-operations \
+celorga corpus init --dir ~/team-operations \
   --id team-operations \
   --name "Team Operations" \
   --kind shared \
@@ -60,12 +60,12 @@ This does not merge corpora into one database. The shared CLI runs the canonical
 Automation can request the same read-only projection with repeatable mounts:
 
 #+begin_src sh
-org2 workspace agenda \
+celorga workspace agenda \
   --mount ~/personal-notes \
   --mount ~/team-operations \
   --recursive --from 2026-07-20 --to 2026-07-26 --json
 
-org2 workspace search "launch readiness" \
+celorga workspace search "launch readiness" \
   --mount ~/personal-notes \
   --mount ~/team-operations \
   --recursive --limit 50 --json

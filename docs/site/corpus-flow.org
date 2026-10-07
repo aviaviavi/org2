@@ -54,7 +54,7 @@ Generated view example:
 :ID: project-alpha-dashboard
 :ORG2_ARTIFACT_ROLE: view
 :ORG2_PROVENANCE: id:project-alpha, query:todo-status-open
-:ORG2_GENERATOR: org2 query --format org
+:ORG2_GENERATOR: celorga query --format org
 :ORG2_GENERATED_AT: 2026-05-10T22:30:00Z
 :ORG2_SOURCE_HASHES: file:notes/project-alpha.org=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: review-required
@@ -93,7 +93,7 @@ The conventional directory mapping is:
 Run lint over the corpus root:
 
 #+begin_src sh
-org2 lint --dir /path/to/corpus --recursive
+celorga lint --dir /path/to/corpus --recursive
 #+end_src
 
 When files live under the conventional directories, lint checks that their declared =ORG2_ARTIFACT_ROLE= matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.

@@ -9,7 +9,7 @@ This page describes the recommended boundary for OpenClaw, Claude, Codex, local 
 
 Org2 guarantees local compiler outputs:
 
-- stable command outputs such as =org2 query --format json= and =org2 compile corpus=
+- stable command outputs such as =celorga query --format json= and =celorga compile corpus=
 - source files, line ranges, heading ancestry, matched lines, and snippets for citations
 - artifact roles, provenance metadata, graph links, backlinks, agenda state, and lint diagnostics
 - no network or provider dependency for non-AI commands
@@ -25,10 +25,10 @@ Generated text should remain reviewable. Write it to =views/=, =compiled/=, or a
 
 * Query-to-context workflow
 
-Use =org2 query= to fetch grounded context before asking an LLM to answer a question.
+Use =celorga query= to fetch grounded context before asking an LLM to answer a question.
 
 #+begin_src sh
-org2 query "What did we decide about Project Alpha?" \
+celorga query "What did we decide about Project Alpha?" \
   --dir ~/notes \
   --recursive \
   --subtree \
@@ -65,8 +65,8 @@ Question: What did we decide about Project Alpha?
 For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.
 
 #+begin_src sh
-org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-org2 lint --dir ~/notes --recursive --format json > views/corpus-health.json
+celorga compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+celorga lint --dir ~/notes --recursive --format json > views/corpus-health.json
 #+end_src
 
 The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in [[file:corpus-flow.org][Corpus flow]].
@@ -98,11 +98,11 @@ Agent conversations that matter should be represented as durable Org2 headings i
 
 The =agent= and =session= fields identify the external worker/session. =context= is a comma- or semicolon-separated list of typed references such as =id:=, =file:=, =ticket:=, =report:=, =entity:=, =artifact:=, or =url:=. The body can also include normal Org2 links under a =Context attachments= section for readable labels and editor navigation.
 
-=org2 agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. Attachments that point at known =id:=, =file:=, wiki/note targets, or exact typed refs such as =report:report-1= include a =target= object with the resolved title, file, line range, and citation.
+=celorga agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. Attachments that point at known =id:=, =file:=, wiki/note targets, or exact typed refs such as =report:report-1= include a =target= object with the resolved title, file, line range, and citation.
 
-Fetching the selected context object goes the other direction: =org2 agent fetch --id report-1 --format json= includes =relatedThreads= when agent-thread records attach to that node. Each related thread carries its id/title/session/status/citation plus =matchingAttachments=, so a Workspace or Agenda client can show “open existing thread” from a TODO/report/entity without scanning every thread itself. This preserves citations and avoids raw transcript storage unless the user chooses it.
+Fetching the selected context object goes the other direction: =celorga agent fetch --id report-1 --format json= includes =relatedThreads= when agent-thread records attach to that node. Each related thread carries its id/title/session/status/citation plus =matchingAttachments=, so a Workspace or Agenda client can show “open existing thread” from a TODO/report/entity without scanning every thread itself. This preserves citations and avoids raw transcript storage unless the user chooses it.
 
-For prompt-ready context, =org2 context --id report-1 --format markdown= renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a =Related agent threads= section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one. Selecting the thread itself with =org2 context --id thread-1= renders a =Selected agent threads= section with agent/session/status/storage/transcript metadata plus each resolved context attachment, so OpenClaw handoffs can recover what the thread is about without scraping the thread body.
+For prompt-ready context, =celorga context --id report-1 --format markdown= renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a =Related agent threads= section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one. Selecting the thread itself with =celorga context --id thread-1= renders a =Selected agent threads= section with agent/session/status/storage/transcript metadata plus each resolved context attachment, so OpenClaw handoffs can recover what the thread is about without scraping the thread body.
 
 * Collaboration and workflow state
 
@@ -139,7 +139,7 @@ The first stable convention is property-backed and intentionally small:
 - run/session metadata: =SESSION=, =RUN_ID=, =RUN_STARTED_AT=, =RUN_FINISHED_AT=, =RUN_LOG=, =SOURCE_ARTIFACTS=
 - handoff metadata: =HANDOFF_SUMMARY=, =HANDOFF_NEXT_ACTION=, =HANDOFF_LINKS=
 
-=org2 agent fetch --id support-followup-1 --format json= exposes these fields under =collaboration=. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known =id:=, =file:=, =report:=, =entity:=, and related refs when possible. =org2 context --id support-followup-1= renders a =Collaboration state= section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.
+=celorga agent fetch --id support-followup-1 --format json= exposes these fields under =collaboration=. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known =id:=, =file:=, =report:=, =entity:=, and related refs when possible. =celorga context --id support-followup-1= renders a =Collaboration state= section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.
 
 These conventions define the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.
 
@@ -194,7 +194,7 @@ Data-backed reports should keep executable details and materialized artifacts as
 :BACKFILL_STATUS: complete
 :FRESHNESS: live
 :REFRESH_REF: query-data:package_fetches_by_company
-:REFRESH_COMMAND: org2 query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
+:REFRESH_COMMAND: celorga query-data --file reports/firebolt.org --results package_fetches_by_company --out views/package_fetches_by_company.org
 :REFRESH_STATUS: ready
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-06-13T12:30:00-07:00
@@ -222,13 +222,13 @@ Data-backed reports should keep executable details and materialized artifacts as
 
 Keep credentials and secrets outside org2 files. Store only stable query IDs, non-secret query text or params, relation shape metadata such as =DATABASE=, =SCHEMA=, =TABLE=, =VIEW=, =COLUMNS=, =PRIMARY_KEY=, =PARTITION_BY=, =SORT_BY=, =DIMENSIONS=, =MEASURES=, =GRAIN=, =FILTERS=, =GROUP_BY=, =TIME_COLUMN=, and =TIMEZONE=, safe credential/config handles such as =env:SCARF_ANALYTICS_TOKEN= or =profile:product-analytics=, source paths/URIs, row counts, result limit/window/sampling metadata, operational readiness metadata such as =WATERMARK=, =DATA_LATENCY=, =AVAILABILITY=, and =BACKFILL_STATUS=, freshness, artifact references, query hashes, materialization state, provenance refs, source hashes, lineage refs, data contracts/schema versions, non-secret refresh handles, validation/confidence notes, quality status/checks, and lightweight ownership/access metadata such as =DATA_OWNER=, =DATA_STEWARD=, =SENSITIVITY=, =VISIBILITY=, =ACCESS_POLICY=, and =RETENTION=. This lets agents trace claims back to data and understand handling constraints without embedding warehouse-scale rows in notes or leaking inline secrets.
 
-=org2 agent fetch --id query-fetches-by-company --format json= exposes this as =dataLink= metadata, including =kind=, =system=, =database=, =schema=, =table=, =view=, parsed =columns=, =primaryKey=, =partitionBy=, =sortBy=, =dimensions=, and =measures= arrays, =grain=, =filters=, =groupBy=, =timeColumn=, =timezone=, =source= / =path=, =queryId=, =query=, =queryHash=, parsed JSON =params= when possible, safe =credentialRef= / =configRef= values, =artifact=, =rowCount=, =resultLimit=, =resultOffset=, =sampleSize=, =sampleRate=, =samplingMethod=, =coverage=, =windowStart=, =windowEnd=, =lastRun=, =watermark=, =dataLatency=, =availability=, =backfillStatus=, =freshness=, =materialized=, optional refresh metadata (=refreshRef=, =refreshCommand=, =refreshStatus=, =refreshAfter=, and =nextRefresh=), validation metadata (=validationStatus=, =validationAt=, =validationBy=, =validationNote=, =confidence=, and =validationRefs=), ownership/access metadata (=dataOwner=, =dataSteward=, =sensitivity=, =visibility=, =accessPolicy=, and =retention=), optional =lineageRefs= from =LINEAGE_REFS= / =DATA_LINEAGE= / =UPSTREAM_REFS=, =dataContract=, =schemaVersion=, quality metadata (=qualityStatus=, =qualityScore=, =qualityChecks=, and =qualityNote=), optional =provenance= refs from =ORG2_PROVENANCE=, and optional =sourceHashes= from =ORG2_SOURCE_HASHES=. A local DuckDB-style dataset can use =KIND: dataset= with =ENGINE=, =PATH=, =TABLE=, =COLUMNS=, =PARAMS=, and =RESULTS=, and the same =dataLink= field is returned for Workspace/search clients.
+=celorga agent fetch --id query-fetches-by-company --format json= exposes this as =dataLink= metadata, including =kind=, =system=, =database=, =schema=, =table=, =view=, parsed =columns=, =primaryKey=, =partitionBy=, =sortBy=, =dimensions=, and =measures= arrays, =grain=, =filters=, =groupBy=, =timeColumn=, =timezone=, =source= / =path=, =queryId=, =query=, =queryHash=, parsed JSON =params= when possible, safe =credentialRef= / =configRef= values, =artifact=, =rowCount=, =resultLimit=, =resultOffset=, =sampleSize=, =sampleRate=, =samplingMethod=, =coverage=, =windowStart=, =windowEnd=, =lastRun=, =watermark=, =dataLatency=, =availability=, =backfillStatus=, =freshness=, =materialized=, optional refresh metadata (=refreshRef=, =refreshCommand=, =refreshStatus=, =refreshAfter=, and =nextRefresh=), validation metadata (=validationStatus=, =validationAt=, =validationBy=, =validationNote=, =confidence=, and =validationRefs=), ownership/access metadata (=dataOwner=, =dataSteward=, =sensitivity=, =visibility=, =accessPolicy=, and =retention=), optional =lineageRefs= from =LINEAGE_REFS= / =DATA_LINEAGE= / =UPSTREAM_REFS=, =dataContract=, =schemaVersion=, quality metadata (=qualityStatus=, =qualityScore=, =qualityChecks=, and =qualityNote=), optional =provenance= refs from =ORG2_PROVENANCE=, and optional =sourceHashes= from =ORG2_SOURCE_HASHES=. A local DuckDB-style dataset can use =KIND: dataset= with =ENGINE=, =PATH=, =TABLE=, =COLUMNS=, =PARAMS=, and =RESULTS=, and the same =dataLink= field is returned for Workspace/search clients.
 
-Fetching a parent report or file also exposes descendant data/query records as =relatedDataLinks=. For example, =org2 agent fetch --id report-fetches --format json= includes child =warehouse-query= and =dataset= headings with their citations, =claimState= review/freshness metadata, and compact =dataLink= metadata. The prompt-ready renderer mirrors this with a =Related data links= section, so a Workspace client can show the report's evidence, relation shape, partition/sort hints, semantic dimensions/measures/grain, filters/grouping/time-bucket hints, source path/URI, non-secret query text and params, artifacts, row counts, result limits/windows/sampling notes, data freshness/watermark/latency/availability/backfill state, materialization state, refresh status, validation/confidence state, lineage/contract/quality state, access/retention constraints, claim review state, and source-hash snapshot next to the selected note without reparsing the org2 file.
+Fetching a parent report or file also exposes descendant data/query records as =relatedDataLinks=. For example, =celorga agent fetch --id report-fetches --format json= includes child =warehouse-query= and =dataset= headings with their citations, =claimState= review/freshness metadata, and compact =dataLink= metadata. The prompt-ready renderer mirrors this with a =Related data links= section, so a Workspace client can show the report's evidence, relation shape, partition/sort hints, semantic dimensions/measures/grain, filters/grouping/time-bucket hints, source path/URI, non-secret query text and params, artifacts, row counts, result limits/windows/sampling notes, data freshness/watermark/latency/availability/backfill state, materialization state, refresh status, validation/confidence state, lineage/contract/quality state, access/retention constraints, claim review state, and source-hash snapshot next to the selected note without reparsing the org2 file.
 
 Data/query records can also live outside the selected report subtree, such as in a central data catalog. Point them at the selected note with =CONTEXT: id:report-fetches=, =TARGET_ID: report-fetches=, =REPORT_ID: report-fetches=, or a normal =[[id:report-fetches]]= link. =relatedDataLinks= includes those referenced records with =matchingAttachments= so clients can explain why the query belongs with the selected report/entity.
 
-When the selected node is itself a =warehouse-query=, =dataset=, or other data-link record, =org2 context --id query-fetches-by-company= also includes that selected record in =Related data links=. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.
+When the selected node is itself a =warehouse-query=, =dataset=, or other data-link record, =celorga context --id query-fetches-by-company= also includes that selected record in =Related data links=. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.
 
 Event-backed records use the same =dataLink= envelope, but emphasize timeline provenance instead of result rows. Use =KIND: event-stream= for an append-only external stream and =KIND: timeline-link= for a curated projection over one or more streams.
 
@@ -254,7 +254,7 @@ Event-backed records use the same =dataLink= envelope, but emphasize timeline pr
 :END:
 #+end_src
 
-=org2 agent fetch= exposes event/timeline metadata as =eventStream=, =timeline=, =eventType=, =entity=, =actor=, =occurredAt=, =capturedAt=, =sourceCursor=, =streamPosition=, =partitionKey=, =correlationId=, =causationId=, =changeId=, and =changeHash= when present. This lets Workspace and OpenClaw clients answer "what changed and why?", replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.
+=celorga agent fetch= exposes event/timeline metadata as =eventStream=, =timeline=, =eventType=, =entity=, =actor=, =occurredAt=, =capturedAt=, =sourceCursor=, =streamPosition=, =partitionKey=, =correlationId=, =causationId=, =changeId=, and =changeHash= when present. This lets Workspace and OpenClaw clients answer "what changed and why?", replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.
 
 * What to save back
 
@@ -265,7 +265,7 @@ Good generated outputs are inspectable artifacts, not silent canonical edits:
 - =compiled/retrieval-index.json= for a derived machine artifact
 - patch files or draft notes for proposed canonical changes
 
-Generated Org files should include properties such as =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, and =ORG2_GENERATED_AT=. Run =org2 lint= before trusting or publishing generated outputs.
+Generated Org files should include properties such as =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, and =ORG2_GENERATED_AT=. Run =celorga lint= before trusting or publishing generated outputs.
 
 * Minimal answer contract
 

@@ -215,8 +215,8 @@ The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:
 #+begin_src sh
 npm install -g @aviaviavi/org2
 org2 --version
-org2 agenda --dir /path/to/your/corpus --recursive
-org2 agenda --dir /path/to/your/corpus --recursive --tui
+celorga agenda --dir /path/to/your/corpus --recursive
+celorga agenda --dir /path/to/your/corpus --recursive --tui
 #+end_src
 
 You can try the CLI without a global install:
@@ -246,12 +246,12 @@ You can use your existing Org directory directly. Org2 accepts =.org= as a first
 Point the Mac app at the existing folder with *Open an existing corpus*, or try the CLI without changing anything:
 
 #+begin_src sh
-org2 agenda --dir /path/to/your/org-directory --recursive
+celorga agenda --dir /path/to/your/org-directory --recursive
 #+end_src
 
 Org2 supports outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing. Keep complex Babel setups, custom Emacs Lisp, specialized export backends, and heavily customized agenda behavior in Org mode until their Org2 behavior has been verified. Both tools can work over the same readable source where their semantics overlap.
 
-See [[file:editors-emacs.org][Using Org2 from Emacs]], [[file:org2-vs-org-mode.org][Org2 vs Org Mode]], and [[file:migration.org][Migration guidance]].
+See [[file:editors-emacs.org][Using Org2 from Emacs]], [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]], and [[file:migration.org][Migration guidance]].
 
 * Build from source
 

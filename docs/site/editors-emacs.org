@@ -13,10 +13,10 @@ That gives you mature Org editing, outline navigation, folding, timestamps, TODO
 Run Org2 commands from a shell, =compile=, =async-shell-command=, or your own Emacs wrapper:
 
 #+begin_src sh
-org2 agenda --dir ~/notes --recursive
-org2 fmt --dir ~/notes --recursive --check
-org2 lint --dir ~/notes --recursive
-org2 publish docs-site --config org2.json
+celorga agenda --dir ~/notes --recursive
+celorga fmt --dir ~/notes --recursive --check
+celorga lint --dir ~/notes --recursive
+celorga publish docs-site --config org2.json
 #+end_src
 
 Mutating commands preview by default and require =--apply= to write files, which makes them reasonable to wire into custom Emacs commands once you are comfortable with the output.
@@ -30,4 +30,4 @@ Mutating commands preview by default and require =--apply= to write files, which
 
 * Current status
 
-Dedicated Emacs integration is still open work. Useful future pieces would include CLI command wrappers, LSP setup, agenda buffers backed by =org2 agenda --format json=, and helpers for roam IDs/backlinks.
+Dedicated Emacs integration is still open work. Useful future pieces would include CLI command wrappers, LSP setup, agenda buffers backed by =celorga agenda --format json=, and helpers for roam IDs/backlinks.

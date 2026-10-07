@@ -99,5 +99,5 @@ Using both is reasonable. Org Mode can remain the editor for =.org= files while 
 - [[file:migration.org][Migration guidance]]
 - [[file:semantics-status.org][Semantics and status]]
 - [[file:features.org][Current OpenOrg features]]
-- [[file:org2-vs-markdown.org][Org2 vs Markdown]]
-- [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
+- [[file:celorga-vs-markdown.org][Org2 vs Markdown]]
+- [[file:celorga-vs-obsidian.org][Org2 vs Obsidian]]

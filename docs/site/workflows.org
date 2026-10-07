@@ -26,7 +26,7 @@ workflows/                 authored workflow files
 .org2/                     runtime bindings, correlation state, and derived control data
 #+end_src
 
-Older early-alpha installations may contain =.org2/workflows/=. Org2 continues to read that location, prefers a visible =workflows/= file when both contain the same workflow ID, and provides =org2 workflow migrate= to move non-conflicting legacy files. New and newly saved workflows use =workflows/=.
+Older early-alpha installations may contain =.org2/workflows/=. Org2 continues to read that location, prefers a visible =workflows/= file when both contain the same workflow ID, and provides =celorga workflow migrate= to move non-conflicting legacy files. New and newly saved workflows use =workflows/=.
 
 One workflow per file is the default. A note or project heading may link to or invoke a workflow, while independent files keep workflow identity, version history, review, and distribution straightforward.
 
@@ -37,7 +37,7 @@ Open *Agent Work → Automations* in the Mac app and choose *New Automation*. Gi
 The minimal CLI form is:
 
 #+begin_src sh
-org2 workflow create weekly-product-update \
+celorga workflow create weekly-product-update \
   --title "Weekly product update" \
   --prompt "Prepare a cited update from this week's product notes." \
   --destination-ref builtin.claude \
@@ -54,7 +54,7 @@ The readable =:AI_DESTINATION_REF:= property is a symbolic reference to configur
 A completed one-off run can become a draft workflow:
 
 #+begin_src sh
-org2 workflow save RUN_ID --id weekly-review --dir ~/notes
+celorga workflow save RUN_ID --id weekly-review --dir ~/notes
 #+end_src
 
 The saved file is a proposal, not an automatic publication or rerun. Review the concrete context copied from the original run, replace one-off values with inputs where appropriate, and inspect outputs, validation, and approval boundaries before activation.
@@ -64,18 +64,18 @@ The Mac *Agent Work → Automations* surface also lists fuller reusable workflow
 Useful lifecycle commands include:
 
 #+begin_src sh
-org2 workflow list --dir ~/notes --json
-org2 workflow validate weekly-review --dir ~/notes
-org2 workflow run weekly-review --dir ~/notes --json
-org2 workflow due --dir ~/notes --json
-org2 workflow activate weekly-review --dir ~/notes
-org2 workflow pause weekly-review --dir ~/notes
-org2 workflow schedule weekly-review --cron "0 9 * * 1" \
+celorga workflow list --dir ~/notes --json
+celorga workflow validate weekly-review --dir ~/notes
+celorga workflow run weekly-review --dir ~/notes --json
+celorga workflow due --dir ~/notes --json
+celorga workflow activate weekly-review --dir ~/notes
+celorga workflow pause weekly-review --dir ~/notes
+celorga workflow schedule weekly-review --cron "0 9 * * 1" \
   --timezone America/Los_Angeles --model gpt-5.6-sol \
   --reasoning-effort high --dir ~/notes
-org2 workflow delete weekly-review --dir ~/notes
-org2 workflow delete weekly-review --dir ~/notes --apply
-org2 workflow migrate --dir ~/notes
+celorga workflow delete weekly-review --dir ~/notes
+celorga workflow delete weekly-review --dir ~/notes --apply
+celorga workflow migrate --dir ~/notes
 #+end_src
 
 Draft, active, and paused describe operational intent. Editing the file remains possible in every state. A workflow should be validated and reviewed before an edited version becomes responsible for consequential or scheduled work.
@@ -110,11 +110,11 @@ The optional =org2-lifecycle= plugin adds deeper OpenClaw lifecycle integration:
 4. When execution requests approval or clarification, the turn may end while the durable run remains open. Approving in the Mac app continues the existing workflow in its correlated OpenClaw chat session; a pending approval or blocked run is never treated as successful completion.
 5. Outputs, validation, steps, and approvals remain visible in Agent Work as the agent records them through the shared CLI.
 
-Run =org2 doctor --dir CORPUS --json= before reconciliation or execution when a long-running workspace may contain stale or hand-edited state. The read-only report identifies contradictory run/approval state, duplicate provider identities, missing workflow definitions, conflicting attempt numbers, overlapping active attempts, unmanaged OpenClaw cron series, and broken or duplicate headline projections. It exits nonzero for hard contradictions but never rewrites the canonical records automatically.
+Run =celorga doctor --dir CORPUS --json= before reconciliation or execution when a long-running workspace may contain stale or hand-edited state. The read-only report identifies contradictory run/approval state, duplicate provider identities, missing workflow definitions, conflicting attempt numbers, overlapping active attempts, unmanaged OpenClaw cron series, and broken or duplicate headline projections. It exits nonzero for hard contradictions but never rewrites the canonical records automatically.
 
 Lifecycle mutations use atomic revision-checked writes. A client that holds a run across requests should read =run show ID --with-revision --json= and return that token through =--if-revision=; even without the explicit flag, one CLI invocation protects the revision it loaded. A concurrent mutation or ambiguous direct edit therefore produces a conflict for the caller to refresh and reconcile, not a last-writer-wins overwrite.
 
-High-volume account-oriented workflows should keep global selection state in =org2 ledger= accounts rather than in the workflow prompt or one append-only task heading. Resolve every available name, email, domain, and provider identity before creating an account. A workflow can query =ledger list LEDGER --eligible --json=, link the exact run approval through an idempotent account event, and record the provider receipt after the approved action completes. The workflow remains the recipe, each run remains one attempt, and the ledger remains durable cross-attempt subject history.
+High-volume account-oriented workflows should keep global selection state in =celorga ledger= accounts rather than in the workflow prompt or one append-only task heading. Resolve every available name, email, domain, and provider identity before creating an account. A workflow can query =ledger list LEDGER --eligible --json=, link the exact run approval through an idempotent account event, and record the provider receipt after the approved action completes. The workflow remains the recipe, each run remains one attempt, and the ledger remains durable cross-attempt subject history.
 
 Opening a PDF output from Agent Work uses the system's default PDF application (Preview by default on macOS). Text outputs continue to open in the Org2 workspace, with raw source editing available when needed.
 
@@ -144,4 +144,4 @@ This is an early automation surface. The canonical file carries readable Org2 au
 
 * Running without the desktop app
 
-The [[file:headless-server.org][headless server]] reuses these workflow and run records. Assign =automationHostRef= with preview-first =org2 server assign --dir CORPUS --host-ref HOST=. Updated desktop schedulers skip a corpus owned by another host. Scheduled attempt creation locks each workflow separately and refuses an already dispatched occurrence. Independently synchronized copies require one explicitly chosen owner; they do not support automatic distributed failover.
+The [[file:headless-server.org][headless server]] reuses these workflow and run records. Assign =automationHostRef= with preview-first =celorga server assign --dir CORPUS --host-ref HOST=. Updated desktop schedulers skip a corpus owned by another host. Scheduled attempt creation locks each workflow separately and refuses an already dispatched occurrence. Independently synchronized copies require one explicitly chosen owner; they do not support automatic distributed failover.

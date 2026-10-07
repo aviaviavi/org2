@@ -147,7 +147,7 @@
 
 * Headless host
 
-A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =org2 server= without a desktop window. It can expose a separately enabled read-only Streamable HTTP MCP endpoint for bounded, cited corpus search and retrieval, using one revocable hash-only bearer credential per client. iOS can save and select a Mac or server and sees the same conversations, live progress, and message provenance from either; a conversation keeps running on the host that owns its runtime session; each corpus has an explicit scheduler owner, and each execution host has an explicit local-agent filesystem policy. See [[file:headless-server.org][Headless server setup]] for pairing, MCP access, permissions, login-service installation, and the current host boundaries.
+A dedicated macOS host can run the OpenOrg chat relay and automation scheduler from =celorga server= without a desktop window. It can expose a separately enabled read-only Streamable HTTP MCP endpoint for bounded, cited corpus search and retrieval, using one revocable hash-only bearer credential per client. iOS can save and select a Mac or server and sees the same conversations, live progress, and message provenance from either; a conversation keeps running on the host that owns its runtime session; each corpus has an explicit scheduler owner, and each execution host has an explicit local-agent filesystem policy. See [[file:headless-server.org][Headless server setup]] for pairing, MCP access, permissions, login-service installation, and the current host boundaries.
 
 OpenOrg also offers a default-off experimental *Paste as Org2* command in the document Source editor, with local conversion, an editable preview, optional tiny-model structure suggestions, and explicit insertion. See [[file:editors-macos.org][macOS workspace]].
 
@@ -155,7 +155,7 @@ The iOS Files tab supports local fuzzy search across pages, headings, and entry 
 
 * Explainable agent activity
 
-Every chat thread, durable run, and automation can explain itself: why it is working or waiting on you, which host and runtime reported that, the last heartbeat or transition, whether the state is live, cached, or uncertain, and the exact approval or question that blocks it. Explanations come from structured presence, transcript, and run records rather than terminal output. OpenOrg shows them in Activity's *Explain Status* inspector and a *Hosts* section covering the Mac, headless servers, and remote harnesses; agents and scripts use =org2 activity explain=, =org2 activity events --follow=, and race-free =org2 thread wait= / =org2 run wait=. See [[file:tooling-reference.org::*Explainable activity, events, and waits][the tooling reference]].
+Every chat thread, durable run, and automation can explain itself: why it is working or waiting on you, which host and runtime reported that, the last heartbeat or transition, whether the state is live, cached, or uncertain, and the exact approval or question that blocks it. Explanations come from structured presence, transcript, and run records rather than terminal output. OpenOrg shows them in Activity's *Explain Status* inspector and a *Hosts* section covering the Mac, headless servers, and remote harnesses; agents and scripts use =celorga activity explain=, =celorga activity events --follow=, and race-free =celorga thread wait= / =celorga run wait=. See [[file:tooling-reference.org::*Explainable activity, events, and waits][the tooling reference]].
 
 * Web pages beside your notes
 

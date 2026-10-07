@@ -130,9 +130,9 @@ The team deferred billing launch until the migration checklist is complete.
 Prefer deterministic previews before mutating notes:
 
 #+begin_src sh
-org2 roam linkify --dir notes --recursive --dry-run
-org2 roam linkify --dir notes --recursive --apply
-org2 lint --dir . --recursive
+celorga roam linkify --dir notes --recursive --dry-run
+celorga roam linkify --dir notes --recursive --apply
+celorga lint --dir . --recursive
 #+end_src
 
 Generated link suggestions from AI should be written to =views/link-suggestions.org= with citations and =review-required= status. Apply only reviewed links to =notes/=.
@@ -148,16 +148,16 @@ todo-2026-05-20-launch-followup-dana
 view-2026-05-20-team-sync-summary
 #+end_src
 
-Run =org2 lint= after writes so duplicate IDs, stale provenance, invalid artifact metadata, and unsafe generated artifacts surface immediately.
+Run =celorga lint= after writes so duplicate IDs, stale provenance, invalid artifact metadata, and unsafe generated artifacts surface immediately.
 
 ** Lint before and after writes
 
 For automated write flows, use this shape:
 
 #+begin_src sh
-org2 lint --dir . --recursive
+celorga lint --dir . --recursive
 # perform one focused write
-org2 lint --dir . --recursive
+celorga lint --dir . --recursive
 #+end_src
 
 If the pre-write corpus is already dirty, record the existing diagnostics and ensure the integration does not introduce new ones.
@@ -277,7 +277,7 @@ mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
 cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org
 
 # 2. Build cited local context deterministically.
-org2 query "team sync" \
+celorga query "team sync" \
   --dir raw/meetings \
   --recursive \
   --subtree \
@@ -286,23 +286,23 @@ org2 query "team sync" \
   > compiled/2026-05-20-team-sync-context.json
 
 # 3. Ask AI to write a reviewable draft, not canonical memory.
-org2 ai run \
+celorga ai run \
   --task summarize-meeting \
   --context compiled/2026-05-20-team-sync-context.json \
   --out views/meeting-summaries/2026-05-20-team-sync.org \
   --apply
 
 # 4. Check generated artifact metadata and graph health.
-org2 lint --dir . --recursive
+celorga lint --dir . --recursive
 
 # 5. After review, promote accepted content.
-org2 ai promote \
+celorga ai promote \
   --file views/meeting-summaries/2026-05-20-team-sync.org \
   --to-file notes/meetings/team-sync.org \
   --apply
 
 # 6. Re-check canonical corpus.
-org2 lint --dir . --recursive
+celorga lint --dir . --recursive
 #+end_src
 
 Before promotion, the draft is a =view= artifact with =review-required= status. After promotion, the accepted note in =notes/meetings/team-sync.org= carries source/provenance properties and the draft can be marked =promoted=.
@@ -313,7 +313,7 @@ Before writing:
 
 - Identify the target zone: =raw/=, =notes/=, =compiled/=, =views/=, or =publish/=.
 - Decide whether the operation is deterministic or review-gated.
-- Run or inspect recent =org2 lint= output when practical.
+- Run or inspect recent =celorga lint= output when practical.
 - Search for existing IDs/entities to avoid duplicates.
 - Prepare provenance: source path/message ref, line range, hash, generator, and timestamp.
 
@@ -327,7 +327,7 @@ When writing:
 
 After writing:
 
-- Run =org2 lint --dir . --recursive= or the repository's equivalent check.
+- Run =celorga lint --dir . --recursive= or the repository's equivalent check.
 - Confirm no duplicate IDs or invalid review/provenance metadata were introduced.
 - If promoting memory, ensure the promoted note says where it came from and the source draft is marked reviewed/promoted.
 - If publishing, verify the output contains only intended reviewed content.

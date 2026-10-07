@@ -3,7 +3,7 @@
 
 Org2 can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.
 
-This page is the design boundary for future =org2 ai ...= commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.
+This page is the design boundary for future =celorga ai ...= commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.
 
 * Layer model
 
@@ -23,7 +23,7 @@ The core stays deterministic and local. It owns:
 
 - parsing Org2 files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties
 - resolving graph data, backlinks, source ranges, and corpus zones
-- emitting =org2 compile corpus= and =org2 query --format json= artifacts
+- emitting =celorga compile corpus= and =celorga query --format json= artifacts
 - linting artifact metadata, provenance, generated-output boundaries, and graph health
 - powering editor integrations through CLI/LSP commands
 
@@ -40,7 +40,7 @@ The AI layer is optional orchestration around compiler outputs. It owns:
 - validating model output shape when a workflow expects JSON or Org2 sections
 - writing reviewable generated artifacts with provenance metadata
 
-This layer can live behind =org2 ai ...= commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.
+This layer can live behind =celorga ai ...= commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.
 
 ** Provider adapter boundary
 
@@ -79,10 +79,10 @@ Secrets and provider-specific configuration stay outside note files, manifests, 
 The command family is:
 
 #+begin_src sh
-org2 ai run --task summarize-meeting --file raw/team-sync.org --out views/team-sync-summary.org
-org2 ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
-org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org
-org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
+celorga ai run --task summarize-meeting --file raw/team-sync.org --out views/team-sync-summary.org
+celorga ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+celorga ai suggest-links --dir notes --recursive --out views/link-suggestions.org
+celorga ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
 Implemented pieces so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
@@ -107,7 +107,7 @@ A job runner should record each transformation with enough data to review and re
 3. Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.
 4. Validate the returned output against the workflow contract.
 5. Write a generated artifact under =views/= or =compiled/= with =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, =ORG2_GENERATED_AT=, optional =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= (=generated=, =review-required=, =reviewed=, or =promoted=).
-6. Run =org2 lint= so missing provenance or unsafe generated/canonical boundaries become visible.
+6. Run =celorga lint= so missing provenance or unsafe generated/canonical boundaries become visible.
 7. Promote only the human-approved parts into =notes/= through an explicit patch, editor command, or future promote workflow.
 
 * End-to-end example
@@ -115,7 +115,7 @@ A job runner should record each transformation with enough data to review and re
 Meeting summary flow:
 
 #+begin_src sh
-org2 query "team sync" \
+celorga query "team sync" \
   --dir raw \
   --recursive \
   --subtree \
@@ -124,13 +124,13 @@ org2 query "team sync" \
   > compiled/team-sync-context.json
 
 # Proposed future command: consumes the cited context and configured provider alias.
-org2 ai run \
+celorga ai run \
   --task summarize-meeting \
   --context compiled/team-sync-context.json \
   --provider work-summary \
   --out views/team-sync-summary.org
 
-org2 lint --dir . --recursive
+celorga lint --dir . --recursive
 #+end_src
 
 The generated summary should include:

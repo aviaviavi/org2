@@ -6,7 +6,7 @@ The CLI is the shared backend for editor integrations and automation. You can us
 
 * Core command families
 
-Run =org2 version= or =org2 --version= to inspect the installed package version, and =org2 --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
+Run =celorga version= or =org2 --version= to inspect the installed package version, and =org2 --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
 
 Main workflows:
 
@@ -57,22 +57,22 @@ commit and fails if its content hash changes.
 
 #+begin_src sh
 # Preview the exact revision and content hash without changing the corpus.
-org2 plugin add https://github.com/example/org2-calendar.git --dir ~/notes --json
+celorga plugin add https://github.com/example/org2-calendar.git --dir ~/notes --json
 
 # Record the source, lock and install the package, then trust this exact hash.
-org2 plugin add github:example/org2-calendar --dir ~/notes --trust --apply
+celorga plugin add github:example/org2-calendar --dir ~/notes --trust --apply
 
 # Install a package from a monorepo.
-org2 plugin add https://github.com/aviaviavi/org2.git \
+celorga plugin add https://github.com/aviaviavi/org2.git \
   --subdir examples/plugins/chess-pgn --dir ~/notes --trust --apply
 
-org2 plugin list --dir ~/notes --json
-org2 plugin doctor --dir ~/notes --json
-org2 plugin sync --dir ~/notes
-org2 plugin sync --dir ~/notes --apply
-org2 plugin update org2.chess-pgn --dir ~/notes
-org2 plugin update org2.chess-pgn --dir ~/notes --trust --apply
-org2 plugin trust org2.chess-pgn --revoke --dir ~/notes --apply
+celorga plugin list --dir ~/notes --json
+celorga plugin doctor --dir ~/notes --json
+celorga plugin sync --dir ~/notes
+celorga plugin sync --dir ~/notes --apply
+celorga plugin update org2.chess-pgn --dir ~/notes
+celorga plugin update org2.chess-pgn --dir ~/notes --trust --apply
+celorga plugin trust org2.chess-pgn --revoke --dir ~/notes --apply
 #+end_src
 
 All mutations preview unless =--apply= is present. =remove= deletes the corpus
@@ -138,27 +138,27 @@ to receive.
 
 V1 has five additive contribution kinds:
 
-- *Commands* run explicitly with =org2 plugin exec PLUGIN COMMAND -- ARG...=.
+- *Commands* run explicitly with =celorga plugin exec PLUGIN COMMAND -- ARG...=.
   The process receives one =org2:plugin-invocation:v1= JSON object on stdin and
   returns one =org2:plugin-result:v1= JSON object on stdout.
 - *Templates* are static package files copied into the corpus with
-  =org2 plugin template PLUGIN:TEMPLATE --out PATH=. Output must remain inside
+  =celorga plugin template PLUGIN:TEMPLATE --out PATH=. Output must remain inside
   the corpus and preview/apply rules still apply.
 - *Document renderers* claim one or more source-block languages. The shared CLI
   renderer gives the process the block body, arguments, source lines, and
   document path. It returns
   =org2:plugin-render-result:v1= JSON containing HTML plus optional CSS,
   JavaScript, title, and height. The result replaces that source block in
-  =org2 export html=, OpenOrg read mode, and OpenOrg source preview.
+  =celorga export html=, OpenOrg read mode, and OpenOrg source preview.
 - *Context-aware actions* declare =title=, the =contexts= they apply to
   (=note=, =heading=, =thread=, =run=, =approval=), an =entry=, and optional
   =capabilities= (=read-corpus=, =network=). OpenOrg lists them in the File
   menu for the current note or heading and in Activity row menus for threads,
-  runs, and approvals; scripts use =org2 plugin actions --context KIND= and
-  =org2 plugin action run PLUGIN:ACTION --context KIND ...=.
+  runs, and approvals; scripts use =celorga plugin actions --context KIND= and
+  =celorga plugin action run PLUGIN:ACTION --context KIND ...=.
 - *Lifecycle hooks* subscribe to activity events such as =run.blocked=,
   =run.completed=, =approval.requested=, and =thread.reply-received=.
-  =org2 plugin hooks dispatch --apply= (once, from a cursor, or with
+  =celorga plugin hooks dispatch --apply= (once, from a cursor, or with
   =--follow=) invokes them; the scheduler host in OpenOrg dispatches them
   automatically. Each event is delivered to a hook once.
 
@@ -175,14 +175,14 @@ exact-text =edit= (the text must occur once; =expectedSha256= pins the file),
 as pending =org2:plugin-proposal:v1= records in =.org2/plugin-proposals/=.
 
 #+begin_src sh
-org2 plugin actions --context heading --json
-org2 plugin action run example.helper:summarize --context heading --file notes/a.org --line 12
-org2 plugin proposals list --status pending
-org2 plugin proposals apply PROPOSAL_ID            # preview with unified diffs
-org2 plugin proposals apply PROPOSAL_ID --apply    # every change must still apply cleanly
-org2 plugin proposals dismiss PROPOSAL_ID --apply
-org2 plugin hooks dispatch --since 1h              # dry run
-org2 plugin hooks dispatch --apply
+celorga plugin actions --context heading --json
+celorga plugin action run example.helper:summarize --context heading --file notes/a.org --line 12
+celorga plugin proposals list --status pending
+celorga plugin proposals apply PROPOSAL_ID            # preview with unified diffs
+celorga plugin proposals apply PROPOSAL_ID --apply    # every change must still apply cleanly
+celorga plugin proposals dismiss PROPOSAL_ID --apply
+celorga plugin hooks dispatch --since 1h              # dry run
+celorga plugin hooks dispatch --apply
 #+end_src
 
 The npm package ships JSON Schemas for the manifest, lock, invocation, command
@@ -222,17 +222,17 @@ The repository includes [[https://github.com/aviaviavi/org2/tree/main/examples/p
 Portable identity lives under the =corpus= key in the root =org2.json=. It lets clones and local mounts refer to the same personal, shared, or project corpus without treating a machine-local path as identity.
 
 #+begin_src sh
-org2 corpus show --dir ~/notes --json
-org2 corpus validate --dir ~/notes
-org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared
-org2 corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared --apply
+celorga corpus show --dir ~/notes --json
+celorga corpus validate --dir ~/notes
+celorga corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared
+celorga corpus init --dir ~/team-notes --id team-notes --name "Team Notes" --kind shared --apply
 #+end_src
 
 =corpus init= previews by default, preserves unrelated =org2.json= settings, creates standard corpus zones when applied, and refuses to silently replace a different existing identity. See [[file:collaboration.org][Shared corpora and collaboration]].
 
 * Batched workspace agent state
 
-=org2 workspace agent-state --dir CORPUS --json= reads runs, workflows, goals, and agent profiles in one process. Its =org2:workspace-agent-state:v1= response has =runs=, =workflows=, =goals=, and =profiles= sections. Each contains the existing list envelope under =value=, or a section-local =error= string, plus =elapsedMilliseconds=. Clients must check each section for errors; a successful process exit does not mean every section succeeded.
+=celorga workspace agent-state --dir CORPUS --json= reads runs, workflows, goals, and agent profiles in one process. Its =org2:workspace-agent-state:v1= response has =runs=, =workflows=, =goals=, and =profiles= sections. Each contains the existing list envelope under =value=, or a section-local =error= string, plus =elapsedMilliseconds=. Clients must check each section for errors; a successful process exit does not mean every section succeeded.
 
 This is a read-only batch for one corpus, not an atomic transaction across files. It does not accept =--mount=. Existing individual list commands and their filters remain available.
 
@@ -241,8 +241,8 @@ This is a read-only batch for one corpus, not an atomic transaction across files
 Repeat =--mount= to combine agenda or search results from identified corpora:
 
 #+begin_src sh
-org2 workspace agenda --mount ~/notes --mount ~/team-notes --recursive --json
-org2 workspace search "quarterly plan" --mount ~/notes --mount ~/team-notes --recursive --json
+celorga workspace agenda --mount ~/notes --mount ~/team-notes --recursive --json
+celorga workspace search "quarterly plan" --mount ~/notes --mount ~/team-notes --recursive --json
 #+end_src
 
 These commands are read-only composition over the normal =agenda= and =search= engines. Results include a =corpus= object with stable ID, name, kind, and the local root needed for navigation. Invalid, unavailable, or duplicate-identity mounts appear in =issues=. The command never discovers a person's app mounts and never establishes a destination for capture or edits.
@@ -289,26 +289,26 @@ The root =org2.json= can declare portable, non-secret Slack, Notion, and email s
 The corpus declaration contains no credentials or machine paths. Each authorized machine creates its own binding outside the corpus under =ORG2_INDEX_HOME= (default =~/.org2/index=):
 
 #+begin_src sh
-org2 source list --dir ~/notes --json
-org2 source add team-slack --source-json '{"type":"slack","workspaceId":"T012345","syncArgs":["--source","bot","--latest-only"],"ingestion":{"since":"14d"}}' --dir ~/notes          # preview
-org2 source add team-slack --source-json '{"type":"slack","workspaceId":"T012345","syncArgs":["--source","bot","--latest-only"],"ingestion":{"since":"14d"}}' --dir ~/notes --apply
-org2 source add team-slack --update --source-json '{"workspaceId":null,"ingestion":{"since":"7d"}}' --dir ~/notes --apply
-org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
-org2 source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
-org2 source doctor --dir ~/notes --json
-org2 source status --dir ~/notes --json
-org2 source import team-slack --dir ~/notes --json
-org2 source sync team-slack --ingest --apply --dir ~/notes --json
-org2 source schedule team-slack --pause --apply --dir ~/notes --json
-org2 source schedule team-slack --kind interval --every-minutes 120 --timezone local --apply --dir ~/notes --json
-org2 source schedule team-slack --kind daily --time 08:30 --timezone America/Los_Angeles --apply --dir ~/notes --json
+celorga source list --dir ~/notes --json
+celorga source add team-slack --source-json '{"type":"slack","workspaceId":"T012345","syncArgs":["--source","bot","--latest-only"],"ingestion":{"since":"14d"}}' --dir ~/notes          # preview
+celorga source add team-slack --source-json '{"type":"slack","workspaceId":"T012345","syncArgs":["--source","bot","--latest-only"],"ingestion":{"since":"14d"}}' --dir ~/notes --apply
+celorga source add team-slack --update --source-json '{"workspaceId":null,"ingestion":{"since":"7d"}}' --dir ~/notes --apply
+celorga source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes
+celorga source bind team-slack --config ~/.slacrawl/team.toml --dir ~/notes --apply
+celorga source doctor --dir ~/notes --json
+celorga source status --dir ~/notes --json
+celorga source import team-slack --dir ~/notes --json
+celorga source sync team-slack --ingest --apply --dir ~/notes --json
+celorga source schedule team-slack --pause --apply --dir ~/notes --json
+celorga source schedule team-slack --kind interval --every-minutes 120 --timezone local --apply --dir ~/notes --json
+celorga source schedule team-slack --kind daily --time 08:30 --timezone America/Los_Angeles --apply --dir ~/notes --json
 #+end_src
 
 =source add PROFILE --source-json JSON= creates one =externalSources= entry of any supported type (=slack=, =notion=, or =email=) and previews until =--apply=. It accepts only the documented keys, validates schedules, corpus-relative zones, and email settings, and refuses credential-like keys (=token=, =password=, =secret=, =apiKey=, …) or token-shaped values, so a secret cannot be written into =org2.json= this way. =--update= merges into an existing profile instead: top-level and =ingestion= keys are replaced, =null= removes a key, and the type cannot change. =bind= previews by default and writes its local file with owner-only permissions when applied. Bindings may override the crawler binary, crawler config, and working directory. Archive database, cache, and Markdown storage locations remain explicit in the crawler's machine-local config. =status= reports crawler archive counts and freshness. =import= reads the local archive, applies profile scopes, =since=, and item limits, then previews raw JSON captures plus review-required Org2 packets. A Notion integration token is itself the API access boundary, so authenticated API records are accepted even when they lack a desktop workspace label; configured =scopes= still filter desktop-cache fallbacks. Externally supplied bodies are fixed-width quoted in the review packet so headings, TODOs, drawers, and other source syntax cannot become active Org semantics. Pass =--apply= to write the artifacts. =sync --ingest --apply= updates the crawler and stages them in one locked operation. Crawler subprocesses time out after 30 minutes by default so scheduled app work cannot remain wedged indefinitely; pass =--timeout SECONDS= to choose a different bounded deadline for =doctor=, =status=, =import=, or =sync=. Existing files are rewritten only when their deterministic contents changed, and apply removes obsolete packet pairs only when their raw envelope proves they were generated for that exact source profile. Promotion into canonical =notes/= remains a separate human review step.
 
 The optional =schedule= declaration is portable source intent. =kind: "interval"= requires a positive integer =everyMinutes=; =kind: "daily"= requires a 24-hour =time= in =HH:MM= form. =timezone= accepts =local= or an IANA timezone name. =source list --json= validates and returns the normalized schedule. =source schedule= previews by default and atomically updates only that profile's schedule when applied. =--pause= and =--resume= preserve its cadence; setting =--kind interval= or =--kind daily= changes the cadence and wall-clock configuration.
 
-The Mac app's *Sources* surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs one connector immediately with *Run Now*, pauses or resumes scheduled sync, edits interval or daily cadence and time zone, reveals the review zone, adds or reconfigures any supported source type from one form (*Add Source* → Slack, Notion, or Email; *Configure…* on an existing source) through =org2 source add=, and stores each type's credential (Slack bot token, Notion integration token, or email password) in macOS Keychain, passing it to the sync process as =SLACK_BOT_TOKEN=, =NOTION_TOKEN=, or =ORG2_EMAIL_PASSWORD=. *Set Up with AI* opens an AI chat that walks through the same setup as an optional alternative. A manual run refreshes only the connector that ran. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter =org2.json=, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.
+The Mac app's *Sources* surface calls this same CLI contract. It shows source health and archive counts, previews imports, runs one connector immediately with *Run Now*, pauses or resumes scheduled sync, edits interval or daily cadence and time zone, reveals the review zone, adds or reconfigures any supported source type from one form (*Add Source* → Slack, Notion, or Email; *Configure…* on an existing source) through =celorga source add=, and stores each type's credential (Slack bot token, Notion integration token, or email password) in macOS Keychain, passing it to the sync process as =SLACK_BOT_TOKEN=, =NOTION_TOKEN=, or =ORG2_EMAIL_PASSWORD=. *Set Up with AI* opens an AI chat that walks through the same setup as an optional alternative. A manual run refreshes only the connector that ran. While the app process is running it checks configured schedules once per minute. A newly enabled or edited schedule begins with its next future occurrence instead of immediately replaying old time slots; after that, a missed occurrence catches up after wake or on the next app launch. Failed automatic runs retain a visible error and retry after 15 minutes. Last-attempt and next-run bookkeeping is machine-local app state, not canonical corpus data. Credentials never enter =org2.json=, raw captures, or review packets. The app and other agents can therefore manage the same corpus profile without making app state canonical.
 
 ** Email sources
 
@@ -335,11 +335,11 @@ The Mac app's *Sources* surface calls this same CLI contract. It shows source he
 #+end_src
 
 #+begin_src sh
-org2 source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes          # preview
-org2 source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes --apply
-org2 source bind mail --password-command "security find-generic-password -s imap.example.com -a you@example.com -w" --dir ~/notes --apply
-ORG2_EMAIL_PASSWORD=... org2 source doctor mail --dir ~/notes --json
-org2 source sync mail --ingest --apply --dir ~/notes --json
+celorga source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes          # preview
+celorga source add-email mail --host imap.example.com --username you@example.com --mailbox INBOX --smtp-host smtp.example.com --dir ~/notes --apply
+celorga source bind mail --password-command "security find-generic-password -s imap.example.com -a you@example.com -w" --dir ~/notes --apply
+ORG2_EMAIL_PASSWORD=... celorga source doctor mail --dir ~/notes --json
+celorga source sync mail --ingest --apply --dir ~/notes --json
 #+end_src
 
 The password comes from =ORG2_EMAIL_PASSWORD= (or the variable named by =bind --password-env=), a machine-local =bind --password-command= that prints it, or OpenOrg's Keychain, which passes it to one sync process. It is never written to =org2.json=, bindings, raw captures, or packets. =security= is =tls= (default, port 993) or =starttls= (port 143); certificates are verified, and unencrypted =none= is accepted only for a loopback test server. Sync opens each mailbox read-only (=EXAMINE=) and fetches with =BODY.PEEK=, so it never marks mail as read or changes flags. The first sync covers =ingestion.since= (default 14 days); later syncs fetch only messages above a machine-local UIDVALIDITY/UID cursor, and a changed UIDVALIDITY restarts from the window. Messages are decoded (MIME encoded words, quoted-printable, base64, charsets; text/plain preferred over HTML converted to text), bounded to =maxMessageBytes= (default 512 KB) and 20,000 characters of text, and staged as raw JSON plus review-required packets grouped by mailbox and month. Email packets accumulate: new mail merges into the staged month instead of replacing earlier messages. =import= previews without advancing the cursor; =sync --apply= (with or without =--ingest=) fetches and stages in one locked operation. =doctor= logs in and reports each mailbox's message count; =status= reports the cursor per mailbox.
@@ -358,9 +358,9 @@ Conventions:
 Examples:
 
 #+begin_src sh
-org2 agenda --dir ~/notes --recursive --json
-org2 lint --dir ~/notes --recursive --format json
-org2 roam node new --dir ~/notes --title "Acme Corp" --apply --json
+celorga agenda --dir ~/notes --recursive --json
+celorga lint --dir ~/notes --recursive --format json
+celorga roam node new --dir ~/notes --title "Acme Corp" --apply --json
 #+end_src
 
 * Agenda
@@ -368,7 +368,7 @@ org2 roam node new --dir ~/notes --title "Acme Corp" --apply --json
 Purpose: query scheduled/deadline items across Org files.
 
 #+begin_src sh
-org2 agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31
+celorga agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31
 #+end_src
 
 Important behavior:
@@ -380,18 +380,18 @@ Important behavior:
 * TODO + planning edits
 
 #+begin_src sh
-org2 todo toggle --file notes.org --line 42 --apply
-org2 todo set --file notes.org --line 42 --status in_progress --apply
-org2 todo set --file notes.org --line 42 --keyword SKIPPED --apply
-org2 plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply
+celorga todo toggle --file notes.org --line 42 --apply
+celorga todo set --file notes.org --line 42 --status in_progress --apply
+celorga todo set --file notes.org --line 42 --keyword SKIPPED --apply
+celorga plan set --file notes.org --line 42 --kind scheduled --date 2026-03-25 --apply
 #+end_src
 
 Set corpus defaults through Settings → General → TODO States in OpenOrg, or with the guarded CLI:
 
 #+begin_src sh
-org2 todo-config show --dir ~/notes
-org2 todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]'
-org2 todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]' --apply
+celorga todo-config show --dir ~/notes
+celorga todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]'
+celorga todo-config set --dir ~/notes --sequences-json '["TODO WAITING | DONE SKIPPED"]' --apply
 #+end_src
 
 =todo-config= returns JSON. =set= previews by default, validates active and terminal states, and preserves unrelated configuration. Pass =--if-revision= with the revision from =show= or a preview to reject stale settings; use =--sequences-json '[]'= to restore built-in defaults. Settings are stored in =org2.json= as =todo.sequences=, an array of Org-style sequence strings. Multiple sequences are supported. Corpus configuration changes invalidate affected agenda and compiled-context caches without rewriting note files.
@@ -401,10 +401,10 @@ File-local declarations take precedence over corpus defaults. Declare custom sta
 Point daily navigation at your own dated files with =daily-config=:
 
 #+begin_src sh
-org2 daily-config infer --dir ~/notes --file journal/2026/09/2026-09-29-wind-down.md
-org2 daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md'
-org2 daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md' --apply
-org2 daily-config show --dir ~/notes --date 2026-10-01
+celorga daily-config infer --dir ~/notes --file journal/2026/09/2026-09-29-wind-down.md
+celorga daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md'
+celorga daily-config set --dir ~/notes --template 'journal/{YYYY}/{MM}/{YYYY}-{MM}-{DD}-wind-down.md' --apply
+celorga daily-config show --dir ~/notes --date 2026-10-01
 #+end_src
 
 =infer= ranks candidate formats from one example path (ambiguous day/month orders return both readings). Formats are corpus-relative paths using ={YYYY}=, ={YY}=, ={MM}=, ={M}=, ={DD}=, ={D}=, ={MMM}=, ={MMMM}=, ={ddd}=, and ={dddd}=, and must include a month and a day. =set= previews by default, accepts =--if-revision=, and stores the format as =roam.dailyFileTemplate=; =--clear= restores the =roam.dailiesDir/YYYY-MM-DD.org= convention. Invalid saved formats are ignored rather than writing outside the corpus.
@@ -412,13 +412,13 @@ org2 daily-config show --dir ~/notes --date 2026-10-01
 * Checkbox edits
 
 #+begin_src sh
-org2 checkbox --file notes.org --line 12
-org2 checkbox --file notes.org --line 12 --apply
-org2 checkbox set --file notes.org --line 12 --status checked --apply
-org2 checkbox cycle --file notes.org --line 12 --fix-cookies --apply
-org2 checkbox --file notes.org --line 12 --format json
-org2 checkbox fix-cookies --file notes.org
-org2 checkbox fix-cookies --file notes.org --apply
+celorga checkbox --file notes.org --line 12
+celorga checkbox --file notes.org --line 12 --apply
+celorga checkbox set --file notes.org --line 12 --status checked --apply
+celorga checkbox cycle --file notes.org --line 12 --fix-cookies --apply
+celorga checkbox --file notes.org --line 12 --format json
+celorga checkbox fix-cookies --file notes.org
+celorga checkbox fix-cookies --file notes.org --apply
 #+end_src
 
 The default action, =cycle=, advances =[ ]= → =[-]= → =[X]= → =[ ]=. =toggle= is an alias for that three-state cycle. =set --status= accepts =unchecked=, =indeterminate=, or =checked=. The one-based =--line= must point to the list item itself; prose, headings, source/example blocks, and drawers are not checkbox targets. An invalid target or option exits with an error and leaves the file unchanged.
@@ -434,9 +434,9 @@ The LSP offers *Org2: Cycle checkbox to …* as a =refactor.rewrite= code action
 * Capture / archive / refile
 
 #+begin_src sh
-org2 capture --file inbox.org --title "Quick note" --template note --apply
-org2 archive --file notes.org --pos 120:0 --apply
-org2 refile --file notes.org --pos 120:0 --to-file projects.org --to-pos 40:0 --apply
+celorga capture --file inbox.org --title "Quick note" --template note --apply
+celorga archive --file notes.org --pos 120:0 --apply
+celorga refile --file notes.org --pos 120:0 --to-file projects.org --to-pos 40:0 --apply
 #+end_src
 
 Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
@@ -446,23 +446,23 @@ Archiving moves the selected subtree to a companion archive file (by default =FI
 Deterministic formatting for Org and Org2 files. File-based formatting automatically rewrites accepted input conveniences such as fenced source blocks, =#+begin_org2= aliases, and backtick inline code to ordinary Org syntax when the target ends in =.org=. Mixed directory operations choose the profile independently for each file. Use =--canonical-org= for stdin, which has no filename, or to force the canonical profile for another target. OpenOrg, the LSP, and VS Code follow the same extension-aware rule. Syntax canonicalization remains independent of optional general format-on-save settings.
 
 #+begin_src sh
-org2 fmt --dir ~/notes --recursive --check
-org2 fmt --dir ~/notes --recursive --apply
-org2 fmt --file note.org --apply
-org2 fmt --stdin --canonical-org
+celorga fmt --dir ~/notes --recursive --check
+celorga fmt --dir ~/notes --recursive --apply
+celorga fmt --file note.org --apply
+celorga fmt --stdin --canonical-org
 #+end_src
 
 * Table formula evaluation
 
-=org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]= evaluates the selected table's safe =#+TBLFM:= formulas. It previews by default, selects the first formula line unless =--formula-index= is given, and performs an atomic revision-guarded write only with =--apply=. Invalid, remote, Emacs Lisp, and otherwise unsupported expressions return diagnostics without changing the file.
+=celorga table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]= evaluates the selected table's safe =#+TBLFM:= formulas. It previews by default, selects the first formula line unless =--formula-index= is given, and performs an atomic revision-guarded write only with =--apply=. Invalid, remote, Emacs Lisp, and otherwise unsupported expressions return diagnostics without changing the file.
 
 * Chart rendering
 
-=org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent =#+begin_src chart= block attached to an Org table. Fenced chart input remains accepted as typing sugar. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.
+=celorga render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent =#+begin_src chart= block attached to an Org table. Fenced chart input remains accepted as typing sugar. Editor clients share this backend, so each extension uses the same table parsing and chart semantics.
 
 #+begin_src sh
-org2 render-chart --file report.org --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
-org2 render-chart --file report.org --line 42 --format json
+celorga render-chart --file report.org --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+celorga render-chart --file report.org --line 42 --format json
 #+end_src
 
 The first renderer supports deterministic =bar=, =line=, and bucketed =histogram= charts with =x= and =y= column mappings. Canonical =.org= documents use source blocks:
@@ -502,7 +502,7 @@ Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when a chart
 
 * Saved property views
 
-=org2 property-view= provides the shared runtime for OpenOrg's saved property tables and cards. All responses are JSON. Definitions are portable =org2:property-view:v1= JSON files in =views/ID.org2-view.json=, with the filename matching the definition ID. Querying scans ordinary =.org= and =.org2= sources in the active corpus, respects configured ignore patterns, and does not follow symlinks or read hidden directories. It reuses compiled corpus nodes and their effective property inheritance; there is no SQL or separate canonical store.
+=celorga property-view= provides the shared runtime for OpenOrg's saved property tables and cards. All responses are JSON. Definitions are portable =org2:property-view:v1= JSON files in =views/ID.org2-view.json=, with the filename matching the definition ID. Querying scans ordinary =.org= and =.org2= sources in the active corpus, respects configured ignore patterns, and does not follow symlinks or read hidden directories. It reuses compiled corpus nodes and their effective property inheritance; there is no SQL or separate canonical store.
 
 #+begin_src json
 {
@@ -523,13 +523,13 @@ Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when a chart
 =scope.kind= is =file=, =heading= or =all=; optional =filePrefix= is a case-sensitive corpus-relative path prefix and limits file discovery before compilation. =columns= supports 1–24 fields. Lowercase built-in fields =title/document/file/kind/todo/tags/id= are read-only; =document= is the containing Org document title, while other field names normalize to uppercase property keys. =match= combines zero to 30 filters with =all= or =any=; zero filters select every scoped row. Operators =is/isNot/contains= compare case-insensitive strings, =exists/missing= test nonempty/empty values, =matches= tests a case-insensitive JavaScript regular expression, =gt/lt= compare finite numeric values, =on/before/after= compare the first =YYYY-MM-DD= found in the field (plain dates, Org timestamps, ISO date-times, or dated file names) with a =YYYY-MM-DD= value, and =active/terminal= use the compiled TODO workflow for the =todo= field. Missing values never satisfy numeric or date comparisons; invalid regular expressions and non-date values for date operators are rejected when the definition is parsed. Filter values may contain date variables, resolved in local time each time the view runs and stored verbatim in the definition: ={today}=, ={yesterday}= and ={tomorrow}= yield =YYYY-MM-DD=; =±N= followed by =d=, =w=, =m= or =y= offsets them, as in ={today-7d}= or ={today+1m}=; ={month}= yields =YYYY-MM= and ={year}= yields =YYYY=. Other brace text stays literal. For example, =[{"field":"file","operator":"on","value":"{today}"},{"field":"CREATED","operator":"on","value":"{today}"}]= with =match: any= lists files from today without hard-coding a date. =sort= supports up to eight fields with =asc/desc=; two numeric values sort numerically, otherwise case-insensitive lexical order applies, with source keys as stable tie-breakers. Optional =groupBy= emits a group value per row; clients preserve sorted order within each group. =limit= is 1–5,000; =total= and =truncated= report omitted rows.
 
 #+begin_src sh
-org2 property-view list --dir CORPUS
-org2 property-view suggest --prompt 'Show unfinished project tasks grouped by project' --dir ~/notes
-org2 property-view query --dir CORPUS --view open-work
-org2 property-view query --dir CORPUS --definition '{"schema":"org2:property-view:v1","id":"all-notes","title":"All notes","layout":"table","scope":{"kind":"file"},"columns":["title","ASSIGNEE"],"match":"all","filters":[],"sort":[],"limit":500}'
-org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION'
-org2 property-view save --dir CORPUS --definition 'JSON_DEFINITION' --apply
-org2 property-view edit --dir CORPUS --file notes/work.org --kind heading --line 12 --property STATUS --value review --if-revision 'sha256:SOURCE_REVISION'
+celorga property-view list --dir CORPUS
+celorga property-view suggest --prompt 'Show unfinished project tasks grouped by project' --dir ~/notes
+celorga property-view query --dir CORPUS --view open-work
+celorga property-view query --dir CORPUS --definition '{"schema":"org2:property-view:v1","id":"all-notes","title":"All notes","layout":"table","scope":{"kind":"file"},"columns":["title","ASSIGNEE"],"match":"all","filters":[],"sort":[],"limit":500}'
+celorga property-view save --dir CORPUS --definition 'JSON_DEFINITION'
+celorga property-view save --dir CORPUS --definition 'JSON_DEFINITION' --apply
+celorga property-view edit --dir CORPUS --file notes/work.org --kind heading --line 12 --property STATUS --value review --if-revision 'sha256:SOURCE_REVISION'
 #+end_src
 
 For updates to an existing definition, both preview and apply require its =--if-revision= from =list= or the previous save. New saves require the destination to be absent. Each query row includes =file=, =kind=, =line=, source =revision=, local =properties=, =inheritedProperties=, requested =values=, and =editable=. Pass the exact row identity and revision to =edit=, inspect its old/proposed values and content, then repeat with =--apply=. Atomic writes check the same revision before replacement. A stale row must be queried again; never guess a line after the source changes.
@@ -538,7 +538,7 @@ Editing uses canonical parsed source ranges, retains unrelated lines and CRLF li
 
 * Data queries
 
-=org2 query-data= is the DuckDB-backed bridge for local and remote datasets described in Org notes. It scans =#+begin_src dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths/URLs, named Org tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from =#+begin_src sql view=NAME= blocks, then runs a =#+begin_src sql results=NAME= block and materializes the returned rows. Equivalent fences remain accepted as typing sugar.
+=celorga query-data= is the DuckDB-backed bridge for local and remote datasets described in Org notes. It scans =#+begin_src dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths/URLs, named Org tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from =#+begin_src sql view=NAME= blocks, then runs a =#+begin_src sql results=NAME= block and materializes the returned rows. Equivalent fences remain accepted as typing sugar.
 
 #+begin_example
 #+begin_src dataset fetches
@@ -589,7 +589,7 @@ GROUP BY state
 #+end_src
 #+end_example
 
-Named org2 tables can also become local DuckDB views without an intermediate CSV export:
+Named celorga tables can also become local DuckDB views without an intermediate CSV export:
 
 #+begin_example
 #+name: raw_fetches
@@ -611,13 +611,13 @@ FROM fetches
 #+end_example
 
 #+begin_src sh
-org2 query-data --file report.org --results fetches_by_state
-org2 query-data --file report.org --line 42 --format json
-org2 query-data --file report.org --inspect --include-script
-org2 query-data --file report.org --results fetches_by_state --out views/fetches_by_state.org
-org2 query-data --file report.org --results fetches_by_state --apply
-org2 query-data --file report.org --all-results --apply --format json
-cat report.org | org2 query-data --stdin --results fetches_by_state
+celorga query-data --file report.org --results fetches_by_state
+celorga query-data --file report.org --line 42 --format json
+celorga query-data --file report.org --inspect --include-script
+celorga query-data --file report.org --results fetches_by_state --out views/fetches_by_state.org
+celorga query-data --file report.org --results fetches_by_state --apply
+celorga query-data --file report.org --all-results --apply --format json
+cat report.org | celorga query-data --stdin --results fetches_by_state
 #+end_src
 
 The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. =--apply= inserts that generated block after the selected SQL block or replaces the existing =#+query-data: result=...= block in place. =--all-results --apply= runs every named SQL result first, applies the complete set in memory, advances existing =#+updated:= and =ORG2_OBSERVED_AT= file metadata from the latest successful result timestamp, and writes the source file once only after all results succeed; any query failure leaves the file unchanged. Materialized tables include a compact provenance line with the result id, row count, explicit source dependencies, optional artifact/freshness, query and script hashes, and =ran_at= timestamp. Add =artifact=PATH= to record an intended materialized output and =freshness=24h=, =ttl=24h=, or =max-age=24h= when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; =--include-script= includes DuckDB setup SQL. Use =--inspect= to parse without running DuckDB. Org2 uses its bundled DuckDB engine by default; =--duckdb PATH= is an explicit CLI-engine override. ClickHouse and Metabase datasets resolve named =dataSources= profiles from the nearest =org2.json=; secrets are read only from profile-named environment variables or the Mac app's Keychain workflow. Metabase datasets may target saved questions or include reproducible native SQL with a configured database ID. Remote refresh is explicit: HTML export and merely opening a note in the Mac rendered view never execute warehouse queries. See [[file:language-reference.org][the language reference]] for profile and dataset examples.
@@ -627,28 +627,28 @@ The default output is a named org table with =#+name: fetches_by_state= so it ca
 Agents should begin by querying the installed version rather than relying on remembered documentation:
 
 #+begin_src sh
-org2 agent capabilities
-org2 agent --help
+celorga agent capabilities
+celorga agent --help
 #+end_src
 
-The capability command emits =org2:capabilities:v1= JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining =agent= subcommands return bounded =org2:agent-context:v1= JSON with citations and source ranges. =org2 context= is the human/prompt-friendly shorthand, =org2 brief= renders a cited synthesis, and =org2 compile corpus= emits a complete schema-versioned corpus artifact.
+The capability command emits =org2:capabilities:v1= JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining =agent= subcommands return bounded =org2:agent-context:v1= JSON with citations and source ranges. =celorga context= is the human/prompt-friendly shorthand, =celorga brief= renders a cited synthesis, and =celorga compile corpus= emits a complete schema-versioned corpus artifact.
 
 See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
 
 * Explainable activity, events, and waits
 
-=org2 activity= explains agent work from structured records only: host presence files under =.org2/openclaw-chat.store/live/=, committed chat transcript metadata and message provenance, the AI chat inbox, durable run event logs, workflow trigger attempts, and workflow dispatch locks. It never scrapes terminal output.
+=celorga activity= explains agent work from structured records only: host presence files under =.org2/openclaw-chat.store/live/=, committed chat transcript metadata and message provenance, the AI chat inbox, durable run event logs, workflow trigger attempts, and workflow dispatch locks. It never scrapes terminal output.
 
 #+begin_src sh
-org2 activity explain --dir ~/notes                 # everything working or waiting on you
-org2 activity explain --run RUN_ID --dir ~/notes --json
-org2 activity explain --thread THREAD_ID --dir ~/notes --json
-org2 activity explain --workflow WORKFLOW_ID --dir ~/notes
-org2 activity hosts --dir ~/notes --json
-org2 activity events --since 2h --type run.*,approval.* --dir ~/notes --json
-org2 activity events --follow --json --dir ~/notes  # NDJSON stream until interrupted
-org2 thread wait THREAD_ID --until reply --timeout 600 --dir ~/notes --json
-org2 run wait RUN_ID --until approval|blocked|completed --timeout 3600 --dir ~/notes
+celorga activity explain --dir ~/notes                 # everything working or waiting on you
+celorga activity explain --run RUN_ID --dir ~/notes --json
+celorga activity explain --thread THREAD_ID --dir ~/notes --json
+celorga activity explain --workflow WORKFLOW_ID --dir ~/notes
+celorga activity hosts --dir ~/notes --json
+celorga activity events --since 2h --type run.*,approval.* --dir ~/notes --json
+celorga activity events --follow --json --dir ~/notes  # NDJSON stream until interrupted
+celorga thread wait THREAD_ID --until reply --timeout 600 --dir ~/notes --json
+celorga run wait RUN_ID --until approval|blocked|completed --timeout 3600 --dir ~/notes
 #+end_src
 
 Each =org2:activity-explanation:v1= item names its =state= (=working=, =queued=, =needs-you=, =your-turn=, =failed=, =scheduled=, =due=, =paused=, =idle=, =settled=, or =done=), a stable =reason.code= with a one-sentence summary, =reportedBy= (host, host kind and connection state, runtime, destination, model, last actor), =lastSignal= (heartbeat, transition, message, or trigger attempt with its age), =confidence= (=live= while the reporting host's presence is fresh, =cached= for committed records, =uncertain= when presence is stale or a delivery is unresolved) with a reason, and =blocking= entries for the exact approval (run, approval ID, action, risk class, fingerprint, and the decision command), clarification question, delivery failure, artifact review, or unread reply. Explanations never decide approvals.
@@ -661,29 +661,29 @@ Waits evaluate their condition against durable state before watching, so a trans
 
 * Chat thread automation
 
-=org2 thread= reads the corpus-owned AI chat transcript from its authoritative sharded store, with compatibility for a legacy =.org2/openclaw-chat.json= transcript. Reads also project pending operation-journal entries, so active and settled threads retain the same stable ID, messages, session key, context, and timestamps while queued changes remain visible. Settlement is a reversible work-state transition, not deletion.
+=celorga thread= reads the corpus-owned AI chat transcript from its authoritative sharded store, with compatibility for a legacy =.org2/openclaw-chat.json= transcript. Reads also project pending operation-journal entries, so active and settled threads retain the same stable ID, messages, session key, context, and timestamps while queued changes remain visible. Settlement is a reversible work-state transition, not deletion.
 
 #+begin_src sh
-org2 thread list --dir ~/notes --state all --json
-org2 thread show THREAD_ID --dir ~/notes --json
-org2 thread post THREAD_ID --message "The export is ready" \
+celorga thread list --dir ~/notes --state all --json
+celorga thread show THREAD_ID --dir ~/notes --json
+celorga thread post THREAD_ID --message "The export is ready" \
   --author "Research Agent" --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes
-org2 thread post THREAD_ID --message "The export is ready" \
+celorga thread post THREAD_ID --message "The export is ready" \
   --author "Research Agent" --agent-ref AGENT_REF \
   --source run:RUN_ID --idempotency-key RUN_ID:complete --dir ~/notes --apply
-org2 thread post ROOM_ID --message "The export is ready for review" \
+celorga thread post ROOM_ID --message "The export is ready for review" \
   --author "Research Agent" --request-turn @codex \
   --idempotency-key RUN_ID:review --dir ~/notes --apply
-org2 thread configure ROOM_ID --agent-turn-limit 6 --dir ~/notes --apply
-org2 thread configure ROOM_ID --agent-turn-limit default --dir ~/notes --apply
-org2 thread settle THREAD_ID --dir ~/notes          # preview
-org2 thread settle THREAD_ID --dir ~/notes --apply
-org2 thread reopen THREAD_ID --dir ~/notes --apply
-org2 thread configure --auto-settle 604800 --dir ~/notes --apply
-org2 thread configure --auto-settle never --dir ~/notes --apply
-org2 thread auto-settle --dir ~/notes                # preview eligible IDs
-org2 thread auto-settle --dir ~/notes --apply
+celorga thread configure ROOM_ID --agent-turn-limit 6 --dir ~/notes --apply
+celorga thread configure ROOM_ID --agent-turn-limit default --dir ~/notes --apply
+celorga thread settle THREAD_ID --dir ~/notes          # preview
+celorga thread settle THREAD_ID --dir ~/notes --apply
+celorga thread reopen THREAD_ID --dir ~/notes --apply
+celorga thread configure --auto-settle 604800 --dir ~/notes --apply
+celorga thread configure --auto-settle never --dir ~/notes --apply
+celorga thread auto-settle --dir ~/notes                # preview eligible IDs
+celorga thread auto-settle --dir ~/notes --apply
 #+end_src
 
 =thread post= is a no-turn background delivery surface for agents and automations. Preview is the default; =--apply= atomically queues an =org2:ai-chat-inbox-message:v1= envelope under =.org2/ai-chat-inbox/=. MCP clients can perform the same delivery with =org2_thread_post=. The running Mac app watches that append-only inbox, merges the attributed assistant message on its main actor, reopens a settled destination, marks the post unread when the thread is not visible, runs the normal sound/push notification path, persists the transcript, and only then removes the envelope. If the app is offline, it drains queued envelopes when that corpus is opened. =--idempotency-key= is scoped to the destination thread and prevents retries from duplicating a delivered post. =--agent-ref= preserves the portable agent identity; =--author= supplies its readable chat label; =--source= can retain a run or provider reference. Without =--request-turn=, the post does not invoke, steer, or enqueue any AI runtime.
@@ -694,7 +694,7 @@ Agents in a shared room can also start each other's turns: when an agent's reply
 
 =thread settle/reopen=, =thread configure --auto-settle never|SECONDS=, =thread configure ROOM_ID --agent-turn-limit N|default=, and =thread auto-settle= are also preview-first. With =--apply= they atomically queue =org2:ai-chat-operation:v1= envelopes under =.org2/ai-chat-inbox/operations/= instead of directly rewriting the transcript. OpenOrg drains these operations in deterministic order while running or when the corpus opens, commits each resulting transcript and settlement-settings generation durably, and only then removes that operation file. An invalid entry or failed durability barrier remains in the journal for inspection and retry.
 
-The selected Mac chat is identified in Codex, Claude Code, Pi, OpenCode, and OpenClaw workspace prompts by =ORG2_AI_CHAT_THREAD_ID=. Pass that marker into a subagent, cron task, or other background worker only when it is explicitly expected to report after its parent turn ends; also pass the active corpus root, readable author, source/run reference, and a stable idempotency key. Embedded Codex advertises =org2_thread_post= as a native dynamic tool, while =org2 mcp serve= exposes the same tool through MCP =tools/list=. The OpenClaw lifecycle plugin adds the conditional CLI guidance to workflow and continuation prompts. It deliberately does not mirror every foreground completion because the ordinary assistant reply already reaches the thread.
+The selected Mac chat is identified in Codex, Claude Code, Pi, OpenCode, and OpenClaw workspace prompts by =ORG2_AI_CHAT_THREAD_ID=. Pass that marker into a subagent, cron task, or other background worker only when it is explicitly expected to report after its parent turn ends; also pass the active corpus root, readable author, source/run reference, and a stable idempotency key. Embedded Codex advertises =org2_thread_post= as a native dynamic tool, while =celorga mcp serve= exposes the same tool through MCP =tools/list=. The OpenClaw lifecycle plugin adds the conditional CLI guidance to workflow and continuation prompts. It deliberately does not mirror every foreground completion because the ordinary assistant reply already reaches the thread.
 
 The transcript schema keeps the legacy =isArchived= field for older clients and adds =settledAt= plus =settlementSettings.autoSettleAfterSeconds=. Existing archived threads therefore load as settled, while older unclassified threads remain active. Auto-settlement excludes the selected thread, pinned or unread threads, pending turns, and a latest message that is still sending, failed, or interrupted. Empty threads and threads with a historical failure followed by a successful delivery remain eligible once inactive.
 
@@ -704,63 +704,63 @@ On macOS, =thread repair= uses OpenOrg's native transcript reconciler without st
 
 #+begin_src sh
 npm run build:server
-org2 thread repair --dir ~/notes --json
-org2 thread repair --dir ~/notes --if-revision PREVIEW_REVISION --apply --json
-org2 thread repair --dir ~/notes --watch --interval 900 --apply
-org2 server chat-repair --interval 900 --apply
-org2 server chat-repair --interval off --apply
+celorga thread repair --dir ~/notes --json
+celorga thread repair --dir ~/notes --if-revision PREVIEW_REVISION --apply --json
+celorga thread repair --dir ~/notes --watch --interval 900 --apply
+celorga server chat-repair --interval 900 --apply
+celorga server chat-repair --interval off --apply
 #+end_src
 
 The native worker defaults to the checkout's built =OpenOrgServer=; =--executable PATH= selects another built worker. A watch interval accepts 10–86400 seconds, defaults to 120, and runs one check at a time. The desktop offers *Settings → AI Chat → Conversations → Check synced chat history* with Off, 2 minutes, 5 minutes, 15 minutes, and 1 hour. The headless server stores =chatRepairIntervalSeconds= in its machine-local configuration; restart it after a configuration change. Existing server configurations default to 120 seconds. Checks inspect only chat storage, use a small fingerprint to skip unchanged stores, and retry incomplete syncs on a later interval. Ordinary note conflicts and intentional message deletions are outside this recovery operation.
 
 * Durable agent runs and review
 
-Goals and named workers are portable corpus records, distinct from the runtime that executes them. =org2 goal create/update/list/show= manages =org2:goal:v1= files under =goals/=. =org2 agent-profile create/update/list/show= manages =org2:agent-profile:v1= files under =agent-profiles/=. Both create and update preview by default and require =--apply= to write.
+Goals and named workers are portable corpus records, distinct from the runtime that executes them. =celorga goal create/update/list/show= manages =org2:goal:v1= files under =goals/=. =celorga agent-profile create/update/list/show= manages =org2:agent-profile:v1= files under =agent-profiles/=. Both create and update preview by default and require =--apply= to write.
 
 The Mac workspace projects these records into *Agent Work → Goals* and *Agent Work → Agents*. The catalogs show status, ownership or primary-goal relationships, default runtimes, runtime bindings, measures, and linked-run counts while the detail pane renders the canonical file. Relationship controls navigate between goals, profiles, and filtered runs. Lifecycle and default-runtime changes use the same =goal update= and =agent-profile update= commands instead of app-private state.
 
 An agent profile may declare responsibilities, capabilities, skills, reporting and goal relationships, an optional =defaultRuntime= of =openclaw=, =codex=, or =claude=, and repeatable non-secret runtime bindings such as =openclaw:customer-support= or =codex:default=. The default runtime is a user-visible starting preference, not a binding or a fixed destination; chat users can override it before the conversation starts. Credentials, session IDs, destination configuration, provider/model choice, and machine paths do not belong in the profile. Resolve the active runtime identity before delegation:
 
 #+begin_src sh
-org2 agent-profile resolve --runtime openclaw \
+celorga agent-profile resolve --runtime openclaw \
   --runtime-agent-id customer-support --dir ~/notes --json
-org2 run create --title "Resolve the customer issue" --goal "Investigate and resolve the customer issue" \
+celorga run create --title "Resolve the customer issue" --goal "Investigate and resolve the customer issue" \
   --agent-ref customer-support --goal-ref customer-trust --dir ~/notes
-org2 todo assign --file notes/support.org --line 12 --assignee "Customer Support" \
+celorga todo assign --file notes/support.org --line 12 --assignee "Customer Support" \
   --agent-ref customer-support --goal-ref customer-trust --apply
 #+end_src
 
 The resolved =agentRef= is the portable worker ID; OpenClaw, Codex, Claude Code, Pi, and OpenCode are runtimes, not profile IDs. A profile's =primaryGoalRef= is returned as the default =goalRef=. Existing selected-work refs take precedence over a runtime default. =AGENT_REF= and =GOAL_REF= flow through agent context, durable runs, and authored workflows; =ASSIGNEE= remains the readable display label. Resolution fails on ambiguous active bindings or a missing primary goal and returns =found: false= for an unbound runtime identity, allowing clients to omit refs rather than guess.
 
-=org2 run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
+=celorga run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
 
 #+begin_src sh
-org2 run create --title "Prepare the weekly operating review" \
+celorga run create --title "Prepare the weekly operating review" \
   --goal "Prepare the review with cited claims and a validated PDF export" \
   --accept "Claims retain citations" --accept "PDF passes export validation" \
   --risk local-draft --owner avi --assignee analyst \
   --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
   --step agent:"Draft cited review" --step validation:"Validate citations and export" \
   --context notes/operations.org --capability agent-context --dir ~/notes
-org2 run list --dir ~/notes --json
-org2 run show RUN_ID --dir ~/notes --json
-org2 run start RUN_ID --dir ~/notes
-org2 run step RUN_ID step-1 --status completed --dir ~/notes
-org2 run validation RUN_ID --name citations --status passed --dir ~/notes
-org2 run runtime RUN_ID --provider openai --model gpt-5 \
+celorga run list --dir ~/notes --json
+celorga run show RUN_ID --dir ~/notes --json
+celorga run start RUN_ID --dir ~/notes
+celorga run step RUN_ID step-1 --status completed --dir ~/notes
+celorga run validation RUN_ID --name citations --status passed --dir ~/notes
+celorga run runtime RUN_ID --provider openai --model gpt-5 \
   --tokens-used 18420 --elapsed-seconds 93.4 --dir ~/notes
-org2 run approval-request RUN_ID --title "Release report" \
+celorga run approval-request RUN_ID --title "Release report" \
   --action "publish operating review" --risk external-action --role owner --dir ~/notes
-org2 run approval-decide RUN_ID APPROVAL_ID --decision approved \
+celorga run approval-decide RUN_ID APPROVAL_ID --decision approved \
   --actor avi --role owner --fingerprint sha256:... \
   --receipt approval:local:123 --dir ~/notes
-org2 run approval-resolve \
+celorga run approval-resolve \
   --decision-key artifact:gmail:gog:DRAFT_ID --dir ~/notes --json
-org2 run approval-reconcile --dir ~/notes --json       # preview
-org2 run approval-reconcile --dir ~/notes --apply      # repair historical duplicates
-org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed \
+celorga run approval-reconcile --dir ~/notes --json       # preview
+celorga run approval-reconcile --dir ~/notes --apply      # repair historical duplicates
+celorga run artifact-review RUN_ID ARTIFACT_ID --status reviewed \
   --actor avi --dir ~/notes
-org2 run complete RUN_ID \
+celorga run complete RUN_ID \
   --summary "Prepared the cited operating review and validated its PDF export." \
   --highlight "All claims retain citations" --next-action "Share after owner review" --dir ~/notes
 #+end_src
@@ -773,15 +773,15 @@ Pending approvals own their waiting boundary. =run block= refuses to replace =wa
 
 An approval belongs to one canonical durable run and has an ID unique within that run. Its native =sha256:= fingerprint covers the immutable request material (title, action, risk, reviewer constraints, and request note); every client decides that exact identity, and =approval-decide --fingerprint= rejects stale or altered material. Provider-backed requests must preserve an exact =Provider draft: PROVIDER:TOOL:DRAFT_ID= line. The CLI treats that value as a decision key: a repeated request for matching material reuses the existing pending approval, replacement material supersedes the prior pending version, and a stale version cannot be decided after a newer request exists. =run approval-resolve --decision-key KEY= returns the canonical approval even after it has left the pending queue, so an execution guard can verify the durable decision without trusting private adapter metadata. Historical duplicate projections are retained as canceled audit records rather than being falsely marked approved. A decision explanation is stored separately as =decisionNote= instead of rewriting the request. A =revised= decision requires =--note "Requested changes"=, because a status without direction cannot produce a meaningful replacement. A run may have several pending approvals; it remains =waiting-approval= while approvals in the current boundary are still pending. Approving, rejecting, or canceling one item removes only that exact =RUN_ID/APPROVAL_ID= pair from the queue and leaves unrelated siblings actionable. Agent Work's approval-level *Mark Done Elsewhere* action records the exact item as =canceled= with an external receipt; it does not complete the containing run. Once the current boundary is fully decided, the run returns to =running= and the worker may perform only approved actions; rejected or canceled actions remain durable exclusions. A revision request remains distinct: once the boundary is resolved it moves the run to =blocked=, and the Mac workspace turns an eligible revision-only blocked workflow back over to its correlated OpenClaw session with the durable decision note. The agent must create new review material and a replacement approval on the same run without performing the protected action. Requesting that replacement approval opens a new boundary, so its later approval resumes the run without rewriting the older revision request in history. An approval decision does not clear a separate clarification or operational block. An approval may name both a required role and a specific reviewer. =approval-decide= refuses a mismatched =--role= or =--actor=, and the decision event preserves the asserted role plus any release receipt. This is a durable workflow boundary; operating-system or organizational identity enforcement can sit above it.
 
-=org2 approvals= returns the unified =org2:approvals:v2= decision queue. Its =kind= field distinguishes durable =run= approvals from standalone =headline= approvals; run items include =runId=, =approvalId=, =fingerprint=, =decisionKeys=, the run goal/status, and pending/total approval counts. OpenClaw and other producers use those keys to discover an existing provider boundary instead of inventing another authority. Deciding a run item must use =run approval-decide= so the queue and Agent Work's *Runs* tab are two projections of the same canonical =.org2/runs/*.org2= record. Standalone heading approvals remain ordinary corpus TODOs and keep their file/line/ID identity. A legacy heading nested under a Gmail provider-draft task and repeated durable approvals for that same draft collapse to the newest durable decision. Recording that decision automatically supersedes older pending copies and closes dedicated duplicate review runs; stale material remains inspectable in history but cannot return to either actionable surface. Run discovery keeps a disposable machine-local fingerprint index, so repeat queue loads reopen only changed run records. JSON clients can repeat =--run-detail ID= to receive selected full run records in the same response instead of starting separate =run show= processes. =org2 review list= returns the broader =org2:review-queue:v1= inspection feed, which also includes review-required artifacts, blocked clarification requests, and warning/failed validation.
+=celorga approvals= returns the unified =org2:approvals:v2= decision queue. Its =kind= field distinguishes durable =run= approvals from standalone =headline= approvals; run items include =runId=, =approvalId=, =fingerprint=, =decisionKeys=, the run goal/status, and pending/total approval counts. OpenClaw and other producers use those keys to discover an existing provider boundary instead of inventing another authority. Deciding a run item must use =run approval-decide= so the queue and Agent Work's *Runs* tab are two projections of the same canonical =.org2/runs/*.org2= record. Standalone heading approvals remain ordinary corpus TODOs and keep their file/line/ID identity. A legacy heading nested under a Gmail provider-draft task and repeated durable approvals for that same draft collapse to the newest durable decision. Recording that decision automatically supersedes older pending copies and closes dedicated duplicate review runs; stale material remains inspectable in history but cannot return to either actionable surface. Run discovery keeps a disposable machine-local fingerprint index, so repeat queue loads reopen only changed run records. JSON clients can repeat =--run-detail ID= to receive selected full run records in the same response instead of starting separate =run show= processes. =celorga review list= returns the broader =org2:review-queue:v1= inspection feed, which also includes review-required artifacts, blocked clarification requests, and warning/failed validation.
 
-A heading carrying =ORG2_RUN_ID= plus an exact approval ID, a unique matching approval title, or an otherwise unambiguous single pending decision is a derived run projection. The unified queue omits it as a second writable decision and keeps the run approval canonical. =org2 doctor= reports a pending writable duplicate as an error.
+A heading carrying =ORG2_RUN_ID= plus an exact approval ID, a unique matching approval title, or an otherwise unambiguous single pending decision is a derived run projection. The unified queue omits it as a second writable decision and keeps the run approval canonical. =celorga doctor= reports a pending writable duplicate as an error.
 
-Before an agent acts on a large or long-lived workspace, =org2 doctor= performs a read-only consistency pass over run records, workflow definitions, approval identities, recurring attempt metadata, and linked corpus headings:
+Before an agent acts on a large or long-lived workspace, =celorga doctor= performs a read-only consistency pass over run records, workflow definitions, approval identities, recurring attempt metadata, and linked corpus headings:
 
 #+begin_src sh
-org2 doctor --dir ~/notes
-org2 doctor --dir ~/notes --json
+celorga doctor --dir ~/notes
+celorga doctor --dir ~/notes --json
 #+end_src
 
 The versioned =org2:agentic-doctor:v1= JSON report distinguishes errors, warnings, and informational migration findings. It detects terminal runs with pending decisions, waiting runs without a decision, duplicate provider keys, conflicting workflow attempt identities, ungrouped OpenClaw cron series, broken run/approval links, direct readable-header drift, and likely duplicate open projections. Hard contradictions produce a nonzero exit status. The command never repairs or normalizes files: review the cited evidence, then use the canonical lifecycle command or an explicit source edit to settle the underlying state.
@@ -789,44 +789,44 @@ The versioned =org2:agentic-doctor:v1= JSON report distinguishes errors, warning
 Every CLI and MCP run mutation uses a short local write lock, an atomic durable rename, and the SHA-256 revision read with the run. Workflow updates use the same guarded file primitive while retaining their documented visible-field authoring behavior. If another client or text editor changes a file first, the mutation fails rather than overwriting it. New run and workflow IDs also require the target to be absent. Long-lived clients can make the run boundary explicit:
 
 #+begin_src sh
-org2 run show RUN_ID --with-revision --dir ~/notes --json
-org2 run comment RUN_ID --author agent --body "Checked current state" \
+celorga run show RUN_ID --with-revision --dir ~/notes --json
+celorga run comment RUN_ID --author agent --body "Checked current state" \
   --if-revision sha256:... --dir ~/notes
 #+end_src
 
-The snapshot envelope is =org2:run-snapshot:v1= and includes =revision=, =sourceIssues=, and the parsed =run=. A lifecycle write also refuses readable run headers that disagree with the machine state, directing the caller to =org2 doctor= instead of normalizing an ambiguous direct edit. An abandoned =.org2.lock= is reported by the doctor; confirm that no writer remains before removing it.
+The snapshot envelope is =org2:run-snapshot:v1= and includes =revision=, =sourceIssues=, and the parsed =run=. A lifecycle write also refuses readable run headers that disagree with the machine state, directing the caller to =celorga doctor= instead of normalizing an ambiguous direct edit. An abandoned =.org2.lock= is reported by the doctor; confirm that no writer remains before removing it.
 
 * Work ledgers for recurring account workflows
 
-=org2 ledger= keeps high-volume recurring bookkeeping out of a monolithic agent prompt or TODO file. One stable account becomes one canonical Org2 file under =notes/LEDGER/accounts/ACCOUNT_ID.org2=.
+=celorga ledger= keeps high-volume recurring bookkeeping out of a monolithic agent prompt or TODO file. One stable account becomes one canonical Org2 file under =notes/LEDGER/accounts/ACCOUNT_ID.org2=.
 
 #+begin_src sh
-org2 ledger create account-outreach acme \
+celorga ledger create account-outreach acme \
   --title "Acme Corp" --identity domain:acme.example \
   --alias Acme --field segment=enterprise \
   --context "Reviewed commercial context." --apply --dir ~/notes
 
-org2 ledger event account-outreach acme \
+celorga ledger event account-outreach acme \
   --type approval-linked --key approval:acme:gmail-draft \
   --run RUN_ID --approval APPROVAL_ID \
   --decision-key gmail:gog:DRAFT_ID --apply --dir ~/notes
 
-org2 ledger event account-outreach acme \
+celorga ledger event account-outreach acme \
   --type outreach-sent --key send:acme:gmail-message \
   --run RUN_ID --approval APPROVAL_ID \
   --external-id gmail:message:MESSAGE_ID --apply --dir ~/notes
 
-org2 ledger list account-outreach --eligible \
+celorga ledger list account-outreach --eligible \
   --as-of 2026-07-31T12:00:00Z --cooldown-days 90 --dir ~/notes --json
 
-org2 ledger resolve account-outreach \
+celorga ledger resolve account-outreach \
   --identity "Acme Corp" --identity growth@acme.example \
   --identity acme.example --dir ~/notes --json
 #+end_src
 
-Creates, updates, and events preview by default and require =--apply=. Account source uses the versioned =org2:work-ledger-account:v1= schema, readable aliases/identity/context fields, guarded SHA-256 revisions, arbitrary string =--field KEY=VALUE= metadata, and append-only events. Applied mutations also hold a ledger-wide lock while checking global uniqueness, so concurrent writers cannot claim the same identity or event key in two account files. Every event requires a ledger-wide idempotency key. Identity keys and event keys may not be claimed by two accounts. Repeating identical event material is a no-op; reusing its key for different material fails. Human edits to title, state, aliases, identity keys, and context are accepted as canonical authoring; disagreement between readable event history and structured event state is reported by =org2 doctor=, makes the account ineligible, and blocks a later structured write until explicitly reconciled.
+Creates, updates, and events preview by default and require =--apply=. Account source uses the versioned =org2:work-ledger-account:v1= schema, readable aliases/identity/context fields, guarded SHA-256 revisions, arbitrary string =--field KEY=VALUE= metadata, and append-only events. Applied mutations also hold a ledger-wide lock while checking global uniqueness, so concurrent writers cannot claim the same identity or event key in two account files. Every event requires a ledger-wide idempotency key. Identity keys and event keys may not be claimed by two accounts. Repeating identical event material is a no-op; reusing its key for different material fails. Human edits to title, state, aliases, identity keys, and context are accepted as canonical authoring; disagreement between readable event history and structured event state is reported by =celorga doctor=, makes the account ineligible, and blocks a later structured write until explicitly reconciled.
 
-An =approval-linked= event points to the native =RUN_ID/APPROVAL_ID=; it does not copy approval status into the account. Recording =outreach-sent= with a linked approval requires that canonical decision to be approved and requires an external message/receipt ID. Eligibility excludes paused, suppressed, or closed accounts, accounts with linked pending approvals, approved/proposed outreach that has not yet reached a matching sent/canceled/skipped outcome, and accounts contacted inside the requested cooldown. Carry the same run/approval linkage on the settlement event; for work without a native approval, pass =--data= with the same named cycle value. This prevents the next scheduler tick from recommending the same account during the gap between approval and execution, including when an account has more than one outreach cycle. =org2 doctor= also checks ledger identity/event collisions, broken run or approval references, path/identity mismatches, and sent outreach linked to a non-approved decision.
+An =approval-linked= event points to the native =RUN_ID/APPROVAL_ID=; it does not copy approval status into the account. Recording =outreach-sent= with a linked approval requires that canonical decision to be approved and requires an external message/receipt ID. Eligibility excludes paused, suppressed, or closed accounts, accounts with linked pending approvals, approved/proposed outreach that has not yet reached a matching sent/canceled/skipped outcome, and accounts contacted inside the requested cooldown. Carry the same run/approval linkage on the settlement event; for work without a native approval, pass =--data= with the same named cycle value. This prevents the next scheduler tick from recommending the same account during the gap between approval and execution, including when an account has more than one outreach cycle. =celorga doctor= also checks ledger identity/event collisions, broken run or approval references, path/identity mismatches, and sent outreach linked to a non-approved decision.
 
 The account file is curated canonical knowledge, so aliases, stable identity, commercial history, and human context belong under =notes/=. Raw CRM exports, email/provider payloads, and collector results remain under =raw/= and should be referenced through event =--source= values. Generated rankings or candidate lists belong in =views/=.
 
@@ -837,31 +837,31 @@ The account file is curated canonical knowledge, so aliases, stable identity, co
 =workflow create= writes a prompt, destination reference, optional exact model and reasoning effort, and optional schedule as a plain =org2:workflow:v1= file under the visible top-level =workflows/=. =workflow save RUN_ID= generalizes a completed run into a fuller draft workflow. Packages can also declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers. See [[file:workflows.org][Automations and workflows]] for the plain-text ownership and destination-neutral execution contract.
 
 #+begin_src sh
-org2 workflow create weekly-product-update \
+celorga workflow create weekly-product-update \
   --title "Weekly product update" \
   --prompt "Prepare a cited update from this week's product notes." \
   --destination-ref builtin.claude \
   --model opus \
   --schedule "0 9 * * 1" --timezone America/Los_Angeles --dir ~/notes
-org2 workflow save RUN_ID --id weekly-operating-review --version 1.0.0 --dir ~/notes
-org2 workflow validate weekly-operating-review --dir ~/notes
-org2 workflow run weekly-operating-review --input week=2026-W29 --dir ~/notes
-org2 workflow activate weekly-operating-review --dir ~/notes
-org2 workflow schedule weekly-operating-review --cron "0 9 * * 1" \
+celorga workflow save RUN_ID --id weekly-operating-review --version 1.0.0 --dir ~/notes
+celorga workflow validate weekly-operating-review --dir ~/notes
+celorga workflow run weekly-operating-review --input week=2026-W29 --dir ~/notes
+celorga workflow activate weekly-operating-review --dir ~/notes
+celorga workflow schedule weekly-operating-review --cron "0 9 * * 1" \
   --timezone America/Los_Angeles --model gpt-5.6-sol \
   --reasoning-effort high --gate-event capture --gate-path notes/ --dir ~/notes
-org2 workflow signal weekly-operating-review --event capture \
+celorga workflow signal weekly-operating-review --event capture \
   --signal-id capture-2026-W29 --changed notes/inbox.org --dir ~/notes
-org2 workflow due --now 2026-07-20T16:00:00Z --dir ~/notes --json
-org2 workflow gate weekly-operating-review --trigger schedule --dir ~/notes --json
-org2 workflow pause weekly-operating-review --dir ~/notes
-org2 workflow delete weekly-operating-review --dir ~/notes
-org2 workflow delete weekly-operating-review --dir ~/notes --apply
-org2 workflow migrate --dir ~/notes
-org2 workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
-org2 workflow triggers weekly-operating-review --event capture --dir ~/notes --json
-org2 workflow package weekly-operating-review --dir ~/notes --json
-org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes
+celorga workflow due --now 2026-07-20T16:00:00Z --dir ~/notes --json
+celorga workflow gate weekly-operating-review --trigger schedule --dir ~/notes --json
+celorga workflow pause weekly-operating-review --dir ~/notes
+celorga workflow delete weekly-operating-review --dir ~/notes
+celorga workflow delete weekly-operating-review --dir ~/notes --apply
+celorga workflow migrate --dir ~/notes
+celorga workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
+celorga workflow triggers weekly-operating-review --event capture --dir ~/notes --json
+celorga workflow package weekly-operating-review --dir ~/notes --json
+celorga workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes
 #+end_src
 
 Schedule syntax accepts positive whole-number intervals such as =every 15m=, =every 4h=, or =every 1d=, plus deterministic five-field cron expressions with an optional IANA timezone. =--model= and =--reasoning-effort= write exact invocation choices into the canonical workflow; =--clear-model= and =--clear-reasoning-effort= restore destination/runtime defaults. =workflow due= reports only the latest missed occurrence for each active automation and identifies occurrences suppressed by an active attempt. Event hosts can also ask =workflow triggers= which declarations are due; =--event= accepts only =capture= or =meeting-import= and rejects unknown event names. =workflow signal= persists capture, meeting-import, or file-change evidence. A schedule with =--gate-event= and/or =--gate-path= starts an attempt only when a matching signal is newer than its prior attempt boundary; otherwise =workflow gate= and =workflow run --trigger= return a deterministic skip result without creating a run. The logical workflow identity stays stable while each eligible execution receives distinct attempt identity, schedule/trigger provenance, destination reference, requested model/reasoning configuration, and consumed signal IDs. =run list --json= exposes attempt roll-ups so clients can summarize history without conflating retries or recurring executions. =workflow delete= previews by default and requires =--apply=; it removes the definition while preserving prior runs and does not cancel an already-dispatched attempt.
@@ -871,39 +871,39 @@ Schedule syntax accepts positive whole-number intervals such as =every 15m=, =ev
 The built-in =meeting-to-controlled-execution= package preserves meeting provenance, extracts cited decisions/tasks/questions, delegates bounded work, refreshes configured data/charts, compiles finished artifacts, requests release review, and gates publication:
 
 #+begin_src sh
-org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
+celorga workflow install-builtin meeting-to-controlled-execution --dir ~/notes
 #+end_src
 
 * Artifact dependency and freshness graph
 
-=org2 artifact graph= evaluates a JSON declaration containing artifact =id=, =path=, =sources=, optional previous =sourceHashes=, and optional rebuild =command=. Outputs are fresh, stale, missing, or conflicted. =artifact rebuild= propagates upstream staleness to downstream outputs and emits an ordered reviewable plan; =--apply= on =graph= stores the derived graph at =.org2/artifact-graph.json=.
+=celorga artifact graph= evaluates a JSON declaration containing artifact =id=, =path=, =sources=, optional previous =sourceHashes=, and optional rebuild =command=. Outputs are fresh, stale, missing, or conflicted. =artifact rebuild= propagates upstream staleness to downstream outputs and emits an ordered reviewable plan; =--apply= on =graph= stores the derived graph at =.org2/artifact-graph.json=.
 
 #+begin_src sh
-org2 artifact graph --manifest compiled/artifacts.json --dir ~/notes --json
-org2 artifact rebuild --manifest compiled/artifacts.json --dir ~/notes
+celorga artifact graph --manifest compiled/artifacts.json --dir ~/notes --json
+celorga artifact rebuild --manifest compiled/artifacts.json --dir ~/notes
 #+end_src
 
 * Runtime policies, MCP, and connector snapshots
 
-=org2 runtime init= creates =.org2/runtime-policy.json=. Symbolic policies select an eligible descriptor by required capabilities, privacy, transport, context window, and cost class. Built-in policy names are =private-local=, =fast-draft=, =deep-analysis=, =vision=, =regulated-cloud=, and =offline=. Runtime records contain aliases and model metadata, never credentials.
+=celorga runtime init= creates =.org2/runtime-policy.json=. Symbolic policies select an eligible descriptor by required capabilities, privacy, transport, context window, and cost class. Built-in policy names are =private-local=, =fast-draft=, =deep-analysis=, =vision=, =regulated-cloud=, and =offline=. Runtime records contain aliases and model metadata, never credentials.
 
 #+begin_src sh
-org2 runtime select private-local --capability text --dir ~/notes --json
-org2 runtime select deep-analysis --capability tool-use --dir ~/notes --json
-org2 runtime verify-paths --capability text --dir ~/notes --json
+celorga runtime select private-local --capability text --dir ~/notes --json
+celorga runtime select deep-analysis --capability tool-use --dir ~/notes --json
+celorga runtime verify-paths --capability text --dir ~/notes --json
 #+end_src
 
 =runtime verify-paths= is the portability check used by workflow test suites: it fails unless the configured baseline capability is available through both an enabled local/private descriptor and an enabled hosted descriptor. Execution remains adapter-owned; this check validates that switching paths does not require changing a workflow package or corpus state.
 
-=org2 mcp serve= starts a stdio Model Context Protocol server. It exposes paginated =org2://corpus/= resources, workflow prompts, bounded cited =org2_search=, =org2_fetch=, and =org2_context= retrieval, read-only coordination queries, and trusted local run/thread mutations. Resource reads include a SHA-256 revision and line count. The headless server can expose the five read-only tools through bearer-authenticated Streamable HTTP; create one hash-only credential per client with =server token create=. =mcp client-add= records explicitly configured external servers in =.org2/mcp-clients.json=. =mcp discover= performs an initialize/list handshake, reports the server's resources, tools, and prompts, and can persist a provenance-bearing discovery snapshot. =mcp snapshot= writes any external result under =raw/connectors/mcp/= with source URI, retrieval time, identity, freshness, and payload so durable work does not depend on an invisible live response.
+=celorga mcp serve= starts a stdio Model Context Protocol server. It exposes paginated =org2://corpus/= resources, workflow prompts, bounded cited =org2_search=, =org2_fetch=, and =org2_context= retrieval, read-only coordination queries, and trusted local run/thread mutations. Resource reads include a SHA-256 revision and line count. The headless server can expose the five read-only tools through bearer-authenticated Streamable HTTP; create one hash-only credential per client with =server token create=. =mcp client-add= records explicitly configured external servers in =.org2/mcp-clients.json=. =mcp discover= performs an initialize/list handshake, reports the server's resources, tools, and prompts, and can persist a provenance-bearing discovery snapshot. =mcp snapshot= writes any external result under =raw/connectors/mcp/= with source URI, retrieval time, identity, freshness, and payload so durable work does not depend on an invisible live response.
 
 See [[file:mcp-and-skills.org][MCP and agent skills]] for local stdio and remote Streamable HTTP configuration, the exact current resource, prompt, eight-tool stdio, and five-tool read-only HTTP surfaces, write boundaries, protocol smoke tests, and the packaged general Org2 skill. The MCP server remains intentionally narrower than the CLI.
 
 #+begin_src sh
-org2 mcp serve --dir ~/notes
-org2 mcp client-add crm --command crm-mcp --arg=--stdio --capability accounts --env CRM_TOKEN --dir ~/notes
-org2 mcp discover crm --snapshot crm-capabilities --dir ~/notes --json
-org2 mcp snapshot account-123 --source mcp://crm/accounts/123 \
+celorga mcp serve --dir ~/notes
+celorga mcp client-add crm --command crm-mcp --arg=--stdio --capability accounts --env CRM_TOKEN --dir ~/notes
+celorga mcp discover crm --snapshot crm-capabilities --dir ~/notes --json
+celorga mcp snapshot account-123 --source mcp://crm/accounts/123 \
   --identity account:123 --fresh-until 2026-07-15T00:00:00Z \
   --input /tmp/account.json --dir ~/notes
 #+end_src
@@ -912,12 +912,12 @@ Client configuration records environment-variable names for setup and discovery,
 
 * Outcome evaluation and replay fixtures
 
-=org2 eval run= compares an observable run against JSON expectations for terminal status, artifacts, passing validations, citations, approval boundaries, and protected paths. It writes =org2:workflow-eval:v1= results under =.org2/evals/=. Metrics come from inspectable run records: elapsed time, tokens, cost, citation coverage, and artifact review/freshness.
+=celorga eval run= compares an observable run against JSON expectations for terminal status, artifacts, passing validations, citations, approval boundaries, and protected paths. It writes =org2:workflow-eval:v1= results under =.org2/evals/=. Metrics come from inspectable run records: elapsed time, tokens, cost, citation coverage, and artifact review/freshness.
 
 #+begin_src sh
-org2 eval run RUN_ID --expect test/fixtures/weekly-review.expected.json --dir ~/notes
-org2 eval replay weekly-operating-review --fixture test/fixtures/weekly-review.replay.json --dir ~/notes
-org2 eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/notes
+celorga eval run RUN_ID --expect test/fixtures/weekly-review.expected.json --dir ~/notes
+celorga eval replay weekly-operating-review --fixture test/fixtures/weekly-review.replay.json --dir ~/notes
+celorga eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/notes
 #+end_src
 
 =eval replay= deterministically instantiates the declared workflow against fixture inputs and checks version, resolved goal, plan steps, capabilities, and risk boundary without invoking a provider. =eval fixture= replaces people, providers, source locations, and receipts with synthetic values. Review the result before distributing it; free-form artifact contents are not copied by the command.
@@ -927,7 +927,7 @@ org2 eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/n
 Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader [[file:maintenance-workflows.org][maintenance and health workflow]] alongside formatter checks, graph queries, publish previews, and ID/index repair passes.
 
 #+begin_src sh
-org2 lint --dir ~/notes --recursive
+celorga lint --dir ~/notes --recursive
 #+end_src
 
 Current checks include:
@@ -943,45 +943,45 @@ See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact
 
 * AI job manifest validation
 
-=org2 ai validate-job= validates repeatable AI workflow manifests without calling a provider or loading secrets.
+=celorga ai validate-job= validates repeatable AI workflow manifests without calling a provider or loading secrets.
 
 #+begin_src sh
-org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
+celorga ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+celorga ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
 #+end_src
 
 Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See [[file:ai-job-manifests.org][AI job manifests]] for the schema and examples.
 
-=org2 ai run= writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest =input.files= as deterministic source material, including simple glob patterns. It stamps =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, prompt/template, adapter/model, generated-at, and =ORG2_REVIEW_STATUS= metadata. Without =--apply= it previews the draft.
+=celorga ai run= writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest =input.files= as deterministic source material, including simple glob patterns. It stamps =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, prompt/template, adapter/model, generated-at, and =ORG2_REVIEW_STATUS= metadata. Without =--apply= it previews the draft.
 
 #+begin_src sh
-org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
-org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org --apply
+celorga ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+celorga ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org --apply
 #+end_src
 
-=org2 ai suggest-links= ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; =--apply= only writes the suggestion report when =--out= is provided.
+=celorga ai suggest-links= ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; =--apply= only writes the suggestion report when =--out= is provided.
 
 #+begin_src sh
-org2 ai suggest-links --dir ~/notes --recursive --format json
-org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org --apply
+celorga ai suggest-links --dir ~/notes --recursive --format json
+celorga ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org --apply
 #+end_src
 
-=org2 ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
+=celorga ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
 
 #+begin_src sh
-org2 ai promote --file views/weekly-summary.org --to-file notes/weekly-summary.org --apply
+celorga ai promote --file views/weekly-summary.org --to-file notes/weekly-summary.org --apply
 #+end_src
 
 See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, review checklist, and VS Code command-palette entry points.
 
 * Compiled corpus artifacts
 
-=org2 compile corpus= emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.
+=celorga compile corpus= emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.
 
 #+begin_src sh
-org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
-org2 compile corpus --dir ~/notes --recursive --incremental --out compiled/corpus.json
+celorga compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+celorga compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
+celorga compile corpus --dir ~/notes --recursive --incremental --out compiled/corpus.json
 #+end_src
 
 The JSON form includes:
@@ -993,7 +993,7 @@ The JSON form includes:
 - links and resolved backlinks for explicit =id:= links and unambiguous wiki links
 - text snippets suitable for previews or retrieval pipelines
 
-Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same =ORG2_ARTIFACT_*=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= fields and keep using =org2 lint= for generated-output health checks.
+Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same =ORG2_ARTIFACT_*=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= fields and keep using =celorga lint= for generated-output health checks.
 
 For repeated whole-corpus reads, =--incremental= stores compiled semantics plus per-file cache metadata in the machine-local Org2 index home and reparses only added or changed files. Deleted files are dropped from the next artifact, while corpus-wide backlinks, entities, relations, and statistics are rebuilt from reusable file semantics so the output remains equivalent to a full compile. =--cache FILE= overrides the derived cache location. Human-facing =context=, =agent context=, and =brief= commands use this incremental cache automatically.
 
@@ -1002,12 +1002,12 @@ For repeated whole-corpus reads, =--incremental= stores compiled semantics plus 
 Use =search= for literal, case-insensitive full-text lookup over =.org= files, and =query= when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless =--recursive= is set. The [[file:llm-consumers.org][External LLM consumer pattern]] page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.
 
 #+begin_src sh
-org2 search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
-org2 search "Mercor" --dir ~/notes --recursive --sort relevance
-org2 index --dir ~/notes --recursive --file ~/notes/inbox.org --incremental --format json
-org2 query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
-org2 query "Sentra" --dir ~/notes --recursive --format json
-org2 query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json
+celorga search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
+celorga search "Mercor" --dir ~/notes --recursive --sort relevance
+celorga index --dir ~/notes --recursive --file ~/notes/inbox.org --incremental --format json
+celorga query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
+celorga query "Sentra" --dir ~/notes --recursive --format json
+celorga query actions --object 'id:PERSON-ID' --dir ~/notes --recursive --recent-days 30 --format json
 #+end_src
 
 Useful flags:
@@ -1021,22 +1021,22 @@ Useful flags:
 - =--date-from= / =--date-to= and =--file-zone= narrow results by local corpus zones and source dates.
 - =--format json= returns machine-readable file, line, heading, snippet, source range, and context fields.
 
-=org2 query actions= is the bounded, deterministic action-item projection for a person or other node. It resolves the target by stable ID or unique title, returns active TODOs directly linked or assigned to that node, and also inherits TODOs from a containing meeting that links to the node. Recently completed items require a completion or meeting date inside =--recent-days=. =--open-limit= and =--completed-limit= bound the displayed arrays while =counts= retains the complete totals. The command uses the incremental corpus cache and performs no model call or brief generation.
+=celorga query actions= is the bounded, deterministic action-item projection for a person or other node. It resolves the target by stable ID or unique title, returns active TODOs directly linked or assigned to that node, and also inherits TODOs from a containing meeting that links to the node. Recently completed items require a completion or meeting date inside =--recent-days=. =--open-limit= and =--completed-limit= bound the displayed arrays while =counts= retains the complete totals. The command uses the incremental corpus cache and performs no model call or brief generation.
 
-=org2 index= builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, =org2 index --incremental --file FILE= replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with =--index current=, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. =auto= remains the conservative CLI default for callers without a watcher.
+=celorga index= builds disposable machine-local search data. Its JSON artifact remains inspectable, and Org2 also maintains a versioned binary sidecar for faster repeat loads; an absent, stale, or unreadable sidecar safely falls back to JSON. After an initial build, =celorga index --incremental --file FILE= replaces or removes only that file's index entry; if no compatible base index exists, it safely falls back to a complete build. Watcher-backed clients may search that maintained index with =--index current=, avoiding a directory walk and per-file freshness check on every query. The macOS app uses both paths for filesystem events so frequent agent edits and live searches do not repeatedly scan the corpus. =auto= remains the conservative CLI default for callers without a watcher.
 
 * JSON Canvas
 
 The =canvas= family operates on [[https://jsoncanvas.org/spec/1.0/][JSON Canvas 1.0]] documents. The =.canvas= file is canonical; native board layout and local resource previews consume shared TypeScript output.
 
 #+begin_src sh
-org2 canvas create --dir ~/notes --file boards/project.canvas
-org2 canvas create --dir ~/notes --file boards/project.canvas --apply
-org2 canvas show --dir ~/notes --file boards/project.canvas --json
-org2 canvas targets --dir ~/notes --query architecture --json
-org2 canvas edit --dir ~/notes --file boards/project.canvas --if-revision sha256:HASH --stdin --apply --json
-org2 canvas import --dir ~/notes --file boards/imported.canvas --from /path/to/source.canvas --apply
-org2 canvas export --dir ~/notes --file boards/project.canvas --out /path/to/new-copy.canvas --apply
+celorga canvas create --dir ~/notes --file boards/project.canvas
+celorga canvas create --dir ~/notes --file boards/project.canvas --apply
+celorga canvas show --dir ~/notes --file boards/project.canvas --json
+celorga canvas targets --dir ~/notes --query architecture --json
+celorga canvas edit --dir ~/notes --file boards/project.canvas --if-revision sha256:HASH --stdin --apply --json
+celorga canvas import --dir ~/notes --file boards/imported.canvas --from /path/to/source.canvas --apply
+celorga canvas export --dir ~/notes --file boards/project.canvas --out /path/to/new-copy.canvas --apply
 #+end_src
 
 =edit= reads a JSON array from standard input. Supported operations are =add-node= with =node=, =update-node= with =id= and =patch=, =remove-node= with =id=, and corresponding =add-edge=, =update-edge=, and =remove-edge= operations. A node removal also removes edges incident to it. Patch operations cannot change IDs. The runtime validates the entire result before one atomic revision-guarded write. It accepts at most 100 operations per edit. New files and exports require an absent destination; existing documents are never overwritten through import/export.
@@ -1054,22 +1054,22 @@ Mutations stay inside the active corpus and exclude =raw/= and hidden state. Res
 * Roam workflows
 
 #+begin_src sh
-org2 roam db-sync --dir ~/notes --recursive --apply
-org2 roam node new --dir ~/notes --title "Acme Corp" --apply
-org2 roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
-org2 roam linkify --dir ~/notes --recursive
-org2 roam graph --dir ~/notes --recursive --format report
-org2 roam graph --dir ~/notes --recursive --format json
+celorga roam db-sync --dir ~/notes --recursive --apply
+celorga roam node new --dir ~/notes --title "Acme Corp" --apply
+celorga roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+celorga roam linkify --dir ~/notes --recursive
+celorga roam graph --dir ~/notes --recursive --format report
+celorga roam graph --dir ~/notes --recursive --format json
 #+end_src
 
-Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =org2 roam linkify --format json= reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; =--apply= only writes exact safe replacements, never semantic suggestions. =org2 roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
+Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =celorga roam linkify --format json= reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; =--apply= only writes exact safe replacements, never semantic suggestions. =celorga roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
 
 ** Local neighborhoods and individual mentions
 
 #+begin_src sh
-org2 roam connections --dir ~/notes --id alpha-stable --depth 2 --format json
-org2 roam connections --dir ~/notes --file ~/notes/project.org --line 17 --format json
-org2 roam mention-link --dir ~/notes --file ~/notes/meeting.org --mention KEY --target alpha-stable --if-revision sha256:HASH --format json
+celorga roam connections --dir ~/notes --id alpha-stable --depth 2 --format json
+celorga roam connections --dir ~/notes --file ~/notes/project.org --line 17 --format json
+celorga roam mention-link --dir ~/notes --file ~/notes/meeting.org --mention KEY --target alpha-stable --if-revision sha256:HASH --format json
 # Inspect the preview, then repeat the same command with --apply.
 #+end_src
 
@@ -1086,17 +1086,17 @@ Org2 keeps the existing Org-style =:crypt:= convention and encrypts at the subtr
 
 #+begin_src sh
 # Passphrase/symmetric mode
-org2 crypt decrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
-org2 crypt encrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
+celorga crypt decrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
+celorga crypt encrypt --file secrets.org --line 42 --passphrase 'your-passphrase' --apply
 
 # Multi-recipient public-key mode
-org2 crypt encrypt --file secrets.org --line 42 \
+celorga crypt encrypt --file secrets.org --line 42 \
   --recipient user@example.com \
   --recipient agent@example.com \
   --apply
 
 # Public-key recipient files are useful for keys that are not in your keyring
-org2 crypt encrypt --file secrets.org --line 42 \
+celorga crypt encrypt --file secrets.org --line 42 \
   --recipient-file keys/agent-public.asc \
   --apply
 
@@ -1109,7 +1109,7 @@ org2 crypt encrypt --file secrets.org --line 42 \
 Only the entries with this property are encrypted to that agent.
 
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
-org2 crypt reencrypt --file secrets.org --line 42 \
+celorga crypt reencrypt --file secrets.org --line 42 \
   --passphrase 'old-passphrase-if-needed' \
   --recipient user@example.com \
   --recipient agent@example.com \
@@ -1121,17 +1121,17 @@ Per-entry recipient properties let one corpus mix private-only and shared-with-a
 * Export + publish
 
 #+begin_src sh
-org2 export html --file README.org --out README.html --apply
-org2 export html --dir docs/site --recursive --out-dir site --apply
-org2 export beamer --file talks/demo.org --out publish/demo.tex --apply
-org2 export beamer --file talks/demo.org --out publish/demo.pdf --pdf --apply
-org2 publish document --file reports/brief.org --to web --out-dir publish/brief
-org2 publish document --file reports/brief.org --to web --out-dir publish/brief --apply
-org2 publish document --file talks/briefing.org --to beamer-pdf --out-file publish/briefing.pdf
-org2 publish document --file reports/brief.org --to google-docs --folder-id DRIVE_FOLDER_ID
-org2 publish document --file talks/briefing.org --to google-slides --folder-id DRIVE_FOLDER_ID
-org2 publish document --file reports/evidence.org --to google-sheets --folder-id DRIVE_FOLDER_ID
-org2 publish docs-site --config org2.json
+celorga export html --file README.org --out README.html --apply
+celorga export html --dir docs/site --recursive --out-dir site --apply
+celorga export beamer --file talks/demo.org --out publish/demo.tex --apply
+celorga export beamer --file talks/demo.org --out publish/demo.pdf --pdf --apply
+celorga publish document --file reports/brief.org --to web --out-dir publish/brief
+celorga publish document --file reports/brief.org --to web --out-dir publish/brief --apply
+celorga publish document --file talks/briefing.org --to beamer-pdf --out-file publish/briefing.pdf
+celorga publish document --file reports/brief.org --to google-docs --folder-id DRIVE_FOLDER_ID
+celorga publish document --file talks/briefing.org --to google-slides --folder-id DRIVE_FOLDER_ID
+celorga publish document --file reports/evidence.org --to google-sheets --folder-id DRIVE_FOLDER_ID
+celorga publish docs-site --config org2.json
 #+end_src
 
 Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.
@@ -1164,21 +1164,21 @@ Publishing to Google is deliberately one-way. CLI callers must retain the return
 #+begin_src sh
 # Create after inspecting the preview.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/brief.org --to google-docs \
+  celorga publish document --file reports/brief.org --to google-docs \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Other native Google formats use the same credential and folder policy.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file talks/briefing.org --to google-slides \
+  celorga publish document --file talks/briefing.org --to google-slides \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/evidence.org --to google-sheets \
+  celorga publish document --file reports/evidence.org --to google-sheets \
   --folder-id DRIVE_FOLDER_ID --apply --format json
 
 # Explicit full-document replacement. The last-seen version is optional metadata.
 ORG2_GOOGLE_DRIVE_ACCESS_TOKEN="$TOKEN" \
-  org2 publish document --file reports/brief.org --to google-docs \
+  celorga publish document --file reports/brief.org --to google-docs \
   --document-id GOOGLE_DOCUMENT_ID \
   --replace-existing --apply --format json
 #+end_src
@@ -1192,7 +1192,7 @@ Presentation export reads the shared Org2 AST and maps both legacy Org Beamer pr
 Start language server:
 
 #+begin_src sh
-org2 lsp
+celorga lsp
 #+end_src
 
 Current implemented capabilities include:
@@ -1210,11 +1210,11 @@ For full details, see:
 
 * Headless server CLI
 
-=org2 server init|start|status|pair|revoke|stop|permissions|token|mcp|assign|service|push-config= manages the macOS headless relay, scheduler, and optional read-only Streamable HTTP MCP listener. Configuration is machine-local. =server permissions --filesystem-access read-only|workspace-write|full-access= previews or atomically updates that host's local agent filesystem policy. =server token create|list|revoke= manages per-client =corpus:read= bearer credentials while persisting only hashes; creating the first token enables MCP and revoking the final token disables it. =server mcp enable|disable= previews endpoint, port, and exact browser-origin changes. All applied permission, token, or MCP changes require a restart. =server status= reports the active policy and non-secret MCP metadata. =server assign= previews a symbolic =automationHostRef= change in =org2.json=. The =workflow due --host-ref HOST= and scheduled =workflow run --host-ref HOST= interfaces enforce that owner. See [[file:headless-server.org][Headless server setup]] for the complete lifecycle and limitations.
+=celorga server init|start|status|pair|revoke|stop|permissions|token|mcp|assign|service|push-config= manages the macOS headless relay, scheduler, and optional read-only Streamable HTTP MCP listener. Configuration is machine-local. =server permissions --filesystem-access read-only|workspace-write|full-access= previews or atomically updates that host's local agent filesystem policy. =server token create|list|revoke= manages per-client =corpus:read= bearer credentials while persisting only hashes; creating the first token enables MCP and revoking the final token disables it. =server mcp enable|disable= previews endpoint, port, and exact browser-origin changes. All applied permission, token, or MCP changes require a restart. =server status= reports the active policy and non-secret MCP metadata. =server assign= previews a symbolic =automationHostRef= change in =org2.json=. The =workflow due --host-ref HOST= and scheduled =workflow run --host-ref HOST= interfaces enforce that owner. See [[file:headless-server.org][Headless server setup]] for the complete lifecycle and limitations.
 
 * Project note commands
 
-=org2 project list|show|create|adopt|update= operates on ordinary Org files.
+=celorga project list|show|create|adopt|update= operates on ordinary Org files.
 List returns =org2:project-list:v1= with projects and per-file diagnostics;
 create, adopt, and update return =org2:project-edit:v1= with proposed content,
 project metadata, =baseRevision= (null for new files), and =applied=.
@@ -1251,9 +1251,9 @@ Raw captures remain immutable: graph reads may include them, but unlinked-mentio
 The =integrations/browser-clip/= Chromium extension produces =org2:browser-clip:v1= JSON in =.org2clip= files: =url=, =title=, optional =author=, ISO =capturedAt=, =mode= (=article= or =selection=), =template= (=note= or =task=), and plain-text =content=. The Mac Capture window exposes this same runtime import contract.
 
 #+begin_src sh
-org2 browser-clip import --file article.org2clip --dir ~/notes --json
+celorga browser-clip import --file article.org2clip --dir ~/notes --json
 # Copy revision and clipRevision from that preview:
-org2 browser-clip import --file article.org2clip --dir ~/notes \
+celorga browser-clip import --file article.org2clip --dir ~/notes \
   --if-revision sha256:DESTINATION_HASH --if-clip-revision CLIP_HASH --apply --json
 #+end_src
 

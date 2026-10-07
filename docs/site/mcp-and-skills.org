@@ -14,7 +14,7 @@ Install the npm package, then start the local stdio server with an absolute corp
 
 #+begin_src sh
 npm install --global @aviaviavi/org2
-org2 mcp serve --dir /absolute/path/to/notes
+celorga mcp serve --dir /absolute/path/to/notes
 #+end_src
 
 The process speaks MCP over standard input and output. Normally an MCP client starts and supervises it; you do not keep a separate network service running.
@@ -24,7 +24,7 @@ The process speaks MCP over standard input and output. Normally an MCP client st
 Current Codex clients share local MCP configuration. Add Org2 from the CLI:
 
 #+begin_src sh
-codex mcp add org2 -- org2 mcp serve --dir /absolute/path/to/notes
+codex mcp add org2 -- celorga mcp serve --dir /absolute/path/to/notes
 codex mcp list
 #+end_src
 
@@ -34,7 +34,7 @@ Restart the client after changing configuration, then use =/mcp= to inspect the 
 
 #+begin_src sh
 claude mcp add --transport stdio --scope user org2 -- \
-  org2 mcp serve --dir /absolute/path/to/notes
+  celorga mcp serve --dir /absolute/path/to/notes
 claude mcp get org2
 #+end_src
 
@@ -63,9 +63,9 @@ If a GUI-launched client cannot find =org2= on its =PATH=, set =command= to the 
 The headless server can expose the selected corpus through a separate *read-only Streamable HTTP MCP* listener on its Tailscale address. Initialize and build the server as described in [[file:headless-server.org][Headless OpenOrg server]], then preview and create a client credential:
 
 #+begin_src sh
-org2 server token create --name chatgpt
-org2 server token create --name chatgpt --apply
-org2 server start
+celorga server token create --name chatgpt
+celorga server token create --name chatgpt --apply
+celorga server start
 #+end_src
 
 Creating the first token enables the endpoint. The applied command prints the token exactly once; OpenOrg stores only its SHA-256 hash in the private machine-local server configuration. Restart an already running server after token, port, origin, or MCP state changes. =server status= reports the endpoint and non-secret token metadata.
@@ -83,9 +83,9 @@ The listener binds only to the configured Tailscale IPv4 address. Tailscale encr
 The HTTP endpoint accepts =POST /mcp= with =Authorization: Bearer TOKEN=. It is stateless, negotiates the MCP =2025-03-26= protocol profile, returns JSON responses, accepts individual messages or batches of at most 100 messages, and returns =405= for the optional GET event stream. It rejects unknown browser origins unless they were explicitly allowlisted with =server mcp enable --allow-origin ORIGIN --apply= and caps request bodies at 2 MB. These transport choices follow the [[https://modelcontextprotocol.io/specification/2025-03-26/basic/transports][official MCP Streamable HTTP contract]]. It does not expose the three write tools available through trusted stdio. Create a separate token per client so access can be revoked independently:
 
 #+begin_src sh
-org2 server token list
-org2 server token revoke --id TOKEN_ID
-org2 server token revoke --id TOKEN_ID --apply
+celorga server token list
+celorga server token revoke --id TOKEN_ID
+celorga server token revoke --id TOKEN_ID --apply
 #+end_src
 
 * What the server exposes
@@ -107,7 +107,7 @@ The current tools are:
 - =org2_run_list=: inspect durable runs and review state.
 - =org2_thread_post=: post an attributed, idempotent background update to an existing AI chat without starting a model turn.
 
-The read-only retrieval tools share the same incremental compiler and cited context substrate as =org2 agent search|fetch|context=. Result counts and context characters are capped by their schemas. Resource listing is paginated in stable lexical order, and resource reads include a SHA-256 revision plus line count. The server is still not a complete mirror of the CLI: Agenda, TODO mutation, publishing, lint, graph checks, and other specialized commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.
+The read-only retrieval tools share the same incremental compiler and cited context substrate as =celorga agent search|fetch|context=. Result counts and context characters are capped by their schemas. Resource listing is paginated in stable lexical order, and resource reads include a SHA-256 revision plus line count. The server is still not a complete mirror of the CLI: Agenda, TODO mutation, publishing, lint, graph checks, and other specialized commands remain CLI operations. Use the general skill below so an agent knows when to leave MCP and call CLI JSON.
 
 * Corpus and safety boundaries
 
@@ -129,7 +129,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"resources/list","params":{}}' \
-  | org2 mcp serve --dir /absolute/path/to/notes
+  | celorga mcp serve --dir /absolute/path/to/notes
 #+end_src
 
 You should receive an initialize result and the first sorted =resources= page. A trusted stdio client connection test should additionally show eight tools and the corpus's workflow prompts; the read-only HTTP endpoint shows five tools.
@@ -139,8 +139,8 @@ You should receive an initialize result and the first sorted =resources= page. A
 The npm package includes the canonical portable skill at =skills/org2/SKILL.md=. Install a corpus-owned copy with a preview first:
 
 #+begin_src sh
-org2 skill install --dir /absolute/path/to/notes
-org2 skill install --dir /absolute/path/to/notes --apply
+celorga skill install --dir /absolute/path/to/notes
+celorga skill install --dir /absolute/path/to/notes --apply
 #+end_src
 
 The destination is =.agents/skills/org2/SKILL.md=. The installer creates only a missing file. If that path already contains a user-managed copy, it reports a conflict and never overwrites it. Use =--format json= for automation.
@@ -153,7 +153,7 @@ Open the *Skills* workspace surface or press =Cmd-Shift-K=. The catalog shows ad
 
 The skill tells agents to:
 
-- discover the installed command contract with =org2 agent capabilities=;
+- discover the installed command contract with =celorga agent capabilities=;
 - prefer MCP resources and typed tools when connected;
 - use bounded CLI JSON for the rest of the product;
 - preview mutations, preserve IDs and citations, respect approvals, and keep credentials outside the corpus;
@@ -166,9 +166,9 @@ It intentionally does not duplicate the complete CLI reference. The installed ca
 Do not confuse the inbound server above with Org2's outbound MCP snapshot commands:
 
 #+begin_src sh
-org2 mcp client-add crm --command crm-mcp --arg=--stdio \
+celorga mcp client-add crm --command crm-mcp --arg=--stdio \
   --capability accounts --env CRM_TOKEN --dir /absolute/path/to/notes
-org2 mcp discover crm --snapshot crm-capabilities \
+celorga mcp discover crm --snapshot crm-capabilities \
   --dir /absolute/path/to/notes --json
 #+end_src
 

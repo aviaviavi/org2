@@ -42,9 +42,9 @@ Then read =:help org2=.
 The Vim plugin does not yet wrap the Org2 CLI. Use the CLI directly for agenda, roam, formatting, lint, export, and publishing workflows:
 
 #+begin_src sh
-org2 agenda --dir /path/to/notes --recursive
-org2 fmt --dir /path/to/notes --recursive --check
-org2 roam graph --dir /path/to/notes --recursive
+celorga agenda --dir /path/to/notes --recursive
+celorga fmt --dir /path/to/notes --recursive --check
+celorga roam graph --dir /path/to/notes --recursive
 #+end_src
 
 * Limitations

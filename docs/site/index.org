@@ -151,7 +151,7 @@
   <aside class="org2-lineage-note" aria-labelledby="org2-lineage-title">
     <p class="org2-lineage-label" id="org2-lineage-title">For Org mode users</p>
     <p><strong>OpenOrg brings Org's durable plain-text model to native apps, editors, CLIs, and AI agents.</strong> It uses ordinary <code>.org</code> documents by default while providing one independently specified runtime for links, planning, publishing, data, and agent workflows outside Emacs.</p>
-    <a href="org2-vs-org-mode.html">How Org2 compares <span aria-hidden="true">→</span></a>
+    <a href="celorga-vs-org-mode.html">How Org2 compares <span aria-hidden="true">→</span></a>
   </aside>
   <div class="org2-sample-intro">
     <h2 id="org2-sample-title">What an OpenOrg document looks like</h2>
@@ -190,7 +190,7 @@
 
 <span class="org2-syntax-heading">**</span> Source query for docs
   <span class="org2-syntax-block">#+begin_src sh</span>
-  org2 query --tag launch --format json
+  celorga query --tag launch --format json
   <span class="org2-syntax-block">#+end_src</span>
 
 <span class="org2-syntax-heading">**</span> Launch readiness data <span class="org2-syntax-tag">:evidence:</span>
@@ -252,8 +252,8 @@
     <a href="downloads.html"><strong>Download</strong><span>Mac app, iPhone beta, CLI, and editor plugins</span></a>
     <a href="getting-started.html"><strong>Getting started</strong><span>Your first useful day in ten minutes</span></a>
     <a href="features.html"><strong>All features</strong><span>A tour of everything OpenOrg does</span></a>
-    <a href="openorg-and-org2.html"><strong>Architecture</strong><span>How OpenOrg and Org2 fit together</span></a>
+    <a href="architecture.html"><strong>Architecture</strong><span>How OpenOrg and Org2 fit together</span></a>
   </nav>
-  <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="org2-vs-obsidian.html">Obsidian</a>, <a href="org2-vs-markdown.html">Markdown</a>, or <a href="org2-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/org2">GitHub</a>.</p>
+  <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="celorga-vs-obsidian.html">Obsidian</a>, <a href="celorga-vs-markdown.html">Markdown</a>, or <a href="celorga-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/org2">GitHub</a>.</p>
 </section>
 #+END_EXPORT

@@ -79,7 +79,7 @@ const homepage = fs.readFileSync(path.join(repoRoot, "docs/site/index.org"), "ut
 const features = fs.readFileSync(path.join(repoRoot, "docs/site/features.org"), "utf8");
 const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/site/getting-started.org"), "utf8");
 const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
-const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/openorg-and-org2.org"), "utf8");
+const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/architecture.org"), "utf8");
 const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
 const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
 const parsedPublishConfig = JSON.parse(publishConfig);
@@ -246,7 +246,7 @@ if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
 }
 if (
   !publishConfig.includes('href=\\"agent-quickstart.html\\">Agents and models')
-  || !publishConfig.includes('href=\\"openorg-and-org2.html\\">Architecture')
+  || !publishConfig.includes('href=\\"architecture.html\\">Architecture')
   || publishConfig.includes('<summary>About</summary>')
   || publishConfig.includes('<summary>Safety</summary>')
   || publishConfig.includes('href=\\"privacy-and-data.html\\"')

@@ -90,5 +90,5 @@ The projects also point toward each other in useful ways: Obsidian demonstrates 
 - [[https://obsidian.md/help/plugins/canvas][Obsidian Canvas]]
 - [[https://obsidian.md/help/cli][Obsidian CLI]]
 - [[https://obsidian.md/license][Obsidian license overview]]
-- [[file:org2-vs-markdown.org][Org2 vs Markdown]]
-- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
+- [[file:celorga-vs-markdown.org][Org2 vs Markdown]]
+- [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]]

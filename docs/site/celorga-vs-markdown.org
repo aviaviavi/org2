@@ -98,5 +98,5 @@ Choose Markdown for broadly portable documents and lightweight conventions. Choo
 
 - [[file:features.org][Org2 features]]
 - [[file:getting-started.org][Getting started]]
-- [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
-- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
+- [[file:celorga-vs-obsidian.org][Org2 vs Obsidian]]
+- [[file:celorga-vs-org-mode.org][Org2 vs Org Mode]]
