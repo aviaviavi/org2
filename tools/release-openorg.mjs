@@ -36,6 +36,8 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackagePath = join(repoRoot, "package.json");
 const npmPackageName = JSON.parse(readFileSync(rootPackagePath, "utf8")).name;
+// npm pack names scoped tarballs "scope-name-version.tgz".
+const npmTarballBaseName = npmPackageName.replace(/^@/, "").replace("/", "-");
 const productSiteBase = "https://celorga.io";
 const vscodePackageDir = join(repoRoot, "editors", "vscode-org2");
 const iosProjectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
@@ -984,7 +986,7 @@ async function verify(plan, options) {
     async () => {
       const release = JSON.parse(capture("gh", ["release", "view", plan.version, "--json", "assets,tagName,url"]).stdout);
       const names = new Set(release.assets.map((asset) => asset.name));
-      for (const expected of ["OpenOrg.dmg", "OpenOrg-Intel.dmg", `aviaviavi-org2-${plan.version}.tgz`, `org2-vscode-${plan.version}.vsix`]) {
+      for (const expected of ["OpenOrg.dmg", "OpenOrg-Intel.dmg", `${npmTarballBaseName}-${plan.version}.tgz`, `org2-vscode-${plan.version}.vsix`]) {
         if (!names.has(expected)) throw new Error(`GitHub Release is missing ${expected}`);
       }
       console.log(`✓ GitHub Release ${release.url}`);

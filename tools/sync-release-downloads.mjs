@@ -56,17 +56,22 @@ export function artifactKind(name) {
   return "other";
 }
 
+// Mac disk images released as OpenOrg (0.5.0 until the rename) or Celorga.
+function isProductArtifact(asset) {
+  return /^(?:openorg|celorga)/.test(asset.name.toLowerCase());
+}
+
 export function artifactLabel(asset) {
-  const productName = asset.name.toLowerCase().startsWith("openorg") ? "OpenOrg" : "Org2 Workspace";
+  const productName = isProductArtifact(asset) ? "Celorga" : "Org2 Workspace";
   switch (artifactKind(asset.name)) {
     case "macos-apple-silicon":
       return `${productName} for macOS (Apple Silicon DMG)`;
     case "macos-intel":
       return `${productName} for macOS (Intel DMG)`;
     case "vscode":
-      return "Org2 for VS Code (VSIX)";
+      return "Celorga for VS Code (VSIX)";
     case "npm":
-      return "Org2 npm package (TGZ)";
+      return "Celorga npm package (TGZ)";
     default:
       return asset.name;
   }
@@ -121,16 +126,16 @@ export function mergeReleaseDownloadBlock(body, release) {
 
 function currentReleaseCard(asset, version) {
   const kind = artifactKind(asset.name);
-  const isOpenOrg = asset.name.toLowerCase().startsWith("openorg");
+  const isOpenOrg = isProductArtifact(asset);
   const registry = {
     vscode: {
-      title: "Org2 for VS Code",
+      title: "Celorga for VS Code",
       meta: "VS Code Marketplace",
       url: vscodeMarketplaceUrl,
       action: "View in Marketplace",
     },
     npm: {
-      title: "Org2 npm package",
+      title: "Celorga npm package",
       meta: "npm registry",
       url: npmPackageUrl,
       action: "View on npm",
@@ -143,7 +148,7 @@ function currentReleaseCard(asset, version) {
     "macos-intel": isOpenOrg
       ? "Native Intel workspace app. Developer ID signed, notarized, and stapled."
       : "Native Intel workspace app. Developer-signed and currently not notarized.",
-    vscode: "Editor integration with syntax, agenda, navigation, formatting, and Org2 commands.",
+    vscode: "Editor integration with syntax, agenda, navigation, formatting, and Celorga commands.",
     npm: "CLI, compiler, language server, publishing runtime, and agent-facing tools.",
     other: "Additional release artifact.",
   };
@@ -169,7 +174,7 @@ export function renderDownloadsPage(releases) {
   const current = published[0];
   const currentAssets = sortedAssets(current);
   const currentMacAssets = currentAssets.filter((asset) => artifactKind(asset.name).startsWith("macos-"));
-  const isOpenOrgRelease = currentMacAssets.some((asset) => asset.name.toLowerCase().startsWith("openorg"));
+  const isOpenOrgRelease = currentMacAssets.some(isProductArtifact);
   const visibleCurrentAssets = isOpenOrgRelease
     ? currentAssets
     : currentAssets.filter((asset) => ["vscode", "npm"].includes(artifactKind(asset.name)));
@@ -178,30 +183,30 @@ export function renderDownloadsPage(releases) {
     .join("\n");
 
   const installStatus = isOpenOrgRelease
-    ? "The OpenOrg disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper."
+    ? "The Celorga disk images are available for Apple Silicon and Intel. Both are Developer ID signed, notarized, stapled, and accepted by Gatekeeper."
     : "";
   const alphaPreamble = isOpenOrgRelease ? "" : `
 
-* OpenOrg 0.5.0
+* Celorga 0.5.0
 
-OpenOrg =0.5.0= is being prepared as an alpha for Apple Silicon and Intel Macs. The public download will appear here after both packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
+Celorga =0.5.0= is being prepared as an alpha for Apple Silicon and Intel Macs. The public download will appear here after both packages are Developer ID signed, notarized, stapled, and pass Gatekeeper verification.
 
-The Org2 CLI, npm package, VS Code extension, schemas, and =.org2= format are available as the developer toolkit. See [[file:openorg-and-org2.org][OpenOrg and Org2]] for the relationship between the workspace and its open foundation.`;
-  const currentReleaseHeading = isOpenOrgRelease ? "OpenOrg" : "Org2 developer tools";
+The Celorga CLI, npm package, VS Code extension, and schemas are available as the developer toolkit. See [[file:architecture.org][Architecture]] for the relationship between the workspace and its open runtime.`;
+  const currentReleaseHeading = isOpenOrgRelease ? "Celorga" : "Celorga developer tools";
   const currentReleaseLabel = isOpenOrgRelease
-    ? `OpenOrg ${current.tag_name} downloads`
-    : `Org2 ${current.tag_name} developer tool downloads`;
+    ? `Celorga ${current.tag_name} downloads`
+    : `Celorga ${current.tag_name} developer tool downloads`;
   const stableDownloadSection = isOpenOrgRelease ? `
 
-* Stable OpenOrg download URL
+* Stable Celorga download URL
 
-OpenOrg release automation uses one permanent template for versioned disk images:
+Celorga release automation uses one permanent template for versioned disk images:
 
 #+begin_src text
 https://org2.gateway.scarf.sh/downloads/{version}/{artifact}
 #+end_src
 
-For example, the current OpenOrg builds are:
+For example, the current Celorga builds are:
 
 #+begin_src text
 ${currentMacAssets.slice(0, 2).map((asset) => scarfDownloadUrl(current.tag_name, asset.name)).join("\n")}
@@ -210,11 +215,11 @@ ${currentMacAssets.slice(0, 2).map((asset) => scarfDownloadUrl(current.tag_name,
 Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.` : "";
 
   return `#+TITLE: Downloads
-#+SUBTITLE: Install OpenOrg and its developer tools
+#+SUBTITLE: Install Celorga and its developer tools
 
 #+BEGIN_EXPORT html
 <section class="org2-page-intro org2-downloads-intro">
-  <p>OpenOrg is the workspace product; Org2 is its open format and developer toolkit. OpenOrg disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
+  <p>Celorga is a local-first workspace app with an open runtime, CLI, and developer toolkit. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT${alphaPreamble}
 
@@ -226,20 +231,20 @@ ${cards}
 </section>
 #+END_EXPORT
 
-${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use [[${npmPackageUrl}][the Org2 package on npm]] or install [[${vscodeMarketplaceUrl}][Org2 from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
+${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation, use [[${npmPackageUrl}][the celorga package on npm]] or install [[${vscodeMarketplaceUrl}][Celorga from the VS Code Marketplace]]. The paired iOS app is distributed separately through TestFlight.
 
-* OpenOrg for iOS
+* Celorga for iOS
 
-OpenOrg brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
+Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid org2-download-grid-mobile" aria-label="OpenOrg for iOS installation options">
+<section class="org2-download-grid org2-download-grid-mobile" aria-label="Celorga for iOS installation options">
   <article class="org2-download-card org2-download-card-ios">
     <p class="org2-download-kicker">TestFlight</p>
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
     <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:mail@avi.press?subject=OpenOrg%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
   <article class="org2-download-card org2-download-card-source">
     <p class="org2-download-kicker">Open source</p>

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  artifactLabel,
   managedBlockEnd,
   managedBlockStart,
   mergeReleaseDownloadBlock,
@@ -56,8 +57,8 @@ const openOrgBlock = releaseDownloadBlock({
     { name: "OpenOrg-Intel.dmg", size: 8284365 },
   ],
 });
-assert.match(openOrgBlock, /OpenOrg for macOS \(Apple Silicon DMG\)/);
-assert.match(openOrgBlock, /OpenOrg for macOS \(Intel DMG\)/);
+assert.match(openOrgBlock, /Celorga for macOS \(Apple Silicon DMG\)/);
+assert.match(openOrgBlock, /Celorga for macOS \(Intel DMG\)/);
 assert.match(block, /org2-vscode-0\.4\.1\.vsix/);
 assert.match(block, /aviaviavi-org2-0\.4\.1\.tgz/);
 
@@ -67,22 +68,22 @@ assert.match(merged, /## Highlights\n\nCurrent release\./);
 assert.equal(mergeReleaseDownloadBlock(merged, releases[0]), merged);
 
 const page = renderDownloadsPage(releases);
-assert.match(page, /\* OpenOrg 0\.5\.0/);
-assert.match(page, /\* Org2 developer tools 0\.4\.1/);
+assert.match(page, /\* Celorga 0\.5\.0/);
+assert.match(page, /\* Celorga developer tools 0\.4\.1/);
 assert.match(page, new RegExp(vscodeMarketplaceUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(page, new RegExp(npmPackageUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(page, /View in Marketplace/);
 assert.match(page, /View on npm/);
-assert.doesNotMatch(page, /Org2 for VS Code \(VSIX\)<\/h3>/);
-assert.doesNotMatch(page, /Org2 npm package \(TGZ\)<\/h3>/);
+assert.doesNotMatch(page, /Celorga for VS Code \(VSIX\)<\/h3>/);
+assert.doesNotMatch(page, /Celorga npm package \(TGZ\)<\/h3>/);
 assert.doesNotMatch(page, /\| Version \| VS Code VSIX \| npm TGZ \|/);
 assert.doesNotMatch(page, /org2\.gateway\.scarf\.sh\/downloads\/0\.4\.1\/(?:org2-vscode|aviaviavi-org2)/);
 assert.doesNotMatch(page, /Org2 Workspace/);
 assert.doesNotMatch(page, /Org2Workspace(?:-Intel)?\.dmg/);
 assert.doesNotMatch(page, /\| 0\.3\.0 \|/);
-assert.match(page, /\* OpenOrg for iOS/);
-assert.match(page, /OpenOrg brings capture/);
-assert.match(page, /mailto:mail@avi\.press\?subject=OpenOrg%20for%20iOS%20TestFlight/);
+assert.match(page, /\* Celorga for iOS/);
+assert.match(page, /Celorga brings capture/);
+assert.match(page, /mailto:mail@avi\.press\?subject=Celorga%20for%20iOS%20TestFlight/);
 assert.match(page, /apps\/ios\/Org2Mobile/);
 
 const openOrgPage = renderDownloadsPage([{
@@ -99,12 +100,12 @@ const openOrgPage = renderDownloadsPage([{
     { name: "aviaviavi-org2-0.5.0.tgz", size: 315913 },
   ],
 }]);
-assert.match(openOrgPage, /\* OpenOrg 0\.5\.0/);
-assert.doesNotMatch(openOrgPage, /\* Org2 developer tools 0\.5\.0/);
+assert.match(openOrgPage, /\* Celorga 0\.5\.0/);
+assert.doesNotMatch(openOrgPage, /\* Celorga developer tools 0\.5\.0/);
 assert.match(openOrgPage, /Developer ID signed, notarized, and stapled/);
 assert.match(openOrgPage, /OpenOrg-Intel\.dmg/);
 assert.match(openOrgPage, /href="https:\/\/marketplace\.visualstudio\.com\/items\?itemName=AviPress\.org2-vscode">View in Marketplace/);
-assert.match(openOrgPage, /href="https:\/\/www\.npmjs\.com\/package\/@aviaviavi\/org2">View on npm/);
+assert.match(openOrgPage, /href="https:\/\/www\.npmjs\.com\/package\/celorga">View on npm/);
 assert.doesNotMatch(openOrgPage, /href="https:\/\/org2\.gateway\.scarf\.sh\/downloads\/0\.5\.0\/org2-vscode/);
 assert.doesNotMatch(openOrgPage, /href="https:\/\/org2\.gateway\.scarf\.sh\/downloads\/0\.5\.0\/aviaviavi-org2/);
 assert.match(openOrgPage, /No release files are hosted separately by Scarf\./);
@@ -121,5 +122,11 @@ const currentReleases = releases.map((release) => ({
 const currentPlan = planReleaseDownloadSync(currentReleases, { currentPage: page });
 assert.equal(currentPlan.pageChanged, false);
 assert.ok(currentPlan.releaseUpdates.every((item) => !item.changed));
+
+// Releases after the rename ship Celorga-named disk images; label both spellings as Celorga.
+assert.equal(artifactLabel({ name: "Celorga.dmg" }), "Celorga for macOS (Apple Silicon DMG)");
+assert.equal(artifactLabel({ name: "Celorga-Intel.dmg" }), "Celorga for macOS (Intel DMG)");
+assert.equal(artifactLabel({ name: "OpenOrg.dmg" }), "Celorga for macOS (Apple Silicon DMG)");
+assert.equal(artifactLabel({ name: "Org2Workspace.dmg" }), "Org2 Workspace for macOS (Apple Silicon DMG)");
 
 console.log("release download sync tests passed");

@@ -3,11 +3,11 @@
 ## Public channels
 
 - Repository: `aviaviavi/org2`
-- npm: `@aviaviavi/org2`
+- npm: `celorga` (from the Celorga rename on; releases before it were published as `@aviaviavi/org2`, which gets a final deprecation notice at cutover)
 - VS Code Marketplace: `AviPress.org2-vscode`
 - Git tag: unprefixed SemVer, for example `0.4.1`
 - GitHub Release assets:
-  - `aviaviavi-org2-{version}.tgz`
+  - `celorga-{version}.tgz` (historical releases: `aviaviavi-org2-{version}.tgz`)
   - `org2-vscode-{version}.vsix`
   - OpenOrg `0.5.0+`: `OpenOrg.dmg` and `OpenOrg-Intel.dmg`
   - Historical Org2 Workspace releases: `Org2Workspace.dmg` and `Org2Workspace-Intel.dmg`
