@@ -196,7 +196,7 @@ if (/\b(?:Codex|OpenClaw)\b/.test(homepage) || /\b(?:Codex|OpenClaw)\b/.test(fea
 if (
   !homepage.includes("agents you choose")
   || !features.includes("models and agent harnesses you already use")
-  || !features.includes("Slack and Notion")
+  || !homepage.includes("coding agents, chat assistants, and local models")
   || !features.includes("local, remote, hosted, or self-hosted destination")
   || !gettingStarted.includes("CLI JSON and MCP")
   || !quickstart.includes("any local, remote, hosted, or self-hosted agent or model")
