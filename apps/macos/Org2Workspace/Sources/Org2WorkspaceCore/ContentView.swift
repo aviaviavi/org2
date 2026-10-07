@@ -11145,13 +11145,7 @@ private struct AIChatView: View {
       )
       .padding(presentation.isCompact ? 10 : 16)
     }
-    .background {
-      if showsEmptyChat {
-        WorkspaceAtmosphere()
-      } else {
-        WorkspaceDesign.paneBackground
-      }
-    }
+    .background(showsEmptyChat ? WorkspaceDesign.surfaceBackground : WorkspaceDesign.paneBackground)
   }
 
   @ViewBuilder
