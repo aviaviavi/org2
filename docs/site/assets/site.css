@@ -1586,7 +1586,7 @@ body #content {
 
 #content .org2-nav-menu nav > a:first-child::after {
   color: var(--fg);
-  content: "OpenOrg";
+  content: "Celorga";
   font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: -0.02em;
