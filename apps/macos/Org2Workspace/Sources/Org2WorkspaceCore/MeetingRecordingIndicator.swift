@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -129,13 +130,8 @@ struct MeetingRecordingToolbarIndicator: View {
   @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
-    if store.meetingRecordingIndicator() != nil {
-      let ticks = store.isRecordingMeeting && !store.isMeetingRecordingPaused
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        if let presentation = store.meetingRecordingIndicator(at: ticks ? context.date : Date()) {
-          pill(presentation)
-        }
-      }
+    if let presentation = store.meetingRecordingIndicator() {
+      pill(presentation)
     }
   }
 
@@ -150,10 +146,14 @@ struct MeetingRecordingToolbarIndicator: View {
             .symbolEffect(.pulse, isActive: presentation.phase == .recording)
           Text(presentation.title)
             .font(.caption.weight(.semibold))
-          if let elapsed = presentation.elapsedText {
-            Text(elapsed)
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.secondary)
+          if presentation.elapsedText != nil {
+            AppKitPeriodicLabel(
+              font: .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular),
+              color: .secondaryLabelColor
+            ) { [clock = store.meetingRecordingClock] now in
+              MeetingRecordingIndicatorPresentation.elapsedText(clock.elapsed(at: now))
+            }
+            .frame(width: 58)
           }
         }
         .contentShape(Rectangle())
