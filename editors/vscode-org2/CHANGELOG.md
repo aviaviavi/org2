@@ -4,6 +4,23 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+## 0.8.8 - 2026-10-07
+
+## OpenOrg 0.8.8
+
+- Browse web links and HTML files directly in the workspace, with find, zoom, copy-link, and expand controls.
+- See interactive charts in AI chat and documents, with updated styling, tooltips, and series controls.
+- Configure Slack, Notion, and IMAP email sources from a single setup form.
+- Understand running work through Activity status explanations, host visibility, and clearer Reply & Resume progress.
+- Start agent work from TODOs, settle completed chats, and keep active turns recoverable across app and server upgrades.
+- Enjoy collapsible sidebar sections, consistent theme surfaces, document @ file suggestions, and syntax highlighting for more than 60 formats.
+- Fix stuck chats, stale synced turns, navigation delays during source sync, and OpenClaw steering compatibility.
+- On iOS, improve shared chart rendering and syntax highlighting in documents.
+
+Install the Apple Silicon or Intel DMG for your Mac. Both builds require macOS 14 or later and are Developer ID signed and Apple notarized. The iOS build is distributed separately through TestFlight.
+
+Full changelog: https://github.com/aviaviavi/org2/compare/0.8.7...0.8.8
+
 ## 0.8.7 - 2026-10-03
 
 ## Highlights
