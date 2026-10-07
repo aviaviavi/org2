@@ -9233,7 +9233,7 @@ function parseAgentRankingWeight(raw: string, flag: string): number {
 }
 
 function printGeneralUsage(exitCode: number): never {
-  console.error(`org2 CLI
+  console.error(`Celorga CLI (celorga; org2 remains a compatibility alias)
 
 Usage:
   org2 <command> [options]

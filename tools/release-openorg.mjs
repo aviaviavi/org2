@@ -25,6 +25,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   OPENORG_SPARKLE_ACCOUNT,
+  OPENORG_SPARKLE_FEED_BASE,
+  OPENORG_SPARKLE_LEGACY_FEED_BASES,
   OPENORG_SPARKLE_PUBLIC_KEY,
   OPENORG_SPARKLE_TARGETS,
   openOrgSparkleDownloadPrefix,
@@ -33,6 +35,8 @@ import {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackagePath = join(repoRoot, "package.json");
+const npmPackageName = JSON.parse(readFileSync(rootPackagePath, "utf8")).name;
+const productSiteBase = "https://celorga.io";
 const vscodePackageDir = join(repoRoot, "editors", "vscode-org2");
 const iosProjectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
 const iosProjectFile = join(iosProjectPath, "project.pbxproj");
@@ -392,8 +396,8 @@ async function preflight(plan, options) {
   }
   const tagExists = capture("git", ["rev-parse", "--verify", `refs/tags/${plan.version}`], { allowFailure: true }).ok;
   if (tagExists) throw new Error(`Tag ${plan.version} already exists`);
-  const npmExists = capture("npm", ["view", `@aviaviavi/org2@${plan.version}`, "version"], { allowFailure: true }).ok;
-  if (npmExists) throw new Error(`@aviaviavi/org2@${plan.version} is already published`);
+  const npmExists = capture("npm", ["view", `${npmPackageName}@${plan.version}`, "version"], { allowFailure: true }).ok;
+  if (npmExists) throw new Error(`${npmPackageName}@${plan.version} is already published`);
   await runJob(plan, "Resolve Mac updater tools", "swift", ["package", "resolve"], { cwd: macPackageDir });
   const sparkleKey = capture(sparkleTool("generate_keys"), [
     "--account", OPENORG_SPARKLE_ACCOUNT,
@@ -676,7 +680,7 @@ async function generateSparkleAppcasts(plan, options) {
     await runJob(plan, `Sign ${target.architecture} update feed`, tool, [
       "--account", OPENORG_SPARKLE_ACCOUNT,
       "--download-url-prefix", openOrgSparkleDownloadPrefix(plan.version),
-      "--link", "https://openorg.so/downloads.html",
+      "--link", `${productSiteBase}/downloads.html`,
       "--embed-release-notes",
       "--maximum-versions", "1",
       staging,
@@ -922,15 +926,20 @@ async function verifyScarf(plan) {
 }
 
 async function verifySparkleAppcasts(plan) {
-  for (const target of OPENORG_SPARKLE_TARGETS) {
-    const response = await fetch(`https://openorg.so/assets/${target.output}`);
-    if (!response.ok) throw new Error(`Sparkle feed ${target.output} returned ${response.status}`);
-    const contents = await response.text();
-    const expectedURL = openOrgSparkleDownloadURL(plan.version, target.artifact);
-    if (!contents.includes(`enclosure url="${expectedURL}"`)
-        || !contents.includes("sparkle:edSignature=")
-        || !contents.includes("sparkle-signatures:")) {
-      throw new Error(`Sparkle feed ${target.output} does not advertise signed ${plan.version} through Scarf`);
+  // Builds shipped before the Celorga rename poll the legacy host, so every
+  // feed base must advertise the release.
+  for (const feedBase of [OPENORG_SPARKLE_FEED_BASE, ...OPENORG_SPARKLE_LEGACY_FEED_BASES]) {
+    for (const target of OPENORG_SPARKLE_TARGETS) {
+      const feedURL = `${feedBase}/${target.output}`;
+      const response = await fetch(feedURL);
+      if (!response.ok) throw new Error(`Sparkle feed ${feedURL} returned ${response.status}`);
+      const contents = await response.text();
+      const expectedURL = openOrgSparkleDownloadURL(plan.version, target.artifact);
+      if (!contents.includes(`enclosure url="${expectedURL}"`)
+          || !contents.includes("sparkle:edSignature=")
+          || !contents.includes("sparkle-signatures:")) {
+        throw new Error(`Sparkle feed ${feedURL} does not advertise signed ${plan.version} through Scarf`);
+      }
     }
   }
   console.log(`✓ Sparkle feeds advertise ${plan.version}`);
@@ -956,7 +965,7 @@ async function pollUntil(label, timeoutMs, check) {
 async function verify(plan, options) {
   await runParallel([
     () => pollUntil("npm public version", 10 * 60_000, async () => (
-      capture("npm", ["view", "@aviaviavi/org2@latest", "version"], { allowFailure: true }).stdout === plan.version
+      capture("npm", ["view", `${npmPackageName}@latest`, "version"], { allowFailure: true }).stdout === plan.version
     )),
     async () => {
       const result = capture("npx", ["@vscode/vsce", "show", "AviPress.org2-vscode", "--json"], {

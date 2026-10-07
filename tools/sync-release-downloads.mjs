@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const repository = "aviaviavi/org2";
 export const scarfGatewayBase = "https://org2.gateway.scarf.sh/downloads";
 export const vscodeMarketplaceUrl = "https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode";
-export const npmPackageUrl = "https://www.npmjs.com/package/@aviaviavi/org2";
+export const npmPackageUrl = "https://www.npmjs.com/package/celorga";
 export const managedBlockStart = "<!-- org2-scarf-downloads:start -->";
 export const managedBlockEnd = "<!-- org2-scarf-downloads:end -->";
 

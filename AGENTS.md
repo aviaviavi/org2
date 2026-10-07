@@ -1,4 +1,12 @@
-# OpenOrg / Org2 Agent Guide
+# Celorga (formerly OpenOrg / Org2) Agent Guide
+
+The product is being renamed to **Celorga**: one brand for the app, runtime,
+and CLI (`celorga`, with `org2` kept as a compatibility alias). Follow
+`docs/rename/celorga.org` for what to rename in user-facing text and which
+identifiers must keep their old spelling (bundle IDs, `.org2`, `org2.json`,
+`ORG2_*`, schema IDs, Keychain and preference keys). Check progress with
+`node tools/celorga-rename-audit.mjs`. The rest of this guide still uses the
+old names for the two layers:
 
 This repository contains two closely related layers:
 

@@ -25,7 +25,7 @@ field("clip-form").addEventListener("submit", async event => {
   const blobURL = URL.createObjectURL(new Blob([JSON.stringify(clip, null, 2) + "\n"], { type: "application/json" }));
   try {
     await chrome.downloads.download({ url: blobURL, filename: `${clip.title.replace(/[^a-z0-9-]+/gi, "-").slice(0, 80) || "article"}.org2clip`, saveAs: true });
-    field("status").textContent = "Clip saved. In OpenOrg’s Capture window, choose Import Browser Clip.";
+    field("status").textContent = "Clip saved. In Celorga’s Capture window, choose Import Browser Clip.";
   } catch (error) { field("status").textContent = `Save failed: ${error.message}`; }
   // Keep the blob available until the popup closes; the download may start later.
 });

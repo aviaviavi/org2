@@ -104,8 +104,8 @@ export async function runBundledAgent(
     headers.Authorization = `Bearer ${request.apiKey}`;
   }
   if (adapter === "openRouter") {
-    headers["HTTP-Referer"] = "https://org2.avi.press";
-    headers["X-Title"] = "OpenOrg";
+    headers["HTTP-Referer"] = "https://celorga.io";
+    headers["X-Title"] = "Celorga";
   }
   const messages: ObjectValue[] = request.messages.map(message => ({
     role: message.role === "assistant" ? "assistant" : "user",

@@ -9,9 +9,11 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(join(repoRoot, relativePath), "utf8");
 
 const packageJSON = JSON.parse(read("package.json"));
-assert.equal(packageJSON.name, "@aviaviavi/org2", "the npm package remains the Org2 substrate");
-assert.equal(packageJSON.bin?.org2, "dist/cli.js", "the org2 CLI name remains stable");
-assert.equal(packageJSON.bin?.["org2-lsp"], "dist/lsp.js", "the org2-lsp CLI name remains stable");
+assert.equal(packageJSON.name, "celorga", "the npm package is published as celorga");
+assert.equal(packageJSON.bin?.celorga, "dist/cli.js", "the celorga CLI is the primary command");
+assert.equal(packageJSON.bin?.["celorga-lsp"], "dist/lsp.js", "the celorga-lsp server is the primary language server");
+assert.equal(packageJSON.bin?.org2, "dist/cli.js", "the org2 CLI name remains a compatibility alias");
+assert.equal(packageJSON.bin?.["org2-lsp"], "dist/lsp.js", "the org2-lsp name remains a compatibility alias");
 
 const macBuild = read("tools/build-macos-app.mjs");
 assert.match(macBuild, /ORG2_WORKSPACE_BUNDLE_ID \?\? "org\.org2\.workspace"/, "preserve the macOS bundle identifier");
