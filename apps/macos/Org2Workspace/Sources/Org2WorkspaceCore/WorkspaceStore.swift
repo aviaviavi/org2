@@ -3235,6 +3235,11 @@ public final class WorkspaceStore {
   private var aiChatAttachmentCachedKeys: Set<AIChatComposerKey> = []
   private var aiChatPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
   private var activeAIChatUserMessageIDByThreadID: [UUID: UUID] = [:]
+  /// User messages this process dispatched to a runtime. One still `sending`
+  /// after this host stopped driving its thread is an orphan, not a live turn.
+  @ObservationIgnored private var aiChatDispatchedUserMessageIDs: Set<UUID> = []
+  /// Steers whose delivery task is still running in this process.
+  @ObservationIgnored private var aiChatInFlightSteerMessageIDs: Set<UUID> = []
   private var drainingAIChatThreadIDs: Set<UUID> = []
   private var aiChatDrainTasksByThreadID: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
   private var stoppedAIChatThreadIDs: Set<UUID> = []
@@ -25570,6 +25575,7 @@ extension WorkspaceStore {
     // In a shared room, guidance can only steer the agent whose turn is
     // running, and only when the message addresses exactly that agent
     // (explicitly or as the room's default). Anything else is queued.
+    repairOrphanedAIChatSends(in: threadID)
     let steeringThread = aiChatThreads.first(where: { $0.id == threadID })
     let roomSteerTargets = delivery == .steer && steeringThread?.isSharedRoom == true
       ? steeringThread.map { aiChatRoomTargets(for: text, in: $0, audience: audience) }
@@ -25605,6 +25611,7 @@ extension WorkspaceStore {
       if selectedAIChatThreadID == threadID {
         aiChatStatusText = "Steering \(aiChatDestinationTitle(steerDestinationID))…"
       }
+      aiChatInFlightSteerMessageIDs.insert(userMessage.id)
       Task { @MainActor [weak self] in
         await self?.deliverAIChatSteer(
           userMessage,
@@ -25744,6 +25751,8 @@ extension WorkspaceStore {
     in threadID: UUID,
     context: AIChatCorpusContextToken
   ) async {
+    aiChatInFlightSteerMessageIDs.insert(message.id)
+    defer { aiChatInFlightSteerMessageIDs.remove(message.id) }
     guard isCurrentAIChatCorpusContext(context) else { return }
     guard aiChatThreads.contains(where: { $0.id == threadID }) else { return }
     let roomDestinationID = aiChatThreads.first(where: { $0.id == threadID })?.isSharedRoom == true
@@ -26048,6 +26057,8 @@ extension WorkspaceStore {
       aiChatStatusText = statusText
     }
     syncSelectedAIChatSendState()
+    // A turn this host lost track of earlier also ran on the expired task.
+    repairOrphanedAIChatSends(in: threadID)
   }
 
   private func replaceAIChatMessageDelivery(
@@ -26446,7 +26457,78 @@ extension WorkspaceStore {
     await task.value
     if aiChatDrainTasksByThreadID[threadID]?.token == token {
       aiChatDrainTasksByThreadID.removeValue(forKey: threadID)
+      // Nothing drives this thread any more; a turn it left `sending` would
+      // otherwise keep the chat "working" and queue every later message.
+      repairOrphanedAIChatSends(in: threadID)
     }
+  }
+
+  /// Whether a dispatched message is still awaiting its reply and was not
+  /// stopped, so a late reply still belongs to it.
+  private func isUnstoppedAIChatSend(
+    _ messageID: UUID,
+    in threadID: UUID,
+    transcriptURL: URL
+  ) -> Bool {
+    guard !stoppedAIChatThreadIDs.contains(threadID),
+          !staleCodexRuntimeThreadIDs.contains(threadID)
+    else { return false }
+    return aiChatMessages(for: threadID, transcriptURL: transcriptURL).contains {
+      $0.id == messageID && $0.role == .user && $0.deliveryStatus == .sending
+    }
+  }
+
+  /// Interrupts sends this process dispatched but no longer drives, then
+  /// resumes anything queued behind them. Without this, one lost turn left the
+  /// chat looking busy: new messages queued forever and steers had no live
+  /// session to reach.
+  private func repairOrphanedAIChatSends(in threadID: UUID) {
+    guard isAIChatRuntimeStateVisible(for: threadID),
+          !unloadedAIChatThreadIDs.contains(threadID),
+          !isAIChatThreadRunningOnCurrentHost(threadID),
+          !hasPendingAIChatRecovery(in: threadID),
+          let storedThread = aiChatThreads.first(where: { $0.id == threadID })
+    else { return }
+    let thread = storedThread.replacingMessages(aiChatMessages(for: threadID))
+    let repaired = Self.interruptOrphanedAIChatSends(
+      in: thread,
+      dispatchedMessageIDs: aiChatDispatchedUserMessageIDs
+    )
+    guard let repaired else { return }
+    aiChatDispatchedUserMessageIDs.subtract(
+      thread.messages.lazy.filter { $0.deliveryStatus == .sending }.map(\.id)
+    )
+    codexActiveTurnsByThreadID.removeValue(forKey: threadID)
+    updateAIChatThread(threadID, messages: repaired.messages, shouldPersist: true)
+    dequeueInterruptedAIChatSends(in: repaired)
+    syncSelectedAIChatSendState()
+    if !aiChatPendingUserMessageIDs(for: threadID).isEmpty {
+      Task { @MainActor [weak self] in await self?.drainAIChatSendQueue(for: threadID) }
+    }
+  }
+
+  nonisolated static let aiChatOrphanedSendFailureText =
+    "This response stopped before OpenOrg received it. Retry to send it again."
+
+  /// Marks dispatched `sending` turns interrupted. Returns nil when nothing
+  /// changed. Callers ensure no task in this process still drives the thread.
+  nonisolated static func interruptOrphanedAIChatSends(
+    in thread: AIChatThread,
+    dispatchedMessageIDs: Set<UUID>
+  ) -> AIChatThread? {
+    var changed = false
+    let messages = thread.messages.map { message -> AIChatMessage in
+      guard message.role == .user,
+            message.deliveryStatus == .sending,
+            dispatchedMessageIDs.contains(message.id)
+      else { return message }
+      changed = true
+      return message.replacingDeliveryStatus(
+        .interrupted,
+        sendFailure: aiChatOrphanedSendFailureText
+      )
+    }
+    return changed ? thread.replacingMessages(messages) : nil
   }
 
   private func performAIChatSendQueueDrain(for threadID: UUID) async {
@@ -26583,6 +26665,7 @@ extension WorkspaceStore {
         await localEditBroker().beginTurn(turnID)
       }
       activeAIChatUserMessageIDByThreadID[threadID] = userMessageID
+      aiChatDispatchedUserMessageIDs.insert(userMessageID)
       do {
         let requestMessages = try await Task.detached {
           try requestMessages.map(AIChatTextAttachments.expanding)
@@ -26663,14 +26746,16 @@ extension WorkspaceStore {
             sendOrigin: sendOrigin
           )
         }
-        guard aiChatPendingUserMessageIDs(for: threadID).contains(userMessageID) else {
+        codexActiveTurnsByThreadID.removeValue(forKey: threadID)
+        guard aiChatPendingUserMessageIDs(for: threadID).contains(userMessageID)
+          || isUnstoppedAIChatSend(userMessageID, in: threadID, transcriptURL: sendOrigin.transcriptURL)
+        else {
           // Stop/dequeue may race the final frame. Once the local request was
           // canceled, a late reply must not put the thread back into a live
           // presentation or append an answer to the stopped turn.
           clearAIChatCompletedRunPresentation(for: threadID)
           return
         }
-        codexActiveTurnsByThreadID.removeValue(forKey: threadID)
         let assistantMessageID = insertAIChatReply(
           reply,
           after: userMessageID,
@@ -26684,8 +26769,11 @@ extension WorkspaceStore {
             ? Self.openCodeRemoteReplyID(for: userMessageID) : nil
         )
         activeAIChatUserMessageIDByThreadID.removeValue(forKey: threadID)
+        aiChatDispatchedUserMessageIDs.remove(userMessageID)
         clearAIChatCompletedRunPresentation(for: threadID)
-        removeFirstPendingAIChatUserMessage(in: threadID)
+        // Remove exactly the answered message: a transcript refresh may have
+        // rebuilt the queue while the turn was running.
+        removePendingAIChatUserMessage(userMessageID, in: threadID)
         await recordAgentAutomationReply(
           threadID: threadID,
           destination: dispatchDestination,
@@ -26951,6 +27039,7 @@ extension WorkspaceStore {
     prepareAIChatRunPresentation(for: threadID)
     drainingAIChatThreadIDs.insert(threadID)
     activeAIChatUserMessageIDByThreadID[threadID] = pendingUserMessage.id
+    aiChatDispatchedUserMessageIDs.insert(pendingUserMessage.id)
     aiChatRequestStartedAtByThreadID[threadID] = pendingTurn.startedAt
     aiChatActiveRunIDByThreadID[threadID] = pendingTurn.runID
     if recoversOpenCode {
@@ -30448,20 +30537,36 @@ extension WorkspaceStore {
     // A user-initiated retry is a new attempt. Stop guards intentionally ignore
     // late events from the canceled attempt, but must not suppress the retry's
     // gateway events or turn its errors back into another stopped result.
+    repairOrphanedAIChatSends(in: threadID)
+    aiChatDispatchedUserMessageIDs.remove(messageID)
     stoppedAIChatThreadIDs.remove(threadID)
     staleCodexRuntimeThreadIDs.remove(threadID)
+    // Decide before this message itself becomes `sending` again, which would
+    // count as a running turn.
+    let threadWasRunning = isAIChatThreadRunning(threadID)
     clearAIChatSendFailure(for: messageID, in: threadID)
     replaceAIChatDeliveryStatus(for: messageID, in: threadID, with: .sending)
-    if message.deliveryKind == .steer,
-       isAIChatThreadRunning(threadID),
-       canSteerAIChatThread(threadID, destinationID: message.targetDestinationID),
-       let retryMessage = aiChatMessages(for: threadID).first(where: { $0.id == messageID }) {
-      await deliverAIChatSteer(
-        retryMessage,
+    if message.deliveryKind == .steer {
+      if threadWasRunning,
+         canSteerAIChatThread(threadID, destinationID: message.targetDestinationID),
+         let retryMessage = aiChatMessages(for: threadID).first(where: { $0.id == messageID }) {
+        await deliverAIChatSteer(
+          retryMessage,
+          in: threadID,
+          context: captureAIChatCorpusContext()
+        )
+        return
+      }
+      // No live turn can take this guidance. Queue it as an ordinary message;
+      // a queued `steer` is never restored to the queue after a reload and
+      // would be interrupted again.
+      replaceAIChatMessageDelivery(
+        for: messageID,
         in: threadID,
-        context: captureAIChatCorpusContext()
+        status: .sending,
+        kind: threadWasRunning ? .followUp : .turn,
+        sendFailure: nil
       )
-      return
     }
     enqueueAIChatUserMessage(messageID, in: threadID)
     if drainingAIChatThreadIDs.contains(threadID) {
@@ -41727,6 +41832,12 @@ extension WorkspaceStore {
     aiChatTranscriptPersistedMutationGeneration = 0
   }
 
+  /// Simulates the in-memory queue losing a running turn (for example a
+  /// transcript refresh rebuilding it) while the provider is still working.
+  func forgetAIChatQueueForTesting(_ threadID: UUID) {
+    aiChatPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+  }
+
   func waitForAIChatTranscriptLoadForTesting() async {
     if let aiChatTranscriptLoadTask {
       await aiChatTranscriptLoadTask.value
@@ -41947,7 +42058,8 @@ extension WorkspaceStore {
     )
     let imported = aiChatReadState.applying(
       to: Self.interruptUnresolvedAIChatSteers(
-        in: Self.settlingAnsweredOpenCodeRemoteTurns(in: importedCandidates).threads
+        in: Self.settlingAnsweredOpenCodeRemoteTurns(in: importedCandidates).threads,
+        inFlightSteerIDs: aiChatInFlightSteerMessageIDs
       ).threads,
       transcriptURL: target
     )
@@ -43060,7 +43172,8 @@ extension WorkspaceStore {
     let migratedThreads = migrateAIChatThreadDestinations(transcript.threads)
     let answeredTurnRecovery = Self.settlingAnsweredOpenCodeRemoteTurns(in: migratedThreads)
     let unresolvedSteerRecovery = Self.interruptUnresolvedAIChatSteers(
-      in: answeredTurnRecovery.threads
+      in: answeredTurnRecovery.threads,
+      inFlightSteerIDs: aiChatInFlightSteerMessageIDs
     )
     let restoredThreads = unresolvedSteerRecovery.threads
     let migratedThreadMetadata = zip(transcript.threads, migratedThreads).contains { pair in
@@ -43169,8 +43282,12 @@ extension WorkspaceStore {
     return (settled, changed)
   }
 
-  nonisolated private static func interruptUnresolvedAIChatSteers(
-    in threads: [AIChatThread]
+  /// A steer still `sending` after a reload lost its acknowledgement, unless
+  /// this process is still delivering it: a transcript refresh mid-delivery
+  /// must not turn live guidance into a failure.
+  nonisolated static func interruptUnresolvedAIChatSteers(
+    in threads: [AIChatThread],
+    inFlightSteerIDs: Set<UUID> = []
   ) -> (threads: [AIChatThread], changed: Bool) {
     var changed = false
     let recovered = threads.map { thread in
@@ -43178,7 +43295,8 @@ extension WorkspaceStore {
       let messages = thread.messages.map { message in
         guard message.role == .user,
               message.deliveryStatus == .sending,
-              message.deliveryKind == .steer
+              message.deliveryKind == .steer,
+              !inFlightSteerIDs.contains(message.id)
         else { return message }
         changed = true
         threadChanged = true

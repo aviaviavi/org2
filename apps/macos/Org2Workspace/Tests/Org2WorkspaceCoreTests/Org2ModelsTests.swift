@@ -6920,6 +6920,137 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  /// The reported bug: the queue lost a running turn, so its reply was
+  /// dropped and the prompt stayed `sending`. The chat looked busy forever,
+  /// new messages queued behind it, and steers had no session to reach.
+  @MainActor
+  func testTurnLostFromQueueStillReceivesItsReplyAndTheChatSettles() async throws {
+    let sendRecorder = AIChatSuspendedSendRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-lost-turn-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+
+    store.aiChatDraft = "first request"
+    let firstSend = Task { await store.sendAIChatMessage() }
+    await sendRecorder.waitUntilStarted()
+    let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
+    store.forgetAIChatQueueForTesting(threadID)
+
+    await sendRecorder.finish(reply: "first reply")
+    await firstSend.value
+
+    XCTAssertEqual(
+      store.aiChatMessages.map { "\($0.role.rawValue):\($0.deliveryStatus):\($0.content)" },
+      ["user:sent:first request", "assistant:sent:first reply"]
+    )
+    XCTAssertFalse(store.isAIChatThreadRunning(threadID))
+
+    store.sendComposedAIChatMessage(text: "next question")
+    let next = try XCTUnwrap(store.aiChatMessages.last)
+    XCTAssertEqual(next.deliveryKind, .turn, "the next message is not queued behind a finished turn")
+    for _ in 0..<100 where store.aiChatMessages.last?.content != "next reply" {
+      await sendRecorder.finish(reply: "next reply")
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertEqual(store.aiChatMessages.last?.content, "next reply")
+  }
+
+  func testOrphanRepairInterruptsOnlyTurnsThisProcessDispatched() {
+    let orphan = AIChatMessage(role: .user, content: "lost", deliveryStatus: .sending)
+    let queued = AIChatMessage(
+      role: .user,
+      content: "queued",
+      deliveryStatus: .sending,
+      deliveryKind: .followUp
+    )
+    let answered = AIChatMessage(role: .user, content: "answered", deliveryStatus: .sent)
+    let thread = AIChatThread(title: "Lost", sessionKey: "lost", messages: [answered, orphan, queued])
+
+    let repaired = WorkspaceStore.interruptOrphanedAIChatSends(
+      in: thread,
+      dispatchedMessageIDs: [orphan.id, answered.id]
+    )
+    XCTAssertEqual(repaired?.messages.map(\.deliveryStatus), [.sent, .interrupted, .sending])
+    XCTAssertEqual(repaired?.messages[1].sendFailure, WorkspaceStore.aiChatOrphanedSendFailureText)
+    XCTAssertNil(WorkspaceStore.interruptOrphanedAIChatSends(in: thread, dispatchedMessageIDs: []))
+  }
+
+  /// A transcript refresh while a steer is still being delivered must not
+  /// mark it "interrupted before its acknowledgement".
+  func testReloadLeavesInFlightSteerAlone() {
+    let inFlight = AIChatMessage(role: .user, content: "go", deliveryStatus: .sending, deliveryKind: .steer)
+    let lost = AIChatMessage(role: .user, content: "lost", deliveryStatus: .sending, deliveryKind: .steer)
+    let thread = AIChatThread(title: "Steer", sessionKey: "steer", messages: [inFlight, lost])
+
+    let result = WorkspaceStore.interruptUnresolvedAIChatSteers(
+      in: [thread],
+      inFlightSteerIDs: [inFlight.id]
+    )
+    XCTAssertEqual(result.threads[0].messages.map(\.deliveryStatus), [.sending, .interrupted])
+  }
+
+  /// Retrying an interrupted steer when no turn is running used to re-queue it
+  /// still marked as a steer. Queue rebuilds skip steers, so the next reload
+  /// interrupted it again and every retry "failed".
+  @MainActor
+  func testRetriedSteerWithoutLiveTurnSendsAsAnOrdinaryTurn() async throws {
+    let sendRecorder = AIChatSuspendedSendRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-retry-steer-\(UUID().uuidString).json")
+    let steer = AIChatMessage(
+      role: .user,
+      content: "do the confirmation",
+      sendFailure: "This steer was interrupted before its acknowledgement. Retry it to steer the active run again.",
+      deliveryStatus: .interrupted,
+      deliveryKind: .steer
+    )
+    let thread = AIChatThread(
+      title: "Interrupted steer",
+      sessionKey: "interrupted-steer",
+      messages: [
+        AIChatMessage(role: .user, content: "start", deliveryStatus: .sent),
+        AIChatMessage(role: .assistant, content: "started"),
+        steer
+      ]
+    )
+    try AIChatTranscriptStore.shared.flush(
+      AIChatTranscriptSnapshot(
+        threads: [thread],
+        selectedThreadID: thread.id,
+        settlementSettings: AIChatThreadSettlementSettings()
+      ),
+      legacyURL: transcriptURL
+    )
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      aiChatTranscriptURL: transcriptURL,
+      aiChatSendHandler: { messages, _, _, _ in
+        try await sendRecorder.send(messages: messages)
+      }
+    )
+    await store.waitForAIChatTranscriptLoadForTesting()
+    XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
+
+    let retry = Task { await store.retryAIChatMessage(steer.id) }
+    await sendRecorder.waitUntilStarted()
+    let retried = try XCTUnwrap(store.aiChatMessages.first { $0.id == steer.id })
+    XCTAssertEqual(retried.deliveryKind, .turn)
+    XCTAssertEqual(retried.deliveryStatus, .sending)
+    XCTAssertNil(retried.sendFailure)
+
+    await sendRecorder.finish(reply: "confirmed")
+    await retry.value
+    XCTAssertEqual(store.aiChatMessages.first { $0.id == steer.id }?.deliveryStatus, .sent)
+    XCTAssertEqual(store.aiChatMessages.last?.content, "confirmed")
+    XCTAssertFalse(store.isAIChatThreadRunning(thread.id))
+  }
+
   func testOpenClawSteerRequestUsesSteerCommandWithoutQueueMode() throws {
     let attachment = AIChatAttachment(
       fileName: "reference.txt",
