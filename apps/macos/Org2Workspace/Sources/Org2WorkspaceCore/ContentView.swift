@@ -11135,7 +11135,9 @@ private struct AIChatView: View {
 
       chatTranscript
 
-      Divider()
+      if !showsEmptyChat {
+        Divider()
+      }
 
       AIChatComposerView(
         focusOnAppear: presentation != .assistantPanel,
@@ -11143,7 +11145,13 @@ private struct AIChatView: View {
       )
       .padding(presentation.isCompact ? 10 : 16)
     }
-    .background(WorkspaceDesign.paneBackground)
+    .background {
+      if showsEmptyChat {
+        WorkspaceAtmosphere()
+      } else {
+        WorkspaceDesign.paneBackground
+      }
+    }
   }
 
   @ViewBuilder
@@ -11303,11 +11311,15 @@ private struct AIChatView: View {
     .fixedSize()
   }
 
+  private var showsEmptyChat: Bool {
+    store.aiChatMessages.isEmpty
+      && !store.isSendingAIChatMessage
+      && !store.isLoadingAIChatTranscript
+      && store.aiChatTranscriptRecoveryNotice == nil
+  }
+
   @ViewBuilder private var chatTranscript: some View {
-    if store.aiChatMessages.isEmpty,
-       !store.isSendingAIChatMessage,
-       !store.isLoadingAIChatTranscript,
-       store.aiChatTranscriptRecoveryNotice == nil {
+    if showsEmptyChat {
       EmptyChatView()
     } else {
       chatTranscriptDocument
@@ -12169,7 +12181,6 @@ private struct EmptyChatView: View {
         .padding(28)
         .frame(maxWidth: .infinity, minHeight: geometry.size.height)
       }
-      .background { WorkspaceAtmosphere() }
     }
     .accessibilityIdentifier("ai-chat-empty-state")
   }
