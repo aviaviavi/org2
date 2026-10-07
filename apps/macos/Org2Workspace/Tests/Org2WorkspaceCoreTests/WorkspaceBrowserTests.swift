@@ -137,6 +137,61 @@ final class WorkspaceBrowserTests: XCTestCase {
     XCTAssertEqual(store.workspaceTabs.count, tabCount + 1)
     XCTAssertEqual(store.presentedWebPageURL, page)
   }
+
+  @MainActor
+  func testWebPageFindInPageZoomAndPaneControls() throws {
+    let suiteName = "org2-web-page-tools-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    let page = try XCTUnwrap(URL(string: "https://example.com/docs"))
+    store.openWebPage(page)
+
+    // ⌘F targets the page: the find bar opens and searches go to the web view.
+    XCTAssertTrue(store.focusCurrentSearchField())
+    let browser = store.browser
+    XCTAssertTrue(browser.isFindPresented)
+    XCTAssertEqual(browser.findFocusToken, 1)
+    browser.findQuery = "install"
+    browser.findNext()
+    guard case .find("install", backwards: false) = browser.pendingRequest?.action else { return XCTFail("expected a forward find") }
+    browser.findPrevious()
+    guard case .find("install", backwards: true) = browser.pendingRequest?.action else { return XCTFail("expected a backward find") }
+    browser.reportFindResult(matchFound: false)
+    XCTAssertEqual(browser.findMatchFound, false)
+    browser.findQuery = "  "
+    browser.find()
+    XCTAssertEqual(browser.pendingRequest?.action, .clearFind)
+    XCTAssertNil(browser.findMatchFound)
+    browser.dismissFind()
+    XCTAssertFalse(browser.isFindPresented)
+
+    // Zoom steps through fixed levels and clamps at both ends.
+    XCTAssertTrue(browser.isActualSize)
+    browser.zoomIn()
+    XCTAssertEqual(browser.pageZoom, 1.1, accuracy: 0.001)
+    browser.zoomOut()
+    browser.zoomOut()
+    XCTAssertEqual(browser.pageZoom, 0.9, accuracy: 0.001)
+    for _ in 0..<20 { browser.zoomOut() }
+    XCTAssertEqual(browser.pageZoom, 0.5, accuracy: 0.001)
+    XCTAssertFalse(browser.canZoomOut)
+    for _ in 0..<20 { browser.zoomIn() }
+    XCTAssertEqual(browser.pageZoom, 3, accuracy: 0.001)
+    XCTAssertFalse(browser.canZoomIn)
+    browser.resetZoom()
+    XCTAssertTrue(browser.isActualSize)
+
+    // The pane's expand and close controls work on a web page like a document.
+    store.toggleDetailPaneExpansion()
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    store.toggleDetailPaneExpansion()
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    store.closeDetailPane()
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+    store.openWebPage(page)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed, "reopening the link shows the page again")
+  }
 }
 
 @MainActor

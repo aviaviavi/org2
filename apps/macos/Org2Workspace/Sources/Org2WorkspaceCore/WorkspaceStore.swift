@@ -12531,6 +12531,7 @@ extension WorkspaceStore {
     browser.load(url)
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
+    activeWorkspacePane = .detail
     statusText = "Opened \(url.host ?? url.absoluteString)"
   }
 
@@ -12554,6 +12555,10 @@ extension WorkspaceStore {
 
   @discardableResult
   public func focusPageSearch() -> Bool {
+    if presentedWebPageURL != nil {
+      browser.presentFind()
+      return true
+    }
     guard selectedLocation != nil else { return false }
     isPageSearchPresented = true
     pageSearchQuery = renderedSearchHighlightQuery ?? ""
@@ -38967,6 +38972,20 @@ extension WorkspaceStore {
       }
       if (modifiers == [.command] || modifiers == [.command, .shift]), event.keyCode == 24 {
         zoomSlidePreviewIn()
+        return true
+      }
+    }
+
+    if scope == .all,
+       presentedWebPageURL != nil,
+       !isWorkspaceDetailPaneClosed,
+       isWorkspaceSurfacePaneClosed || activeWorkspacePane == .detail {
+      if modifiers == [.command], event.keyCode == 27 {
+        browser.zoomOut()
+        return true
+      }
+      if (modifiers == [.command] || modifiers == [.command, .shift]), event.keyCode == 24 {
+        browser.zoomIn()
         return true
       }
     }

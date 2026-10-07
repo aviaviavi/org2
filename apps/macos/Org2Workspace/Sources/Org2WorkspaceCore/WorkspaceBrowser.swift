@@ -243,6 +243,8 @@ public final class WorkspaceBrowserModel {
       case forward
       case reload
       case stop
+      case find(String, backwards: Bool)
+      case clearFind
     }
     public let id: Int
     public let action: Action
@@ -265,6 +267,15 @@ public final class WorkspaceBrowserModel {
   public private(set) var pendingRequest: NavigationRequest?
   public private(set) var servedSites: [ServedSite] = []
   public private(set) var runningLocalPorts: [UInt16] = []
+  /// Find in page.
+  public private(set) var isFindPresented = false
+  public var findQuery = ""
+  /// Whether the last search found a match; `nil` before searching.
+  public private(set) var findMatchFound: Bool?
+  public private(set) var findFocusToken = 0
+  /// Page zoom (1 = actual size), applied to the web view.
+  public private(set) var pageZoom: Double = 1
+  public static let zoomLevels: [Double] = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
   @ObservationIgnored private var requestSequence = 0
   @ObservationIgnored private var servers: [String: LocalStaticSiteServer] = [:]
 
@@ -277,6 +288,7 @@ public final class WorkspaceBrowserModel {
 
   public func load(_ url: URL) {
     errorMessage = nil
+    findMatchFound = nil
     // Until the web view reports the new page, the old one is not current.
     currentURL = nil
     addressText = url.isFileURL ? url.path : url.absoluteString
@@ -292,6 +304,59 @@ public final class WorkspaceBrowserModel {
     }
     load(url)
     return true
+  }
+
+  // MARK: Find in page
+
+  public func presentFind() {
+    isFindPresented = true
+    findFocusToken += 1
+  }
+
+  public func dismissFind() {
+    isFindPresented = false
+    findMatchFound = nil
+    request(.clearFind)
+  }
+
+  /// Searches for `findQuery`; an empty query clears the highlight.
+  public func find(backwards: Bool = false) {
+    let query = findQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      findMatchFound = nil
+      request(.clearFind)
+      return
+    }
+    request(.find(findQuery, backwards: backwards))
+  }
+
+  public func findNext() { find(backwards: false) }
+  public func findPrevious() { find(backwards: true) }
+
+  func reportFindResult(matchFound: Bool) {
+    findMatchFound = matchFound
+  }
+
+  // MARK: Zoom
+
+  public var canZoomIn: Bool { pageZoom < (Self.zoomLevels.last ?? 3) - 0.001 }
+  public var canZoomOut: Bool { pageZoom > (Self.zoomLevels.first ?? 0.5) + 0.001 }
+  public var isActualSize: Bool { abs(pageZoom - 1) < 0.001 }
+
+  public func zoomIn() {
+    pageZoom = Self.zoomLevels.first { $0 > pageZoom + 0.001 } ?? pageZoom
+  }
+
+  public func zoomOut() {
+    pageZoom = Self.zoomLevels.last { $0 < pageZoom - 0.001 } ?? pageZoom
+  }
+
+  public func resetZoom() { pageZoom = 1 }
+
+  /// The page's address for Copy Link and Open in Default Browser.
+  public var shareableURL: URL? {
+    guard let currentURL, currentURL.absoluteString != "about:blank" else { return nil }
+    return currentURL
   }
 
   public func goBack() { request(.back) }
@@ -367,6 +432,9 @@ public final class WorkspaceBrowserModel {
 struct WorkspaceWebView: NSViewRepresentable {
   let model: WorkspaceBrowserModel
   var fileReadAccessRoot: URL?
+  /// Called when the page takes keyboard focus (a click into it), so pane
+  /// shortcuts such as Find target the web page.
+  var onActivate: (@MainActor () -> Void)?
 
   func makeCoordinator() -> Coordinator { Coordinator(model: model, fileReadAccessRoot: fileReadAccessRoot) }
 
@@ -374,7 +442,9 @@ struct WorkspaceWebView: NSViewRepresentable {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .default()
     configuration.preferences.isElementFullscreenEnabled = true
-    let webView = WKWebView(frame: .zero, configuration: configuration)
+    let webView = WorkspaceFocusReportingWebView(frame: .zero, configuration: configuration)
+    webView.onActivate = onActivate
+    webView.pageZoom = model.pageZoom
     webView.allowsBackForwardNavigationGestures = true
     webView.allowsMagnification = true
     webView.navigationDelegate = context.coordinator
@@ -386,6 +456,8 @@ struct WorkspaceWebView: NSViewRepresentable {
 
   func updateNSView(_ webView: WKWebView, context: Context) {
     context.coordinator.fileReadAccessRoot = fileReadAccessRoot
+    (webView as? WorkspaceFocusReportingWebView)?.onActivate = onActivate
+    if abs(webView.pageZoom - model.pageZoom) > 0.001 { webView.pageZoom = model.pageZoom }
     if let request = model.pendingRequest { context.coordinator.perform(request, in: webView) }
   }
 
@@ -452,6 +524,17 @@ struct WorkspaceWebView: NSViewRepresentable {
       case .forward: webView.goForward()
       case .reload: webView.reload()
       case .stop: webView.stopLoading()
+      case .find(let query, let backwards):
+        let configuration = WKFindConfiguration()
+        configuration.backwards = backwards
+        configuration.caseSensitive = false
+        configuration.wraps = true
+        let model = self.model
+        webView.find(query, configuration: configuration) { result in
+          MainActor.assumeIsolated { model.reportFindResult(matchFound: result.matchFound) }
+        }
+      case .clearFind:
+        webView.evaluateJavaScript("window.getSelection && window.getSelection().removeAllRanges(); null;")
       }
     }
 
@@ -503,6 +586,23 @@ struct WorkspaceWebView: NSViewRepresentable {
       }
       return nil
     }
+  }
+}
+
+/// Reports when it becomes first responder, i.e. when the user clicks or
+/// tabs into the page.
+final class WorkspaceFocusReportingWebView: WKWebView {
+  var onActivate: (@MainActor () -> Void)?
+
+  override func becomeFirstResponder() -> Bool {
+    let accepted = super.becomeFirstResponder()
+    if accepted { onActivate?() }
+    return accepted
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    onActivate?()
+    super.mouseDown(with: event)
   }
 }
 
@@ -560,11 +660,16 @@ extension EnvironmentValues {
 /// navigation, an editable address, and Open in Default Browser.
 struct WorkspaceWebPageDetailPane: View {
   @Environment(WorkspaceStore.self) private var store
+  @FocusState private var isFindFieldFocused: Bool
 
   var body: some View {
     let browser = store.browser
     VStack(spacing: 0) {
       toolbar(browser)
+      if browser.isFindPresented {
+        Divider()
+        findBar(browser)
+      }
       if browser.isLoading {
         ProgressView(value: browser.progress)
           .progressViewStyle(.linear)
@@ -581,9 +686,60 @@ struct WorkspaceWebPageDetailPane: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .background(Color.orange.opacity(0.08))
       }
-      WorkspaceWebView(model: browser, fileReadAccessRoot: store.corpusRoot)
+      WorkspaceWebView(model: browser, fileReadAccessRoot: store.corpusRoot) {
+        store.activateWorkspacePane(.detail)
+      }
     }
     .background(WorkspaceDesign.surfaceBackground)
+    .onChange(of: browser.findFocusToken) { isFindFieldFocused = true }
+  }
+
+  private func findBar(_ browser: WorkspaceBrowserModel) -> some View {
+    @Bindable var browser = browser
+    return HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .foregroundStyle(WorkspaceDesign.secondaryText)
+      TextField("Find in page", text: $browser.findQuery)
+        .textFieldStyle(.roundedBorder)
+        .focused($isFindFieldFocused)
+        .onSubmit { browser.findNext() }
+        .onKeyPress(.escape) {
+          browser.dismissFind()
+          return .handled
+        }
+        .task(id: browser.findQuery) {
+          try? await Task.sleep(nanoseconds: 120_000_000)
+          guard !Task.isCancelled else { return }
+          browser.find()
+        }
+        .frame(maxWidth: 320)
+        .accessibilityLabel("Find in page")
+      if browser.findMatchFound == false {
+        Text("Not found")
+          .font(.caption)
+          .foregroundStyle(WorkspaceDesign.secondaryText)
+      }
+      Button { browser.findPrevious() } label: {
+        Label("Previous Match", systemImage: "chevron.up")
+      }
+      .labelStyle(.iconOnly)
+      .keyboardShortcut("g", modifiers: [.command, .shift])
+      .help("Previous match (⇧⌘G)")
+      .disabled(browser.findQuery.isEmpty)
+      Button { browser.findNext() } label: {
+        Label("Next Match", systemImage: "chevron.down")
+      }
+      .labelStyle(.iconOnly)
+      .keyboardShortcut("g", modifiers: .command)
+      .help("Next match (⌘G)")
+      .disabled(browser.findQuery.isEmpty)
+      Spacer(minLength: 0)
+      Button("Done") { browser.dismissFind() }
+    }
+    .buttonStyle(.borderless)
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
   }
 
   private func toolbar(_ browser: WorkspaceBrowserModel) -> some View {
@@ -628,12 +784,42 @@ struct WorkspaceWebPageDetailPane: View {
       .fixedSize()
       .help("Serve a folder as a local web app, or open a running development server")
       Button {
-        if let url = browser.currentURL ?? store.presentedWebPageURL { NSWorkspace.shared.open(url) }
+        if let url = browser.shareableURL ?? store.presentedWebPageURL { NSWorkspace.shared.open(url) }
       } label: {
         Image(systemName: "safari")
       }
       .help("Open in Default Browser")
       .accessibilityLabel("Open in Default Browser")
+      Menu {
+        Button("Find in Page…") { browser.presentFind() }
+        Divider()
+        Button("Copy Link") {
+          guard let url = browser.shareableURL ?? store.presentedWebPageURL else { return }
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        }
+        Button("Open in Default Browser") {
+          if let url = browser.shareableURL ?? store.presentedWebPageURL { NSWorkspace.shared.open(url) }
+        }
+        Divider()
+        Button("Zoom In") { browser.zoomIn() }.disabled(!browser.canZoomIn)
+        Button("Zoom Out") { browser.zoomOut() }.disabled(!browser.canZoomOut)
+        Button("Actual Size") { browser.resetZoom() }.disabled(browser.isActualSize)
+      } label: {
+        Image(systemName: "ellipsis.circle")
+      }
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("More page actions")
+      .accessibilityLabel("More page actions")
+      if !browser.isActualSize {
+        Button { browser.resetZoom() } label: {
+          Text("\(Int((browser.pageZoom * 100).rounded()))%")
+            .font(.caption.monospacedDigit())
+        }
+        .help("Reset zoom to actual size")
+      }
+      DetailPaneControlGroup()
     }
     .buttonStyle(.borderless)
     .padding(.horizontal, 12)

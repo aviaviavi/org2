@@ -15448,7 +15448,7 @@ private struct HeaderBar<Trailing: View>: View {
   }
 }
 
-private struct DetailPaneControlGroup: View {
+struct DetailPaneControlGroup: View {
   @Environment(WorkspaceStore.self) private var store
 
   var body: some View {
