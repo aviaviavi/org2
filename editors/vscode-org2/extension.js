@@ -61,6 +61,7 @@ const {
   provideFoldingRanges: provideFoldingRangesForDocument,
 } = require('./foldingRanges');
 const { findCryptSubtreesNeedingEncryption, hasUnclosedPgpBlock, replaceLineRanges } = require('./cryptOnSave');
+const { isExplicitlyConfigured, resolveDefaultCliExecutable } = require('./cliExecutable');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -143,7 +144,7 @@ function provideDocumentLinks(document) {
   const links = [];
   const linkAbbreviations = resolveDocumentLinkAbbreviations(document);
 
-  // Org2 links: [[url]] or [[url][desc]]
+  // Celorga links: [[url]] or [[url][desc]]
   const org2LinkRe = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*)\])?\]\]/g;
   const bareUrlRe = /\bhttps?:\/\/[^\s<>()\[\]{}]+/g;
 
@@ -234,7 +235,7 @@ class Org2ReviewProvider {
 
   updateViewSummary() {
     if (!this.view) return;
-    this.view.title = `Org2 Review (${this.items.length})`;
+    this.view.title = `Celorga Review (${this.items.length})`;
     this.view.description = this.items.length ? 'review-required' : '';
   }
 
@@ -274,7 +275,7 @@ class Org2ReviewProvider {
       item.command = { command: 'org2.openReviewItem', title: 'Open Review Item', arguments: [element] };
       return item;
     }
-    const errItem = new vscode.TreeItem('Org2 review: failed to load', vscode.TreeItemCollapsibleState.None);
+    const errItem = new vscode.TreeItem('Celorga review: failed to load', vscode.TreeItemCollapsibleState.None);
     errItem.description = this.lastError ? String(this.lastError.message || this.lastError) : '';
     return errItem;
   }
@@ -325,7 +326,7 @@ class Org2BacklinksProvider {
     this.groups = [];
     this.targetId = '';
     this.targetFile = '';
-    this.emptyReason = 'Open an Org/Org2 file with a file-level ID to view backlinks.';
+    this.emptyReason = 'Open an Org file with a file-level ID to view backlinks.';
     this.lastError = undefined;
     this._loadSeq = 0;
   }
@@ -338,7 +339,7 @@ class Org2BacklinksProvider {
     this.groups = [];
     this.targetId = '';
     this.targetFile = '';
-    this.emptyReason = String(reason || 'Open an Org/Org2 file with a file-level ID to view backlinks.');
+    this.emptyReason = String(reason || 'Open an Org file with a file-level ID to view backlinks.');
     this.lastError = undefined;
     this.refresh();
   }
@@ -348,13 +349,13 @@ class Org2BacklinksProvider {
     const focusView = options && options.focusView === true;
 
     if (!editor || !editor.document) {
-      this.clear('Open an Org/Org2 file with a file-level ID to view backlinks.');
+      this.clear('Open an Org file with a file-level ID to view backlinks.');
       return;
     }
 
     const doc = editor.document;
     if ((doc.languageId !== 'org2' && doc.languageId !== 'org') || !doc.uri || doc.uri.scheme !== 'file') {
-      this.clear('Backlinks are available for file-backed Org/Org2 documents.');
+      this.clear('Backlinks are available for file-backed Org documents.');
       return;
     }
 
@@ -464,14 +465,14 @@ class Org2BacklinksProvider {
       return item;
     }
 
-    const item = new vscode.TreeItem(String(element || 'Org2 backlinks'), vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(String(element || 'Celorga backlinks'), vscode.TreeItemCollapsibleState.None);
     item.contextValue = 'org2BacklinksMessage';
     return item;
   }
 
   async getChildren(element) {
     if (!element) {
-      if (this.lastError) return ['Org2 backlinks: failed to load'];
+      if (this.lastError) return ['Celorga backlinks: failed to load'];
       if (!this.targetId) return [this.emptyReason];
       if (!this.groups.length) return [this.emptyReason];
       return this.groups;
@@ -501,7 +502,7 @@ async function loadBacklinksByIdWithContext(context, id, rootDir, options = {}) 
   const normalizedId = extractRoamUuid(id);
   if (!normalizedId) {
     if (!quiet) {
-      vscode.window.showWarningMessage('Org2: invalid backlink target ID (expected UUID or id:UUID link).');
+      vscode.window.showWarningMessage('Celorga: invalid backlink target ID (expected UUID or id:UUID link).');
     }
     return null;
   }
@@ -514,7 +515,7 @@ async function loadBacklinksByIdWithContext(context, id, rootDir, options = {}) 
     backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: rootDir });
   } catch (e) {
     if (!quiet) {
-      vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
     }
     return null;
   }
@@ -524,7 +525,7 @@ async function loadBacklinksByIdWithContext(context, id, rootDir, options = {}) 
     payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
   } catch (e) {
     if (!quiet) {
-      vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
+      vscode.window.showErrorMessage('Celorga: failed to parse celorga backlinks output.');
     }
     return null;
   }
@@ -607,7 +608,7 @@ class Org2AgendaProvider {
   updateViewSummary() {
     if (!this.view) return;
     const summary = this.getSummary();
-    this.view.title = `Org2 Agenda (${summary.total})`;
+    this.view.title = `Celorga Agenda (${summary.total})`;
     const breakdown = [];
     if (summary.overdue > 0) breakdown.push(`O:${summary.overdue}`);
     if (summary.today > 0) breakdown.push(`T:${summary.today}`);
@@ -707,7 +708,7 @@ class Org2AgendaProvider {
     }
 
     // Error sentinel
-    const errItem = new vscode.TreeItem('Org2 agenda: failed to load', vscode.TreeItemCollapsibleState.None);
+    const errItem = new vscode.TreeItem('Celorga agenda: failed to load', vscode.TreeItemCollapsibleState.None);
     errItem.description = this.lastError ? String(this.lastError.message || this.lastError) : '';
     return errItem;
   }
@@ -760,6 +761,18 @@ function resolveAgendaFiles(scopeFiles, cwd) {
   return out;
 }
 
+let cachedDefaultCli = { pathValue: undefined, configured: undefined, command: undefined };
+
+function resolveDefaultCliCommand(cfg, cmd) {
+  const explicitlyConfigured = isExplicitlyConfigured(typeof cfg.inspect === 'function' ? cfg.inspect('agenda.command') : undefined);
+  if (explicitlyConfigured) return cmd;
+  const pathValue = String(process.env.PATH || process.env.Path || '');
+  if (cachedDefaultCli.pathValue !== pathValue || cachedDefaultCli.configured !== cmd) {
+    cachedDefaultCli = { pathValue, configured: cmd, command: resolveDefaultCliExecutable(cmd) };
+  }
+  return cachedDefaultCli.command;
+}
+
 function resolveOrg2Command(context, args) {
   const cfg = vscode.workspace.getConfiguration('org2');
   const cmd = cfg.get('agenda.command', 'org2');
@@ -769,7 +782,7 @@ function resolveOrg2Command(context, args) {
   let finalArgs = [...extraArgs, ...args];
 
   // Helpful default for local development: if this extension is checked out inside
-  // the org2 repo, run the repo-local CLI instead of relying on a global PATH install.
+  // the Celorga repo, run the repo-local CLI instead of relying on a global PATH install.
   if (cmd === 'org2' && !(cfg.get('agenda.args', []).length)) {
     const fs = require('fs');
 
@@ -781,7 +794,8 @@ function resolveOrg2Command(context, args) {
       finalCmd = process.execPath;
       finalArgs = [repoCli, ...args];
     } catch (_) {
-      // If not in-repo, fall back to PATH `org2`.
+      // Not in-repo: prefer PATH `celorga`, falling back to the `org2` alias.
+      finalCmd = resolveDefaultCliCommand(cfg, cmd);
     }
   }
 
@@ -1339,7 +1353,7 @@ async function fetchAgendaGroups(context, filter) {
   const { args, warnEmptyFiles } = buildAgendaCliArgs(agendaOptions);
 
   if (warnEmptyFiles) {
-    vscode.window.showWarningMessage("Org2 agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
+    vscode.window.showWarningMessage("Celorga agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
   }
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
@@ -1349,7 +1363,7 @@ async function fetchAgendaGroups(context, filter) {
   try {
     data = JSON.parse(stdout);
   } catch (e) {
-    const err = new Error('Org2 agenda: failed to parse JSON output.');
+    const err = new Error('Celorga agenda: failed to parse JSON output.');
     err.cause = e;
     throw err;
   }
@@ -1431,7 +1445,7 @@ async function pickAgendaFilter(provider) {
       { label: 'Today', value: { type: 'today', days: 1 } },
       { label: `Next ${defaultDays} days`, value: { type: 'next', days: defaultDays } },
     ],
-    { placeHolder: 'Org2 agenda filter' }
+    { placeHolder: 'Celorga agenda filter' }
   );
 
   if (!pick) return;
@@ -1445,7 +1459,7 @@ async function pickAgendaStatusFilter(provider) {
   const current = normalizeAgendaStatusFilterValue(currentRaw, 'all');
   const options = buildAgendaStatusFilterQuickPickOptions(current);
 
-  const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Org2 agenda TODO status filter' });
+  const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Celorga agenda TODO status filter' });
   if (!pick) return;
 
   const target = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
@@ -1520,7 +1534,7 @@ function activate(context) {
       });
       child.on('close', (code) => {
         if (code !== 0) {
-          const e = new Error(`org2 fmt failed (code=${code})`);
+          const e = new Error(`celorga fmt failed (code=${code})`);
           e.stderr = stderr;
           e.stdout = stdout;
           e.code = code;
@@ -1559,7 +1573,7 @@ function activate(context) {
     return fallback.stdout;
   }
 
-  const formatterOutput = vscode.window.createOutputChannel('Org2 Formatter');
+  const formatterOutput = vscode.window.createOutputChannel('Celorga Formatter');
   context.subscriptions.push(formatterOutput);
 
   function parseFormatterChangedFiles(stdout) {
@@ -1654,7 +1668,7 @@ function activate(context) {
       }
 
       const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-      throw new Error(`Org2 formatter check failed: ${msg}`);
+      throw new Error(`Celorga formatter check failed: ${msg}`);
     }
   }
 
@@ -1693,7 +1707,7 @@ function activate(context) {
       const stderr = String((err && err.stderr) || '');
       if (!isFormatterApplyJsonUnsupported(stderr, stdout)) {
         const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-        throw new Error(`Org2 formatter apply failed: ${msg}`);
+        throw new Error(`Celorga formatter apply failed: ${msg}`);
       }
     }
 
@@ -1724,18 +1738,18 @@ function activate(context) {
   function getActiveFormatterTarget() {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !editor.document) {
-      vscode.window.showWarningMessage('Org2: open an org/org2 file first.');
+      vscode.window.showWarningMessage('Celorga: open an Org file first.');
       return undefined;
     }
 
     const doc = editor.document;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
-      vscode.window.showWarningMessage('Org2: formatter commands require an org/org2 editor.');
+      vscode.window.showWarningMessage('Celorga: formatter commands require an Org editor.');
       return undefined;
     }
 
     if (!doc.uri || doc.uri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Org2: formatter commands require a file-backed document.');
+      vscode.window.showWarningMessage('Celorga: formatter commands require a file-backed document.');
       return undefined;
     }
 
@@ -1746,7 +1760,7 @@ function activate(context) {
     if (!doc || !doc.isDirty) return true;
 
     const confirm = await vscode.window.showWarningMessage(
-      'Org2: save this file before running formatter check/apply/preview?',
+      'Celorga: save this file before running formatter check/apply/preview?',
       { modal: true },
       'Save and Continue'
     );
@@ -1755,7 +1769,7 @@ function activate(context) {
 
     const ok = await doc.save();
     if (!ok) {
-      vscode.window.showWarningMessage('Org2: could not save file before running formatter command.');
+      vscode.window.showWarningMessage('Celorga: could not save file before running formatter command.');
       return false;
     }
 
@@ -1832,17 +1846,17 @@ function activate(context) {
     try {
       const { changedFiles, stderr } = await getWorkspaceFormattingDrift(root, pathFilters);
       if (changedFiles.length === 0) {
-        vscode.window.showInformationMessage('Org2: workspace formatter check passed.');
+        vscode.window.showInformationMessage('Celorga: workspace formatter check passed.');
         return;
       }
 
       renderFormatterDriftReport(
         changedFiles,
         stderr,
-        `Org2 formatter drift check: ${changedFiles.length} file(s) need formatting.`
+        `Celorga formatter drift check: ${changedFiles.length} file(s) need formatting.`
       );
       vscode.window.showWarningMessage(
-        `Org2: formatting drift in ${changedFiles.length} file(s). See "Org2 Formatter" output.`
+        `Celorga: formatting drift in ${changedFiles.length} file(s). See "Celorga Formatter" output.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1861,7 +1875,7 @@ function activate(context) {
       const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
 
       formatterOutput.clear();
-      formatterOutput.appendLine(`Org2 corpus lint: ${issues.length} issue(s)`);
+      formatterOutput.appendLine(`Celorga corpus lint: ${issues.length} issue(s)`);
       formatterOutput.appendLine(`Checked files: ${Number(parsed.checkedFiles || 0)} | Skipped files: ${Number(parsed.skippedFiles || 0)}`);
 
       for (const issue of issues) {
@@ -1878,9 +1892,9 @@ function activate(context) {
       formatterOutput.show(true);
 
       if (issues.length === 0) {
-        vscode.window.showInformationMessage('Org2: corpus lint passed (no graph/artifact health issues).');
+        vscode.window.showInformationMessage('Celorga: corpus lint passed (no graph/artifact health issues).');
       } else {
-        vscode.window.showWarningMessage(`Org2: corpus lint found ${issues.length} issue(s). See "Org2 Formatter" output.`);
+        vscode.window.showWarningMessage(`Celorga: corpus lint found ${issues.length} issue(s). See "Celorga Formatter" output.`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1890,7 +1904,7 @@ function activate(context) {
 
   async function runWorkspaceGraphAudit() {
     const root = getAgendaRootDir();
-    await runOrg2CompilerCommand('Org2 Graph Audit', ['graph', 'audit', '--dir', root, '--recursive', '--format', 'report']);
+    await runOrg2CompilerCommand('Celorga Graph Audit', ['graph', 'audit', '--dir', root, '--recursive', '--format', 'report']);
   }
 
   async function runAiReviewReport() {
@@ -1902,13 +1916,13 @@ function activate(context) {
     const scope = await vscode.window.showQuickPick([
       { label: 'Review active file', value: 'file', picked: !!active },
       { label: 'Review workspace', value: 'workspace', picked: !active },
-    ], { placeHolder: 'Org2 AI review scope' });
+    ], { placeHolder: 'Celorga AI review scope' });
     if (!scope) return;
 
     const args = ['ai', 'review'];
     if (scope.value === 'file') {
       if (!active) {
-        vscode.window.showWarningMessage('Org2: open a file-backed Org/Org2 document to review the active file.');
+        vscode.window.showWarningMessage('Celorga: open a file-backed Org document to review the active file.');
         return;
       }
       const fileRel = relativeWorkspacePath(root, active.fsPath) || active.fsPath;
@@ -1917,7 +1931,7 @@ function activate(context) {
       args.push('--dir', root, '--recursive');
     }
     args.push('--format', 'text');
-    await runOrg2CompilerCommand(scope.value === 'file' ? 'Org2 AI Review: Active File' : 'Org2 AI Review: Workspace', args);
+    await runOrg2CompilerCommand(scope.value === 'file' ? 'Celorga AI Review: Active File' : 'Celorga AI Review: Workspace', args);
   }
 
   async function markAiReviewStatus(status) {
@@ -1930,27 +1944,27 @@ function activate(context) {
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: false,
-      filters: { 'Org2 draft artifacts': ['org2', 'org'], 'All files': ['*'] },
-      title: `Select Org2 AI draft to mark ${status}`,
+      filters: { 'Celorga draft artifacts': ['org2', 'org'], 'All files': ['*'] },
+      title: `Select Celorga AI draft to mark ${status}`,
     });
     if (!draftUris || draftUris.length === 0 || draftUris[0].scheme !== 'file') return;
 
     const draftRel = relativeWorkspacePath(root, draftUris[0].fsPath);
     if (!draftRel) {
-      vscode.window.showErrorMessage('Org2: AI review status source must be inside the workspace.');
+      vscode.window.showErrorMessage('Celorga: AI review status source must be inside the workspace.');
       return;
     }
 
     const label = status.charAt(0).toUpperCase() + status.slice(1);
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: mark ${draftRel} as ${status}?`,
+      `Celorga: mark ${draftRel} as ${status}?`,
       { modal: true },
       label
     );
     if (confirm !== label) return;
 
-    await runOrg2CompilerCommand(`Org2 AI Review Status: ${status}`, ['ai', 'review', '--file', draftRel, '--status', status, '--apply', '--format', 'text'], {
-      successMessage: `Org2: marked ${draftRel} as ${status}.`,
+    await runOrg2CompilerCommand(`Celorga AI Review Status: ${status}`, ['ai', 'review', '--file', draftRel, '--status', status, '--apply', '--format', 'text'], {
+      successMessage: `Celorga: marked ${draftRel} as ${status}.`,
     });
   }
 
@@ -1962,16 +1976,16 @@ function activate(context) {
       filters: {
         'JSON corpus artifacts': ['json', 'jsonl'],
       },
-      title: 'Write Org2 compiled corpus artifact',
+      title: 'Write Celorga compiled corpus artifact',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
 
     const outPath = targetUri.fsPath;
     const format = outPath.toLowerCase().endsWith('.jsonl') ? 'jsonl' : 'json';
     const result = await runOrg2CompilerCommand(
-      'Org2 Compile Corpus',
+      'Celorga Compile Corpus',
       ['compile', 'corpus', '--dir', root, '--recursive', '--format', format, '--out', outPath],
-      { successMessage: `Org2: compiled corpus to ${path.basename(outPath)}.` }
+      { successMessage: `Celorga: compiled corpus to ${path.basename(outPath)}.` }
     );
     if (!result) return;
 
@@ -1997,7 +2011,7 @@ function activate(context) {
       canSelectFolders: false,
       canSelectMany: false,
       filters: { 'AI job manifests': ['json'], 'All files': ['*'] },
-      title: 'Select Org2 AI job manifest',
+      title: 'Select Celorga AI job manifest',
     });
     if (!jobUris || jobUris.length === 0 || jobUris[0].scheme !== 'file') return;
 
@@ -2005,28 +2019,28 @@ function activate(context) {
     const defaultName = `${path.basename(jobPath, path.extname(jobPath))}.org`;
     const targetUri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(path.join(root, 'views', defaultName)),
-      filters: { 'Org2 draft artifacts': ['org', 'org2'] },
-      title: 'Write Org2 AI draft artifact',
+      filters: { 'Celorga draft artifacts': ['org', 'org2'] },
+      title: 'Write Celorga AI draft artifact',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
 
     const outRel = relativeWorkspacePath(root, targetUri.fsPath);
     if (!outRel) {
-      vscode.window.showErrorMessage('Org2: AI draft output must be inside the workspace.');
+      vscode.window.showErrorMessage('Celorga: AI draft output must be inside the workspace.');
       return;
     }
 
-    const preview = await runOrg2CompilerCommand('Org2 AI Draft Preview', ['ai', 'run', '--job', jobPath, '--out', outRel, '--format', 'text']);
+    const preview = await runOrg2CompilerCommand('Celorga AI Draft Preview', ['ai', 'run', '--job', jobPath, '--out', outRel, '--format', 'text']);
     if (!preview) return;
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: write AI draft artifact to ${outRel}?`,
+      `Celorga: write AI draft artifact to ${outRel}?`,
       { modal: true },
       'Write Draft'
     );
     if (confirm !== 'Write Draft') return;
 
-    const applied = await runOrg2CompilerCommand('Org2 AI Draft Write', ['ai', 'run', '--job', jobPath, '--out', outRel, '--apply', '--format', 'text'], {
-      successMessage: `Org2: wrote AI draft artifact to ${outRel}. Review it before promotion.`,
+    const applied = await runOrg2CompilerCommand('Celorga AI Draft Write', ['ai', 'run', '--job', jobPath, '--out', outRel, '--apply', '--format', 'text'], {
+      successMessage: `Celorga: wrote AI draft artifact to ${outRel}. Review it before promotion.`,
     });
     if (!applied) return;
 
@@ -2043,29 +2057,29 @@ function activate(context) {
     const defaultUri = vscode.Uri.file(path.join(root, 'views', 'link-suggestions.org'));
     const targetUri = await vscode.window.showSaveDialog({
       defaultUri,
-      filters: { 'Org2 suggestion reports': ['org', 'org2'], 'JSON suggestion reports': ['json'] },
-      title: 'Write review-only Org2 AI link/entity suggestion report',
+      filters: { 'Celorga suggestion reports': ['org', 'org2'], 'JSON suggestion reports': ['json'] },
+      title: 'Write review-only Celorga AI link/entity suggestion report',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
 
     const outRel = relativeWorkspacePath(root, targetUri.fsPath);
     if (!outRel) {
-      vscode.window.showErrorMessage('Org2: AI link/entity suggestion report must be inside the workspace.');
+      vscode.window.showErrorMessage('Celorga: AI link/entity suggestion report must be inside the workspace.');
       return;
     }
 
     const format = targetUri.fsPath.toLowerCase().endsWith('.json') ? 'json' : 'text';
-    const preview = await runOrg2CompilerCommand('Org2 AI Link/Entity Suggestions Preview', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--format', format]);
+    const preview = await runOrg2CompilerCommand('Celorga AI Link/Entity Suggestions Preview', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--format', format]);
     if (!preview) return;
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: write review-only AI link/entity suggestion report to ${outRel}? Canonical notes will not be edited.`,
+      `Celorga: write review-only AI link/entity suggestion report to ${outRel}? Canonical notes will not be edited.`,
       { modal: true },
       'Write Report'
     );
     if (confirm !== 'Write Report') return;
 
-    const applied = await runOrg2CompilerCommand('Org2 AI Link/Entity Suggestions Write', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--apply', '--format', format], {
-      successMessage: `Org2: wrote review-only AI link/entity suggestion report to ${outRel}.`,
+    const applied = await runOrg2CompilerCommand('Celorga AI Link/Entity Suggestions Write', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--apply', '--format', format], {
+      successMessage: `Celorga: wrote review-only AI link/entity suggestion report to ${outRel}.`,
     });
     if (!applied) return;
 
@@ -2087,14 +2101,14 @@ function activate(context) {
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: false,
-      filters: { 'Org2 draft artifacts': ['org2', 'org'], 'All files': ['*'] },
-      title: 'Select reviewed Org2 AI draft artifact',
+      filters: { 'Celorga draft artifacts': ['org2', 'org'], 'All files': ['*'] },
+      title: 'Select reviewed Celorga AI draft artifact',
     });
     if (!draftUris || draftUris.length === 0 || draftUris[0].scheme !== 'file') return;
 
     const targetUri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(path.join(root, 'notes', path.basename(draftUris[0].fsPath))),
-      filters: { 'Org2 notes': ['org2', 'org'], 'All files': ['*'] },
+      filters: { 'Celorga notes': ['org2', 'org'], 'All files': ['*'] },
       title: 'Append reviewed draft into canonical note',
     });
     if (!targetUri || targetUri.scheme !== 'file') return;
@@ -2102,21 +2116,21 @@ function activate(context) {
     const draftRel = relativeWorkspacePath(root, draftUris[0].fsPath);
     const targetRel = relativeWorkspacePath(root, targetUri.fsPath);
     if (!draftRel || !targetRel) {
-      vscode.window.showErrorMessage('Org2: AI promote source and target must be inside the workspace.');
+      vscode.window.showErrorMessage('Celorga: AI promote source and target must be inside the workspace.');
       return;
     }
 
-    const preview = await runOrg2CompilerCommand('Org2 AI Promote Preview', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--format', 'text']);
+    const preview = await runOrg2CompilerCommand('Celorga AI Promote Preview', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--format', 'text']);
     if (!preview) return;
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: append reviewed draft ${draftRel} to ${targetRel}?`,
+      `Celorga: append reviewed draft ${draftRel} to ${targetRel}?`,
       { modal: true },
       'Promote Draft'
     );
     if (confirm !== 'Promote Draft') return;
 
-    const applied = await runOrg2CompilerCommand('Org2 AI Promote Apply', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--apply', '--format', 'text'], {
-      successMessage: `Org2: promoted reviewed draft into ${targetRel}.`,
+    const applied = await runOrg2CompilerCommand('Celorga AI Promote Apply', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--apply', '--format', 'text'], {
+      successMessage: `Celorga: promoted reviewed draft into ${targetRel}.`,
     });
     if (!applied) return;
 
@@ -2139,7 +2153,7 @@ function activate(context) {
     try {
       const { changedFiles, stderr } = await getCurrentFileFormattingDrift(target.filePath);
       if (changedFiles.length === 0) {
-        vscode.window.showInformationMessage(`Org2: ${displayPath} has no formatter drift.`);
+        vscode.window.showInformationMessage(`Celorga: ${displayPath} has no formatter drift.`);
         return;
       }
 
@@ -2147,10 +2161,10 @@ function activate(context) {
       renderFormatterDriftReport(
         changedFiles,
         stderr,
-        `Org2 formatter drift check: ${displayPath} needs formatting.`
+        `Celorga formatter drift check: ${displayPath} needs formatting.`
       );
       vscode.window.showWarningMessage(
-        `Org2: formatting drift in ${changedCount} file(s). See "Org2 Formatter" output.`
+        `Celorga: formatting drift in ${changedCount} file(s). See "Celorga Formatter" output.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2169,7 +2183,7 @@ function activate(context) {
     try {
       const preview = await getCurrentFileFormattingPreview(target.filePath);
       if (!preview.changed) {
-        vscode.window.showInformationMessage(`Org2: ${displayPath} has no formatter drift.`);
+        vscode.window.showInformationMessage(`Celorga: ${displayPath} has no formatter drift.`);
         return;
       }
 
@@ -2182,12 +2196,12 @@ function activate(context) {
         'vscode.diff',
         target.doc.uri,
         formattedDoc.uri,
-        `Org2 Formatter Preview: ${displayPath} (formatted)`
+        `Celorga Formatter Preview: ${displayPath} (formatted)`
       );
 
       if (preview.stderr) {
         formatterOutput.clear();
-        formatterOutput.appendLine(`Org2 formatter preview: ${displayPath}`);
+        formatterOutput.appendLine(`Celorga formatter preview: ${displayPath}`);
         formatterOutput.appendLine('');
         formatterOutput.appendLine(preview.stderr);
         formatterOutput.show(true);
@@ -2224,7 +2238,7 @@ function activate(context) {
       const stderr = String((err && err.stderr) || '');
       if (stdout.trim() || stderr.trim()) renderCompilerOutput(`${title} failed`, stdout, stderr);
       const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-      vscode.window.showErrorMessage(`Org2: ${msg}`);
+      vscode.window.showErrorMessage(`Celorga: ${msg}`);
       return undefined;
     }
   }
@@ -2232,38 +2246,38 @@ function activate(context) {
   async function promptWorkspaceQuery(kind) {
     const label = kind === 'search' ? 'Search' : 'Query';
     const value = await vscode.window.showInputBox({
-      prompt: `Org2 ${label}: text to find in workspace notes`,
+      prompt: `Celorga ${label}: text to find in workspace notes`,
       placeHolder: kind === 'search' ? 'plain text / regexp-ish term' : 'text or ID to cite back to source files',
     });
     if (!value || !String(value).trim()) return;
     const root = getAgendaRootDir();
     const args = [kind, String(value).trim(), '--dir', root, '--recursive', '--format', 'text', '--sort', 'date-desc'];
-    await runOrg2CompilerCommand(`Org2 ${label}: ${String(value).trim()}`, args);
+    await runOrg2CompilerCommand(`Celorga ${label}: ${String(value).trim()}`, args);
   }
 
   async function runRoamLinkifyPreview() {
     const root = getAgendaRootDir();
-    await runOrg2CompilerCommand('Org2 Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
+    await runOrg2CompilerCommand('Celorga Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
   }
 
   async function runRoamLinkifyApply() {
     const root = getAgendaRootDir();
-    const preview = await runOrg2CompilerCommand('Org2 Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
+    const preview = await runOrg2CompilerCommand('Celorga Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
     if (!preview) return;
     const confirm = await vscode.window.showWarningMessage(
-      'Org2: apply roam linkify changes to workspace files?',
+      'Celorga: apply roam linkify changes to workspace files?',
       { modal: true },
       'Apply Linkify'
     );
     if (confirm !== 'Apply Linkify') return;
-    await runOrg2CompilerCommand('Org2 Roam Linkify Apply', ['roam', 'linkify', '--dir', root, '--recursive', '--apply', '--format', 'text'], {
-      successMessage: 'Org2: roam linkify applied. Review the changed files.',
+    await runOrg2CompilerCommand('Celorga Roam Linkify Apply', ['roam', 'linkify', '--dir', root, '--recursive', '--apply', '--format', 'text'], {
+      successMessage: 'Celorga: roam linkify applied. Review the changed files.',
     });
   }
 
   async function runRoamGraphReport() {
     const root = getAgendaRootDir();
-    await runOrg2CompilerCommand('Org2 Roam Maintenance Report', ['roam', 'graph', '--dir', root, '--recursive', '--format', 'report']);
+    await runOrg2CompilerCommand('Celorga Roam Maintenance Report', ['roam', 'graph', '--dir', root, '--recursive', '--format', 'report']);
   }
 
 
@@ -2277,14 +2291,14 @@ function activate(context) {
       changedFiles = drift.changedFiles;
 
       if (changedFiles.length === 0) {
-        vscode.window.showInformationMessage('Org2: workspace already formatted.');
+        vscode.window.showInformationMessage('Celorga: workspace already formatted.');
         return;
       }
 
       renderFormatterDriftReport(
         changedFiles,
         drift.stderr,
-        `Org2 formatter apply preview: ${changedFiles.length} file(s) will be formatted.`
+        `Celorga formatter apply preview: ${changedFiles.length} file(s) will be formatted.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2293,7 +2307,7 @@ function activate(context) {
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: format ${changedFiles.length} workspace file(s) now?`,
+      `Celorga: format ${changedFiles.length} workspace file(s) now?`,
       { modal: true },
       'Format Workspace'
     );
@@ -2316,7 +2330,7 @@ function activate(context) {
       }
       formatterOutput.show(true);
       vscode.window.showInformationMessage(
-        `Org2: formatted ${appliedFiles.length} workspace file(s). See "Org2 Formatter" output.`
+        `Celorga: formatted ${appliedFiles.length} workspace file(s). See "Celorga Formatter" output.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2338,14 +2352,14 @@ function activate(context) {
       changedFiles = drift.changedFiles;
 
       if (changedFiles.length === 0) {
-        vscode.window.showInformationMessage(`Org2: ${displayPath} is already formatted.`);
+        vscode.window.showInformationMessage(`Celorga: ${displayPath} is already formatted.`);
         return;
       }
 
       renderFormatterDriftReport(
         changedFiles,
         drift.stderr,
-        `Org2 formatter apply preview: ${displayPath} will be formatted.`
+        `Celorga formatter apply preview: ${displayPath} will be formatted.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2354,7 +2368,7 @@ function activate(context) {
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: format ${displayPath} now?`,
+      `Celorga: format ${displayPath} now?`,
       { modal: true },
       'Format File'
     );
@@ -2399,7 +2413,7 @@ function activate(context) {
       }
       formatterOutput.show(true);
       vscode.window.showInformationMessage(
-        `Org2: formatted ${displayPath}. See "Org2 Formatter" output.`
+        `Celorga: formatted ${displayPath}. See "Celorga Formatter" output.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2456,19 +2470,19 @@ function activate(context) {
 
     const doc = editor.document;
     if (!doc || doc.uri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Org2: HTML export requires a file-backed document.');
+      vscode.window.showWarningMessage('Celorga: HTML export requires a file-backed document.');
       return;
     }
 
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
-      vscode.window.showWarningMessage('Org2: HTML export only supports Org/Org2 files.');
+      vscode.window.showWarningMessage('Celorga: HTML export only supports Org files.');
       return;
     }
 
     if (doc.isDirty) {
       const ok = await doc.save();
       if (!ok) {
-        vscode.window.showWarningMessage('Org2: could not save file before HTML export.');
+        vscode.window.showWarningMessage('Celorga: could not save file before HTML export.');
         return;
       }
     }
@@ -2487,7 +2501,7 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: HTML export preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: HTML export preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
@@ -2495,7 +2509,7 @@ function activate(context) {
     const outputPathRaw = typeof previewPayload.outputPath === 'string' ? previewPayload.outputPath : '';
 
     if (!htmlText) {
-      vscode.window.showErrorMessage('Org2: HTML export preview returned no html output.');
+      vscode.window.showErrorMessage('Celorga: HTML export preview returned no html output.');
       return;
     }
 
@@ -2504,7 +2518,7 @@ function activate(context) {
 
     const outputPath = path.isAbsolute(outputPathRaw) ? outputPathRaw : path.resolve(cwd, outputPathRaw || `${filePath}.html`);
     const confirm = await vscode.window.showInformationMessage(
-      `Org2: write HTML export to ${path.basename(outputPath)}?`,
+      `Celorga: write HTML export to ${path.basename(outputPath)}?`,
       { modal: true },
       'Write HTML'
     );
@@ -2521,7 +2535,7 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: HTML export write failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: HTML export write failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
@@ -2535,13 +2549,13 @@ function activate(context) {
       // It's fine if VS Code can't open the output path immediately.
     }
 
-    vscode.window.showInformationMessage(`Org2: exported HTML to ${path.basename(appliedOutPath)}.`);
+    vscode.window.showInformationMessage(`Celorga: exported HTML to ${path.basename(appliedOutPath)}.`);
   }
 
   async function exportWorkspaceHtml() {
     const workspaceRoot = getAgendaRootDir();
     if (!workspaceRoot) {
-      vscode.window.showWarningMessage('Org2: set org2.agenda.dir or open a workspace folder before workspace export.');
+      vscode.window.showWarningMessage('Celorga: set org2.agenda.dir or open a workspace folder before workspace export.');
       return;
     }
 
@@ -2552,7 +2566,7 @@ function activate(context) {
       ? outputDirConfig
       : path.resolve(workspaceRoot, outputDirConfig);
     const indexFileConfig = String(cfg.get('export.indexFile', 'index.html') || '').trim();
-    const indexTitleConfig = String(cfg.get('export.indexTitle', 'Org2 Export Index') || '').trim();
+    const indexTitleConfig = String(cfg.get('export.indexTitle', 'Celorga Export Index') || '').trim();
     const exportStyleArgs = getHtmlExportStyleArgs();
 
     const previewArgs = ['export', 'html', '--dir', workspaceRoot, '--recursive', '--out-dir', outputDir, ...exportStyleArgs, '--format', 'json'];
@@ -2571,7 +2585,7 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: workspace HTML export preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: workspace HTML export preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
@@ -2580,12 +2594,12 @@ function activate(context) {
     const count = Number.isFinite(countRaw) && countRaw >= 0 ? countRaw : exported.length;
 
     if (count <= 0) {
-      vscode.window.showInformationMessage('Org2: no Org/Org2 files found for workspace HTML export.');
+      vscode.window.showInformationMessage('Celorga: no Org files found for workspace HTML export.');
       return;
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Org2: export ${count} Org file(s) to HTML under ${outputDir}?`,
+      `Celorga: export ${count} Org file(s) to HTML under ${outputDir}?`,
       { modal: true },
       'Export Workspace HTML'
     );
@@ -2602,7 +2616,7 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: workspace HTML export failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: workspace HTML export failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
@@ -2636,7 +2650,7 @@ function activate(context) {
     }
 
     const indexSuffix = indexOutputRaw ? ` (index: ${path.basename(indexOutputRaw)})` : '';
-    vscode.window.showInformationMessage(`Org2: exported ${appliedCount} workspace Org file(s) to HTML${indexSuffix}.`);
+    vscode.window.showInformationMessage(`Celorga: exported ${appliedCount} workspace Org file(s) to HTML${indexSuffix}.`);
   }
 
   const formattingProvider = {
@@ -2656,7 +2670,7 @@ function activate(context) {
         return [vscode.TextEdit.replace(fullRange, formatted)];
       } catch (err) {
         const msg = err && err.stderr ? String(err.stderr).trim() : (err instanceof Error ? err.message : String(err));
-        vscode.window.showWarningMessage(`Org2: format failed: ${msg}`);
+        vscode.window.showWarningMessage(`Celorga: format failed: ${msg}`);
         return [];
       }
     },
@@ -2698,7 +2712,7 @@ function activate(context) {
               if (encrypted) text = encrypted;
             } catch (err) {
               const msg = err && err.stderr ? String(err.stderr).trim() : (err instanceof Error ? err.message : String(err));
-              vscode.window.showErrorMessage(`Org2: crypt save encryption failed; save canceled: ${msg}`);
+              vscode.window.showErrorMessage(`Celorga: crypt save encryption failed; save canceled: ${msg}`);
               throw err;
             }
           }
@@ -3065,7 +3079,7 @@ function activate(context) {
       // Fall through to line-by-line parsing.
     }
 
-    // Some org2 invocations can emit extra informational lines before JSON.
+    // Some CLI invocations can emit extra informational lines before JSON.
     // Parse trailing JSON lines and accept the last explicit boolean `changed`.
     const lines = text
       .split(/\r?\n/)
@@ -3100,7 +3114,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before setting priority from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before setting priority from the agenda.');
         return;
       }
 
@@ -3112,7 +3126,7 @@ function activate(context) {
 
       doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: setting priority requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: setting priority requires a file-backed document.');
         return;
       }
 
@@ -3122,7 +3136,7 @@ function activate(context) {
 
     const headlineLine = findHeadlineLineAtOrAbove(doc, line0);
     if (headlineLine < 0) {
-      vscode.window.showWarningMessage('Org2: move cursor to a headline before setting priority.');
+      vscode.window.showWarningMessage('Celorga: move cursor to a headline before setting priority.');
       return;
     }
 
@@ -3139,7 +3153,7 @@ function activate(context) {
 
     const applied = await vscode.workspace.applyEdit(edit);
     if (!applied) {
-      vscode.window.showWarningMessage('Org2: failed to update priority token.');
+      vscode.window.showWarningMessage('Celorga: failed to update priority token.');
       return;
     }
 
@@ -3162,7 +3176,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before updating todo status from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before updating todo status from the agenda.');
         return;
       }
     } else {
@@ -3171,14 +3185,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: todo status requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: todo status requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before updating todo status.');
+          vscode.window.showWarningMessage('Celorga: could not save file before updating todo status.');
           return;
         }
       }
@@ -3228,7 +3242,7 @@ function activate(context) {
         await agendaProvider.load();
       }
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }
   }
 
@@ -3245,7 +3259,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before marking agent handoff from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before marking agent handoff from the agenda.');
         return false;
       }
     } else {
@@ -3254,14 +3268,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: agent handoff requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: agent handoff requires a file-backed document.');
         return false;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before marking agent handoff.');
+          vscode.window.showWarningMessage('Celorga: could not save file before marking agent handoff.');
           return false;
         }
       }
@@ -3356,7 +3370,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before updating planning from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before updating planning from the agenda.');
         return;
       }
     } else {
@@ -3365,14 +3379,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: planning update requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: planning update requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before updating planning.');
+          vscode.window.showWarningMessage('Celorga: could not save file before updating planning.');
           return;
         }
       }
@@ -3388,7 +3402,7 @@ function activate(context) {
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const normalizedKind = normalizePlanKind(kind);
     if (!normalizedKind) {
-      vscode.window.showWarningMessage('Org2: invalid planning kind (expected scheduled or deadline).');
+      vscode.window.showWarningMessage('Celorga: invalid planning kind (expected scheduled or deadline).');
       return;
     }
 
@@ -3396,7 +3410,7 @@ function activate(context) {
     const dateOverrideRaw = typeof options.dateOverride === 'string' ? options.dateOverride : '';
     const dateOverride = normalizePlanDateInput(dateOverrideRaw);
     if (dateOverrideRaw && !dateOverride) {
-      vscode.window.showWarningMessage('Org2: invalid planning date override (expected YYYY-MM-DD).');
+      vscode.window.showWarningMessage('Celorga: invalid planning date override (expected YYYY-MM-DD).');
       return;
     }
     const skipAgendaReload = options.skipAgendaReload ? true : false;
@@ -3445,7 +3459,7 @@ function activate(context) {
         await agendaProvider.load();
       }
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
   }
 
@@ -3516,7 +3530,7 @@ function activate(context) {
   async function runCryptCli(action, item) {
     const normalizedAction = String(action || '').trim().toLowerCase();
     if (!(normalizedAction === 'encrypt' || normalizedAction === 'decrypt' || normalizedAction === 'reencrypt')) {
-      vscode.window.showWarningMessage('Org2: invalid crypt action (expected encrypt, decrypt, or reencrypt).');
+      vscode.window.showWarningMessage('Celorga: invalid crypt action (expected encrypt, decrypt, or reencrypt).');
       return;
     }
 
@@ -3529,7 +3543,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before running org-crypt from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before running org-crypt from the agenda.');
         return;
       }
     } else {
@@ -3538,14 +3552,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: org-crypt requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: org-crypt requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before running org-crypt.');
+          vscode.window.showWarningMessage('Celorga: could not save file before running org-crypt.');
           return;
         }
       }
@@ -3565,7 +3579,7 @@ function activate(context) {
     let passphrase = '';
     if (normalizedAction === 'decrypt' || normalizedAction === 'reencrypt' || (normalizedAction === 'encrypt' && configuredRecipients.length === 0 && configuredRecipientFiles.length === 0)) {
       const passphraseInput = await vscode.window.showInputBox({
-        prompt: `Org2: crypt ${normalizedAction} subtree (passphrase${normalizedAction === 'encrypt' ? '' : ', optional for public-key decrypt if your agent can prompt/unlock'})`,
+        prompt: `Celorga: crypt ${normalizedAction} subtree (passphrase${normalizedAction === 'encrypt' ? '' : ', optional for public-key decrypt if your agent can prompt/unlock'})`,
         password: true,
         ignoreFocusOut: true,
         validateInput: (v) => {
@@ -3624,7 +3638,7 @@ function activate(context) {
         await agendaProvider.load();
       }
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: crypt ${normalizedAction} failed: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: crypt ${normalizedAction} failed: ${String(e && e.message ? e.message : e)}`);
     }
   }
 
@@ -3638,7 +3652,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before archiving from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before archiving from the agenda.');
         return;
       }
     } else {
@@ -3647,14 +3661,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: archiving requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: archiving requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before archiving.');
+          vscode.window.showWarningMessage('Celorga: could not save file before archiving.');
           return;
         }
       }
@@ -3678,7 +3692,7 @@ function activate(context) {
         : undefined;
 
     const ok = await vscode.window.showWarningMessage(
-      `Org2: archive subtree at line ${line}? (This will edit the file on disk)`,
+      `Celorga: archive subtree at line ${line}? (This will edit the file on disk)`,
       { modal: true },
       'Archive'
     );
@@ -3693,14 +3707,14 @@ function activate(context) {
       const diffText = String(stdout || '').trimEnd();
 
       if (!diffText) {
-        vscode.window.showInformationMessage('Org2: nothing to archive.');
+        vscode.window.showInformationMessage('Celorga: nothing to archive.');
         return;
       }
 
       await showNamedPreviewDocument(`${path.basename(filePath)}-archive-preview.diff`, 'diff', diffText + '\n');
 
       const applyOk = await vscode.window.showWarningMessage(
-        `Org2: apply archive edit at line ${line}?`,
+        `Celorga: apply archive edit at line ${line}?`,
         { modal: true },
         'Apply'
       );
@@ -3732,13 +3746,13 @@ function activate(context) {
       }
 
       if (archivePath) {
-        vscode.window.showInformationMessage(`Org2: archived subtree to ${archivePath}.`);
+        vscode.window.showInformationMessage(`Celorga: archived subtree to ${archivePath}.`);
       }
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
       vscode.window.showErrorMessage(
-        `Org2: archive failed: ${String(e && e.message ? e.message : e)}${extra}`
+        `Celorga: archive failed: ${String(e && e.message ? e.message : e)}${extra}`
       );
     }
   }
@@ -3759,7 +3773,7 @@ function activate(context) {
 
       const openDoc = findOpenDocumentForPath(filePath);
       if (openDoc && openDoc.isDirty) {
-        vscode.window.showWarningMessage('Org2: please save the file before refiling from the agenda.');
+        vscode.window.showWarningMessage('Celorga: please save the file before refiling from the agenda.');
         return;
       }
     } else {
@@ -3768,14 +3782,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: refiling requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: refiling requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before refiling.');
+          vscode.window.showWarningMessage('Celorga: could not save file before refiling.');
           return;
         }
       }
@@ -3826,7 +3840,7 @@ function activate(context) {
         filePath: candidate,
       })),
       {
-        placeHolder: 'Org2: refile subtree destination file',
+        placeHolder: 'Celorga: refile subtree destination file',
         matchOnDescription: true,
         matchOnDetail: true,
       }
@@ -3838,7 +3852,7 @@ function activate(context) {
 
     const openDestinationDoc = findOpenDocumentForPath(destinationPath);
     if (openDestinationDoc && openDestinationDoc.isDirty) {
-      vscode.window.showWarningMessage('Org2: please save the destination file before refiling.');
+      vscode.window.showWarningMessage('Celorga: please save the destination file before refiling.');
       return;
     }
 
@@ -3848,7 +3862,7 @@ function activate(context) {
         ? fs.readFileSync(destinationPath, 'utf8').replace(/\r\n/g, '\n')
         : '';
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: could not read destination file: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: could not read destination file: ${String(e && e.message ? e.message : e)}`);
       return;
     }
 
@@ -3874,7 +3888,7 @@ function activate(context) {
     }
 
     const headingPick = await vscode.window.showQuickPick(headingPicks, {
-      placeHolder: 'Org2: insert location in destination file',
+      placeHolder: 'Celorga: insert location in destination file',
       matchOnDescription: true,
       matchOnDetail: false,
     });
@@ -3894,7 +3908,7 @@ function activate(context) {
       const diffText = String(stdout || '').trimEnd();
 
       if (!diffText) {
-        vscode.window.showInformationMessage('Org2: nothing to refile.');
+        vscode.window.showInformationMessage('Celorga: nothing to refile.');
         return;
       }
 
@@ -3902,7 +3916,7 @@ function activate(context) {
       await vscode.window.showTextDocument(diffDoc, { preview: true, preserveFocus: false });
 
       const applyOk = await vscode.window.showWarningMessage(
-        `Org2: apply refile edit to ${path.basename(destinationPath)}?`,
+        `Celorga: apply refile edit to ${path.basename(destinationPath)}?`,
         { modal: true },
         'Apply'
       );
@@ -3938,12 +3952,12 @@ function activate(context) {
       }
 
       vscode.window.showInformationMessage(
-        `Org2: refiled subtree to ${path.basename(destinationPath)}${destinationHeadingLine1 ? ` (line ${destinationHeadingLine1})` : ''}.`
+        `Celorga: refiled subtree to ${path.basename(destinationPath)}${destinationHeadingLine1 ? ` (line ${destinationHeadingLine1})` : ''}.`
       );
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: refile failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: refile failed: ${String(e && e.message ? e.message : e)}${extra}`);
     }
   }
 
@@ -3962,24 +3976,24 @@ function activate(context) {
 
     const doc = editor.document;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
-      vscode.window.showWarningMessage('Org2: heading level commands are only available for Org/Org2 files.');
+      vscode.window.showWarningMessage('Celorga: heading level commands are only available for Org files.');
       return;
     }
 
     const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
     if (!subtreeRange) {
-      vscode.window.showWarningMessage('Org2: place cursor on a headline to adjust subtree heading levels.');
+      vscode.window.showWarningMessage('Celorga: place cursor on a headline to adjust subtree heading levels.');
       return;
     }
 
     if (delta < 0 && subtreeRange.level <= 1) {
-      vscode.window.showInformationMessage('Org2: top-level headings cannot be promoted further.');
+      vscode.window.showInformationMessage('Celorga: top-level headings cannot be promoted further.');
       return;
     }
 
     const targets = findHeadingLevelEditTargets(doc, subtreeRange);
     if (targets.length === 0) {
-      vscode.window.showInformationMessage('Org2: no headings found in subtree.');
+      vscode.window.showInformationMessage('Celorga: no headings found in subtree.');
       return;
     }
 
@@ -3987,7 +4001,7 @@ function activate(context) {
     for (const target of targets) {
       const nextLevel = target.level + delta;
       if (nextLevel < 1) {
-        vscode.window.showInformationMessage('Org2: cannot promote heading above level 1.');
+        vscode.window.showInformationMessage('Celorga: cannot promote heading above level 1.');
         return;
       }
 
@@ -4001,7 +4015,7 @@ function activate(context) {
 
     const applied = await vscode.workspace.applyEdit(edit);
     if (!applied) {
-      vscode.window.showErrorMessage('Org2: failed to update subtree heading levels.');
+      vscode.window.showErrorMessage('Celorga: failed to update subtree heading levels.');
       return;
     }
   }
@@ -4027,13 +4041,13 @@ function activate(context) {
 
     const doc = editor.document;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
-      vscode.window.showWarningMessage('Org2: subtree move commands are only available for Org/Org2 files.');
+      vscode.window.showWarningMessage('Celorga: subtree move commands are only available for Org files.');
       return;
     }
 
     const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
     if (!subtreeRange) {
-      vscode.window.showWarningMessage('Org2: place cursor on a headline to move a subtree.');
+      vscode.window.showWarningMessage('Celorga: place cursor on a headline to move a subtree.');
       return;
     }
 
@@ -4044,8 +4058,8 @@ function activate(context) {
     if (!siblingRange) {
       vscode.window.showInformationMessage(
         delta < 0
-          ? 'Org2: subtree is already the first sibling.'
-          : 'Org2: subtree is already the last sibling.'
+          ? 'Celorga: subtree is already the first sibling.'
+          : 'Celorga: subtree is already the last sibling.'
       );
       return;
     }
@@ -4072,7 +4086,7 @@ function activate(context) {
 
     const applied = await vscode.workspace.applyEdit(edit);
     if (!applied) {
-      vscode.window.showErrorMessage('Org2: failed to move subtree.');
+      vscode.window.showErrorMessage('Celorga: failed to move subtree.');
       return;
     }
 
@@ -4168,7 +4182,7 @@ function activate(context) {
         })),
       ],
       {
-        placeHolder: 'Org2: capture target file',
+        placeHolder: 'Celorga: capture target file',
         matchOnDescription: true,
         matchOnDetail: true,
       }
@@ -4179,7 +4193,7 @@ function activate(context) {
     let captureFilePath = '';
     if (captureFilePick.customPath) {
       const customPathRaw = await vscode.window.showInputBox({
-        prompt: 'Org2: capture file path',
+        prompt: 'Celorga: capture file path',
         value: defaultFileRaw || activeFilePath || path.join(workspaceRoot, 'inbox.org'),
         placeHolder: '/path/to/inbox.org',
         validateInput: (v) => (String(v || '').trim() ? undefined : 'Capture file path is required'),
@@ -4191,7 +4205,7 @@ function activate(context) {
     }
 
     if (!captureFilePath) {
-      vscode.window.showWarningMessage('Org2: capture file path is required.');
+      vscode.window.showWarningMessage('Celorga: capture file path is required.');
       return;
     }
 
@@ -4204,13 +4218,13 @@ function activate(context) {
       : [templateOptions[0], templateOptions[1]];
 
     const templatePick = await vscode.window.showQuickPick(templatePicks, {
-      placeHolder: 'Org2: capture template',
+      placeHolder: 'Celorga: capture template',
       matchOnDescription: true,
     });
     if (!templatePick) return;
 
     const titleRaw = await vscode.window.showInputBox({
-      prompt: 'Org2: capture title',
+      prompt: 'Celorga: capture title',
       placeHolder: templatePick.value === 'task' ? 'Ship onboarding copy' : 'Call notes',
       validateInput: (v) => (String(v || '').trim() ? undefined : 'Capture title is required'),
     });
@@ -4218,7 +4232,7 @@ function activate(context) {
 
     const captureTitle = String(titleRaw || '').trim();
     if (!captureTitle) {
-      vscode.window.showWarningMessage('Org2: capture title is required.');
+      vscode.window.showWarningMessage('Celorga: capture title is required.');
       return;
     }
 
@@ -4232,7 +4246,7 @@ function activate(context) {
       ];
       const todoPick = await vscode.window.showQuickPick(
         todoPickOrder.map((keyword) => ({ label: keyword, value: keyword })),
-        { placeHolder: 'Org2: capture task TODO keyword' }
+        { placeHolder: 'Celorga: capture task TODO keyword' }
       );
       if (!todoPick) return;
       captureTodoKeyword = todoPick.value;
@@ -4256,12 +4270,12 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: capture preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: capture preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
     if (!diffText) {
-      vscode.window.showInformationMessage('Org2: capture preview produced no changes.');
+      vscode.window.showInformationMessage('Celorga: capture preview produced no changes.');
       return;
     }
 
@@ -4269,7 +4283,7 @@ function activate(context) {
     await vscode.window.showTextDocument(diffDoc, { preview: true, preserveFocus: false });
 
     const applyOk = await vscode.window.showWarningMessage(
-      `Org2: capture ${templatePick.value} in ${path.basename(captureFilePath)}?`,
+      `Celorga: capture ${templatePick.value} in ${path.basename(captureFilePath)}?`,
       { modal: true },
       'Capture'
     );
@@ -4292,7 +4306,7 @@ function activate(context) {
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
-      vscode.window.showErrorMessage(`Org2: capture failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      vscode.window.showErrorMessage(`Celorga: capture failed: ${String(e && e.message ? e.message : e)}${extra}`);
       return;
     }
 
@@ -4333,7 +4347,7 @@ function activate(context) {
     }
 
     vscode.window.showInformationMessage(
-      `Org2: captured ${templatePick.value} in ${path.basename(captureFilePath)} (line ${headingLine1}).`
+      `Celorga: captured ${templatePick.value} in ${path.basename(captureFilePath)} (line ${headingLine1}).`
     );
   }
 
@@ -4369,7 +4383,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamDailiesGotoDate', async () => {
       const date = await vscode.window.showInputBox({
-        prompt: 'Org2: Roam dailies — go to date (YYYY-MM-DD)',
+        prompt: 'Celorga: Roam dailies — go to date (YYYY-MM-DD)',
         placeHolder: 'YYYY-MM-DD',
         validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
       });
@@ -4393,7 +4407,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.roamNodeNew', async () => {
       const selectedTitle = getActiveSelectionTextForTitle();
       const titleRaw = await vscode.window.showInputBox({
-        prompt: selectedTitle ? 'Org2: Roam — new node title (from selection)' : 'Org2: Roam — new node title',
+        prompt: selectedTitle ? 'Celorga: Roam — new node title (from selection)' : 'Celorga: Roam — new node title',
         placeHolder: 'Node title',
         value: selectedTitle,
         valueSelection: selectedTitle ? [0, selectedTitle.length] : undefined,
@@ -4403,7 +4417,7 @@ function activate(context) {
 
       const title = String(titleRaw || '').trim();
       if (!title) {
-        vscode.window.showWarningMessage('Org2: node title is required.');
+        vscode.window.showWarningMessage('Celorga: node title is required.');
         return;
       }
 
@@ -4414,13 +4428,13 @@ function activate(context) {
       let out;
       try {
         out = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Org2: Creating roam node', cancellable: false },
+          { location: vscode.ProgressLocation.Notification, title: 'Celorga: Creating roam node', cancellable: false },
           async () => await execFileAsync(finalCmd, finalArgs, { cwd: root })
         );
       } catch (e) {
         const stderr = e && e.stderr ? String(e.stderr).trim() : '';
         const extra = stderr ? `\n${stderr}` : '';
-        vscode.window.showErrorMessage(`Org2: failed to create roam node: ${String(e && e.message ? e.message : e)}${extra}`);
+        vscode.window.showErrorMessage(`Celorga: failed to create roam node: ${String(e && e.message ? e.message : e)}${extra}`);
         return;
       }
 
@@ -4428,20 +4442,20 @@ function activate(context) {
       try {
         payload = JSON.parse(String((out && out.stdout) || '').trim());
       } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 roam node output.');
+        vscode.window.showErrorMessage('Celorga: failed to parse celorga roam node output.');
         return;
       }
 
       const file = typeof payload.file === 'string' ? payload.file : '';
       if (!file) {
-        vscode.window.showErrorMessage('Org2: roam node output missing file path.');
+        vscode.window.showErrorMessage('Celorga: roam node output missing file path.');
         return;
       }
 
       const uri = vscode.Uri.file(file);
       const doc = await vscode.workspace.openTextDocument(uri);
       await vscode.window.showTextDocument(doc, { preview: false });
-      vscode.window.showInformationMessage(`Org2: created roam node ${path.basename(file)}.`);
+      vscode.window.showInformationMessage(`Celorga: created roam node ${path.basename(file)}.`);
     })
   );
 
@@ -4452,14 +4466,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: copying an ID link requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: copying an ID link requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before copying ID link.');
+          vscode.window.showWarningMessage('Celorga: could not save file before copying ID link.');
           return;
         }
       }
@@ -4494,7 +4508,7 @@ function activate(context) {
       try {
         out = await execFileAsync(finalCmd, finalArgs, { cwd: getRoamIndexRootDir() });
       } catch (e) {
-        vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
+        vscode.window.showErrorMessage(`Celorga: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
         return;
       }
 
@@ -4502,13 +4516,13 @@ function activate(context) {
       try {
         payload = JSON.parse(String((out && out.stdout) || '').trim());
       } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
+        vscode.window.showErrorMessage('Celorga: failed to parse celorga id ensure output.');
         return;
       }
 
       const id = typeof payload.id === 'string' ? payload.id : '';
       if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
-        vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
+        vscode.window.showErrorMessage('Celorga: celorga id ensure did not return a valid UUID.');
         return;
       }
 
@@ -4528,7 +4542,7 @@ function activate(context) {
       }
 
       await vscode.env.clipboard.writeText(link);
-      vscode.window.showInformationMessage('Org2: copied ID link to clipboard.');
+      vscode.window.showInformationMessage('Celorga: copied ID link to clipboard.');
     })
   );
 
@@ -4552,7 +4566,7 @@ function activate(context) {
 
       if (!uuid) {
         const input = await vscode.window.showInputBox({
-          prompt: 'Org2: Roam — copy ID link for target ID',
+          prompt: 'Celorga: Roam — copy ID link for target ID',
           placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
           value: rawInput,
           validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
@@ -4563,7 +4577,7 @@ function activate(context) {
       }
 
       if (!uuid) {
-        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        vscode.window.showWarningMessage('Celorga: invalid ID input (expected UUID or id:UUID link).');
         return;
       }
 
@@ -4576,7 +4590,7 @@ function activate(context) {
 
       const link = `[[id:${uuid}][${title}]]`;
       await vscode.env.clipboard.writeText(link);
-      vscode.window.showInformationMessage(`Org2: copied ID link for id:${uuid}.`);
+      vscode.window.showInformationMessage(`Celorga: copied ID link for id:${uuid}.`);
     })
   );
 
@@ -4587,14 +4601,14 @@ function activate(context) {
 
       const doc = editor.document;
       if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: inserting a backlink requires a file-backed document.');
+        vscode.window.showWarningMessage('Celorga: inserting a backlink requires a file-backed document.');
         return;
       }
 
       if (doc.isDirty) {
         const ok = await doc.save();
         if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before inserting backlink.');
+          vscode.window.showWarningMessage('Celorga: could not save file before inserting backlink.');
           return;
         }
       }
@@ -4607,7 +4621,7 @@ function activate(context) {
       let candidates = [];
       try {
         candidates = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Org2: indexing roam nodes', cancellable: false },
+          { location: vscode.ProgressLocation.Notification, title: 'Celorga: indexing roam nodes', cancellable: false },
           async () => collectRoamNodeCandidates(root)
         );
       } catch (e) {
@@ -4646,7 +4660,7 @@ function activate(context) {
         });
 
         const pick = await vscode.window.showQuickPick(picks, {
-          placeHolder: 'Org2: Roam — insert backlink target (type to search node title)',
+          placeHolder: 'Celorga: Roam — insert backlink target (type to search node title)',
           matchOnDescription: true,
           matchOnDetail: true,
         });
@@ -4663,7 +4677,7 @@ function activate(context) {
       } else {
         // Fallback for empty/missing index: preserve previous manual flow.
         const idInput = await vscode.window.showInputBox({
-          prompt: 'Org2: Roam — insert backlink target (ID fallback)',
+          prompt: 'Celorga: Roam — insert backlink target (ID fallback)',
           placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
           value: extractRoamUuid(selected) ? String(selected).trim() : '',
           validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
@@ -4672,7 +4686,7 @@ function activate(context) {
 
         id = extractRoamUuid(idInput);
         if (!id) {
-          vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+          vscode.window.showWarningMessage('Celorga: invalid ID input (expected UUID or id:UUID link).');
           return;
         }
 
@@ -4698,12 +4712,12 @@ function activate(context) {
       });
 
       if (!changed) {
-        vscode.window.showWarningMessage('Org2: failed to insert backlink.');
+        vscode.window.showWarningMessage('Celorga: failed to insert backlink.');
         return;
       }
 
       await doc.save();
-      vscode.window.showInformationMessage('Org2: inserted backlink.');
+      vscode.window.showInformationMessage('Celorga: inserted backlink.');
     })
   );
 
@@ -4720,7 +4734,7 @@ function activate(context) {
         editor.selection = new vscode.Selection(pos, pos);
         revealNavigationPosition(editor, pos);
       } catch (e) {
-        vscode.window.showErrorMessage(`Org2: failed to open file: ${String(e && e.message ? e.message : e)}`);
+        vscode.window.showErrorMessage(`Celorga: failed to open file: ${String(e && e.message ? e.message : e)}`);
       }
     })
   );
@@ -4776,14 +4790,14 @@ function activate(context) {
 
     const doc = editor.document;
     if (!doc || doc.uri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Org2: showing backlinks requires a file-backed document.');
+      vscode.window.showWarningMessage('Celorga: showing backlinks requires a file-backed document.');
       return null;
     }
 
     if (doc.isDirty) {
       const ok = await doc.save();
       if (!ok) {
-        vscode.window.showWarningMessage('Org2: could not save file before loading backlinks.');
+        vscode.window.showWarningMessage('Celorga: could not save file before loading backlinks.');
         return null;
       }
     }
@@ -4808,7 +4822,7 @@ function activate(context) {
     try {
       ensureOut = await execFileAsync(ensureCmd, ensureFinalArgs, { cwd: rootDir });
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
+      vscode.window.showErrorMessage(`Celorga: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
       return null;
     }
 
@@ -4816,13 +4830,13 @@ function activate(context) {
     try {
       ensurePayload = JSON.parse(String((ensureOut && ensureOut.stdout) || '').trim());
     } catch (e) {
-      vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
+      vscode.window.showErrorMessage('Celorga: failed to parse celorga id ensure output.');
       return null;
     }
 
     const id = typeof ensurePayload.id === 'string' ? ensurePayload.id : '';
     if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
-      vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
+      vscode.window.showErrorMessage('Celorga: celorga id ensure did not return a valid UUID.');
       return null;
     }
     const ensuredKind = ensurePayload.kind === 'headline' ? 'headline' : 'file';
@@ -4849,7 +4863,7 @@ function activate(context) {
     const rootDir = String((loaded && loaded.rootDir) || '');
 
     if (!backlinks.length) {
-      vscode.window.showInformationMessage(`Org2: no backlinks found for id:${id}.`);
+      vscode.window.showInformationMessage(`Celorga: no backlinks found for id:${id}.`);
       return;
     }
 
@@ -4876,11 +4890,11 @@ function activate(context) {
       .filter(Boolean);
 
     if (!picks.length) {
-      vscode.window.showInformationMessage('Org2: backlinks found, but no openable source locations were returned.');
+      vscode.window.showInformationMessage('Celorga: backlinks found, but no openable source locations were returned.');
       return;
     }
 
-    const defaultPlaceHolder = `Org2: open backlink source for id:${id} (${picks.length} found)`;
+    const defaultPlaceHolder = `Celorga: open backlink source for id:${id} (${picks.length} found)`;
     const pick = await vscode.window.showQuickPick(picks, {
       placeHolder: typeof options.placeHolder === 'string' && options.placeHolder.trim() ? options.placeHolder.trim() : defaultPlaceHolder,
       matchOnDescription: true,
@@ -4925,7 +4939,7 @@ function activate(context) {
       typeof options.scopeLabel === 'string' && options.scopeLabel.trim() ? options.scopeLabel.trim() : 'target';
 
     if (backlinks.length === 0) {
-      vscode.window.showInformationMessage(`Org2: no backlinks found for id:${id}.`);
+      vscode.window.showInformationMessage(`Celorga: no backlinks found for id:${id}.`);
       return;
     }
 
@@ -4972,17 +4986,17 @@ function activate(context) {
       if (!loaded) return;
 
       await pickAndOpenBacklinkSource(loaded, {
-        placeHolder: `Org2: open backlink source for current ${loaded.ensuredKind} (${loaded.backlinks.length} found)`,
+        placeHolder: `Celorga: open backlink source for current ${loaded.ensuredKind} (${loaded.backlinks.length} found)`,
       });
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamOpenBacklinkById', async (id) => {
-      const uuid = await resolveRoamUuidInput(id, 'Org2: Roam — open backlink source for ID');
+      const uuid = await resolveRoamUuidInput(id, 'Celorga: Roam — open backlink source for ID');
       if (uuid === null) return;
       if (!uuid) {
-        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        vscode.window.showWarningMessage('Celorga: invalid ID input (expected UUID or id:UUID link).');
         return;
       }
 
@@ -5006,10 +5020,10 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamShowBacklinksById', async (id) => {
-      const uuid = await resolveRoamUuidInput(id, 'Org2: Roam — show backlinks for ID');
+      const uuid = await resolveRoamUuidInput(id, 'Celorga: Roam — show backlinks for ID');
       if (uuid === null) return;
       if (!uuid) {
-        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        vscode.window.showWarningMessage('Celorga: invalid ID input (expected UUID or id:UUID link).');
         return;
       }
 
@@ -5026,7 +5040,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.roamDbSync', async () => {
       const root = getRoamIndexRootDir();
       if (!root) {
-        vscode.window.showWarningMessage('Org2: no Roam index dir configured (set org2.roam.indexDir or org2.agenda.dir, or open a workspace).');
+        vscode.window.showWarningMessage('Celorga: no Roam index dir configured (set org2.roam.indexDir or org2.agenda.dir, or open a workspace).');
         return;
       }
 
@@ -5040,13 +5054,13 @@ function activate(context) {
       let previewOut;
       try {
         previewOut = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Org2: Roam DB Sync (scan)', cancellable: false },
+          { location: vscode.ProgressLocation.Notification, title: 'Celorga: Roam DB Sync (scan)', cancellable: false },
           async () => await execFileAsync(previewCmd, previewFinalArgs, { cwd: root })
         );
       } catch (e) {
         const stderr = e && e.stderr ? String(e.stderr).trim() : '';
         const extra = stderr ? `\n${stderr}` : '';
-        vscode.window.showErrorMessage(`Org2: roam db-sync scan failed: ${String(e && e.message ? e.message : e)}${extra}`);
+        vscode.window.showErrorMessage(`Celorga: roam db-sync scan failed: ${String(e && e.message ? e.message : e)}${extra}`);
         return;
       }
 
@@ -5054,13 +5068,13 @@ function activate(context) {
       try {
         payload = JSON.parse(String((previewOut && previewOut.stdout) || '').trim());
       } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync output.');
+        vscode.window.showErrorMessage('Celorga: failed to parse celorga roam db-sync output.');
         return;
       }
 
       const missing = Array.isArray(payload.missingFileIds) ? payload.missingFileIds : [];
       if (missing.length === 0) {
-        vscode.window.showInformationMessage('Org2: roam db-sync — all scanned files already have file-level IDs.');
+        vscode.window.showInformationMessage('Celorga: roam db-sync — all scanned files already have file-level IDs.');
         return;
       }
 
@@ -5069,7 +5083,7 @@ function activate(context) {
       await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
 
       const ok = await vscode.window.showWarningMessage(
-        `Org2: add file-level IDs to ${missing.length} file(s)? (This will edit files on disk)`,
+        `Celorga: add file-level IDs to ${missing.length} file(s)? (This will edit files on disk)`,
         { modal: true },
         'Apply'
       );
@@ -5081,13 +5095,13 @@ function activate(context) {
       let applyOut;
       try {
         applyOut = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Org2: Roam DB Sync (apply)', cancellable: false },
+          { location: vscode.ProgressLocation.Notification, title: 'Celorga: Roam DB Sync (apply)', cancellable: false },
           async () => await execFileAsync(applyCmd, applyFinalArgs, { cwd: root })
         );
       } catch (e) {
         const stderr = e && e.stderr ? String(e.stderr).trim() : '';
         const extra = stderr ? `\n${stderr}` : '';
-        vscode.window.showErrorMessage(`Org2: roam db-sync apply failed: ${String(e && e.message ? e.message : e)}${extra}`);
+        vscode.window.showErrorMessage(`Celorga: roam db-sync apply failed: ${String(e && e.message ? e.message : e)}${extra}`);
         return;
       }
 
@@ -5095,12 +5109,12 @@ function activate(context) {
       try {
         applyPayload = JSON.parse(String((applyOut && applyOut.stdout) || '').trim());
       } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync apply output.');
+        vscode.window.showErrorMessage('Celorga: failed to parse celorga roam db-sync apply output.');
         return;
       }
 
       const appliedCount = typeof applyPayload.appliedCount === 'number' ? applyPayload.appliedCount : 0;
-      vscode.window.showInformationMessage(`Org2: roam db-sync — applied IDs to ${appliedCount} file(s).`);
+      vscode.window.showInformationMessage(`Celorga: roam db-sync — applied IDs to ${appliedCount} file(s).`);
     })
   );
 
@@ -5120,7 +5134,7 @@ function activate(context) {
 
       if (!uuid) {
         const input = await vscode.window.showInputBox({
-          prompt: 'Org2: Roam — open ID link',
+          prompt: 'Celorga: Roam — open ID link',
           placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
           value: initial,
           validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
@@ -5130,7 +5144,7 @@ function activate(context) {
       }
 
       if (!uuid) {
-        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        vscode.window.showWarningMessage('Celorga: invalid ID input (expected UUID or id:UUID link).');
         return;
       }
 
@@ -5152,7 +5166,7 @@ function activate(context) {
       if (!results.length) {
         const found = await findFirstIdMatchInDir(root, uuid);
         if (!found) {
-          vscode.window.showWarningMessage(`Org2: ID not found: ${uuid}`);
+          vscode.window.showWarningMessage(`Celorga: ID not found: ${uuid}`);
           return;
         }
         results = [{ file: found.filePath, line: found.line, title: path.basename(found.filePath) }];
@@ -5174,7 +5188,7 @@ function activate(context) {
         picks.length === 1
           ? picks[0]
           : await vscode.window.showQuickPick(picks, {
-              placeHolder: `Org2: open ID (${picks.length} matches)`,
+              placeHolder: `Celorga: open ID (${picks.length} matches)`,
               matchOnDescription: true,
             });
       if (!pick) return;
@@ -5195,7 +5209,7 @@ function activate(context) {
 
       if (!query) {
         const input = await vscode.window.showInputBox({
-          prompt: 'Org2: Roam — open node by title',
+          prompt: 'Celorga: Roam — open node by title',
           placeHolder: 'Node title',
           validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
         });
@@ -5214,7 +5228,7 @@ function activate(context) {
       }
 
       if (!Array.isArray(candidates) || candidates.length === 0) {
-        vscode.window.showWarningMessage('Org2: no roam nodes found to resolve title link.');
+        vscode.window.showWarningMessage('Celorga: no roam nodes found to resolve title link.');
         return;
       }
 
@@ -5224,7 +5238,7 @@ function activate(context) {
       const matches = exact.length ? exact : candidates.filter((node) => normalize(node.title).includes(needle));
 
       if (!matches.length) {
-        vscode.window.showWarningMessage(`Org2: no roam node found for title "${query}".`);
+        vscode.window.showWarningMessage(`Celorga: no roam node found for title "${query}".`);
         return;
       }
 
@@ -5259,7 +5273,7 @@ function activate(context) {
       });
 
       const pick = await vscode.window.showQuickPick(picks, {
-        placeHolder: `Org2: choose node for "${query}"`,
+        placeHolder: `Celorga: choose node for "${query}"`,
         matchOnDescription: true,
         matchOnDetail: true,
       });
@@ -5282,7 +5296,7 @@ function activate(context) {
   async function promptPlanDate(kind) {
     const normalizedKind = normalizePlanKind(kind);
     const input = await vscode.window.showInputBox({
-      prompt: `Org2: set ${String(normalizedKind || kind || '').toUpperCase()} (YYYY-MM-DD)`,
+      prompt: `Celorga: set ${String(normalizedKind || kind || '').toUpperCase()} (YYYY-MM-DD)`,
       placeHolder: 'YYYY-MM-DD',
       validateInput: (v) => (normalizePlanDateInput(v) ? undefined : 'Expected YYYY-MM-DD'),
     });
@@ -5333,7 +5347,7 @@ function activate(context) {
       const dateOverrideRaw = typeof runOptions.dateOverride === 'string' ? runOptions.dateOverride : '';
       const normalizedDateOverride = normalizePlanDateInput(dateOverrideRaw);
       if (dateOverrideRaw && !normalizedDateOverride) {
-        vscode.window.showWarningMessage('Org2: invalid planning date override (expected YYYY-MM-DD).');
+        vscode.window.showWarningMessage('Celorga: invalid planning date override (expected YYYY-MM-DD).');
         return;
       }
 
@@ -5382,7 +5396,7 @@ function activate(context) {
         { label: 'DONE', value: 'done' },
         { label: 'CANCELED', value: 'canceled' },
       ],
-      { placeHolder: 'Org2: set todo status' }
+      { placeHolder: 'Celorga: set todo status' }
     );
     if (!pick) return;
     await runSet(pick.value);
@@ -5447,7 +5461,7 @@ function activate(context) {
             { label: 'Priority C', value: 'C' },
             { label: 'Clear priority', value: '' },
           ],
-          { placeHolder: 'Org2: set headline priority' }
+          { placeHolder: 'Celorga: set headline priority' }
         );
         if (!pick) return;
         priority = normalizeOrgPriorityToken(pick.value);
@@ -5740,7 +5754,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.rerunAutoFold', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage('Org2: no active editor');
+        vscode.window.showInformationMessage('Celorga: no active editor');
         return;
       }
       const doc = editor.document;
@@ -5755,7 +5769,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.debugFoldingRanges', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage('Org2: no active editor');
+        vscode.window.showInformationMessage('Celorga: no active editor');
         return;
       }
       const doc = editor.document;
@@ -5766,7 +5780,7 @@ function activate(context) {
         .join(' ');
 
       vscode.window.showInformationMessage(
-        `Org2: folding ranges=${ranges.length}${preview ? ' ' + preview : ''}`
+        `Celorga: folding ranges=${ranges.length}${preview ? ' ' + preview : ''}`
       );
     })
   );
@@ -5775,13 +5789,13 @@ function activate(context) {
     vscode.commands.registerCommand('org2.debugListLinks', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage('Org2: no active editor');
+        vscode.window.showInformationMessage('Celorga: no active editor');
         return;
       }
       const doc = editor.document;
       const links = provideDocumentLinks(doc);
 
-      const out = vscode.window.createOutputChannel('Org2');
+      const out = vscode.window.createOutputChannel('Celorga');
       out.appendLine(`Found ${links.length} links in ${doc.uri.toString()}`);
       for (const l of links) {
         out.appendLine(

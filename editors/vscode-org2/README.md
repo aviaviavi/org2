@@ -1,19 +1,20 @@
-# Org2 (VS Code)
+# Celorga (VS Code)
 
-VS Code extension for Org2 workflows.
+VS Code extension for Celorga workflows on ordinary Org files.
 
 ## Requirements
 
-- This extension requires the `org2` CLI.
-- If `org2` is not available, language-only features still work, but agenda/editing/roam/export commands will fail.
+- This extension requires the `celorga` CLI. The `org2` executable remains a permanent compatibility alias for `celorga`, and the extension accepts either.
+- If neither `celorga` nor `org2` is available, language-only features still work, but agenda/editing/roam/export commands will fail.
+- Formerly published as "Org2". The marketplace ID (`AviPress.org2-vscode`), command IDs, the `org2` language ID, and `org2.*` settings keep their names so existing installs, keybindings, and settings continue to work.
 
 ## Quick start (60 seconds)
 
-1. Install the Org2 CLI:
+1. Install the Celorga CLI:
 
 ```sh
-npm install -g @aviaviavi/org2
-org2 --help
+npm install -g celorga
+celorga --help
 ```
 
 2. Install the extension from the VS Code Marketplace:
@@ -23,7 +24,7 @@ code --install-extension AviPress.org2-vscode
 ```
 
 3. Open your notes folder.
-4. Run `Org2: Open Agenda` from the command palette.
+4. Run `Celorga: Open Agenda` from the command palette.
 
 ## Source checkout setup
 
@@ -36,7 +37,7 @@ npm ci
 npm run build
 ```
 
-Then install/run the extension from `editors/vscode-org2` with the Extension Development Host, or package a VSIX and install it manually. Ensure `org2` is on your `PATH` or use the repo fallback.
+Then install/run the extension from `editors/vscode-org2` with the Extension Development Host, or package a VSIX and install it manually. Ensure `celorga` (or the `org2` alias) is on your `PATH` or use the repo fallback.
 
 ## What you get
 
@@ -44,7 +45,7 @@ Then install/run the extension from `editors/vscode-org2` with the Extension Dev
   - syntax highlighting
   - folding for headings/lists/property drawers
   - clickable links
-- Command workflows powered by the `org2` CLI:
+- Command workflows powered by the `celorga` CLI:
   - agenda, TODO/planning edits, capture, archive/refile
   - roam backlinks/IDs/dailies
   - HTML export
@@ -62,8 +63,8 @@ Then install/run the extension from `editors/vscode-org2` with the Extension Dev
   - `org2.folding.autoFoldMaxHeadingLevel` (number; default 1; 0 = off)
   - `org2.folding.autoFoldPropertyDrawers` (boolean; default true)
 - Clickable links (via VS Code document links): `[[url]]`, `[[url][desc]]`, bare `https://...`
-- Quick capture command with diff preview + apply confirmation (`Org2: Capture Quick Entry`)
-- HTML export commands for active file/workspace (`Org2: Export Current File to HTML`, `Org2: Export Workspace Org Files to HTML`)
+- Quick capture command with diff preview + apply confirmation (`Celorga: Capture Quick Entry`)
+- HTML export commands for active file/workspace (`Celorga: Export Current File to HTML`, `Celorga: Export Workspace Org Files to HTML`)
 - LSP features: definitions/declarations/type/implementation, hovers, signature help, completion, highlights, rename, file-rename edits, code actions, formatting, semantic tokens, inlay hints, call hierarchy
 
 ## Link rendering note (best-effort)
@@ -74,63 +75,63 @@ Limitation: VS Code decorations cannot truly replace/collapse the underlying tex
 
 ## TODO status editing (MVP)
 
-The extension can toggle/set TODO keywords on the current headline via the `org2` CLI.
+The extension can toggle/set TODO keywords on the current headline via the `celorga` CLI.
 
-- Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
-- Command: **Org2: Set Todo Status** (`org2.setTodoStatus`) — command args accept the same aliases as CLI `todo set --status` (e.g. `open`, `backlog`, `in-progress`, `completed`, `cancelled`).
-- Command: **Org2: Set Priority** (`org2.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
+- Command: **Celorga: Toggle Todo Status** (`org2.toggleTodo`)
+- Command: **Celorga: Set Todo Status** (`org2.setTodoStatus`) — command args accept the same aliases as CLI `todo set --status` (e.g. `open`, `backlog`, `in-progress`, `completed`, `cancelled`).
+- Command: **Celorga: Set Priority** (`org2.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
 - Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
 - Handoff command: `org2.markDoneAndHandoff` marks the heading `DONE`, sets `STATUS=ready-for-agent`, and writes `ORG2_AGENT_HANDOFF_AT`.
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: TODO status changes save the file (if needed), run `org2 todo toggle|set --file ... --line ... --apply` (and add `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refresh the buffer from disk. Priority changes are applied directly in-editor on the current headline and saved immediately for file-backed documents. Agenda-invoked priority edits trigger an immediate agenda reload so priority sort/filter/group views update right away. By default the extension restores the prior cursor/selection after CLI-based edits; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
+Implementation detail: TODO status changes save the file (if needed), run `celorga todo toggle|set --file ... --line ... --apply` (and add `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refresh the buffer from disk. Priority changes are applied directly in-editor on the current headline and saved immediately for file-backed documents. Agenda-invoked priority edits trigger an immediate agenda reload so priority sort/filter/group views update right away. By default the extension restores the prior cursor/selection after CLI-based edits; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Celorga may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
 ## Planning + capture + archiving + refile + export (MVP)
 
-The extension can edit planning keywords, run quick capture, archive subtrees, refile subtrees, and export HTML via the `org2` CLI.
+The extension can edit planning keywords, run quick capture, archive subtrees, refile subtrees, and export HTML via the `celorga` CLI.
 
-- Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
-- Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
-- Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
-- Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
-- Command: **Org2: Capture Quick Entry** (`org2.captureQuickEntry`) → pick file/template/title, optionally include current selection as body text, preview diff, then apply
-- Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
-- Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
-- Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
-- Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
-- Command: **Org2: Corpus Lint — Graph & Artifact Health** (`org2.lintWorkspaceCorpus`) → runs `org2 lint` recursively in the workspace and reports graph/artifact health issues, including broken `id:` links, unresolved or ambiguous wiki links, raw/canonical vs generated trust-boundary mistakes, and raw -> notes -> compiled -> views -> publish corpus-flow mismatches, in the output pane
-- Command: **Org2: Graph Audit Workspace** (`org2.graphAuditWorkspace`) → runs `org2 graph audit` recursively and opens a human-readable graph-health report
-- Command: **Org2: Compile Workspace Corpus Artifact** (`org2.compileWorkspaceCorpus`) → prompts for a JSON/JSONL output path, runs `org2 compile corpus` recursively against the workspace, and opens the generated machine-readable corpus artifact
-- Command: **Org2: AI — Review Workspace / Active File** (`org2.aiReviewWorkspace`) → runs `org2 ai review` for either the active file or the workspace and reports generated-artifact lifecycle issues
-- Command: **Org2: AI — Write Draft Artifact** (`org2.aiRunDraft`) → picks an AI job manifest, previews `org2 ai run`, then writes review-required draft artifacts such as meeting/transcript summaries with citations and TODO/link suggestions after confirmation
-- Command: **Org2: AI — Mark Draft Reviewed/Rejected/Deferred** (`org2.aiMarkReviewed` / `org2.aiMarkRejected` / `org2.aiMarkDeferred`) → stamps the active draft artifact review status before promotion
-- Command: **Org2: AI — Promote Reviewed Draft** (`org2.aiPromoteDraft`) → previews and appends only reviewed generated artifacts into canonical notes
+- Command: **Celorga: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
+- Command: **Celorga: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
+- Command: **Celorga: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
+- Command: **Celorga: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
+- Command: **Celorga: Capture Quick Entry** (`org2.captureQuickEntry`) → pick file/template/title, optionally include current selection as body text, preview diff, then apply
+- Command: **Celorga: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
+- Command: **Celorga: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
+- Command: **Celorga: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
+- Command: **Celorga: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
+- Command: **Celorga: Corpus Lint — Graph & Artifact Health** (`org2.lintWorkspaceCorpus`) → runs `celorga lint` recursively in the workspace and reports graph/artifact health issues, including broken `id:` links, unresolved or ambiguous wiki links, raw/canonical vs generated trust-boundary mistakes, and raw -> notes -> compiled -> views -> publish corpus-flow mismatches, in the output pane
+- Command: **Celorga: Graph Audit Workspace** (`org2.graphAuditWorkspace`) → runs `celorga graph audit` recursively and opens a human-readable graph-health report
+- Command: **Celorga: Compile Workspace Corpus Artifact** (`org2.compileWorkspaceCorpus`) → prompts for a JSON/JSONL output path, runs `celorga compile corpus` recursively against the workspace, and opens the generated machine-readable corpus artifact
+- Command: **Celorga: AI — Review Workspace / Active File** (`org2.aiReviewWorkspace`) → runs `celorga ai review` for either the active file or the workspace and reports generated-artifact lifecycle issues
+- Command: **Celorga: AI — Write Draft Artifact** (`org2.aiRunDraft`) → picks an AI job manifest, previews `celorga ai run`, then writes review-required draft artifacts such as meeting/transcript summaries with citations and TODO/link suggestions after confirmation
+- Command: **Celorga: AI — Mark Draft Reviewed/Rejected/Deferred** (`org2.aiMarkReviewed` / `org2.aiMarkRejected` / `org2.aiMarkDeferred`) → stamps the active draft artifact review status before promotion
+- Command: **Celorga: AI — Promote Reviewed Draft** (`org2.aiPromoteDraft`) → previews and appends only reviewed generated artifacts into canonical notes
 
 Implementation detail: the extension saves the file (if needed).
-- Planning edits run `org2 plan set ... --apply`.
-- Quick capture runs `org2 capture ... --format diff` first to preview the append, then `org2 capture ... --apply --format json` if confirmed, and can pass active-selection text as `--body` when `org2.capture.useSelectionAsBody` is enabled.
-- Archiving runs `org2 archive ... --format diff` first to generate a preview with provenance metadata, then `org2 archive ... --apply --format json` if confirmed and reports the archive destination.
-- Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
-- Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
-- Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.
-- AI draft writing runs `org2 ai run --job ... --out ...` (or the inline `org2 ai run --task summarize-meeting --file ... --out ...` flow) for preview and adds `--apply` only after confirmation. For `summarize-meeting` jobs, the generated draft includes summary, decisions, TODO suggestions, entity/link candidates, and source citations; promotion remains a separate reviewed-draft command.
+- Planning edits run `celorga plan set ... --apply`.
+- Quick capture runs `celorga capture ... --format diff` first to preview the append, then `celorga capture ... --apply --format json` if confirmed, and can pass active-selection text as `--body` when `org2.capture.useSelectionAsBody` is enabled.
+- Archiving runs `celorga archive ... --format diff` first to generate a preview with provenance metadata, then `celorga archive ... --apply --format json` if confirmed and reports the archive destination.
+- Refile runs `celorga refile ... --format diff` for preview, then `celorga refile ... --apply --format json` if confirmed.
+- Current-file HTML export runs `celorga export html --file ... --format json` for preview and `celorga export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
+- Workspace HTML export runs `celorga export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.
+- AI draft writing runs `celorga ai run --job ... --out ...` (or the inline `celorga ai run --task summarize-meeting --file ... --out ...` flow) for preview and adds `--apply` only after confirmation. For `summarize-meeting` jobs, the generated draft includes summary, decisions, TODO suggestions, entity/link candidates, and source citations; promotion remains a separate reviewed-draft command.
 - Exported HTML maps `#+AUTHOR`, `#+DATE`, `#+SUBTITLE`, `#+DESCRIPTION`, and `#+KEYWORDS` into standard HTML `<meta>` tags, respects `#+LANGUAGE` for `<html lang="...">`, injects `#+HTML_HEAD` / `#+HTML_HEAD_EXTRA` snippets into `<head>`, prepends a document title/subtitle header when `#+SUBTITLE` is present, treats `#+OPTIONS: toc:t` like passing `--toc` and `#+OPTIONS: toc:N` like `--toc-depth N` (auto TOC + heading anchors), treats `#+OPTIONS: num:t` like passing `--number-headings` and `#+OPTIONS: num:N` like `--number-headings-depth N`, emits heading anchor IDs for `--toc`, `--toc-depth`, `--rewrite-file-links`, and in-document `[[* Heading]]` / `[[#custom-id]]` links (including `:CUSTOM_ID:` targets), and uses cleaned default labels (`Heading` / `custom-id`) when those in-document links omit descriptions.
 Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
 
-The extension can show an *agenda* view powered by the `org2` CLI.
+The extension can show an *agenda* view powered by the `celorga` CLI.
 
 ### Usage
 
-1. Ensure `org2` is available:
+1. Ensure `celorga` is available:
    - If you have this repo checked out and built, the extension will *try* to fall back to running `node <repo>/dist/cli.js`.
-   - Otherwise install/provide `org2` on your `PATH`, or configure `org2.agenda.command` + `org2.agenda.args`.
-2. Run the command: **`Org2: Open Agenda`**.
+   - Otherwise install/provide `celorga` (or the `org2` alias) on your `PATH`, or configure `org2.agenda.command` + `org2.agenda.args`.
+2. Run the command: **`Celorga: Open Agenda`**.
 3. Use the view title buttons:
-   - **Refresh** (`Org2: Refresh Agenda`)
-   - **Filter** (`Org2: Agenda Filter`) → Today / Next N days
+   - **Refresh** (`Celorga: Refresh Agenda`)
+   - **Filter** (`Celorga: Agenda Filter`) → Today / Next N days
 
 ### Settings
 
@@ -191,16 +192,16 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
 - `org2.formatter.excludeFileFilter`: exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)
-- `org2.formatter.configFile`: optional `org2.json` path for workspace formatter commands; when set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively
-- `org2.capture.defaultFile`: optional default target file for `Org2: Capture Quick Entry`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
-- `org2.capture.defaultTemplate`: default template ordering (`note` or `task`) for `Org2: Capture Quick Entry`
+- `org2.formatter.configFile`: optional `org2.json` path for workspace formatter commands; when set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `org2.agenda.dir` recursively
+- `org2.capture.defaultFile`: optional default target file for `Celorga: Capture Quick Entry`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
+- `org2.capture.defaultTemplate`: default template ordering (`note` or `task`) for `Celorga: Capture Quick Entry`
 - `org2.capture.defaultTodoKeyword`: default TODO keyword ordering for task captures (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, `CANCELLED`)
-- `org2.capture.useSelectionAsBody`: when true (default), pass the active editor selection as capture body text (`--body`) in `Org2: Capture Quick Entry`
-- `org2.export.outputDir`: output directory for `Org2: Export Workspace Org Files to HTML`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
+- `org2.capture.useSelectionAsBody`: when true (default), pass the active editor selection as capture body text (`--body`) in `Celorga: Capture Quick Entry`
+- `org2.export.outputDir`: output directory for `Celorga: Export Workspace Org Files to HTML`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
 - `org2.export.indexFile`: optional workspace export index file path (`index.html` by default); empty disables index generation; relative paths resolve inside `org2.export.outputDir`
-- `org2.export.indexTitle`: title used for generated workspace export index pages (`Org2 Export Index` by default)
+- `org2.export.indexTitle`: title used for generated workspace export index pages (`Celorga Export Index` by default)
 - `org2.export.stylesheets`: optional comma/newline-separated stylesheet URLs/paths passed to HTML export commands as repeated `--css` flags
-- `org2.export.includeDefaultStyle`: when true (default), keep Org2's built-in inline stylesheet; disable to export with external CSS only (`--no-default-style`)
+- `org2.export.includeDefaultStyle`: when true (default), keep Celorga's built-in inline stylesheet; disable to export with external CSS only (`--no-default-style`)
 - `org2.export.includeToc`: when true, include a generated table of contents with heading anchor links in exported HTML (`--toc`)
 - `org2.export.tocDepth`: optional TOC depth limit; values `>0` pass `--toc-depth N` (and enable TOC automatically), `0` keeps full-depth behavior
 - `org2.export.numberHeadings`: when true, prefix exported headings (and TOC entries when present) with generated section numbers (`--number-headings`)
@@ -214,15 +215,15 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.roam.dailiesDir`: optional root directory for Roam dailies (new files use `YYYY-MM-DD.org`; existing `.org2` dailies remain discoverable); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
 - `org2.roam.indexDir`: optional root directory for Roam ID/query/backlinks/db-sync operations; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
-- `org2.roam.nodesDir`: optional directory for `Org2: Roam — New Node`; absolute paths are used directly, relative paths resolve against `org2.roam.indexDir` (or `org2.agenda.dir`/workspace root)
-- `org2.agenda.command`: command used to run org2 (default: `org2`)
+- `org2.roam.nodesDir`: optional directory for `Celorga: Roam — New Node`; absolute paths are used directly, relative paths resolve against `org2.roam.indexDir` (or `org2.agenda.dir`/workspace root)
+- `org2.agenda.command`: command used to run the Celorga CLI (default: `org2`; when left unset, the extension runs `celorga` if it is on `PATH` and falls back to the `org2` alias)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
 - `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning/archive apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
 - `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning/archive apply commands force a targeted file refresh from disk (`todo`/`plan` only refresh when CLI output reports an actual change); set false to rely on VS Code file watching and avoid refresh-related fold churn.
 - `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
-- `org2.editor.allowGlobalRefreshFallback`: when false (default), Org2 will not fall back to global `workbench.action.files.revert` if target-file `revertResource` is unavailable; enable only if you need compatibility with older VS Code builds and accept broader refresh side-effects.
-- `org2.editor.navigationReveal`: controls reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id). `outside` (default) only recenters when the target is offscreen, `default` uses normal VS Code reveal, `center` always recenters, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
+- `org2.editor.allowGlobalRefreshFallback`: when false (default), Celorga will not fall back to global `workbench.action.files.revert` if target-file `revertResource` is unavailable; enable only if you need compatibility with older VS Code builds and accept broader refresh side-effects.
+- `org2.editor.navigationReveal`: controls reveal behavior after Celorga non-agenda navigation commands (backlinks/open-file/open-id). `outside` (default) only recenters when the target is offscreen, `default` uses normal VS Code reveal, `center` always recenters, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
 - `org2.editor.navigationRevealFromAgenda`: controls reveal behavior when opening agenda items. `none` (default) avoids forced reveal calls to minimize fold churn; `default` inherits `org2.editor.navigationReveal`; `outside`/`center` apply agenda-specific recentering.
 
 ### Agenda visuals
@@ -251,89 +252,89 @@ All visuals remain theme-aware (`ThemeColor`) and keep urgency dots for schedule
 
 ### Click-through
 
-Agenda items are clickable; clicking opens the source file at the line reported by the org2 CLI.
+Agenda items are clickable; clicking opens the source file at the line reported by the celorga CLI.
 
 ### Formatter commands
 
-- `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check --format json` and reports drift in the `Org2 Formatter` output channel. If `org2.formatter.configFile` is set, it uses `org2 fmt --config <path> --check --format json` instead. When configured, it also passes `--file-match <org2.formatter.fileFilter>` and/or `--exclude-file <org2.formatter.excludeFileFilter>`.
-- `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply --format json` (or `org2 fmt --config <path> --apply --format json` when `org2.formatter.configFile` is set), with the same optional workspace file filters (fallback: plain `--apply` for older CLIs).
-- `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --format json` (prompts to save first when needed) and reports drift in the same output channel (fallback: `--check --format json` for older CLIs).
-- `Org2: Formatter — Preview Current File Diff` uses `org2 fmt --file <active-file> --format json` to open a side-by-side VS Code diff against formatted output without mutating the file (fallback: plain `org2 fmt --file <active-file>` output for older CLIs).
-- `Org2: Formatter — Apply Current File Formatting` previews current-file drift via the same JSON payload, asks for confirmation, then runs `org2 fmt --file <active-file> --apply --format json` (fallback: plain `--apply` for older CLIs).
+- `Celorga: Formatter — Check Workspace Drift` runs `celorga fmt --dir <agenda-root> --recursive --check --format json` and reports drift in the `Celorga Formatter` output channel. If `org2.formatter.configFile` is set, it uses `celorga fmt --config <path> --check --format json` instead. When configured, it also passes `--file-match <org2.formatter.fileFilter>` and/or `--exclude-file <org2.formatter.excludeFileFilter>`.
+- `Celorga: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `celorga fmt --dir <agenda-root> --recursive --apply --format json` (or `celorga fmt --config <path> --apply --format json` when `org2.formatter.configFile` is set), with the same optional workspace file filters (fallback: plain `--apply` for older CLIs).
+- `Celorga: Formatter — Check Current File Drift` runs `celorga fmt --file <active-file> --format json` (prompts to save first when needed) and reports drift in the same output channel (fallback: `--check --format json` for older CLIs).
+- `Celorga: Formatter — Preview Current File Diff` uses `celorga fmt --file <active-file> --format json` to open a side-by-side VS Code diff against formatted output without mutating the file (fallback: plain `celorga fmt --file <active-file>` output for older CLIs).
+- `Celorga: Formatter — Apply Current File Formatting` previews current-file drift via the same JSON payload, asks for confirmation, then runs `celorga fmt --file <active-file> --apply --format json` (fallback: plain `--apply` for older CLIs).
 
 ## Command reference (VS Code)
 
 Quick command palette index (`Cmd/Ctrl+Shift+P`):
 
 - Agenda
-  - `Org2: Open Agenda` (`org2.openAgenda`)
-  - `Org2: Refresh Agenda` (`org2.refreshAgenda`)
-  - `Org2: Formatter — Check Workspace Drift` (`org2.formatWorkspaceCheck`)
-  - `Org2: Formatter — Apply Workspace Formatting` (`org2.formatWorkspaceApply`)
-  - `Org2: Formatter — Check Current File Drift` (`org2.formatCurrentFileCheck`)
-  - `Org2: Formatter — Preview Current File Diff` (`org2.formatCurrentFilePreviewDiff`)
-  - `Org2: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
-  - `Org2: Export Current File to HTML` (`org2.exportCurrentFileHtml`)
-  - `Org2: Export Workspace Org Files to HTML` (`org2.exportWorkspaceHtml`)
-  - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
+  - `Celorga: Open Agenda` (`org2.openAgenda`)
+  - `Celorga: Refresh Agenda` (`org2.refreshAgenda`)
+  - `Celorga: Formatter — Check Workspace Drift` (`org2.formatWorkspaceCheck`)
+  - `Celorga: Formatter — Apply Workspace Formatting` (`org2.formatWorkspaceApply`)
+  - `Celorga: Formatter — Check Current File Drift` (`org2.formatCurrentFileCheck`)
+  - `Celorga: Formatter — Preview Current File Diff` (`org2.formatCurrentFilePreviewDiff`)
+  - `Celorga: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
+  - `Celorga: Export Current File to HTML` (`org2.exportCurrentFileHtml`)
+  - `Celorga: Export Workspace Org Files to HTML` (`org2.exportWorkspaceHtml`)
+  - `Celorga: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
-  - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
-  - `Org2: Set Todo Status` (`org2.setTodoStatus`)
-  - `Org2: Set Priority` (`org2.setPriority`)
-  - `Org2: Set Todo → TODO` (`org2.setTodoTODO`)
-  - `Org2: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
-  - `Org2: Set Todo → DONE` (`org2.setTodoDone`)
-  - `Org2: Set Todo → CANCELED` (`org2.setTodoCanceled`)
-  - `Org2: Mark Done and Handoff to Agent` (`org2.markDoneAndHandoff`)
-  - `Org2: Set SCHEDULED` (`org2.setScheduled`)
-  - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
-  - `Org2: Set DEADLINE` (`org2.setDeadline`)
-  - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
-  - `Org2: Crypt Decrypt Subtree` (`org2.cryptDecryptSubtree`)
-  - `Org2: Crypt Encrypt Subtree` (`org2.cryptEncryptSubtree`)
-  - `Org2: Crypt Re-encrypt Subtree` (`org2.cryptReencryptSubtree`)
+  - `Celorga: Toggle Todo Status` (`org2.toggleTodo`)
+  - `Celorga: Set Todo Status` (`org2.setTodoStatus`)
+  - `Celorga: Set Priority` (`org2.setPriority`)
+  - `Celorga: Set Todo → TODO` (`org2.setTodoTODO`)
+  - `Celorga: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
+  - `Celorga: Set Todo → DONE` (`org2.setTodoDone`)
+  - `Celorga: Set Todo → CANCELED` (`org2.setTodoCanceled`)
+  - `Celorga: Mark Done and Handoff to Agent` (`org2.markDoneAndHandoff`)
+  - `Celorga: Set SCHEDULED` (`org2.setScheduled`)
+  - `Celorga: Set SCHEDULED to Today` (`org2.setScheduledToday`)
+  - `Celorga: Set DEADLINE` (`org2.setDeadline`)
+  - `Celorga: Set DEADLINE to Today` (`org2.setDeadlineToday`)
+  - `Celorga: Crypt Decrypt Subtree` (`org2.cryptDecryptSubtree`)
+  - `Celorga: Crypt Encrypt Subtree` (`org2.cryptEncryptSubtree`)
+  - `Celorga: Crypt Re-encrypt Subtree` (`org2.cryptReencryptSubtree`)
 
 Configure `org2.crypt.recipients` with your default GPG recipients (for example your user/device key plus an agent key) to make encrypt/re-encrypt use multi-recipient public-key encryption from VS Code. `org2.crypt.recipientFiles` is also supported for recipient files.
-  - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
-  - `Org2: Archive Subtree` (`org2.archiveSubtree`)
-  - `Org2: Refile Subtree` (`org2.refileSubtree`)
-  - `Org2: Promote Subtree` / `Org2: Demote Subtree` (`org2.promoteSubtree` / `org2.demoteSubtree`)
-  - `Org2: Move Subtree Up` / `Org2: Move Subtree Down` (`org2.moveSubtreeUp` / `org2.moveSubtreeDown`)
+  - `Celorga: Capture Quick Entry` (`org2.captureQuickEntry`)
+  - `Celorga: Archive Subtree` (`org2.archiveSubtree`)
+  - `Celorga: Refile Subtree` (`org2.refileSubtree`)
+  - `Celorga: Promote Subtree` / `Celorga: Demote Subtree` (`org2.promoteSubtree` / `org2.demoteSubtree`)
+  - `Celorga: Move Subtree Up` / `Celorga: Move Subtree Down` (`org2.moveSubtreeUp` / `org2.moveSubtreeDown`)
 - Roam
-  - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
-  - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
-  - `Org2: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
-  - `Org2: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
-  - `Org2: Roam — New Node` (`org2.roamNodeNew`) — pre-fills the title from the current selection/highlighted text when present
-  - `Org2: Roam — Copy ID Link (Current Heading/File)` (`org2.roamCopyIdLink`)
-  - `Org2: Roam — Copy ID Link (Prompt/Link)` (`org2.roamCopyIdLinkById`)
-  - `Org2: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
-  - `Org2: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
-  - `Org2: Roam — Show Backlinks (Current Heading/File)` (`org2.roamShowBacklinks`)
-  - `Org2: Roam — Show Backlinks (Prompt/Link)` (`org2.roamShowBacklinksById`)
-  - `Org2: Roam — Open Backlink Source (Current Heading/File)` (`org2.roamOpenBacklink`)
-  - `Org2: Roam — Open Backlink Source (Prompt/Link)` (`org2.roamOpenBacklinkById`)
-  - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
+  - `Celorga: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
+  - `Celorga: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
+  - `Celorga: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
+  - `Celorga: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
+  - `Celorga: Roam — New Node` (`org2.roamNodeNew`) — pre-fills the title from the current selection/highlighted text when present
+  - `Celorga: Roam — Copy ID Link (Current Heading/File)` (`org2.roamCopyIdLink`)
+  - `Celorga: Roam — Copy ID Link (Prompt/Link)` (`org2.roamCopyIdLinkById`)
+  - `Celorga: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
+  - `Celorga: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
+  - `Celorga: Roam — Show Backlinks (Current Heading/File)` (`org2.roamShowBacklinks`)
+  - `Celorga: Roam — Show Backlinks (Prompt/Link)` (`org2.roamShowBacklinksById`)
+  - `Celorga: Roam — Open Backlink Source (Current Heading/File)` (`org2.roamOpenBacklink`)
+  - `Celorga: Roam — Open Backlink Source (Prompt/Link)` (`org2.roamOpenBacklinkById`)
+  - `Celorga: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
   - Open-ID input accepts raw UUIDs, `id:UUID`, and full `[[id:UUID][desc]]` text; when invoked without an argument it prompts.
-  - Copy ID Link (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), and reuses `[[id:...][desc]]` link text or `org2 query --id` as the copied link title.
-  - Insert-Backlink target input accepts the same UUID/id-link formats, and pre-fills the backlink title from an `[[id:...][desc]]` target (or from `org2 query --id` when possible).
+  - Copy ID Link (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), and reuses `[[id:...][desc]]` link text or `celorga query --id` as the copied link title.
+  - Insert-Backlink target input accepts the same UUID/id-link formats, and pre-fills the backlink title from an `[[id:...][desc]]` target (or from `celorga query --id` when possible).
   - Show Backlinks now scopes to the current heading when possible (falls back to file-level IDs when no heading context exists).
   - Show Backlinks (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), then opens a backlinks report for that explicit target ID.
   - Open Backlink Source (Current Heading/File) uses the same heading/file scope, then offers a quick pick of backlink sources (title + file:line + context snippet) for one-step navigation.
   - Open Backlink Source (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), then opens a source pick list for that explicit target ID.
 - Folding + debug
-  - `Org2: Re-run Auto-Fold` (`org2.rerunAutoFold`)
-  - `Org2: Toggle Fold Here` (`org2.toggleFoldHere`)
-  - `Org2: Debug Folding Ranges` (`org2.debugFoldingRanges`)
-  - `Org2: Debug List Links` (`org2.debugListLinks`)
+  - `Celorga: Re-run Auto-Fold` (`org2.rerunAutoFold`)
+  - `Celorga: Toggle Fold Here` (`org2.toggleFoldHere`)
+  - `Celorga: Debug Folding Ranges` (`org2.debugFoldingRanges`)
+  - `Celorga: Debug List Links` (`org2.debugListLinks`)
 
 ## Keyboard shortcuts
 
 Default direct bindings:
 
-- `ctrl+alt+t` → `Org2: Toggle Todo Status`
-- `ctrl+alt+o` → `Org2: Toggle Fold Here`
-- `ctrl+alt+d` → `Org2: Debug Folding Ranges`
+- `ctrl+alt+t` → `Celorga: Toggle Todo Status`
+- `ctrl+alt+o` → `Celorga: Toggle Fold Here`
+- `ctrl+alt+d` → `Celorga: Debug Folding Ranges`
 
 Power keymap (enabled by default via `org2.keymap.power: true`):
 
@@ -396,12 +397,12 @@ All defaults are scoped to `org`/`org2` editors.
 
 The power keymap uses `cmd/ctrl` chords (not bare leader keys), so it remains reliable even when VSCodeVim is enabled in normal mode.
 
-Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to remap `j/k` to VS Code `cursorDown/cursorUp` in Org/Org2 buffers while VSCodeVim Normal mode is active. This makes movement follow *visible* lines across folds.
+Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to remap `j/k` to VS Code `cursorDown/cursorUp` in Org buffers while VSCodeVim Normal mode is active. This makes movement follow *visible* lines across folds.
 
 ## Debugging
 
-- `Org2: Debug Folding Ranges`
-- `Org2: Debug List Links` (prints detected links for the active editor in the `Org2` output channel)
+- `Celorga: Debug Folding Ranges`
+- `Celorga: Debug List Links` (prints detected links for the active editor in the `Celorga` output channel)
 
 ## Notes
 
@@ -409,12 +410,12 @@ This is intentionally small and TextMate-based. The repo also contains a Tree-si
 
 ### Capture / ingest CLI
 
-The extension shells out to the workspace `org2` CLI for editor workflows. Unified source capture is currently exposed by the CLI rather than a VS Code command:
+The extension shells out to the workspace `celorga` CLI for editor workflows. Unified source capture is currently exposed by the CLI rather than a VS Code command:
 
 ```sh
-org2 capture --text "note" --to inbox.org --title "Quick note" --apply
-org2 capture --stdin --to raw/transcript.org --title "Transcript" --apply
-org2 capture --file transcript.txt --to raw/inbox.org --apply
+celorga capture --text "note" --to inbox.org --title "Quick note" --apply
+celorga capture --stdin --to raw/transcript.org --title "Transcript" --apply
+celorga capture --file transcript.txt --to raw/inbox.org --apply
 ```
 
 Captured source entries include source type, origin, timestamp, author (when provided), content hash, and provenance metadata in an org property drawer.

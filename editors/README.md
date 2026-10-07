@@ -1,4 +1,6 @@
 # Editor integrations
 
-- `vscode-org2/`: VS Code language extension (MVP)
-- `vim-org2/`: Vim filetype plugin (syntax + folding)
+Celorga editor integrations. The directory names keep the `org2` spelling for compatibility.
+
+- `vscode-org2/`: Celorga VS Code extension (MVP)
+- `vim-org2/`: Celorga Vim filetype plugin (syntax + folding)

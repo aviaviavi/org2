@@ -1,4 +1,4 @@
-" Org2 filetype plugin
+" Celorga filetype plugin
 
 if exists('b:did_ftplugin_org2')
   finish
@@ -12,11 +12,11 @@ setlocal foldlevel=99
 " Toggle visibility (fold) of the current item's body.
 nnoremap <buffer> <Tab> :call org2#toggle_current_item_fold()<CR>
 
-" Todo helpers (require org2 CLI on PATH)
+" Todo helpers (require the celorga CLI, or its org2 alias, on PATH)
 command! -buffer Org2TodoToggle call org2#todo_toggle()
 command! -buffer -nargs=1 Org2TodoSet call org2#todo_set(<f-args>)
 
-" Formatter (require org2 CLI on PATH)
+" Formatter (require the celorga CLI, or its org2 alias, on PATH)
 command! -buffer Org2Format call org2#format_buffer()
 
 if get(g:, 'org2_format_on_save', 1)

@@ -57,3 +57,29 @@ test('org prose disables VS Code Unicode highlight boxes by default', () => {
   }
 });
 
+
+test('extension uses the Celorga brand while keeping compatibility identifiers', () => {
+  const packagePath = path.join(__dirname, '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+
+  assert.equal(pkg.displayName, 'Celorga');
+  assert.equal(pkg.name, 'org2-vscode');
+  assert.equal(pkg.publisher, 'AviPress');
+  assert.equal(pkg.contributes.configuration.title, 'Celorga');
+  assert.ok(pkg.keywords.includes('celorga'));
+
+  const language = pkg.contributes.languages.find((entry) => entry.id === 'org2');
+  assert.ok(language, 'language id org2 must remain registered');
+  assert.equal(language.aliases[0], 'Celorga Org');
+  assert.ok(language.aliases.includes('org2'));
+  assert.deepEqual(language.extensions, ['.org', '.org2']);
+
+  for (const command of pkg.contributes.commands) {
+    assert.match(command.command, /^org2\./);
+    assert.match(command.title, /^Celorga: /);
+  }
+  for (const view of pkg.contributes.views.explorer) {
+    assert.match(view.id, /^org2/);
+    assert.match(view.name, /^Celorga /);
+  }
+});

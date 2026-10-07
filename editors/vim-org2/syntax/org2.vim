@@ -1,4 +1,4 @@
-" Org2 syntax highlighting
+" Celorga syntax highlighting
 
 if exists('b:current_syntax')
   finish

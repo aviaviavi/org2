@@ -1,6 +1,6 @@
-# Org2 (Vim)
+# Celorga (Vim)
 
-Minimal Vim plugin for Org2.
+Minimal Vim plugin for Celorga.
 
 ## Features
 
@@ -8,6 +8,9 @@ Minimal Vim plugin for Org2.
 - Syntax highlighting (different groups per heading level)
 - Folding by heading level
 - `<Tab>` toggles the fold for the current item
+- `:Org2TodoToggle`, `:Org2TodoSet {status}`, and `:Org2Format` run the `celorga` CLI when it is on your `PATH` and fall back to `org2`, which remains a compatibility alias
+
+The plugin directory, the `org2` filetype, `g:org2_*` options, and `:Org2*` commands keep their names for compatibility.
 
 ## Install
 

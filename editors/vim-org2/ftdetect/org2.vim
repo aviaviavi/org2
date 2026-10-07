@@ -1,4 +1,4 @@
-" Org2 filetype detection
+" Celorga filetype detection
 if exists('g:did_ftdetect_org2')
   finish
 endif

@@ -1,19 +1,23 @@
-*org2*  Org2 filetype support for Vim
+*org2* *celorga*  Celorga filetype support for Vim
 
 CONTENTS                                                *org2-contents*
 
   1. Overview .......................................... |org2-overview|
   2. Folding ........................................... |org2-folding|
   3. Syntax ............................................ |org2-syntax|
+  4. Commands .......................................... |org2-commands|
 
 
 1. Overview                                              *org2-overview*
 
-This plugin provides minimal Org2 support:
+This plugin provides minimal Celorga support:
 
 - Filetype detection for *.org2
 - Syntax highlighting
 - Folding by heading level
+
+The plugin directory, the 'org2' filetype, the |g:org2_format_on_save|
+option, and the :Org2* commands keep their names for compatibility.
 
 
 2. Folding                                                *org2-folding*
@@ -37,6 +41,26 @@ Headings are highlighted with separate syntax groups per level:
   org2Heading1 .. org2Heading8
 
 These are linked to common Vim highlight groups by default.
+
+
+4. Commands                                              *org2-commands*
+
+These commands run the 'celorga' CLI when it is on your PATH and fall back
+to 'org2', which remains a compatibility alias.
+
+:Org2TodoToggle                                          *:Org2TodoToggle*
+  Toggle the TODO keyword on the current headline.
+
+:Org2TodoSet {status}                                    *:Org2TodoSet*
+  Set the TODO keyword on the current headline.
+
+:Org2Format                                              *:Org2Format*
+  Format the buffer with 'celorga fmt --stdin'.
+
+                                                     *g:org2_format_on_save*
+Buffers are formatted before each write unless you set: >
+  let g:org2_format_on_save = 0
+<
 
 
 vim:tw=78:ts=8:ft=help:norl:

@@ -1,4 +1,4 @@
-" Org2 helpers
+" Celorga helpers (the org2 names are kept for compatibility)
 
 if exists('*org2#foldexpr')
   finish
@@ -44,13 +44,18 @@ function! org2#toggle_current_item_fold() abort
   call setpos('.', l:save)
 endfunction
 
+" Prefer the celorga executable; org2 remains a compatibility alias.
+function! org2#cli() abort
+  return executable('celorga') ? 'celorga' : 'org2'
+endfunction
+
 function! org2#todo_toggle() abort
   if &modifiable == 0
     return
   endif
 
   if empty(expand('%:p'))
-    echoerr 'Org2: buffer has no file path'
+    echoerr 'Celorga: buffer has no file path'
     return
   endif
 
@@ -60,7 +65,7 @@ function! org2#todo_toggle() abort
   let l:file = expand('%:p')
   let l:lnum = line('.')
 
-  let l:cmd = 'org2 todo toggle --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --apply --format json'
+  let l:cmd = org2#cli() . ' todo toggle --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --apply --format json'
   call system(l:cmd)
 
   " Reload changes written by the CLI.
@@ -73,7 +78,7 @@ function! org2#todo_set(status) abort
   endif
 
   if empty(expand('%:p'))
-    echoerr 'Org2: buffer has no file path'
+    echoerr 'Celorga: buffer has no file path'
     return
   endif
 
@@ -83,7 +88,7 @@ function! org2#todo_set(status) abort
   let l:lnum = line('.')
   let l:status = a:status
 
-  let l:cmd = 'org2 todo set --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --status ' . shellescape(l:status) . ' --apply --format json'
+  let l:cmd = org2#cli() . ' todo set --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --status ' . shellescape(l:status) . ' --apply --format json'
   call system(l:cmd)
 
   silent! edit!
@@ -95,10 +100,10 @@ function! org2#format_buffer() abort
   endif
 
   let l:input = join(getline(1, '$'), "\n") . "\n"
-  let l:out = system('org2 fmt --stdin', l:input)
+  let l:out = system(org2#cli() . ' fmt --stdin', l:input)
 
   if v:shell_error != 0
-    echoerr 'Org2: format failed'
+    echoerr 'Celorga: format failed'
     return
   endif
 

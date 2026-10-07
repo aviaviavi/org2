@@ -1,7 +1,7 @@
 {
   "name": "org2-vscode",
-  "displayName": "Org2",
-  "description": "Org2 for VS Code (requires org2 CLI): syntax, folding, agenda, roam, TODO/planning, export",
+  "displayName": "Celorga",
+  "description": "Celorga for VS Code (requires the celorga CLI): syntax, folding, agenda, roam, TODO/planning, export",
   "version": "0.8.8",
   "publisher": "AviPress",
   "main": "./extension.js",
@@ -98,7 +98,7 @@
       {
         "id": "org2",
         "aliases": [
-          "Org2",
+          "Celorga Org",
           "org2"
         ],
         "extensions": [
@@ -132,335 +132,335 @@
     "commands": [
       {
         "command": "org2.openAgenda",
-        "title": "Org2: Open Agenda"
+        "title": "Celorga: Open Agenda"
       },
       {
         "command": "org2.refreshAgenda",
-        "title": "Org2: Refresh Agenda",
+        "title": "Celorga: Refresh Agenda",
         "icon": "$(refresh)"
       },
       {
         "command": "org2.openBacklinks",
-        "title": "Org2: Open Backlinks Pane"
+        "title": "Celorga: Open Backlinks Pane"
       },
       {
         "command": "org2.refreshBacklinks",
-        "title": "Org2: Refresh Backlinks Pane",
+        "title": "Celorga: Refresh Backlinks Pane",
         "icon": "$(refresh)"
       },
       {
         "command": "org2.formatWorkspaceCheck",
-        "title": "Org2: Formatter — Check Workspace Drift"
+        "title": "Celorga: Formatter — Check Workspace Drift"
       },
       {
         "command": "org2.formatWorkspaceApply",
-        "title": "Org2: Formatter — Apply Workspace Formatting"
+        "title": "Celorga: Formatter — Apply Workspace Formatting"
       },
       {
         "command": "org2.lintWorkspaceCorpus",
-        "title": "Org2: Corpus Lint — Graph & Artifact Health"
+        "title": "Celorga: Corpus Lint — Graph & Artifact Health"
       },
       {
         "command": "org2.compileWorkspaceCorpus",
-        "title": "Org2: Compile Workspace Corpus Artifact"
+        "title": "Celorga: Compile Workspace Corpus Artifact"
       },
       {
         "command": "org2.moveSubtreeDown",
-        "title": "Org2: Move Subtree Down"
+        "title": "Celorga: Move Subtree Down"
       },
       {
         "command": "org2.moveSubtreeUp",
-        "title": "Org2: Move Subtree Up"
+        "title": "Celorga: Move Subtree Up"
       },
       {
         "command": "org2.demoteSubtree",
-        "title": "Org2: Demote Subtree"
+        "title": "Celorga: Demote Subtree"
       },
       {
         "command": "org2.promoteSubtree",
-        "title": "Org2: Promote Subtree"
+        "title": "Celorga: Promote Subtree"
       },
       {
         "command": "org2.aiMarkDeferred",
-        "title": "Org2: AI — Mark Draft Deferred"
+        "title": "Celorga: AI — Mark Draft Deferred"
       },
       {
         "command": "org2.aiMarkRejected",
-        "title": "Org2: AI — Mark Draft Rejected"
+        "title": "Celorga: AI — Mark Draft Rejected"
       },
       {
         "command": "org2.aiMarkReviewed",
-        "title": "Org2: AI — Mark Draft Reviewed"
+        "title": "Celorga: AI — Mark Draft Reviewed"
       },
       {
         "command": "org2.aiReviewWorkspace",
-        "title": "Org2: AI — Review Workspace / Active File"
+        "title": "Celorga: AI — Review Workspace / Active File"
       },
       {
         "command": "org2.graphAuditWorkspace",
-        "title": "Org2: Graph Audit Workspace"
+        "title": "Celorga: Graph Audit Workspace"
       },
       {
         "command": "org2.aiRunDraft",
-        "title": "Org2: AI — Write Draft Artifact"
+        "title": "Celorga: AI — Write Draft Artifact"
       },
       {
         "command": "org2.aiSuggestLinks",
-        "title": "Org2: AI — Suggest Links & Entities"
+        "title": "Celorga: AI — Suggest Links & Entities"
       },
       {
         "command": "org2.aiPromoteDraft",
-        "title": "Org2: AI — Promote Reviewed Draft"
+        "title": "Celorga: AI — Promote Reviewed Draft"
       },
       {
         "command": "org2.searchWorkspace",
-        "title": "Org2: Search Workspace Notes"
+        "title": "Celorga: Search Workspace Notes"
       },
       {
         "command": "org2.queryWorkspace",
-        "title": "Org2: Query Workspace Notes (Cited)"
+        "title": "Celorga: Query Workspace Notes (Cited)"
       },
       {
         "command": "org2.roamLinkifyPreview",
-        "title": "Org2: Roam — Linkify Preview"
+        "title": "Celorga: Roam — Linkify Preview"
       },
       {
         "command": "org2.roamLinkifyApply",
-        "title": "Org2: Roam — Linkify Apply"
+        "title": "Celorga: Roam — Linkify Apply"
       },
       {
         "command": "org2.roamGraph",
-        "title": "Org2: Roam — Graph Report"
+        "title": "Celorga: Roam — Graph Report"
       },
       {
         "command": "org2.formatCurrentFileCheck",
-        "title": "Org2: Formatter — Check Current File Drift"
+        "title": "Celorga: Formatter — Check Current File Drift"
       },
       {
         "command": "org2.formatCurrentFilePreviewDiff",
-        "title": "Org2: Formatter — Preview Current File Diff"
+        "title": "Celorga: Formatter — Preview Current File Diff"
       },
       {
         "command": "org2.formatCurrentFileApply",
-        "title": "Org2: Formatter — Apply Current File Formatting"
+        "title": "Celorga: Formatter — Apply Current File Formatting"
       },
       {
         "command": "org2.exportCurrentFileHtml",
-        "title": "Org2: Export Current File to HTML"
+        "title": "Celorga: Export Current File to HTML"
       },
       {
         "command": "org2.exportWorkspaceHtml",
-        "title": "Org2: Export Workspace Org Files to HTML"
+        "title": "Celorga: Export Workspace Org Files to HTML"
       },
       {
         "command": "org2.captureQuickEntry",
-        "title": "Org2: Capture Quick Entry"
+        "title": "Celorga: Capture Quick Entry"
       },
       {
         "command": "org2.pickAgendaFilter",
-        "title": "Org2: Agenda Filter",
+        "title": "Celorga: Agenda Filter",
         "icon": "$(filter)"
       },
       {
         "command": "org2.pickAgendaStatusFilter",
-        "title": "Org2: Agenda Status Filter",
+        "title": "Celorga: Agenda Status Filter",
         "icon": "$(checklist)"
       },
       {
         "command": "org2.openAgendaItem",
-        "title": "Org2: Open Agenda Item"
+        "title": "Celorga: Open Agenda Item"
       },
       {
         "command": "org2.toggleTodo",
-        "title": "Org2: Toggle Todo Status"
+        "title": "Celorga: Toggle Todo Status"
       },
       {
         "command": "org2.insertListItemBelow",
-        "title": "Org2: Insert List Item Below"
+        "title": "Celorga: Insert List Item Below"
       },
       {
         "command": "org2.setTodoStatus",
-        "title": "Org2: Set Todo Status"
+        "title": "Celorga: Set Todo Status"
       },
       {
         "command": "org2.setPriority",
-        "title": "Org2: Set Priority"
+        "title": "Celorga: Set Priority"
       },
       {
         "command": "org2.setTodoTODO",
-        "title": "Org2: Set Todo → TODO"
+        "title": "Celorga: Set Todo → TODO"
       },
       {
         "command": "org2.setTodoInProgress",
-        "title": "Org2: Set Todo → IN_PROGRESS"
+        "title": "Celorga: Set Todo → IN_PROGRESS"
       },
       {
         "command": "org2.setTodoDone",
-        "title": "Org2: Set Todo → DONE"
+        "title": "Celorga: Set Todo → DONE"
       },
       {
         "command": "org2.setTodoCanceled",
-        "title": "Org2: Set Todo → CANCELED"
+        "title": "Celorga: Set Todo → CANCELED"
       },
       {
         "command": "org2.markDoneAndHandoff",
-        "title": "Org2: Assign Todo to Agent"
+        "title": "Celorga: Assign Todo to Agent"
       },
       {
         "command": "org2.assignTodoToAgent",
-        "title": "Org2: Assign Todo to Agent"
+        "title": "Celorga: Assign Todo to Agent"
       },
       {
         "command": "org2.setScheduled",
-        "title": "Org2: Set SCHEDULED"
+        "title": "Celorga: Set SCHEDULED"
       },
       {
         "command": "org2.setScheduledToday",
-        "title": "Org2: Set SCHEDULED to Today"
+        "title": "Celorga: Set SCHEDULED to Today"
       },
       {
         "command": "org2.setScheduledTomorrow",
-        "title": "Org2: Set SCHEDULED to Tomorrow"
+        "title": "Celorga: Set SCHEDULED to Tomorrow"
       },
       {
         "command": "org2.setScheduledNextWeek",
-        "title": "Org2: Set SCHEDULED to Next Week"
+        "title": "Celorga: Set SCHEDULED to Next Week"
       },
       {
         "command": "org2.setScheduledNextMonth",
-        "title": "Org2: Set SCHEDULED to Next Month"
+        "title": "Celorga: Set SCHEDULED to Next Month"
       },
       {
         "command": "org2.setDeadline",
-        "title": "Org2: Set DEADLINE"
+        "title": "Celorga: Set DEADLINE"
       },
       {
         "command": "org2.setDeadlineToday",
-        "title": "Org2: Set DEADLINE to Today"
+        "title": "Celorga: Set DEADLINE to Today"
       },
       {
         "command": "org2.cryptDecryptSubtree",
-        "title": "Org2: Crypt Decrypt Subtree"
+        "title": "Celorga: Crypt Decrypt Subtree"
       },
       {
         "command": "org2.cryptEncryptSubtree",
-        "title": "Org2: Crypt Encrypt Subtree"
+        "title": "Celorga: Crypt Encrypt Subtree"
       },
       {
         "command": "org2.cryptReencryptSubtree",
-        "title": "Org2: Crypt Re-encrypt Subtree"
+        "title": "Celorga: Crypt Re-encrypt Subtree"
       },
       {
         "command": "org2.archiveSubtree",
-        "title": "Org2: Archive Subtree"
+        "title": "Celorga: Archive Subtree"
       },
       {
         "command": "org2.refileSubtree",
-        "title": "Org2: Refile Subtree"
+        "title": "Celorga: Refile Subtree"
       },
       {
         "command": "org2.roamDailiesGotoToday",
-        "title": "Org2: Roam Dailies — Go to Today"
+        "title": "Celorga: Roam Dailies — Go to Today"
       },
       {
         "command": "org2.roamDailiesGotoYesterday",
-        "title": "Org2: Roam Dailies — Go to Yesterday"
+        "title": "Celorga: Roam Dailies — Go to Yesterday"
       },
       {
         "command": "org2.roamDailiesGotoTomorrow",
-        "title": "Org2: Roam Dailies — Go to Tomorrow"
+        "title": "Celorga: Roam Dailies — Go to Tomorrow"
       },
       {
         "command": "org2.roamDailiesGotoDate",
-        "title": "Org2: Roam Dailies — Go to Date"
+        "title": "Celorga: Roam Dailies — Go to Date"
       },
       {
         "command": "org2.roamNodeNew",
-        "title": "Org2: Roam — New Node"
+        "title": "Celorga: Roam — New Node"
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam — Copy ID Link (Current Heading/File)"
+        "title": "Celorga: Roam — Copy ID Link (Current Heading/File)"
       },
       {
         "command": "org2.roamCopyIdLinkById",
-        "title": "Org2: Roam — Copy ID Link (Prompt/Link)"
+        "title": "Celorga: Roam — Copy ID Link (Prompt/Link)"
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam — Insert Backlink (Prompt/Link)"
+        "title": "Celorga: Roam — Insert Backlink (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam — Open ID (Prompt/Link)"
+        "title": "Celorga: Roam — Open ID (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenTitle",
-        "title": "Org2: Roam — Open Title Link (Prompt/Link)"
+        "title": "Celorga: Roam — Open Title Link (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam — Show Backlinks (Current Heading/File)"
+        "title": "Celorga: Roam — Show Backlinks (Current Heading/File)"
       },
       {
         "command": "org2.roamShowBacklinksById",
-        "title": "Org2: Roam — Show Backlinks (Prompt/Link)"
+        "title": "Celorga: Roam — Show Backlinks (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenBacklink",
-        "title": "Org2: Roam — Open Backlink Source (Current Heading/File)"
+        "title": "Celorga: Roam — Open Backlink Source (Current Heading/File)"
       },
       {
         "command": "org2.roamOpenBacklinkById",
-        "title": "Org2: Roam — Open Backlink Source (Prompt/Link)"
+        "title": "Celorga: Roam — Open Backlink Source (Prompt/Link)"
       },
       {
         "command": "org2.roamDbSync",
-        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
+        "title": "Celorga: Roam — DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
-        "title": "Org2: Re-run Auto-Fold"
+        "title": "Celorga: Re-run Auto-Fold"
       },
       {
         "command": "org2.toggleFoldHere",
-        "title": "Org2: Toggle Fold Here"
+        "title": "Celorga: Toggle Fold Here"
       },
       {
         "command": "org2.debugFoldingRanges",
-        "title": "Org2: Debug Folding Ranges"
+        "title": "Celorga: Debug Folding Ranges"
       },
       {
         "command": "org2.debugListLinks",
-        "title": "Org2: Debug List Links"
+        "title": "Celorga: Debug List Links"
       },
       {
         "command": "org2.openReview",
-        "title": "Org2: Open Review Queue"
+        "title": "Celorga: Open Review Queue"
       },
       {
         "command": "org2.refreshReview",
-        "title": "Org2: Refresh Review Queue",
+        "title": "Celorga: Refresh Review Queue",
         "icon": "$(refresh)"
       },
       {
         "command": "org2.openReviewItem",
-        "title": "Org2: Open Review Item"
+        "title": "Celorga: Open Review Item"
       }
     ],
     "views": {
       "explorer": [
         {
           "id": "org2Agenda",
-          "name": "Org2 Agenda"
+          "name": "Celorga Agenda"
         },
         {
           "id": "org2Backlinks",
-          "name": "Org2 Backlinks"
+          "name": "Celorga Backlinks"
         },
         {
           "id": "org2Review",
-          "name": "Org2 Review"
+          "name": "Celorga Review"
         }
       ]
     },
@@ -683,12 +683,12 @@
       ]
     },
     "configuration": {
-      "title": "Org2",
+      "title": "Celorga",
       "properties": {
         "org2.agenda.command": {
           "type": "string",
           "default": "org2",
-          "description": "Command used to run org2 (e.g., 'org2' if installed on PATH, or 'node' with org2.agenda.args)."
+          "description": "Command used to run the Celorga CLI. The default, 'org2', prefers 'celorga' when it is on PATH and otherwise runs 'org2' (a permanent compatibility alias). Use 'node' with org2.agenda.args for a source checkout."
         },
         "org2.agenda.args": {
           "type": "array",
@@ -696,7 +696,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Extra args prefixed when calling org2 (advanced; useful for 'node /path/to/dist/cli.js')."
+          "description": "Extra args prefixed when calling the Celorga CLI (advanced; useful for 'node /path/to/dist/cli.js')."
         },
         "org2.agenda.scope": {
           "type": "string",
@@ -720,17 +720,17 @@
         "org2.roam.dailiesDir": {
           "type": "string",
           "default": "",
-          "description": "Root directory for Org2 Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
+          "description": "Root directory for Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
         },
         "org2.roam.indexDir": {
           "type": "string",
           "default": "",
-          "description": "Root directory for Org2 Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
+          "description": "Root directory for Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
         },
         "org2.roam.nodesDir": {
           "type": "string",
           "default": "",
-          "description": "Directory for Org2 Roam node creation (`org2 roam node new`). Absolute paths are used directly; relative paths are resolved against org2.roam.indexDir (or org2.agenda.dir/workspace root). If empty, uses org2.roam.indexDir or org2.agenda.dir/workspace root."
+          "description": "Directory for Roam node creation (`celorga roam node new`). Absolute paths are used directly; relative paths are resolved against org2.roam.indexDir (or org2.agenda.dir/workspace root). If empty, uses org2.roam.indexDir or org2.agenda.dir/workspace root."
         },
         "org2.agenda.files": {
           "type": "array",
@@ -1090,12 +1090,12 @@
         "org2.formatter.configFile": {
           "type": "string",
           "default": "",
-          "description": "Optional org2.json path for workspace formatter commands. When set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively."
+          "description": "Optional org2.json path for workspace formatter commands. When set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `org2.agenda.dir` recursively."
         },
         "org2.capture.defaultFile": {
           "type": "string",
           "default": "",
-          "description": "Optional default target file for `Org2: Capture Quick Entry`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
+          "description": "Optional default target file for `Celorga: Capture Quick Entry`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
         },
         "org2.capture.defaultTemplate": {
           "type": "string",
@@ -1104,22 +1104,22 @@
             "task"
           ],
           "default": "note",
-          "description": "Default template ordering for `Org2: Capture Quick Entry` (`note` or `task`)."
+          "description": "Default template ordering for `Celorga: Capture Quick Entry` (`note` or `task`)."
         },
         "org2.capture.defaultTodoKeyword": {
           "type": "string",
           "default": "TODO",
-          "description": "Default TODO keyword ordering for task captures in `Org2: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`)."
+          "description": "Default TODO keyword ordering for task captures in `Celorga: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`)."
         },
         "org2.capture.useSelectionAsBody": {
           "type": "boolean",
           "default": true,
-          "description": "When enabled, `Org2: Capture Quick Entry` passes the current editor selection as capture body text (`--body`)."
+          "description": "When enabled, `Celorga: Capture Quick Entry` passes the current editor selection as capture body text (`--body`)."
         },
         "org2.export.outputDir": {
           "type": "string",
           "default": "_site",
-          "description": "Output directory for `Org2: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
+          "description": "Output directory for `Celorga: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
         },
         "org2.export.indexFile": {
           "type": "string",
@@ -1128,7 +1128,7 @@
         },
         "org2.export.indexTitle": {
           "type": "string",
-          "default": "Org2 Export Index",
+          "default": "Celorga Export Index",
           "description": "Title used for the generated workspace export index page (`--index-title`). Ignored when org2.export.indexFile is empty."
         },
         "org2.export.stylesheets": {
@@ -1139,7 +1139,7 @@
         "org2.export.includeDefaultStyle": {
           "type": "boolean",
           "default": true,
-          "description": "When enabled, HTML export includes Org2's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
+          "description": "When enabled, HTML export includes Celorga's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
         },
         "org2.export.includeToc": {
           "type": "boolean",
@@ -1176,7 +1176,7 @@
         "org2.todo.writeTransitionLogbook": {
           "type": "boolean",
           "default": false,
-          "description": "When enabled, TODO status updates from VS Code pass `--logbook` to org2 so state transitions are recorded in a LOGBOOK drawer."
+          "description": "When enabled, TODO status updates from VS Code pass `--logbook` to the Celorga CLI so state transitions are recorded in a LOGBOOK drawer."
         },
         "org2.editor.restoreSelectionAfterCliApply": {
           "type": "boolean",
@@ -1207,7 +1207,7 @@
             "none"
           ],
           "default": "outside",
-          "description": "Reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
+          "description": "Reveal behavior after Celorga non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
         },
         "org2.editor.navigationRevealFromAgenda": {
           "type": "string",
@@ -1248,12 +1248,12 @@
         "org2.keymap.power": {
           "type": "boolean",
           "default": true,
-          "description": "Enable Org2 power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org/Org2 editors."
+          "description": "Enable Celorga power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org editors."
         },
         "org2.vim.visibleLineNavigation": {
           "type": "boolean",
           "default": false,
-          "description": "When VSCodeVim is active in Normal mode, remap j/k in Org/Org2 editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
+          "description": "When VSCodeVim is active in Normal mode, remap j/k in Org editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
         },
         "org2.crypt.recipients": {
           "type": "array",
@@ -1261,7 +1261,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Default GPG recipients for Org2 crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys."
+          "description": "Default GPG recipients for Celorga crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys."
         },
         "org2.crypt.recipientFiles": {
           "type": "array",
@@ -1269,12 +1269,12 @@
           "items": {
             "type": "string"
           },
-          "description": "Default GPG recipient files passed to org2 crypt encrypt/reencrypt."
+          "description": "Default GPG recipient files passed to `celorga crypt` encrypt/reencrypt."
         },
         "org2.crypt.encryptOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically encrypt plaintext :crypt: subtrees before saving Org/Org2 files. Save is canceled if encryption fails."
+          "description": "Automatically encrypt plaintext :crypt: subtrees before saving Org files. Save is canceled if encryption fails."
         },
         "org2.crypt.passphrase": {
           "type": "string",
@@ -1659,6 +1659,7 @@
     "url": "https://github.com/aviaviavi/org2/issues"
   },
   "keywords": [
+    "celorga",
     "org2",
     "org mode",
     "org-mode",
@@ -1673,6 +1674,7 @@
   ],
   "files": [
     "extension.js",
+    "cliExecutable.js",
     "agendaArgs.js",
     "agendaTreeModel.js",
     "agendaSelection.js",

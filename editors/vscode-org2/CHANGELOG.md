@@ -1,8 +1,13 @@
 # Changelog
 
-All notable changes to the Org2 VS Code extension are documented in this file.
+All notable changes to the Celorga VS Code extension (formerly Org2) are documented in this file. Entries below the Unreleased section keep the names in use when they were released.
 
 ## Unreleased
+
+- Renamed the extension to Celorga. The display name, command palette titles (`Celorga: …`), Explorer views, settings section, messages, and documentation now use the Celorga name; the language mode is labeled "Celorga Org".
+- The extension now runs the `celorga` CLI when it is on `PATH` and `org2.agenda.command` is not set explicitly, and falls back to `org2`, which remains a permanent compatibility alias.
+- The default workspace export index title is now "Celorga Export Index".
+- Compatibility: the marketplace ID (`AviPress.org2-vscode`), command IDs (`org2.*`), the `org2` language ID, `org2.*` settings, view IDs, and `.org`/`.org2` file associations are unchanged, so existing installs, keybindings, and settings keep working.
 
 ## 0.8.8 - 2026-10-07
 
