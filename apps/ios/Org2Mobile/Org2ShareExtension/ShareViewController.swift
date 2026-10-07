@@ -94,7 +94,7 @@ final class ShareViewController: UIViewController {
           title: title,
           body: body,
           isLoading: false,
-          errorMessage: "Open OpenOrg and select a corpus folder before using the share extension."
+          errorMessage: "Open Celorga and select a corpus folder before using the share extension."
         )
         return
       }
@@ -111,7 +111,7 @@ final class ShareViewController: UIViewController {
         title: title,
         body: body,
         isLoading: false,
-        errorMessage: "Could not capture this item. Re-select the corpus folder in OpenOrg and try again."
+        errorMessage: "Could not capture this item. Re-select the corpus folder in Celorga and try again."
       )
     }
   }
@@ -252,7 +252,7 @@ private struct ShareCaptureView: View {
           }
         }
       }
-      .navigationTitle("Capture to OpenOrg")
+      .navigationTitle("Capture to Celorga")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {

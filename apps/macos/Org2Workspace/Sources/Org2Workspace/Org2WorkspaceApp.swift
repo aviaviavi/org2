@@ -102,9 +102,9 @@ struct Org2WorkspaceApp: App {
 
       CommandGroup(after: .pasteboard) {
         if store.experimentalFeaturesEnabled {
-          Button("Paste as Org2…") {
+          Button("Paste as Org…") {
             if !NSApp.sendAction(NSSelectorFromString("pasteAsOrg2:"), to: nil, from: nil) {
-              store.statusText = "Focus the document Source editor to Paste as Org2."
+              store.statusText = "Focus the document Source editor to Paste as Org."
             }
           }
           .keyboardShortcut("v", modifiers: [.command, .shift])
@@ -590,13 +590,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.alertStyle = .warning
     switch prompt {
     case .activeWork:
-      alert.messageText = "Quit OpenOrg while work is in progress?"
-      alert.informativeText = "Active chats, recordings, and other work may be interrupted. OpenOrg will try to save before quitting. Choose Quit again or press ⌘Q again to quit immediately."
+      alert.messageText = "Quit Celorga while work is in progress?"
+      alert.informativeText = "Active chats, recordings, and other work may be interrupted. Celorga will try to save before quitting. Choose Quit again or press ⌘Q again to quit immediately."
     case .saveFailed:
       alert.messageText = "Quit without saving everything?"
       alert.informativeText = "Some changes could not be saved. Quitting now may lose unsaved edits or recent chat output."
     case .saveTakingTooLong:
-      alert.messageText = "OpenOrg is still preparing to quit"
+      alert.messageText = "Celorga is still preparing to quit"
       alert.informativeText = "Saving or stopping background work is taking longer than expected. You can quit now; unsaved edits or recent chat output may be lost."
     }
     alert.addButton(withTitle: "Quit")
@@ -606,7 +606,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
       // Updates and restarts need not interrupt live turns: stop taking new
       // ones here (they go to an online server) and quit once these finish.
       alert.addButton(withTitle: "Quit When Turns Finish")
-      alert.informativeText += " Or let \(runningTurns) running agent turn\(runningTurns == 1 ? "" : "s") finish first; new turns go to an online OpenOrg server meanwhile."
+      alert.informativeText += " Or let \(runningTurns) running agent turn\(runningTurns == 1 ? "" : "s") finish first; new turns go to an online Celorga server meanwhile."
     }
     alert.buttons[0].keyEquivalent = ""
     alert.buttons[1].keyEquivalent = "\r"
@@ -627,7 +627,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     } else {
       let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 120),
                             styleMask: [.titled], backing: .buffered, defer: false)
-      window.title = "OpenOrg"
+      window.title = WorkspaceProductIdentity.displayName
       window.center()
       window.makeKeyAndOrderFront(nil)
       quitPromptWindow = window

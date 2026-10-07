@@ -1876,7 +1876,7 @@ struct ChatBubbleView: View {
       return message.authorLabel
         ?? message.authorDestinationID.map(destinationTitle)
         ?? message.authorRuntime?.title
-        ?? "Org2"
+        ?? WorkspaceProductIdentity.displayName
     }
   }
 

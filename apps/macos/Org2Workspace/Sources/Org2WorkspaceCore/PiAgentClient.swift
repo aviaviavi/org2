@@ -16,7 +16,7 @@ public enum PiAgentError: LocalizedError, Sendable {
     case .invalidSSHHost:
       "Remote Pi needs a valid SSH host or ~/.ssh/config alias."
     case .missingRemoteWorkspace:
-      "Remote Pi needs the Org2 corpus path on that machine."
+      "Remote Pi needs the Celorga corpus path on that machine."
     case .launchFailed(let detail):
       "Could not start Pi: \(detail)"
     case .invalidResponse(let detail):

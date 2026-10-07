@@ -20,7 +20,7 @@ public enum OpenCodeError: LocalizedError, Sendable {
     case .invalidSSHHost:
       "Remote OpenCode needs a valid SSH host or ~/.ssh/config alias."
     case .missingRemoteWorkspace:
-      "Remote OpenCode needs the Org2 corpus path on that machine."
+      "Remote OpenCode needs the Celorga corpus path on that machine."
     case .launchFailed(let detail):
       "Could not start OpenCode: \(detail)"
     case .invalidResponse(let detail):
@@ -1103,7 +1103,7 @@ sys.exit(result.returncode)
     }
 
     if mayOutliveConnection, isDetachingForTermination {
-      throw OpenCodeError.connectionLost("OpenOrg is quitting; the turn continues on the host")
+      throw OpenCodeError.connectionLost("Celorga is quitting; the turn continues on the host")
     }
     if Task.isCancelled || wasInterrupted || process.terminationReason == .uncaughtSignal {
       throw OpenCodeError.interrupted
@@ -1167,7 +1167,7 @@ sys.exit(result.returncode)
     }
     guard let serverURL = active.serverURL else {
       throw OpenCodeError.invalidResponse(
-        "the active OpenCode turn was reconnected after OpenOrg restarted and cannot be steered; queue a follow-up instead"
+        "the active OpenCode turn was reconnected after Celorga restarted and cannot be steered; queue a follow-up instead"
       )
     }
     let data = try Self.steerRequestData(

@@ -271,7 +271,7 @@ struct AIChatAttachmentPreviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
       case .unavailable:
-        unavailablePreview(detail: "OpenOrg can enlarge images and preview PDF and text attachments in chat.")
+        unavailablePreview(detail: "Celorga can enlarge images and preview PDF and text attachments in chat.")
       }
     } else {
       ProgressView("Loading attachment…")

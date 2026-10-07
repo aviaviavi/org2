@@ -226,15 +226,15 @@ public enum OpenOrgServerError: LocalizedError, Equatable, Sendable {
     case .missingCode:
       "Enter the six-digit pairing code from “org2 server pair”."
     case .notPaired:
-      "Pair this Mac with an OpenOrg server in Settings → Sharing first."
+      "Pair this Mac with a Celorga server in Settings → Sharing first."
     case .connection(let detail):
-      "Could not reach the OpenOrg server: \(detail)"
+      "Could not reach the Celorga server: \(detail)"
     case .malformedResponse:
-      "The OpenOrg server returned an unreadable response."
+      "The Celorga server returned an unreadable response."
     case .server(let message, _):
       message
     case .unsupported:
-      "This OpenOrg server cannot host thread links yet. Update and restart it, then try again."
+      "This Celorga server cannot host thread links yet. Update and restart it, then try again."
     case .threadNotOnServer(let server):
       "\(server) doesn’t have this thread yet. Wait for the corpus to sync to the server, then try again."
     case .keychain(let status):
@@ -470,7 +470,7 @@ public final class OpenOrgServerConnection {
   public var isPaired: Bool { pairing != nil }
 
   public var serverName: String {
-    serverStatus?.serverName ?? pairing?.serverName ?? "OpenOrg Server"
+    serverStatus?.serverName ?? pairing?.serverName ?? "Celorga Server"
   }
 
   /// The location a new share should use when the person does not pick one.
@@ -728,7 +728,7 @@ public final class OpenOrgServerConnection {
     guard (200..<300).contains(response.statusCode) else {
       let envelope = try? MobileRemoteProtocol.decoder().decode(MobileRemoteErrorEnvelope.self, from: response.body)
       throw OpenOrgServerError.server(
-        envelope?.error ?? "The OpenOrg server rejected this request (HTTP \(response.statusCode)).",
+        envelope?.error ?? "The Celorga server rejected this request (HTTP \(response.statusCode)).",
         statusCode: response.statusCode
       )
     }

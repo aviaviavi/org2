@@ -202,7 +202,7 @@ private struct ActivityNowList: View {
     if hosts.count > 1 || hosts.contains(where: { !$0.turns.isEmpty || $0.state != .online }) {
       VStack(alignment: .leading, spacing: 6) {
         sectionHeader("Hosts", systemImage: "network", count: hosts.filter { $0.state.isLive }.count)
-          .help("OpenOrg hosts and agent harnesses that execute work for this corpus")
+          .help("Celorga hosts and agent harnesses that execute work for this corpus")
         ActivityHostsSection(hosts: hosts)
       }
     }

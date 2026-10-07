@@ -38,6 +38,7 @@ const packageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
 const buildOptions = parseBuildOptions(process.argv.slice(2));
 const isTrustedLocalBuild = buildOptions.localFast || buildOptions.localOptimized;
 const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "OpenOrg";
+const displayName = process.env.ORG2_WORKSPACE_DISPLAY_NAME ?? "Celorga";
 const appPath = resolve(
   process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", `${appName}.app`)
 );
@@ -530,7 +531,7 @@ function writeInfoPlist(bundlePath) {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>${xmlEscape(appName)}</string>
+  <string>${xmlEscape(displayName)}</string>
   <key>CFBundleExecutable</key>
   <string>${xmlEscape(executableName)}</string>
   <key>CFBundleIdentifier</key>
@@ -540,7 +541,7 @@ function writeInfoPlist(bundlePath) {
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleName</key>
-  <string>${xmlEscape(appName)}</string>
+  <string>${xmlEscape(displayName)}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -554,13 +555,13 @@ function writeInfoPlist(bundlePath) {
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>${xmlEscape(appName)} serves document links that you explicitly publish to your local network.</string>
+  <string>${xmlEscape(displayName)} serves document links that you explicitly publish to your local network.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>${xmlEscape(appName)} records microphone audio for meeting notes.</string>
+  <string>${xmlEscape(displayName)} records microphone audio for meeting notes.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>${xmlEscape(appName)} uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
+  <string>${xmlEscape(displayName)} uses ScreenCaptureKit to capture system and call audio for meeting notes.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>${xmlEscape(appName)} may use macOS Speech recognition as a fallback when its bundled local transcriber cannot run.</string>
+  <string>${xmlEscape(displayName)} may use macOS Speech recognition as a fallback when its bundled local transcriber cannot run.</string>
 </dict>
 </plist>
 `;
@@ -905,6 +906,7 @@ function main() {
     console.log(JSON.stringify({
       appPath,
       appName,
+      displayName,
       bundleIdentifier,
       configuration: swiftBuildConfiguration,
       iconPath,

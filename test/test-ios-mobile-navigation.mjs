@@ -189,12 +189,12 @@ assert.match(createThread, /projectID: project\?\.id/);
 assert.match(remoteStore, /projects = nextThreads\.projects \?\? \[\]/);
 assert.match(remoteStore, /\/v1\/threads\/\\\(threadID\.uuidString\)\/project/);
 
-assert.match(corpusStore, /content\.title = "OpenOrg due today"/);
-assert.match(remoteCoordinator, /title: "OpenOrg reply notifications"/);
+assert.match(corpusStore, /content\.title = "Celorga due today"/);
+assert.match(remoteCoordinator, /title: "Celorga reply notifications"/);
 assert.doesNotMatch(corpusStore, /content\.title = "Org2/);
 assert.doesNotMatch(remoteCoordinator, /title: "Org2 reply notifications"/);
-assert.match(remoteStore, /serverName = "OpenOrg on Mac"/);
-assert.match(remoteStore, /storedServerName == "Org2 on Mac"/);
+assert.match(remoteStore, /serverName = "Celorga on Mac"/);
+assert.match(remoteStore, /storedServerName == "Org2 on Mac" \|\| storedServerName == "OpenOrg on Mac"/);
 assert.match(mobileCaptureSupport, /mobileInboxFilename = "mobile-inbox\.org"/);
 assert.match(mobileCaptureSupport, /legacyMobileInboxFilename = "mobile-inbox\.org2"/);
 assert.match(

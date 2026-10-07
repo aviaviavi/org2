@@ -958,7 +958,7 @@ private struct OpenOrgLaunchGuideView: View {
         VStack(alignment: .leading, spacing: 5) {
           Text("Connect an agent")
             .font(.title2.weight(.semibold))
-          Text("Choose an agent already installed on this Mac. OpenOrg will take you straight to a familiar chat box with today's note beside it.")
+          Text("Choose an agent already installed on this Mac. Celorga will take you straight to a familiar chat box with today's note beside it.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -1024,7 +1024,7 @@ private struct OpenOrgLaunchGuideView: View {
 
       DisclosureGroup("Workspace options", isExpanded: $showsWorkspaceOptions) {
         VStack(alignment: .leading, spacing: 10) {
-          Text("OpenOrg created a plain-text workspace automatically. You can move or rename it later, or choose another folder now.")
+          Text("Celorga created a plain-text workspace automatically. You can move or rename it later, or choose another folder now.")
             .font(.callout)
             .foregroundStyle(.secondary)
           if let root = store.corpusRoot {
@@ -1072,7 +1072,7 @@ private struct OpenOrgLaunchGuideView: View {
     }
     return store.codexAccountState.isReady
       ? "Uses the Codex installation and ChatGPT sign-in already on this Mac."
-      : "Sign in with ChatGPT once, then OpenOrg can start local Codex chats."
+      : "Sign in with ChatGPT once, then Celorga can start local Codex chats."
   }
 
   private var canContinue: Bool {
@@ -1234,7 +1234,7 @@ private struct CorpusOnboardingView: View {
           WorkspaceIconBadge(systemImage: "text.book.closed", tint: .accentColor, fill: Color.accentColor.opacity(0.12))
             .scaleEffect(1.45)
             .padding(.bottom, 4)
-          Text("Welcome to OpenOrg")
+          Text("Welcome to \(WorkspaceProductIdentity.displayName)")
             .font(.largeTitle.weight(.semibold))
           Text(WorkspaceProductIdentity.productLine)
             .font(.title3)
@@ -1251,7 +1251,7 @@ private struct CorpusOnboardingView: View {
         HStack(alignment: .top, spacing: 18) {
           onboardingCard(
             title: "Open an existing corpus",
-            detail: "Choose any folder containing .org or .org2 files. OpenOrg will scan it and derive Agenda, search, graph, and workspace views.",
+            detail: "Choose any folder containing .org or .org2 files. Celorga will scan it and derive Agenda, search, graph, and workspace views.",
             systemImage: "folder",
             actionTitle: "Choose Folder"
           ) {
@@ -1260,7 +1260,7 @@ private struct CorpusOnboardingView: View {
 
           onboardingCard(
             title: "Create a new corpus",
-            detail: "Choose or create an empty folder. OpenOrg will add an Org2 config, inbox, welcome note, daily notes folder, and reviewable output zones.",
+            detail: "Choose or create an empty folder. Celorga will add a Celorga config, inbox, welcome note, daily notes folder, and reviewable output zones.",
             systemImage: "sparkles.rectangle.stack",
             actionTitle: "Create Starter Corpus"
           ) {
@@ -1868,7 +1868,7 @@ private struct SkillsView: View {
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: "info.circle")
           .foregroundStyle(.secondary)
-        Text("Org2 guidance is built into OpenOrg and available in every AI chat. This list shows additional procedures authored for this workspace.")
+        Text("Operating guidance is built into Celorga and available in every AI chat. This list shows additional procedures authored for this workspace.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -2235,7 +2235,7 @@ private struct ExternalThreadsView: View {
               }
             }
           } label: {
-            Label("Save to Org2", systemImage: "square.and.arrow.down")
+            Label("Save to Celorga", systemImage: "square.and.arrow.down")
           }
           Button {
             Task {
@@ -2246,7 +2246,7 @@ private struct ExternalThreadsView: View {
               }
             }
           } label: {
-            Label("Fork into Org2", systemImage: "arrow.triangle.branch")
+            Label("Fork into Celorga", systemImage: "arrow.triangle.branch")
           }
           .buttonStyle(.borderedProminent)
         }
@@ -5240,7 +5240,7 @@ private struct AgendaControls: View {
             Label(store.agendaOverdueOrder.title, systemImage: "arrow.up.arrow.down")
           }
           .buttonStyle(WorkspaceActionButtonStyle())
-          .help("Choose how overdue items are ordered. Priority changes are saved in the Org2 source file.")
+          .help("Choose how overdue items are ordered. Priority changes are saved in the Org source file.")
         }
 
         Spacer(minLength: 0)
@@ -6020,7 +6020,7 @@ private struct WorkflowsView: View {
       } else if store.agentWorkflows.isEmpty {
         EmptyStateView(
           title: "No Automations",
-          detail: "Create a prompt, choose an AI destination, and optionally add a schedule. Its editable Org2 source will appear in workflows/."
+          detail: "Create a prompt, choose an AI destination, and optionally add a schedule. Its editable Org source will appear in workflows/."
         )
       } else {
         WorkspaceLazyCollection {
@@ -6186,7 +6186,7 @@ private struct WorkflowRunSheet: View {
       Text("Run \(workflow.title)").font(.title2.weight(.semibold))
       let destinationName = workflow.destinationRef.flatMap { store.aiChatDestination(id: $0)?.title }
         ?? "your default AI destination"
-      Text("OpenOrg will create a durable run, then send the prompt to \(destinationName).")
+      Text("Celorga will create a durable run, then send the prompt to \(destinationName).")
         .foregroundStyle(.secondary)
       if workflow.inputs.isEmpty {
         Text("This workflow has no inputs.").foregroundStyle(.secondary)
@@ -6243,7 +6243,7 @@ private struct NewAutomationSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("New Automation").font(.title2.weight(.semibold))
-      Text("The prompt and schedule are stored in an ordinary Org2 workflow file. OpenOrg creates a durable run before sending each occurrence to the selected AI destination.")
+      Text("The prompt and schedule are stored in an ordinary Org workflow file. Celorga creates a durable run before sending each occurrence to the selected AI destination.")
         .foregroundStyle(.secondary)
 
       Form {
@@ -6313,7 +6313,7 @@ private struct NewAutomationSheet: View {
             if created {
               dismiss()
             } else {
-              creationError = store.errorText ?? "OpenOrg could not create this automation."
+              creationError = store.errorText ?? "Celorga could not create this automation."
             }
           }
         } label: {
@@ -6377,7 +6377,7 @@ private struct WorkflowScheduleSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Schedule \(workflow.title)").font(.title2.weight(.semibold))
-      Text("OpenOrg checks this schedule while the app is running and sends each occurrence to the selected AI destination. The definition remains plain text.")
+      Text("Celorga checks this schedule while the app is running and sends each occurrence to the selected AI destination. The definition remains plain text.")
         .foregroundStyle(.secondary)
       AutomationAIConfigurationFields(
         destinationID: $destinationID,
@@ -6416,7 +6416,7 @@ private struct WorkflowScheduleSheet: View {
             if saved {
               dismiss()
             } else {
-              saveError = store.errorText ?? "OpenOrg could not save this schedule."
+              saveError = store.errorText ?? "Celorga could not save this schedule."
             }
           }
         } label: {
@@ -6657,7 +6657,7 @@ private struct AutomationScheduleEditor: View {
       Label(draft.summary, systemImage: "calendar.badge.clock")
         .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
-      Text("OpenOrg catches up the latest missed occurrence when it reopens.")
+      Text("Celorga catches up the latest missed occurrence when it reopens.")
         .font(.caption)
         .foregroundStyle(.tertiary)
     }
@@ -7063,7 +7063,7 @@ private enum RunCompletionMode {
   var detail: String {
     switch self {
     case .run: "Describe what happened in plain language. This is the first thing people will see when they review the run."
-    case .external: "Describe where or how the outcome was completed. This closes the Org2 item and retains unresolved approvals and review metadata as history. It does not stop work that may still be running in another system."
+    case .external: "Describe where or how the outcome was completed. This closes the Celorga item and retains unresolved approvals and review metadata as history. It does not stop work that may still be running in another system."
     case .approvalExternal: "Describe where or how this exact approval action was completed. Only this approval is closed; sibling approvals and the containing run remain open."
     case .approvalExternalBulk(let count): "Describe where or how these \(count) approval actions were completed. Each selected approval is closed independently; sibling approvals and containing runs remain open."
     }
@@ -7189,7 +7189,7 @@ private struct RunCenterDetail: View {
               Label("From \(sourceMeeting.displayTitle)", systemImage: "calendar")
             }
             .buttonStyle(.link)
-            .help("Open \(sourceMeeting.fileReference ?? sourceMeeting.ref) in Org2")
+            .help("Open \(sourceMeeting.fileReference ?? sourceMeeting.ref) in Celorga")
           }
         }
 
@@ -7377,7 +7377,7 @@ private struct RunCenterDetail: View {
                 }
               }
               .buttonStyle(.plain)
-              .help("Open \(artifact.path) in Org2")
+              .help("Open \(artifact.path) in Celorga")
             }
             showMoreButton(for: .artifacts, total: run.artifacts.count, noun: "outputs")
           }
@@ -7798,7 +7798,7 @@ private struct RunCenterDetail: View {
       .help("Start a chat with this durable run record as context")
       Button { store.openAgentRunRecord(run) } label: { Label("View Record", systemImage: "doc.text") }
         .buttonStyle(WorkspaceActionButtonStyle())
-        .help("Render the durable run record inside Org2")
+        .help("Render the durable run record inside Celorga")
       if isMutating { WorkspaceActivityIndicator(size: .mini) }
     }.controlSize(.small)
   }
@@ -8559,7 +8559,7 @@ private struct ApprovalRow: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(isActionInProgress)
-        .help("Record that this outcome was completed outside Org2")
+        .help("Record that this outcome was completed outside Celorga")
 
         Button {
           discuss()
@@ -9143,7 +9143,7 @@ private struct AgendaPriorityControl: View {
       .menuStyle(.borderlessButton)
       .menuIndicator(.hidden)
       .fixedSize()
-      .help("Change priority. The change is saved in the Org2 source file.")
+      .help("Change priority. The change is saved in the Org source file.")
     } else {
       AgendaPriorityPill(priority: priority)
     }
@@ -9891,7 +9891,7 @@ private struct SourcesView: View {
     VStack(spacing: 0) {
       HeaderBar(
         title: "Sources",
-        subtitle: "Slack, Notion, and email staged as reviewable Org2 files",
+        subtitle: "Slack, Notion, and email staged as reviewable Org files",
         surface: .sources
       ) {
         if store.isLoadingSources {
@@ -9919,7 +9919,7 @@ private struct SourcesView: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 14) {
-            Text("Sync updates each crawler’s private local archive. Stage writes bounded raw captures and review-required Org2 packets into this corpus; it never promotes them into canonical notes. Configured schedules run while OpenOrg is open and catch up after sleep or on the next launch.")
+            Text("Sync updates each crawler’s private local archive. Stage writes bounded raw captures and review-required Org packets into this corpus; it never promotes them into canonical notes. Configured schedules run while Celorga is open and catch up after sleep or on the next launch.")
               .font(.callout)
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
@@ -10445,7 +10445,7 @@ private struct SourceCredentialSheet: View {
     VStack(alignment: .leading, spacing: 14) {
       Text("\(profile?.sourceType?.displayName ?? "Source") \(label)")
         .font(.title2.weight(.semibold))
-      Text(secret?.help ?? "OpenOrg stores this credential in macOS Keychain and passes it only to the sync; it is never written to the corpus.")
+      Text(secret?.help ?? "Celorga stores this credential in macOS Keychain and passes it only to the sync; it is never written to the corpus.")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       SecureField(label, text: $store.sourceCredentialDraft)
@@ -10777,7 +10777,7 @@ public struct MeetingTranscriptionSettingsView: View {
           }
         }
         .disabled(store.isConnectingFluidVoice)
-        Text("Org2 detects Fluid Voice, enables its Local API, briefly relaunches it when needed, and verifies the connection. Long meetings remain local and are sent only to this Mac's loopback endpoint.")
+        Text("Celorga detects Fluid Voice, enables its Local API, briefly relaunches it when needed, and verifies the connection. Long meetings remain local and are sent only to this Mac's loopback endpoint.")
           .font(.caption2)
           .foregroundStyle(.secondary)
         DisclosureGroup("Advanced") {
@@ -12321,7 +12321,7 @@ private struct MissingDailyNoteView: View {
       .scaleEffect(1.25)
       Text("No Daily File Found")
         .font(.headline)
-      Text("OpenOrg did not find \(note.relativePath). Automatic daily note creation is disabled for this workspace.")
+      Text("Celorga did not find \(note.relativePath). Automatic daily note creation is disabled for this workspace.")
         .font(.callout)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
@@ -12343,7 +12343,7 @@ private struct MissingDailyNoteView: View {
       .disabled(store.isCreatingMissingDailyNote)
       Button("Use My Own Daily Notes…") { isFormatSheetPresented = true }
         .buttonStyle(.link)
-        .help("Point OpenOrg at one of your existing daily notes so Today, Yesterday, and Tomorrow open your own files.")
+        .help("Point Celorga at one of your existing daily notes so Today, Yesterday, and Tomorrow open your own files.")
       Spacer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -12401,7 +12401,7 @@ private struct NodeEntityTypeMenu: View {
     .fixedSize()
     .disabled(!store.canSetSelectedNodeEntityType)
     .help(store.canSetSelectedNodeEntityType
-      ? "Change this node's Org2 entity type"
+      ? "Change this node's Celorga entity type"
       : "Node type is read-only while this document is unavailable or being edited")
   }
 }
@@ -13838,7 +13838,7 @@ private struct OrgSlidePreviewPane: View {
 
   private var unavailableMessage: String {
     if !store.canPreviewSlides {
-      return "Open the full Org or Org2 page to compile its slide deck."
+      return "Open the full Org page to compile its slide deck."
     }
     return store.slidePreviewError ?? "Preparing the compiled PDF."
   }

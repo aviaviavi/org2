@@ -61,7 +61,7 @@ public enum AIChatMessageSound: String, CaseIterable, Identifiable, Sendable {
   public var displayName: String {
     switch self {
     case .org2:
-      return "Org2 (Default)"
+      return "\(WorkspaceProductIdentity.displayName) (Default)"
     case .systemAlert:
       return "System Alert"
     case .off:
@@ -586,9 +586,9 @@ public enum MobileRemoteFilePreviewError: LocalizedError, Equatable, Sendable {
   public var errorDescription: String? {
     switch self {
     case .invalidPath:
-      "That citation is outside the Org2 corpora available to this workspace."
+      "That citation is outside the Celorga corpora available to this workspace."
     case .unsupportedFile:
-      "Mobile preview is available for Org2, Org, Markdown, and CSV files."
+      "Mobile preview is available for Org, Markdown, and CSV files."
     case .unavailable:
       "That cited file is no longer available on the Mac."
     }
@@ -627,7 +627,7 @@ private enum StarterCorpusCreationError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .notDirectory(let path):
-      "Choose a folder for the new Org2 corpus, not a file: \(path)"
+      "Choose a folder for the new Celorga corpus, not a file: \(path)"
     case .notEmpty(let path):
       "The starter corpus needs an empty folder. Choose a new folder, or use Open Corpus for \(path)."
     }
@@ -2213,7 +2213,7 @@ public final class WorkspaceStore {
     }
   }
   nonisolated static let aiChatPreferredExecutionHostKey = "Org2Workspace.aiChat.preferredExecutionHostRef.v1"
-  nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
+  nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Celorga records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
   nonisolated public static let agendaOpenStatusFilter = "__open__"
   nonisolated public static let agendaCompletedStatusFilter = "__completed__"
@@ -3216,7 +3216,7 @@ public final class WorkspaceStore {
     1_200_000_000
   ]
   nonisolated private static let aiChatInterruptedSendFailureText =
-    "OpenOrg restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
+    "Celorga restarted before this AI response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
   nonisolated private static let aiChatDefaultStoppedSendFailureText =
     "OpenClaw was stopped by you. Retry to start this request again."
   private var aiChatTranscriptURL: URL
@@ -4052,7 +4052,7 @@ extension WorkspaceStore {
             )
             setCorpusRoot(root)
             selectedSurface = .home
-            statusText = "Created your OpenOrg workspace"
+            statusText = "Created your \(WorkspaceProductIdentity.displayName) workspace"
           } catch {
             errorText = error.localizedDescription
             statusText = "Could not create the starter workspace"
@@ -4255,7 +4255,7 @@ extension WorkspaceStore {
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
     panel.prompt = "Open"
-    panel.message = "Choose an Org2 corpus directory"
+    panel.message = "Choose a Celorga corpus directory"
 
     if panel.runModal() == .OK, let url = panel.url {
       setCorpusRoot(url)
@@ -4342,8 +4342,8 @@ extension WorkspaceStore {
     panel.allowsMultipleSelection = false
     panel.prompt = kind == "shared" ? "Create Shared Corpus" : "Create Corpus"
     panel.message = kind == "shared"
-      ? "Choose or create an empty folder or repository for the shared Org2 corpus"
-      : "Choose or create an empty folder for the new Org2 corpus"
+      ? "Choose or create an empty folder or repository for the shared Celorga corpus"
+      : "Choose or create an empty folder for the new Celorga corpus"
 
     guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -4435,7 +4435,7 @@ extension WorkspaceStore {
       )
     }
 
-    let name = root.lastPathComponent.isEmpty ? "Org2 Corpus" : root.lastPathComponent
+    let name = root.lastPathComponent.isEmpty ? "Celorga Corpus" : root.lastPathComponent
     let normalizedKind = kind == "shared" ? "shared" : kind == "project" ? "project" : "personal"
     let suffix = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(12)
     let identity = CorpusIdentity(
@@ -4471,18 +4471,18 @@ extension WorkspaceStore {
 
     let welcomeURL = root.appendingPathComponent("notes/welcome.org")
     let welcome = """
-    #+TITLE: Welcome to OpenOrg
+    #+TITLE: Welcome to Celorga
 
     * Your workspace
 
-    OpenOrg keeps its source of truth in this ordinary folder. Start on Home: ask your connected agent a question, or write directly in today's note beside the chat.
+    Celorga keeps its source of truth in this ordinary folder. Start on Home: ask your connected agent a question, or write directly in today's note beside the chat.
 
     - Daily notes live in =daily/=.
     - Longer-lived notes live in =notes/=.
     - Agent output stays reviewable in =views/= or =compiled/=.
     - Open =Help → Getting Started= whenever you want to reconnect an agent or review the basics.
 
-    You can move or rename this folder, open the files in another editor, and change its name or location later in OpenOrg settings.
+    You can move or rename this folder, open the files in another editor, and change its name or location later in Celorga settings.
     """
     try (welcome + "\n").write(to: welcomeURL, atomically: true, encoding: .utf8)
     try BuiltInOrg2Skill.installIfAbsent(in: root)
@@ -6373,7 +6373,7 @@ extension WorkspaceStore {
         withBundleIdentifier: Self.fluidVoiceBundleIdentifier
       ) else {
         throw AudioSettingsError.providerUnavailable(
-          "Install Fluid Voice, then return here. Org2 will configure and connect its Local API automatically."
+          "Install Fluid Voice, then return here. Celorga will configure and connect its Local API automatically."
         )
       }
 
@@ -6456,7 +6456,7 @@ extension WorkspaceStore {
     }
     let diagnostic = lastError?.localizedDescription ?? "The Local API did not start."
     throw AudioSettingsError.providerUnavailable(
-      "Fluid Voice was configured and reopened, but Org2 could not connect. \(diagnostic)"
+      "Fluid Voice was configured and reopened, but Celorga could not connect. \(diagnostic)"
     )
   }
 
@@ -8001,7 +8001,7 @@ extension WorkspaceStore {
 
       _ = try await cli.run([
         "run", "start", run.id,
-        "--actor", "OpenOrg Automation Scheduler",
+        "--actor", "Celorga Automation Scheduler",
         "--dir", corpusRoot.path,
         "--json"
       ])
@@ -8019,7 +8019,7 @@ extension WorkspaceStore {
       automationRunIDsByThreadID[thread.id] = run.id
       _ = try? await cli.run([
         "run", "comment", run.id,
-        "--author", "OpenOrg Automation Scheduler",
+        "--author", "Celorga Automation Scheduler",
         "--body", "AI destination: \(destination.id)\nAI chat thread: \(thread.id.uuidString.lowercased())",
         "--dir", corpusRoot.path,
         "--json"
@@ -8030,7 +8030,7 @@ extension WorkspaceStore {
         origin: AIChatMessageProvenance(originClient: .automation)
       ) else {
         automationRunIDsByThreadID.removeValue(forKey: thread.id)
-        await failAgentAutomationRun(run.id, reason: "OpenOrg could not enqueue the automation prompt for \(destination.title).")
+        await failAgentAutomationRun(run.id, reason: "Celorga could not enqueue the automation prompt for \(destination.title).")
         return nil
       }
       if presentsThread {
@@ -8045,7 +8045,7 @@ extension WorkspaceStore {
       if let preparedRunID {
         await failAgentAutomationRun(
           preparedRunID,
-          reason: "OpenOrg could not dispatch this automation: \(error.localizedDescription)"
+          reason: "Celorga could not dispatch this automation: \(error.localizedDescription)"
         )
       }
       errorText = error.localizedDescription
@@ -8080,7 +8080,7 @@ extension WorkspaceStore {
     _ = try? await cli.run([
       "run", "fail", runID,
       "--reason", reason,
-      "--actor", "OpenOrg Automation Scheduler",
+      "--actor", "Celorga Automation Scheduler",
       "--dir", corpusRoot.path,
       "--json"
     ])
@@ -8115,7 +8115,7 @@ extension WorkspaceStore {
       _ = try? await cli.run([
         "run", "complete", runID,
         "--summary", summary.isEmpty ? "The AI destination returned an empty response." : summary,
-        "--actor", "OpenOrg Automation Scheduler",
+        "--actor", "Celorga Automation Scheduler",
         "--dir", corpusRoot.path,
         "--json"
       ])
@@ -10664,7 +10664,7 @@ extension WorkspaceStore {
 
     let alert = NSAlert()
     alert.messageText = "Record Meeting"
-    alert.informativeText = "Record local microphone audio into the selected Org2 corpus."
+    alert.informativeText = "Record local microphone audio into the selected Celorga corpus."
     alert.addButton(withTitle: "Start Recording")
     alert.addButton(withTitle: "Cancel")
 
@@ -11180,7 +11180,7 @@ extension WorkspaceStore {
     panel.allowsMultipleSelection = false
     panel.allowedContentTypes = [.audio, .movie]
     panel.prompt = "Import"
-    panel.message = "Choose an audio or video file to transcribe into an Org2 meeting."
+    panel.message = "Choose an audio or video file to transcribe into a Celorga meeting."
 
     if panel.runModal() == .OK, let url = panel.url {
       let title = meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -11750,7 +11750,7 @@ extension WorkspaceStore {
         "--title", "Work: \(title)",
         "--goal", title,
         "--context", "file:\(relative):\(link.line)",
-        "--owner", "OpenOrg",
+        "--owner", "Celorga",
         "--assignee", destination.title,
         "--dir", corpusRoot.path,
         "--json",
@@ -11762,7 +11762,7 @@ extension WorkspaceStore {
       run = created.run
       _ = try await cli.run([
         "run", "start", run.id,
-        "--actor", "OpenOrg",
+        "--actor", "Celorga",
         "--dir", corpusRoot.path,
         "--json",
       ])
@@ -11800,7 +11800,7 @@ extension WorkspaceStore {
       // the work is not lost.
       _ = try? await cli.run([
         "run", "comment", run.id,
-        "--author", "OpenOrg",
+        "--author", "Celorga",
         "--body", "Could not link heading \(relative):\(link.line): \(error.localizedDescription)",
         "--dir", corpusRoot.path,
         "--json",
@@ -11863,7 +11863,7 @@ extension WorkspaceStore {
     )
     _ = try? await cli.run([
       "run", "comment", run.id,
-      "--author", "OpenOrg",
+      "--author", "Celorga",
       "--body", "AI destination: \(destination.id)\nAI chat thread: \(thread.id.uuidString.lowercased())",
       "--dir", corpusRoot.path,
       "--json",
@@ -12013,7 +12013,7 @@ extension WorkspaceStore {
     }
     let panel = NSOpenPanel()
     panel.title = "Move / Refile Entry"
-    panel.message = "Choose the Org2 file where this entry should be appended."
+    panel.message = "Choose the Org file where this entry should be appended."
     panel.prompt = "Refile"
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
@@ -15202,7 +15202,7 @@ extension WorkspaceStore {
 
   public func presentDocumentPublisher() {
     guard currentOrgSourceFile != nil else {
-      statusText = "Open an Org or Org2 document first"
+      statusText = "Open an Org document first"
       return
     }
     isDocumentPublisherPresented = true
@@ -15641,7 +15641,7 @@ extension WorkspaceStore {
 
   public func exportCurrentDocumentPDF() async {
     guard let sourceFile = currentOrgSourceFile else {
-      statusText = "Open an Org or Org2 file first"
+      statusText = "Open an Org file first"
       return
     }
     guard !isExportingCurrentDocumentPDF else { return }
@@ -15728,7 +15728,7 @@ extension WorkspaceStore {
 
   public func exportSlides(format: Org2SlideExportFormat) async {
     guard let sourceFile = currentOrgSourceFile else {
-      statusText = "Open an Org or Org2 file first"
+      statusText = "Open an Org file first"
       return
     }
     guard !isExportingSlides else { return }
@@ -24004,7 +24004,7 @@ extension WorkspaceStore {
     opensDocument: Bool = true
   ) async throws -> URL {
     guard let corpusRoot else {
-      throw CodexAppServerError.invalidResponse("Open an Org2 corpus before importing a thread")
+      throw CodexAppServerError.invalidResponse("Open a Celorga corpus before importing a thread")
     }
     let relativePath = Self.externalThreadSnapshotRelativePath(detail.thread)
     let destination = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
@@ -24076,7 +24076,7 @@ extension WorkspaceStore {
       publishAIChatComposerDraft(draft)
       makeSurfacePrimary(.aiChat)
       aiChatStatusText = "Imported \(relativePath) as read-only context"
-      statusText = "Started a new Org2 thread from \(detail.thread.harness.title)"
+      statusText = "Started a new Celorga thread from \(detail.thread.harness.title)"
     }
     return thread.id
   }
@@ -25640,7 +25640,7 @@ extension WorkspaceStore {
   private func executeAIChatPublish(_ arguments: String) async throws -> String {
     if arguments.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "document" {
       guard currentOrgSourceFile != nil else {
-        return "Open an Org or Org2 document first, then run /publish document."
+        return "Open an Org document first, then run /publish document."
       }
       presentDocumentPublisher()
       return "Opened Publish Document. Preview the disclosure boundary, then choose a local or Google Drive format."
@@ -26189,7 +26189,7 @@ extension WorkspaceStore {
     cancelAIChatPendingTurnRecovery(for: threadID)
     aiChatDrainTasksByThreadID.removeValue(forKey: threadID)?.task.cancel()
 
-    let failureText = "\(aiChatDestinationTitle(destinationID)) task expired before OpenOrg could finish receiving it. Retry to start a new task with this chat context."
+    let failureText = "\(aiChatDestinationTitle(destinationID)) task expired before Celorga could finish receiving it. Retry to start a new task with this chat context."
     var expiredMessageIDs = Set(aiChatPendingUserMessageIDs(for: threadID))
     if let activeMessageID = activeAIChatUserMessageIDByThreadID[threadID] {
       expiredMessageIDs.insert(activeMessageID)
@@ -26876,7 +26876,7 @@ extension WorkspaceStore {
         case .codexLocal, .codexRemote, .codexManagedRemote:
           guard let localEditTurnID else {
             throw CodexAppServerError.invalidResponse(
-              "choose an Org2 corpus before sending a Codex message"
+              "choose a Celorga corpus before sending a Codex message"
             )
           }
           reply = try await sendCodexRequest(
@@ -27376,7 +27376,7 @@ extension WorkspaceStore {
         throw OpenClawGatewayError.aborted(nil)
       case .detachedRunUnavailable:
         throw OpenClawGatewayError.acceptedRunTerminated(
-          "OpenOrg restarted and \(aiChatDestinationTitle(destinationID)) is no longer running this turn, so its response could not be recovered. Retry to send it again."
+          "Celorga restarted and \(aiChatDestinationTitle(destinationID)) is no longer running this turn, so its response could not be recovered. Retry to send it again."
         )
       default:
         throw OpenClawGatewayError.acceptedRunTerminated(error.localizedDescription)
@@ -27763,7 +27763,7 @@ extension WorkspaceStore {
     sendOrigin: AIChatSendOrigin
   ) async throws -> String {
     guard let corpusRoot = sendOrigin.corpusRoot else {
-      throw ClaudeCodeError.invalidResponse("choose an Org2 corpus before using Claude Code")
+      throw ClaudeCodeError.invalidResponse("choose a Celorga corpus before using Claude Code")
     }
     guard let destination = aiChatDestination(id: destinationID),
           destination.adapter == .claudeLocal,
@@ -27858,7 +27858,7 @@ extension WorkspaceStore {
     sendOrigin: AIChatSendOrigin
   ) async throws -> String {
     guard let corpusRoot = sendOrigin.corpusRoot else {
-      throw PiAgentError.invalidResponse("choose an Org2 corpus before using Pi")
+      throw PiAgentError.invalidResponse("choose a Celorga corpus before using Pi")
     }
     guard let destination = aiChatDestination(id: destinationID),
           destination.adapter == .piLocal || destination.adapter == .piRemote,
@@ -27961,7 +27961,7 @@ extension WorkspaceStore {
     // The destination whose saved session and model this turn continues.
     let sessionDestinationID = sessionDestinationID ?? destinationID
     guard let corpusRoot = sendOrigin.corpusRoot else {
-      throw OpenCodeError.invalidResponse("choose an Org2 corpus before using OpenCode")
+      throw OpenCodeError.invalidResponse("choose a Celorga corpus before using OpenCode")
     }
     guard let destination = aiChatDestination(id: destinationID),
           destination.adapter == .openCodeLocal || destination.adapter == .openCodeRemote,
@@ -28188,7 +28188,7 @@ extension WorkspaceStore {
     sendOrigin: AIChatSendOrigin
   ) async throws -> String {
     guard let corpusRoot = sendOrigin.corpusRoot else {
-      throw CodexAppServerError.invalidResponse("choose an Org2 corpus before using Codex")
+      throw CodexAppServerError.invalidResponse("choose a Celorga corpus before using Codex")
     }
     guard let userMessage = messages.last(where: { $0.role == .user }) else {
       throw CodexAppServerError.invalidResponse("no user message was available")
@@ -30950,7 +30950,7 @@ extension WorkspaceStore {
     return message.authorLabel
       ?? message.authorDestinationID.map(aiChatDestinationTitle)
       ?? message.authorRuntime?.title
-      ?? (message.role == .system ? "Org2" : selectedAIChatRuntime.title)
+      ?? (message.role == .system ? WorkspaceProductIdentity.displayName : selectedAIChatRuntime.title)
   }
 
   public func editQueuedAIChatMessage(_ messageID: UUID) {
@@ -34707,8 +34707,8 @@ extension WorkspaceStore {
   public var openClawLocalEditNodeDisplayName: String {
     let bundleID = Bundle.main.bundleIdentifier ?? ""
     return bundleID.hasSuffix(".codex")
-      ? "OpenOrg Local Edits (Codex)"
-      : "OpenOrg Local Edits"
+      ? "Celorga Local Edits (Codex)"
+      : "Celorga Local Edits"
   }
 
   private func localEditBroker() -> AIChatLocalEditBroker {
@@ -35378,7 +35378,7 @@ extension WorkspaceStore {
       return false
     }
     guard name != "org2" else {
-      errorText = "The org2 name is reserved for OpenOrg's built-in operating guidance."
+      errorText = "The org2 name is reserved for Celorga's built-in operating guidance."
       statusText = "Reserved skill name"
       return false
     }
@@ -43327,7 +43327,7 @@ extension WorkspaceStore {
     if marksInterruptedSends {
       transcript = aiChatTranscriptStateByMarkingInterruptedSends(transcript)
     }
-    let message = "\(derivedFailure) OpenOrg is displaying \(canonical.threads.count) thread(s) "
+    let message = "\(derivedFailure) Celorga is displaying \(canonical.threads.count) thread(s) "
       + "from the validated legacy transcript read-only. It may be older than the damaged "
       + "derived store, which was left untouched for recovery."
     return AIChatWorkspaceTranscriptLoad(
@@ -43899,7 +43899,7 @@ extension WorkspaceStore {
       )
       if !FileManager.default.fileExists(atPath: stylesheetURL.path) {
         let template = """
-        /* OpenOrg document overrides. This file only affects HTML read and preview views. */
+        /* Celorga document overrides. This file only affects HTML read and preview views. */
         :root {
           /* --org2-content-width: 960px; */
           /* --org2-page-padding: 28px; */

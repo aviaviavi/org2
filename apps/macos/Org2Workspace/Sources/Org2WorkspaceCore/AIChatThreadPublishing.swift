@@ -74,7 +74,7 @@ struct AIChatThreadPublicationSnapshot: Sendable {
           id: message.id,
           role: message.role,
           author: message.role == .system
-            ? "Org2"
+            ? WorkspaceProductIdentity.displayName
             : assistantTitles[message.id] ?? message.authorLabel ?? defaultAssistantTitle,
           createdAt: message.createdAt,
           text: formatted ? AIChatMessageOrgNormalizer.normalized(message.content) : message.content,
@@ -198,7 +198,7 @@ enum AIChatThreadPublicationPage {
     <meta name="referrer" content="no-referrer">
     <meta name="robots" content="noindex, nofollow">
     <meta name="openorg-revision" content="\(revision)">
-    <title>\(escape(title)) · OpenOrg</title>
+    <title>\(escape(title)) · \(WorkspaceProductIdentity.displayName)</title>
     \(SharePreviewMetadata.tags(title: title, description: previewDescription(snapshot)))
     <style id="org2-app-document-style">\(rendererStylesheet ?? "")</style>
     <style id="openorg-chat-page-style">\(pageStylesheet)</style>
@@ -216,7 +216,7 @@ enum AIChatThreadPublicationPage {
     </section>
     \(empty)\(responding)
     </div>
-    <footer class="page-footer">Shared read-only from OpenOrg. New messages appear automatically while OpenOrg keeps sharing the thread.</footer>
+    <footer class="page-footer">Shared read-only from \(WorkspaceProductIdentity.displayName). New messages appear automatically while \(WorkspaceProductIdentity.displayName) keeps sharing the thread.</footer>
     \(LocalDocumentPublicationHost.liveUpdateScriptElement)
     </body>
     </html>
@@ -229,7 +229,7 @@ enum AIChatThreadPublicationPage {
   static func previewDescription(_ snapshot: AIChatThreadPublicationSnapshot) -> String {
     let count = snapshot.messages.count
     let size = count == 0
-      ? "Shared AI chat from OpenOrg"
+      ? "Shared AI chat from \(WorkspaceProductIdentity.displayName)"
       : "AI chat · \(count) message\(count == 1 ? "" : "s")"
     let opening = (snapshot.messages.first { $0.role == .user } ?? snapshot.messages.first)
       .map { SharePreviewMetadata.collapsedWhitespace($0.text) } ?? ""
@@ -501,7 +501,7 @@ public enum AIChatThreadPublishingError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .missingThread:
-      "OpenOrg could not load that chat thread for sharing."
+      "Celorga could not load that chat thread for sharing."
     }
   }
 }

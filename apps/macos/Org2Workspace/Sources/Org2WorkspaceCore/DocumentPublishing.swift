@@ -495,7 +495,7 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .noDocument:
-      "Open an Org or Org2 document before publishing."
+      "Open an Org document before publishing."
     case .busy:
       "A document publication is already in progress."
     case .pendingEdits:
@@ -505,9 +505,9 @@ public enum DocumentPublishingError: LocalizedError, Sendable {
     case .invalidGoogleResponse:
       "Google Drive completed without returning a usable document link."
     case .googlePublicationPersistenceFailed(let url, let reason):
-      "Google Drive published the artifact, but OpenOrg could not save its stable link in the source file: \(reason). Recover it at \(url.absoluteString)."
+      "Google Drive published the artifact, but Celorga could not save its stable link in the source file: \(reason). Recover it at \(url.absoluteString)."
     case .missingWebBundle(let path):
-      "Org2 completed without producing the expected web publication at \(path)."
+      "Celorga completed without producing the expected web publication at \(path)."
     case .unsupportedFormat:
       "That format is not available for the selected publication destination."
     }
@@ -824,9 +824,9 @@ public enum GoogleDriveOAuthError: LocalizedError, Sendable {
     case .missingClientSecret:
       "Google requires the client secret paired with this Desktop app client. Import the downloaded OAuth client JSON, or paste its client secret, and connect again."
     case .browserOpenFailed:
-      "OpenOrg could not open the Google authorization page."
+      "Celorga could not open the Google authorization page."
     case .callbackServer(let detail):
-      "OpenOrg could not start the temporary Google authorization callback: \(detail)"
+      "Celorga could not start the temporary Google authorization callback: \(detail)"
     case .callbackTimedOut:
       "Google Drive authorization timed out. Try connecting again."
     case .invalidCallback:
@@ -1217,7 +1217,7 @@ private final class GoogleDriveOAuthLoopbackReceiver: @unchecked Sendable {
       complete(.failure(GoogleDriveOAuthError.authorizationDenied(detail)))
       return htmlResponse(
         title: "Google Drive was not connected",
-        message: "Return to OpenOrg to try again."
+        message: "Return to Celorga to try again."
       )
     }
     guard let code = values["code"], !code.isEmpty,
@@ -1226,13 +1226,13 @@ private final class GoogleDriveOAuthLoopbackReceiver: @unchecked Sendable {
       complete(.failure(GoogleDriveOAuthError.invalidCallback))
       return htmlResponse(
         title: "Google Drive could not be connected",
-        message: "Return to OpenOrg to try again."
+        message: "Return to Celorga to try again."
       )
     }
     complete(.success(GoogleDriveOAuthCallback(code: code, state: state)))
     return htmlResponse(
       title: "Google Drive connected",
-      message: "You can close this window and return to OpenOrg."
+      message: "You can close this window and return to Celorga."
     )
   }
 
@@ -1278,11 +1278,11 @@ public enum LocalDocumentPublicationHostError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .invalidAdvertisedHost:
-      "OpenOrg could not determine a local hostname for this Mac."
+      "Celorga could not determine a local hostname for this Mac."
     case .persistenceFailed(let message):
-      "OpenOrg could not persist the local publication: \(message)"
+      "Celorga could not persist the local publication: \(message)"
     case .randomNumberFailure(let status):
-      "OpenOrg could not create a secure publication link (status \(status))."
+      "Celorga could not create a secure publication link (status \(status))."
     case .startupFailed(let message):
       "The local publication server could not start: \(message)"
     case .startupTimedOut:
@@ -1911,7 +1911,7 @@ public final class LocalDocumentPublicationHost: @unchecked Sendable {
       if isAvailable { return token }
     }
     throw LocalDocumentPublicationHostError.persistenceFailed(
-      "OpenOrg could not allocate a unique publication identifier."
+      "Celorga could not allocate a unique publication identifier."
     )
   }
 

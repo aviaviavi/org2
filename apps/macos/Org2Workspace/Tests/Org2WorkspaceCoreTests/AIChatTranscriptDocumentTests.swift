@@ -382,7 +382,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     XCTAssertTrue((result?["trace"] as? String)?.contains("Approach") == true)
     XCTAssertTrue((result?["trace"] as? String)?.contains("Read source") == true)
     XCTAssertTrue((result?["trace"] as? String)?.contains("Provider tokens") == true)
-    XCTAssertTrue((result?["trace"] as? String)?.contains("OpenOrg context") == true)
+    XCTAssertTrue((result?["trace"] as? String)?.contains("Celorga context") == true)
     XCTAssertTrue((result?["changes"] as? String)?.contains("ContentView.swift") == true)
     XCTAssertEqual(result?["details"] as? Bool, false)
   }

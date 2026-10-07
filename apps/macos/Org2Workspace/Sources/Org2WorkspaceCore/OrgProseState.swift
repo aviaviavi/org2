@@ -507,7 +507,7 @@ struct OrgProseDocument: Sendable {
       return invalid("The document contains more than one prose state block.")
     }
     guard candidate.version == String(OrgProseStateFormat.version) else {
-      return invalid("The prose state was written by a newer version of OpenOrg (V\(candidate.version)).")
+      return invalid("The prose state was written by a newer version of Celorga (V\(candidate.version)).")
     }
     let payloadStart = NSMaxRange(candidate.marker)
     guard payloadStart < ns.length else {

@@ -150,7 +150,7 @@ public enum WorkspaceSourceCatalog {
     id: "slack",
     displayName: "Slack",
     systemImage: "number",
-    summary: "Slack is mirrored by the local slacrawl crawler and staged as review-required Org2 packets.",
+    summary: "Slack is mirrored by the local slacrawl crawler and staged as review-required Org packets.",
     defaultProfileID: "slack",
     fields: [
       WorkspaceSourceField(
@@ -186,7 +186,7 @@ public enum WorkspaceSourceCatalog {
     secret: WorkspaceSourceSecret(
       label: "Bot Token",
       environmentVariable: "SLACK_BOT_TOKEN",
-      help: "Paste a Slack bot token (xoxb-…). OpenOrg stores it in macOS Keychain and passes it only to slacrawl; it is never written to the corpus.",
+      help: "Paste a Slack bot token (xoxb-…). Celorga stores it in macOS Keychain and passes it only to slacrawl; it is never written to the corpus.",
       requiredForSyncSources: []
     ),
     defaultSyncArgs: ["--source", "bot", "--latest-only"]
@@ -196,7 +196,7 @@ public enum WorkspaceSourceCatalog {
     id: "notion",
     displayName: "Notion",
     systemImage: "doc.text",
-    summary: "Notion pages are mirrored by the local notcrawl crawler and staged as review-required Org2 packets.",
+    summary: "Notion pages are mirrored by the local notcrawl crawler and staged as review-required Org packets.",
     defaultProfileID: "notion",
     fields: [
       WorkspaceSourceField(
@@ -224,7 +224,7 @@ public enum WorkspaceSourceCatalog {
     secret: WorkspaceSourceSecret(
       label: "Token",
       environmentVariable: "NOTION_TOKEN",
-      help: "Paste a Notion internal integration token. OpenOrg stores it in macOS Keychain and passes it only to notcrawl; it is never written to the corpus.",
+      help: "Paste a Notion internal integration token. Celorga stores it in macOS Keychain and passes it only to notcrawl; it is never written to the corpus.",
       requiredForSyncSources: ["api"]
     ),
     defaultSyncArgs: ["--source", "api"]
@@ -234,7 +234,7 @@ public enum WorkspaceSourceCatalog {
     id: "email",
     displayName: "Email",
     systemImage: "envelope",
-    summary: "OpenOrg reads new mail over IMAP without marking it read and stages it as review-required Org2 packets. Many providers require an app password.",
+    summary: "Celorga reads new mail over IMAP without marking it read and stages it as review-required Org packets. Many providers require an app password.",
     defaultProfileID: "mail",
     fields: [
       WorkspaceSourceField(id: "host", label: "IMAP server", prompt: "imap.example.com", target: .path(["email", "host"]), isRequired: true),
@@ -279,7 +279,7 @@ public enum WorkspaceSourceCatalog {
     secret: WorkspaceSourceSecret(
       label: "Password",
       environmentVariable: "ORG2_EMAIL_PASSWORD",
-      help: "Enter the IMAP password or app password. OpenOrg stores it in macOS Keychain and passes it only to the email sync; it is never written to the corpus."
+      help: "Enter the IMAP password or app password. Celorga stores it in macOS Keychain and passes it only to the email sync; it is never written to the corpus."
     ),
     defaultSyncArgs: []
   )

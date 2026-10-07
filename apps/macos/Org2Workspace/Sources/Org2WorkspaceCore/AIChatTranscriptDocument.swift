@@ -513,7 +513,7 @@ struct AIChatTranscriptDocument: View {
       }
     } else {
       base = message.authorLabel ?? message.authorDestinationID.map(store.aiChatDestinationTitle)
-        ?? message.authorRuntime?.title ?? (message.role == .system ? "Org2" : store.selectedAIChatRuntime.title)
+        ?? message.authorRuntime?.title ?? (message.role == .system ? WorkspaceProductIdentity.displayName : store.selectedAIChatRuntime.title)
     }
     guard let caption = store.aiChatProvenanceCaption(for: message) else { return base }
     return "\(base) · \(caption)"
@@ -1148,7 +1148,7 @@ enum AIChatTranscriptHTML {
           const row=document.createElement('div'); row.className='activity-row';
           const image=document.createElement('span'); image.className='activity-icon'; image.append(icon('searchfile'));
           const copy=document.createElement('div'); copy.className='activity-copy';
-          const title=document.createElement('span'); title.className='activity-title'; title.textContent='OpenOrg context';
+          const title=document.createElement('span'); title.className='activity-title'; title.textContent='Celorga context';
           const detail=document.createElement('span'); detail.className='activity-detail';
           detail.textContent=`${context.mode} · ${total} estimated tokens (static ${context.staticTokens}, project ${context.projectTokens}, transcript ${context.transcriptTokens}, room ${context.roomTokens}, attachments ${context.attachmentTokens})`;
           copy.append(title,detail); row.append(image,copy); trace.append(row);

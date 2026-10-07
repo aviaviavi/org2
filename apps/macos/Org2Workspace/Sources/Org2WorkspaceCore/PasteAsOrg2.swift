@@ -111,7 +111,7 @@ final class PasteAsOrg2Controller: ObservableObject {
   func present() {
     guard let parentWindow else { cancel(); return }
     let sheet = NSWindow(contentViewController: NSHostingController(rootView: PasteAsOrg2Sheet(controller: self)))
-    sheet.title = "Paste as Org2 — Experimental"
+    sheet.title = "Paste as Org — Experimental"
     sheet.styleMask = [.titled, .resizable]
     sheet.setContentSize(NSSize(width: 780, height: 580))
     self.sheet = sheet
@@ -149,7 +149,7 @@ final class PasteAsOrg2Controller: ObservableObject {
     // insertText performs the AppKit permission/undo transaction itself. Calling
     // shouldChangeText first registers the replacement twice with Undo.
     target.insertText(org, replacementRange: selection)
-    target.undoManager?.setActionName("Paste as Org2")
+    target.undoManager?.setActionName("Paste as Org")
     cancel()
     return true
   }
@@ -167,7 +167,7 @@ private struct PasteAsOrg2Sheet: View {
   @ObservedObject var controller: PasteAsOrg2Controller
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Paste as Org2").font(.title2.bold())
+      Text("Paste as Org").font(.title2.bold())
       Text("Experimental · Converted on this Mac. Review and edit before inserting.")
         .foregroundStyle(.secondary)
       Toggle("Use tiny local model for plain text", isOn: $controller.useModel)

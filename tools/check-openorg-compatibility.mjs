@@ -18,7 +18,8 @@ assert.equal(packageJSON.bin?.["org2-lsp"], "dist/lsp.js", "the org2-lsp name re
 const macBuild = read("tools/build-macos-app.mjs");
 assert.match(macBuild, /ORG2_WORKSPACE_BUNDLE_ID \?\? "org\.org2\.workspace"/, "preserve the macOS bundle identifier");
 assert.match(macBuild, /const executableName = "Org2Workspace"/, "preserve the macOS executable name for 0.5");
-assert.match(macBuild, /ORG2_WORKSPACE_APP_NAME \?\? "OpenOrg"/, "present the renamed macOS product");
+assert.match(macBuild, /ORG2_WORKSPACE_APP_NAME \?\? "OpenOrg"/, "preserve the OpenOrg.app bundle file name so Sparkle updates in place");
+assert.match(macBuild, /ORG2_WORKSPACE_DISPLAY_NAME \?\? "Celorga"/, "present the Celorga display name");
 assert.match(macBuild, /OpenOrgAppIcon\.png/, "package the OpenOrg review icon");
 
 const macPackage = read("apps/macos/Org2Workspace/Package.swift");
@@ -50,8 +51,8 @@ for (const preferenceKey of [
 }
 
 const productIdentity = read("apps/macos/Org2Workspace/Sources/Org2WorkspaceCore/WorkspaceProductIdentity.swift");
-assert.match(productIdentity, /displayName = "OpenOrg"/, "keep the user-facing product name centralized");
-assert.match(productIdentity, /substrateName = "Org2"/, "keep Org2 named as the open substrate");
+assert.match(productIdentity, /displayName = "Celorga"/, "keep the user-facing product name centralized");
+assert.match(productIdentity, /substrateName = "Celorga"/, "name the runtime with the same Celorga brand");
 assert.match(productIdentity, /primaryPromise = "Build your knowledge locally and put it to work\."/, "keep the launch tagline centralized");
 
 console.log("OK: OpenOrg/Org2 launch compatibility identifiers are unchanged");

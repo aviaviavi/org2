@@ -102,7 +102,7 @@ public actor OpenClawLocalEditNode {
     let nonce = try await awaitChallenge(on: socket)
     let identity = try OpenClawDeviceIdentity.loadOrCreate()
     try await connect(on: socket, nonce: nonce, identity: identity)
-    await publishState(.connected, "Local Org2 reads and previewed edits are available.")
+    await publishState(.connected, "Local Celorga reads and previewed edits are available.")
 
     while !Task.isCancelled, !isStopping {
       let frame = try await receiveObject(on: socket)

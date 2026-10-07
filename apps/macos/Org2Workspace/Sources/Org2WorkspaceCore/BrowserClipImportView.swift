@@ -178,7 +178,7 @@ struct BrowserClipImportView: View {
         Spacer()
         Button("Choose Clip…", action: chooseClip).disabled(session.busy)
       }
-      Text("Choose an .org2clip file saved by the OpenOrg Web Clipper.")
+      Text("Choose an .org2clip file saved by the Celorga Web Clipper.")
         .foregroundStyle(.secondary)
       if let preview = session.preview {
         Text(preview.clip.title).font(.title3.weight(.semibold))

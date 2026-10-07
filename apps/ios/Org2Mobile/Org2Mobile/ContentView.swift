@@ -12,7 +12,7 @@ struct ContentView: View {
         Task { await store.selectCorpus(url) }
       }
     }
-    .alert("OpenOrg", isPresented: Binding(
+    .alert("Celorga", isPresented: Binding(
       get: { store.errorMessage != nil || remote.errorMessage != nil },
       set: { _ in
         store.errorMessage = nil
@@ -48,7 +48,7 @@ private struct EmptyCorpusView: View {
           .foregroundStyle(.secondary)
 
         VStack(spacing: 8) {
-          Text("OpenOrg")
+          Text("Celorga")
             .font(.largeTitle.weight(.semibold))
           Text("Select a synced corpus folder from Files.")
             .font(.body)
@@ -66,7 +66,7 @@ private struct EmptyCorpusView: View {
         .controlSize(.large)
       }
       .padding(24)
-      .navigationTitle("OpenOrg")
+      .navigationTitle("Celorga")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
           MobileSidebarToolbarButton()
@@ -701,7 +701,7 @@ private struct WorkflowsView: View {
           ContentUnavailableView(
             "Pair With Your Mac",
             systemImage: "desktopcomputer",
-            description: Text("Workflows use the canonical Org2 runtime on your Mac.")
+            description: Text("Workflows use the canonical Celorga runtime on your Mac.")
           )
         } else if remote.workspaceWorkflows.isEmpty && remote.isRefreshingWorkspace {
           LoadingCorpusView()

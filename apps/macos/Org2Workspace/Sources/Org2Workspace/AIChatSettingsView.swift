@@ -108,7 +108,7 @@ struct AIChatSettingsView: View {
             Text("\(preferred) (offline)").tag(preferred)
           }
         }
-        Text("A headless OpenOrg server can own conversations this Mac would run, so quitting, sleeping, or updating OpenOrg never interrupts a turn. This Mac shows the server's live progress and takes over automatically whenever the server is offline, restarting, or lacks the conversation's destination. Local agents then run on the server's machine with its files and permissions.")
+        Text("A headless Celorga server can own conversations this Mac would run, so quitting, sleeping, or updating Celorga never interrupts a turn. This Mac shows the server's live progress and takes over automatically whenever the server is offline, restarting, or lacks the conversation's destination. Local agents then run on the server's machine with its files and permissions.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -250,11 +250,11 @@ struct AIChatSettingsView: View {
   private var localAgentAccessHelp: String {
     switch store.codexSandboxAccess {
     case .readOnly:
-      return "Local coding harnesses can inspect files. Claude Code runs in Plan mode, Pi and OpenCode receive read-only tools, and Codex uses OpenOrg's reviewed edit tools for corpus changes."
+      return "Local coding harnesses can inspect files. Claude Code runs in Plan mode, Pi and OpenCode receive read-only tools, and Codex uses Celorga's reviewed edit tools for corpus changes."
     case .workspaceWrite:
       return "Local and SSH coding harnesses can edit through their native tools in the configured corpus workspace."
     case .fullAccess:
-      return "Coding harnesses receive full tool access. OpenOrg does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
+      return "Coding harnesses receive full tool access. Celorga does not show approval prompts in this mode; use it only for trusted threads. The change applies on the next turn, including in an existing thread."
     }
   }
 
@@ -415,7 +415,7 @@ private struct AIChatDestinationEditor: View {
               get: { destination.workspaceToolsEnabled == true },
               set: { destination.workspaceToolsEnabled = $0 }
             ))
-            Text("Use OpenOrg’s built-in agent to search, read, and propose edits. You review each patch before it is applied. Requires a model that supports tools; text only.")
+            Text("Use Celorga’s built-in agent to search, read, and propose edits. You review each patch before it is applied. Requires a model that supports tools; text only.")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
@@ -626,13 +626,13 @@ private struct AIChatDestinationEditor: View {
     case .piRemote:
       return "Runs Pi over SSH in the configured corpus workspace. Pi must already be installed and connected to a model provider on that host."
     case .openCodeLocal:
-      return "Starts the locally installed OpenCode CLI with an OpenOrg-specific agent configuration."
+      return "Starts the locally installed OpenCode CLI with a Celorga-specific agent configuration."
     case .openCodeRemote:
       return "Runs OpenCode over SSH in the configured corpus workspace. OpenCode must already be installed and connected to a model provider on that host."
     case .codexRemote:
-      return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost. Enter the absolute path of the writable Org2 corpus checkout on that machine; Codex edits it directly."
+      return "Connects to a Codex App Server over WebSocket. Use TLS and a bearer token outside localhost. Enter the absolute path of the writable Celorga corpus checkout on that machine; Codex edits it directly."
     case .codexManagedRemote:
-      return "Attaches through SSH to Codex's managed App Server daemon. Enter the writable Org2 corpus checkout on that Mac; ~ is expanded there, and Codex edits the checkout directly without waiting for OpenOrg. Accepted turns survive laptop sleep and reconnect after wake."
+      return "Attaches through SSH to Codex's managed App Server daemon. Enter the writable Celorga corpus checkout on that Mac; ~ is expanded there, and Codex edits the checkout directly without waiting for Celorga. Accepted turns survive laptop sleep and reconnect after wake."
     case .openClaw:
       return isBuiltInOpenClaw
         ? "This default destination uses the existing OpenClaw Gateway configuration."

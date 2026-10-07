@@ -59,6 +59,7 @@ const planResult = spawnSync(process.execPath, [script, "--plan", "--architectur
 assert.equal(planResult.status, 0, planResult.stderr);
 const plan = JSON.parse(planResult.stdout);
 assert.equal(plan.appName, "OpenOrg");
+assert.equal(plan.displayName, "Celorga");
 assert.equal(plan.architecture, "arm64");
 assert.equal(plan.bundleIdentifier, "org.org2.workspace");
 assert.equal(plan.dailyAppUntouched, "/Users/avi/Applications/Org2Workspace.app");

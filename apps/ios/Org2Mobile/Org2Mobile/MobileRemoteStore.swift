@@ -17,7 +17,7 @@ final class MobileRemoteStore: ObservableObject {
   @Published private(set) var isPaired = false
   @Published private(set) var isConnected = false
   @Published private(set) var connectionError: String?
-  @Published private(set) var serverName = "OpenOrg on Mac"
+  @Published private(set) var serverName = "Celorga on Mac"
   @Published private(set) var status: MobileRemoteServerStatus?
   @Published private(set) var threads: [MobileRemoteThreadSummary] = []
   @Published private(set) var projects: [MobileRemoteProjectSummary] = []
@@ -85,9 +85,9 @@ final class MobileRemoteStore: ObservableObject {
     threadNotificationsEnabled = defaults.object(forKey: Self.threadNotificationsEnabledKey) as? Bool ?? true
     endpointDraft = defaults.string(forKey: Self.endpointKey) ?? ""
     let storedServerName = defaults.string(forKey: Self.serverNameKey)
-    serverName = storedServerName == "Org2 on Mac"
-      ? "OpenOrg on Mac"
-      : storedServerName ?? "OpenOrg on Mac"
+    serverName = storedServerName == "Org2 on Mac" || storedServerName == "OpenOrg on Mac"
+      ? "Celorga on Mac"
+      : storedServerName ?? "Celorga on Mac"
     accessToken = Self.loadToken()
     savedHosts = defaults.data(forKey: Self.savedHostsKey).flatMap {
       try? JSONDecoder().decode([MobileRemoteSavedHost].self, from: $0)
@@ -150,7 +150,7 @@ final class MobileRemoteStore: ObservableObject {
           let endpoint = components.queryItems?.first(where: { $0.name == "endpoint" })?.value,
           let code = components.queryItems?.first(where: { $0.name == "code" })?.value
     else {
-      errorMessage = "That QR code is not an OpenOrg pairing code."
+      errorMessage = "That QR code is not a Celorga pairing code."
       return false
     }
     endpointDraft = endpoint
@@ -620,7 +620,7 @@ final class MobileRemoteStore: ObservableObject {
     }
     if enabled, status?.pushNotificationsSupported == false {
       realTimeNotificationsActive = false
-      pushNotificationStatusText = "Update OpenOrg on the Mac to enable real-time notifications"
+      pushNotificationStatusText = "Update Celorga on the Mac to enable real-time notifications"
       return
     }
     let fingerprint = "\(enabled):\(environment ?? "none"):\(token ?? "none")"
@@ -649,7 +649,7 @@ final class MobileRemoteStore: ObservableObject {
       } else if response.providerConfigured {
         pushNotificationStatusText = "Real-time notifications are active"
       } else {
-        pushNotificationStatusText = "Finish push setup in OpenOrg on the Mac"
+        pushNotificationStatusText = "Finish push setup in Celorga on the Mac"
       }
     } catch {
       guard isCurrentConnection(generation) else { return }
@@ -657,7 +657,7 @@ final class MobileRemoteStore: ObservableObject {
       if status?.pushNotificationsSupported == true {
         pushNotificationStatusText = "Could not sync push notifications: \(error.localizedDescription)"
       } else {
-        pushNotificationStatusText = "Update OpenOrg on the Mac to enable real-time notifications"
+        pushNotificationStatusText = "Update Celorga on the Mac to enable real-time notifications"
       }
     }
   }

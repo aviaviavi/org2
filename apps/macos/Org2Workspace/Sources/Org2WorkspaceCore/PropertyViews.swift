@@ -282,7 +282,7 @@ struct SavedViewsView: View {
             .foregroundStyle(Color.accentColor)
           Text("See your notes as a useful view")
             .font(.title.weight(.semibold))
-          Text("Describe what you want to see. OpenOrg will turn the properties already in your notes into a live table or board. Your Org files stay the source of truth.")
+          Text("Describe what you want to see. Celorga will turn the properties already in your notes into a live table or board. Your Org files stay the source of truth.")
             .font(.body)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

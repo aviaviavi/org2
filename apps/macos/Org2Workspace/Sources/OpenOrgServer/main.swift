@@ -63,7 +63,7 @@ struct OpenOrgServer {
       defer { Darwin.close(lock) }
       let activity = ProcessInfo.processInfo.beginActivity(
         options: [.idleSystemSleepDisabled, .userInitiated],
-        reason: "OpenOrg is hosting chat and scheduled automations"
+        reason: "Celorga is hosting chat and scheduled automations"
       )
       defer { ProcessInfo.processInfo.endActivity(activity) }
       NSApplication.shared.setActivationPolicy(.prohibited)
@@ -212,7 +212,7 @@ struct OpenOrgServer {
       remote.setEnabled(false)
       _ = await store.prepareForTermination()
     } catch {
-      FileHandle.standardError.write(Data("OpenOrg server: \(error.localizedDescription)\n".utf8))
+      FileHandle.standardError.write(Data("Celorga server: \(error.localizedDescription)\n".utf8))
       Foundation.exit(1)
     }
   }

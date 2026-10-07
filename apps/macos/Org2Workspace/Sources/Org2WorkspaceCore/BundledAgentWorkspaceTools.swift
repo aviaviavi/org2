@@ -112,7 +112,7 @@ final class BundledAgentWorkspaceTools {
     guard let app = NSApp, let window = app.keyWindow ?? app.mainWindow else { return false }
     let alert = NSAlert()
     alert.messageText = "Apply workspace edits?"
-    alert.informativeText = "Review the original and proposed text below. OpenOrg will check that the files still match before applying."
+    alert.informativeText = "Review the original and proposed text below. Celorga will check that the files still match before applying."
     alert.addButton(withTitle: "Apply")
     alert.addButton(withTitle: "Cancel")
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))

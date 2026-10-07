@@ -4,7 +4,7 @@ import Foundation
 /// Slack, iMessage, and Discord can render a title and summary when a share
 /// link is pasted. Tags describe only what the shared page already shows.
 enum SharePreviewMetadata {
-  static let siteName = "OpenOrg"
+  static let siteName = WorkspaceProductIdentity.displayName
   static let descriptionLimit = 200
 
   /// `<meta>` tags for a page with `title` and an optional plain-text summary.

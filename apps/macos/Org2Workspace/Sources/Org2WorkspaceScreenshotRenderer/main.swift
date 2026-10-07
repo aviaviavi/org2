@@ -671,7 +671,7 @@ private enum ScreenshotRenderError: LocalizedError {
     case .missingOutputPath:
       return "Usage: Org2WorkspaceScreenshotRenderer --out PATH"
     case .renderFailed:
-      return "Could not render OpenOrg screenshot"
+      return "Could not render Celorga screenshot"
     case .tabVerificationFailed(let reason):
       return "Tab interaction verification failed: \(reason)"
     case .codeCopyVerificationFailed(let reason):

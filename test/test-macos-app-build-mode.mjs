@@ -110,6 +110,7 @@ const defaultDaily = JSON.parse(
 assert.equal(defaultDaily.bundleIdentifier, "org.org2.workspace");
 assert.equal(defaultDaily.configuration, "release");
 assert.equal(defaultDaily.appName, "OpenOrg");
+assert.equal(defaultDaily.displayName, "Celorga");
 assert.match(defaultDaily.appPath, /OpenOrg\.app$/);
 assert.match(defaultDaily.iconPath, /OpenOrgAppIcon\.png$/);
 assert.equal(defaultDaily.installStrategy, "verified staged replacement");
@@ -299,6 +300,7 @@ const codexDebug = JSON.parse(
 assert.equal(codexDebug.bundleIdentifier, "org.org2.workspace.codex");
 assert.equal(codexDebug.configuration, "debug");
 assert.equal(codexDebug.appName, "OpenOrg Preview");
+assert.equal(codexDebug.displayName, "Celorga Preview");
 assert.match(codexDebug.appPath, /OpenOrg Preview\.app$/);
 assert.equal(codexDebug.updates.enabled, false);
 

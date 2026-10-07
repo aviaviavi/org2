@@ -26,7 +26,7 @@ public struct AutomationSchedulerOwnershipPresentation: Equatable, Sendable {
   public var detail: String {
     let scope = corpusName.map { " for \($0)" } ?? " for this corpus"
     guard let ownerHostRef else {
-      return "OpenOrg is checking which host runs scheduled automations\(scope)."
+      return "Celorga is checking which host runs scheduled automations\(scope)."
     }
     if isCurrentHost {
       let subject = ownerHostRef == "desktop" ? "This Mac" : ownerHostRef

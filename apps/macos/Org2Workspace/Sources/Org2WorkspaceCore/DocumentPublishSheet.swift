@@ -148,10 +148,10 @@ struct DocumentPublishSheet: View {
         Text(localFormatDescription)
           .font(.callout)
           .foregroundStyle(.secondary)
-        Text("OpenOrg serves the sealed output from this Mac. Anyone on a network that can reach this Mac and receives the unguessable link can open it.")
+        Text("Celorga serves the sealed output from this Mac. Anyone on a network that can reach this Mac and receives the unguessable link can open it.")
           .font(.callout)
           .foregroundStyle(.secondary)
-        Label("OpenOrg must be running for links to be reachable. Active links resume automatically after relaunch. The first version uses unencrypted HTTP, so use it only on a trusted local or private network.", systemImage: "lock.open.trianglebadge.exclamationmark")
+        Label("Celorga must be running for links to be reachable. Active links resume automatically after relaunch. The first version uses unencrypted HTTP, so use it only on a trusted local or private network.", systemImage: "lock.open.trianglebadge.exclamationmark")
           .font(.caption)
           .foregroundStyle(.orange)
         SettingsLink {
@@ -245,7 +245,7 @@ struct DocumentPublishSheet: View {
               disconnectGoogleDrive()
             }
           }
-          Text("OpenOrg stores the refresh credential in macOS Keychain and requests only Google Drive’s per-file drive.file scope.")
+          Text("Celorga stores the refresh credential in macOS Keychain and requests only Google Drive’s per-file drive.file scope.")
             .font(.caption)
             .foregroundStyle(.secondary)
           Text("OAuth client: \(abbreviatedClientID(googleCredential.clientID))")
@@ -257,7 +257,7 @@ struct DocumentPublishSheet: View {
           }
           .disabled(isWorking)
 
-          Text("OpenOrg uses its registered Google OAuth client. Authorization opens in your default browser; your Google password and tokens are never entered into OpenOrg.")
+          Text("Celorga uses its registered Google OAuth client. Authorization opens in your default browser; your Google password and tokens are never entered into Celorga.")
             .font(.caption)
             .foregroundStyle(.secondary)
 
@@ -397,7 +397,7 @@ struct DocumentPublishSheet: View {
       VStack(alignment: .leading, spacing: 18) {
         resultHeader(
           title: "Published on this Mac",
-          detail: "Available while OpenOrg is running",
+          detail: "Available while Celorga is running",
           systemImage: "checkmark.circle.fill"
         )
         publicationLink(publication.url)
@@ -433,7 +433,7 @@ struct DocumentPublishSheet: View {
           .font(.caption.monospaced())
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
-        Text("OpenOrg saved this link and Drive version in the .org2 source. Publishing the same scope and format again updates this file instead of creating a duplicate.")
+        Text("Celorga saved this link and Drive version in the .org2 source. Publishing the same scope and format again updates this file instead of creating a duplicate.")
           .font(.callout)
           .foregroundStyle(.secondary)
         HStack {

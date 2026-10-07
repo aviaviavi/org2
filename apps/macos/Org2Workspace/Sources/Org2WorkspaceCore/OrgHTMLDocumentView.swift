@@ -434,7 +434,7 @@ final class OrgHTMLLocalResourceSchemeHandler: NSObject, WKURLSchemeHandler, @un
   }
 
   private func resourceError(_ code: CocoaError.Code) -> Error {
-    CocoaError(code, userInfo: [NSLocalizedDescriptionKey: "The local Org2 image could not be loaded."])
+    CocoaError(code, userInfo: [NSLocalizedDescriptionKey: "The local Org image could not be loaded."])
   }
 }
 
@@ -618,7 +618,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     webView.navigationDelegate = context.coordinator
     webView.underPageBackgroundColor = .clear
     webView.allowsMagnification = true
-    webView.setAccessibilityLabel("Rendered Org2 document")
+    webView.setAccessibilityLabel("Rendered Org document")
     return webView
   }
 

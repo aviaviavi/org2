@@ -1619,7 +1619,7 @@ public actor OpenClawGatewayClient {
       "maxProtocol": 4,
       "client": [
         "id": "openclaw-macos",
-        "displayName": "OpenOrg",
+        "displayName": WorkspaceProductIdentity.displayName,
         "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
         "platform": "darwin",
         "deviceFamily": "Mac",
@@ -1934,7 +1934,7 @@ public actor OpenClawGatewayClient {
     let requestID = string(details?["requestId"])
     var message = string(error?["message"]) ?? "The OpenClaw Gateway rejected the request."
     if code == "NOT_PAIRED", let requestID {
-      message += " Approve OpenOrg device request \(requestID) on the Gateway, then send again."
+      message += " Approve Celorga device request \(requestID) on the Gateway, then send again."
     }
     return .gateway(
       code: code,
@@ -1949,9 +1949,9 @@ public actor OpenClawGatewayClient {
       let requestID = firstMatch(in: normalized, pattern: #"\(requestId:\s*([^\s\)]+)\)"#)
       var message = normalized
       if let requestID {
-        message += " Approve OpenOrg request \(requestID) on the Gateway"
+        message += " Approve Celorga request \(requestID) on the Gateway"
       } else {
-        message += " Approve the pending OpenOrg device request on the Gateway"
+        message += " Approve the pending Celorga device request on the Gateway"
       }
       if let deviceID, !deviceID.isEmpty {
         message += " (device \(deviceID.prefix(12)))"
@@ -1966,7 +1966,7 @@ public actor OpenClawGatewayClient {
     .gateway(
       code: "NOT_PAIRED",
       message: "OpenClaw closed the signed device handshake before macOS delivered its final reason. "
-        + "Approve the pending OpenOrg request for device \(deviceID.prefix(12)) on the Gateway, "
+        + "Approve the pending Celorga request for device \(deviceID.prefix(12)) on the Gateway, "
         + "then click Save & Request Pairing again."
     )
   }

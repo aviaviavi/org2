@@ -1328,7 +1328,7 @@ while True:
       params: .object([
         "clientInfo": .object([
           "name": .string("org2_workspace"),
-          "title": .string("OpenOrg"),
+          "title": .string(WorkspaceProductIdentity.displayName),
           "version": .string(Self.clientVersion)
         ]),
         "capabilities": .object([

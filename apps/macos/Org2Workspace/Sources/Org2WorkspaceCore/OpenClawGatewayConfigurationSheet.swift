@@ -69,7 +69,7 @@ public struct OpenClawGatewayConfigurationSheet: View {
           }
 
           GridRow {
-            Text("Remote Org2 Root")
+            Text("Remote Celorga Root")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
             TextField("/path/openclaw/can/read", text: $remoteCorpusPath)
@@ -82,8 +82,8 @@ public struct OpenClawGatewayConfigurationSheet: View {
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
-              Toggle("Read and apply Org2 edits on this Mac", isOn: $localEditsEnabled)
-              Text("Uses a paired, typed Org2 node with read → preview → apply. It does not expose a shell.")
+              Toggle("Read and apply Celorga edits on this Mac", isOn: $localEditsEnabled)
+              Text("Uses a paired, typed Celorga node with read → preview → apply. It does not expose a shell.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
               if localEditsEnabled || store.openClawLocalEditsEnabled {
@@ -140,7 +140,7 @@ public struct OpenClawGatewayConfigurationSheet: View {
             }
           }
           .disabled(isRequestingPairing)
-          .help("Create a stable OpenOrg device identity and request Gateway operator access")
+          .help("Create a stable Celorga device identity and request Gateway operator access")
           Spacer()
           Button("Cancel") {
             dismiss()

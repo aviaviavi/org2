@@ -228,7 +228,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
     let server = MobileRemoteHTTPServer(
       handler: { [weak self] request in
         guard let self else {
-          return .error("The OpenOrg workspace is unavailable.", statusCode: 503)
+          return .error("The Celorga workspace is unavailable.", statusCode: 503)
         }
         return await self.handle(request)
       },
@@ -306,7 +306,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
       return .error("Pair this device with this host again.", statusCode: 401)
     }
     guard let store else {
-      return .error("The OpenOrg workspace is unavailable.", statusCode: 503)
+      return .error("The Celorga workspace is unavailable.", statusCode: 503)
     }
 
     if request.method == "GET", path == "/v1/status" {
@@ -363,7 +363,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
           MobileRemotePushEnvelope(
             messageID: UUID(),
             threadID: threadID,
-            title: "OpenOrg reply notifications",
+            title: "Celorga reply notifications",
             body: "Real-time notifications are working on this iPhone."
           ),
           to: registration.registration
@@ -929,7 +929,7 @@ public final class MobileRemoteCoordinator: ObservableObject {
   }
 
   public var serverName: String {
-    configuredServerName ?? Host.current().localizedName ?? "OpenOrg on Mac"
+    configuredServerName ?? Host.current().localizedName ?? "Celorga on Mac"
   }
 
   private func threadConfiguration(

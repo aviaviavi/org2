@@ -183,7 +183,7 @@ private struct StartupShellView: View {
     ZStack {
       Color(.systemGroupedBackground)
         .ignoresSafeArea()
-      Text("OpenOrg")
+      Text("Celorga")
         .font(.largeTitle.weight(.semibold))
         .foregroundStyle(.primary)
     }

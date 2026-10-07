@@ -11,7 +11,7 @@ enum MobileRemoteClientError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .invalidEndpoint:
-      "Enter an OpenOrg host URL such as http://100.64.0.1:48922 or http://press.local:48922."
+      "Enter a Celorga host URL such as http://100.64.0.1:48922 or http://press.local:48922."
     case .connection(let detail):
       "Could not reach the host: \(detail)"
     case .malformedResponse:
@@ -19,7 +19,7 @@ enum MobileRemoteClientError: LocalizedError {
     case .server(let message):
       message
     case .incompatibleProtocol:
-      "This host uses a different Mobile Remote protocol version. Update OpenOrg on both devices."
+      "This host uses a different Mobile Remote protocol version. Update Celorga on both devices."
     }
   }
 }

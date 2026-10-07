@@ -227,7 +227,7 @@ public struct OpenOrgUsageLogSettingsSection: View {
     } header: {
       Label("Usage Log", systemImage: "list.bullet.rectangle")
     } footer: {
-      Text("Off by default. When on, OpenOrg appends interaction events to usage-events.jsonl on this Mac: how documents are opened (Quick Open, links, sidebar, history), how long they take to appear, Start Work and chat turn timing, and Activity view use. It records counts, durations, and salted file hashes, never note text, chat text, titles, search queries, or file names. Nothing is uploaded; share the file only if you choose to.")
+      Text("Off by default. When on, Celorga appends interaction events to usage-events.jsonl on this Mac: how documents are opened (Quick Open, links, sidebar, history), how long they take to appear, Start Work and chat turn timing, and Activity view use. It records counts, durations, and salted file hashes, never note text, chat text, titles, search queries, or file names. Nothing is uploaded; share the file only if you choose to.")
         .font(.footnote)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

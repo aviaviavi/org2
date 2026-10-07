@@ -17,7 +17,7 @@ struct AppearanceSettingsView: View {
         }
         .pickerStyle(.segmented)
 
-        Text("System follows macOS and switches between your light and dark themes automatically. Light and Dark keep OpenOrg on that theme regardless of the system setting.")
+        Text("System follows macOS and switches between your light and dark themes automatically. Light and Dark keep Celorga on that theme regardless of the system setting.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -28,7 +28,7 @@ struct AppearanceSettingsView: View {
       themeSection(for: .dark, selection: $store.darkThemeID)
 
       Section {
-        Text("Imported themes adapt the palettes of popular Emacs themes to OpenOrg's chrome, rendered documents, and Org source editor.")
+        Text("Imported themes adapt the palettes of popular Emacs themes to Celorga's chrome, rendered documents, and Org source editor.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }

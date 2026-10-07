@@ -696,7 +696,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(try String(contentsOf: skillURL, encoding: .utf8).contains("org2 agent capabilities"))
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
-    XCTAssertTrue(welcome.contains("#+TITLE: Welcome to OpenOrg"))
+    XCTAssertTrue(welcome.contains("#+TITLE: Welcome to Celorga"))
     XCTAssertTrue(welcome.contains("* Your workspace"))
     XCTAssertTrue(welcome.contains("Start on Home"))
     XCTAssertTrue(welcome.contains("move or rename this folder"))
@@ -2154,7 +2154,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(
       error.localizedDescription,
       "pairing required: device is not approved yet (requestId: req-123) "
-        + "Approve OpenOrg request req-123 on the Gateway (device abcdef012345), "
+        + "Approve Celorga request req-123 on the Gateway (device abcdef012345), "
         + "then click Save & Request Pairing again."
     )
     XCTAssertTrue(error.permitsHTTPFallback)
@@ -2168,7 +2168,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(
       error.localizedDescription,
       "OpenClaw closed the signed device handshake before macOS delivered its final reason. "
-        + "Approve the pending OpenOrg request for device abcdef012345 on the Gateway, "
+        + "Approve the pending Celorga request for device abcdef012345 on the Gateway, "
         + "then click Save & Request Pairing again."
     )
     XCTAssertTrue(error.permitsHTTPFallback)

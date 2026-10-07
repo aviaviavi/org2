@@ -67,14 +67,14 @@ struct AIChatThreadSharePopover: View {
           shareRow(
             title: "This Mac",
             systemImage: "laptopcomputer",
-            detail: "Works while this Mac is awake and OpenOrg is open.",
+            detail: "Works while this Mac is awake and Celorga is open.",
             url: localPublication.url
           ) {
             store.stopSharingChatThreadLocally(threadID)
           }
         }
       } else {
-        Text("Create a read-only link that anyone who can reach it can open in a browser. It uses your OpenOrg theme and shows new messages as they arrive.")
+        Text("Create a read-only link that anyone who can reach it can open in a browser. It uses your Celorga theme and shows new messages as they arrive.")
           .font(.callout)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -93,7 +93,7 @@ struct AIChatThreadSharePopover: View {
               openSettings()
             }
             .buttonStyle(.link)
-            .help("Pair this Mac with a headless OpenOrg server to host links there")
+            .help("Pair this Mac with a headless Celorga server to host links there")
           }
           Spacer()
           Button {
@@ -150,7 +150,7 @@ struct AIChatThreadSharePopover: View {
       )) {
         Label("This Mac", systemImage: "laptopcomputer")
           .tag(ChatThreadShareLocation.thisMac)
-        Label(server.isPaired ? server.serverName : "OpenOrg Server", systemImage: "server.rack")
+        Label(server.isPaired ? server.serverName : "Celorga Server", systemImage: "server.rack")
           .tag(ChatThreadShareLocation.server)
           .selectionDisabled(!server.isPaired)
       }
@@ -166,11 +166,11 @@ struct AIChatThreadSharePopover: View {
 
   private func locationDetail(server: OpenOrgServerConnection) -> String {
     guard server.isPaired else {
-      return "Hosted by this Mac while it is awake. Pair an OpenOrg server in Settings → Sharing to host links that stay live while this Mac sleeps."
+      return "Hosted by this Mac while it is awake. Pair a Celorga server in Settings → Sharing to host links that stay live while this Mac sleeps."
     }
     switch selectedLocation {
     case .thisMac:
-      return "Hosted by this Mac while it is awake and OpenOrg is open."
+      return "Hosted by this Mac while it is awake and Celorga is open."
     case .server:
       if case .offline(let reason) = server.reachability {
         return "\(server.serverName) is unreachable right now: \(reason)"

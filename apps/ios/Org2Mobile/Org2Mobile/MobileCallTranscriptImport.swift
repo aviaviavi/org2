@@ -248,7 +248,7 @@ struct MobileCallTranscriptImportView: View {
         } header: {
           Text("Audio fallback")
         } footer: {
-          Text("If Apple did not create a transcript, save or share the call audio to Files and choose it here. OpenOrg uses iOS Speech recognition and leaves the original recording where it is.")
+          Text("If Apple did not create a transcript, save or share the call audio to Files and choose it here. Celorga uses iOS Speech recognition and leaves the original recording where it is.")
         }
 
         if let errorMessage {

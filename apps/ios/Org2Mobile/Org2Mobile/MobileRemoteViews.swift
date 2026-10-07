@@ -719,7 +719,7 @@ struct MobileRemoteRootView: View {
               .foregroundStyle(.secondary)
             Text("No Remote Chats")
               .font(.headline)
-            Text("Create a chat here or in OpenOrg on your host.")
+            Text("Create a chat here or in Celorga on your host.")
               .font(.subheadline)
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.center)
@@ -1042,7 +1042,7 @@ private struct MobileExternalThreadDetailView: View {
       } label: {
         HStack {
           if isContinuing { ProgressView().tint(.white) }
-          Label("Fork into OpenOrg", systemImage: "arrow.triangle.branch")
+          Label("Fork into Celorga", systemImage: "arrow.triangle.branch")
         }
         .frame(maxWidth: .infinity)
       }
@@ -1113,7 +1113,7 @@ private struct MobileRemotePairingView: View {
             .foregroundStyle(.blue)
           Text("Your workspace, always available")
             .font(.title2.weight(.semibold))
-          Text("Connect to your Mac or an always-on OpenOrg server. The selected host runs your chats and provides their workspace context.")
+          Text("Connect to your Mac or an always-on Celorga server. The selected host runs your chats and provides their workspace context.")
             .foregroundStyle(.secondary)
         }
 

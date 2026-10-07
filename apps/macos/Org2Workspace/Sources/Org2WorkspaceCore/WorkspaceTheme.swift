@@ -311,8 +311,8 @@ public enum WorkspaceThemeCatalog {
   /// the editor has always used so the default look is unchanged.
   static let openOrgPaper = WorkspaceTheme(
     id: defaultLightID,
-    name: "OpenOrg Paper",
-    origin: "OpenOrg",
+    name: "Celorga Paper",
+    origin: "Celorga",
     appearance: .light,
     palette: WorkspaceThemePalette(
       canvas: NSColor(srgbRed: 0.949, green: 0.941, blue: 0.914, alpha: 1),
@@ -345,8 +345,8 @@ public enum WorkspaceThemeCatalog {
   /// The original OpenOrg dark palette.
   static let openOrgNight = WorkspaceTheme(
     id: defaultDarkID,
-    name: "OpenOrg Night",
-    origin: "OpenOrg",
+    name: "Celorga Night",
+    origin: "Celorga",
     appearance: .dark,
     palette: WorkspaceThemePalette(
       canvas: NSColor(srgbRed: 0.082, green: 0.102, blue: 0.094, alpha: 1),

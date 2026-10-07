@@ -113,7 +113,7 @@ final class CorpusStore: ObservableObject {
         rootURL = nil
         clearCorpusViews()
       }
-      errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh OpenOrg's saved access."
+      errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh Celorga's saved access."
     }
   }
 
@@ -1012,7 +1012,7 @@ final class CorpusStore: ObservableObject {
 
     if !FileManager.default.fileExists(atPath: inboxURL.path) {
       let header = """
-      #+TITLE: OpenOrg Mobile Inbox
+      #+TITLE: Celorga Mobile Inbox
 
       """
       try header.write(to: inboxURL, atomically: true, encoding: .utf8)
@@ -1314,7 +1314,7 @@ final class CorpusStore: ObservableObject {
       for plan in plans {
         let content = UNMutableNotificationContent()
         content.categoryIdentifier = "org2.agenda.due-today"
-        content.title = "OpenOrg due today"
+        content.title = "Celorga due today"
         content.body = Self.dueTodayNotificationBody(for: plan.entries)
         content.sound = .default
         content.badge = NSNumber(value: plan.entries.count)
@@ -1831,13 +1831,13 @@ private enum CorpusMutationError: LocalizedError {
     case .approvalChanged:
       "This approval changed on disk. Refresh and review the current entry before approving."
     case .fileChanged:
-      "The file changed while OpenOrg was applying the approval. Refresh and try again."
+      "The file changed while Celorga was applying the approval. Refresh and try again."
     case .pairedSendAlreadyClosed:
-      "The paired send task is already closed. OpenOrg will not reopen it from an approval."
+      "The paired send task is already closed. Celorga will not reopen it from an approval."
     case .pairedSendAlreadySent(let evidence):
-      "The paired send task already has sent evidence (\(evidence)). OpenOrg will not reopen it."
+      "The paired send task already has sent evidence (\(evidence)). Celorga will not reopen it."
     case .invalidScopedPatch:
-      "OpenOrg could not build a safe scoped patch for this approval."
+      "Celorga could not build a safe scoped patch for this approval."
     }
   }
 }

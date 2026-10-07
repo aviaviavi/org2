@@ -830,11 +830,11 @@ public enum Org2CLIError: LocalizedError, Equatable {
   public var errorDescription: String? {
     switch self {
     case .missingCLI(let path):
-      "Org2 CLI not found at \(path). Run npm run build in the org2 repo."
+      "Celorga CLI not found at \(path). Run npm run build in the org2 repo."
     case .commandFailed(_, let message):
       message
     case .commandTimedOut(let seconds):
-      "Org2 rendering timed out after \(seconds) second\(seconds == 1 ? "" : "s")."
+      "Celorga rendering timed out after \(seconds) second\(seconds == 1 ? "" : "s")."
     }
   }
 }

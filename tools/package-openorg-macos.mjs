@@ -214,6 +214,7 @@ function googleOAuthClientSource() {
 function printPlan() {
   console.log(JSON.stringify({
     appName: "OpenOrg",
+    displayName: "Celorga",
     architecture: options.architecture,
     bundleIdentifier: "org.org2.workspace",
     dailyAppUntouched: "/Users/avi/Applications/Org2Workspace.app",
@@ -292,6 +293,7 @@ function main() {
         ...targetEnvironment,
         ORG2_WORKSPACE_RUNTIME_DEPENDENCIES: dependencies,
         ORG2_WORKSPACE_APP_NAME: "OpenOrg",
+        ORG2_WORKSPACE_DISPLAY_NAME: "Celorga",
         ORG2_WORKSPACE_APP_PATH: builtApp,
         ORG2_WORKSPACE_BUNDLE_ID: "org.org2.workspace",
         ORG2_WORKSPACE_CODE_SIGN_IDENTITY: signingIdentity,
@@ -345,7 +347,7 @@ function main() {
       architecture: options.architecture,
       artifact: options.output,
       bundleIdentifier: "org.org2.workspace",
-      displayName: "OpenOrg",
+      displayName: "Celorga",
       notarized,
       sha256,
       version: packageVersion,

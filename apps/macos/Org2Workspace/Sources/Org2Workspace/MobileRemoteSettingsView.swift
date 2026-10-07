@@ -143,7 +143,7 @@ private struct GeneralSettingsView: View {
         } header: {
           Label("Daily Notes", systemImage: "calendar")
         } footer: {
-          SettingsFooterText("When enabled, Daily links open existing files only. If a note is missing, OpenOrg shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
+          SettingsFooterText("When enabled, Daily links open existing files only. If a note is missing, Celorga shows a Create Daily Note button instead. This preference applies to this workspace on this Mac.")
         }
       }
       if store.corpusRoot != nil { DailyNoteFormatSettingsSection() }
@@ -174,7 +174,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Experimental", systemImage: "flask")
       } footer: {
-        SettingsFooterText("Try features still in development, including Paste as Org2 in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
+        SettingsFooterText("Try features still in development, including Paste as Org in the Source editor and the bundled agent in AI Chat. Applies to all workspaces on this Mac. Turning this off stops an active bundled agent turn.")
       }
       OpenOrgUsageLogSettingsSection(log: store.usageLog)
       Section {
@@ -182,7 +182,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Telemetry", systemImage: "chart.bar")
       } footer: {
-        SettingsFooterText("Help us understand OpenOrg usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
+        SettingsFooterText("Help us understand Celorga usage. Each app launch sends the app version, macOS version, and CPU architecture to Scarf. Scarf receives your network address to process the request. No notes, chats, file paths, or installation identifiers are sent. Enabled by default; turning this off applies to all workspaces on this Mac.")
       }
     }
     .formStyle(.grouped)
@@ -361,7 +361,7 @@ private struct DocumentSettingsView: View {
       Section {
         Toggle("Format Org files on save", isOn: $store.formatOrgFilesOnSave)
 
-        Text("Runs the shared Org2 formatter before saving a full .org or .org2 page. Turn this off to preserve layout as typed; .org typing conveniences such as code fences are still saved as standard Org syntax.")
+        Text("Runs the shared Celorga formatter before saving a full .org or .org2 page. Turn this off to preserve layout as typed; .org typing conveniences such as code fences are still saved as standard Org syntax.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
@@ -400,7 +400,7 @@ private struct SharingSettingsView: View {
           ContentUnavailableView(
             "No Active Local Links",
             systemImage: "network.slash",
-            description: Text("Publish a document to Local Link or share an AI chat thread and it will appear here while OpenOrg is hosting it.")
+            description: Text("Publish a document to Local Link or share an AI chat thread and it will appear here while Celorga is hosting it.")
           )
           .frame(maxWidth: .infinity, minHeight: 180)
         } else {
@@ -411,7 +411,7 @@ private struct SharingSettingsView: View {
       } header: {
         Label("Active Local Links", systemImage: "network")
       } footer: {
-        SettingsFooterText("Document links serve sealed exports. Chat thread links show the conversation and update as new messages arrive. Neither exposes source files or corpus access. Links stop working when OpenOrg quits or when you stop hosting them here. While Tailscale is connected, links use this Mac’s Tailscale address.")
+        SettingsFooterText("Document links serve sealed exports. Chat thread links show the conversation and update as new messages arrive. Neither exposes source files or corpus access. Links stop working when Celorga quits or when you stop hosting them here. While Tailscale is connected, links use this Mac’s Tailscale address.")
       }
 
       if !store.localDocumentPublications.isEmpty {
@@ -674,12 +674,12 @@ private struct OpenOrgServerSettingsSection: View {
         set: { server.setDefaultShareLocation($0) }
       )) {
         Text("This Mac").tag(ChatThreadShareLocation.thisMac)
-        Text(server.isPaired ? server.serverName : "OpenOrg Server")
+        Text(server.isPaired ? server.serverName : "Celorga Server")
           .tag(ChatThreadShareLocation.server)
           .selectionDisabled(!server.isPaired)
       }
     } header: {
-      Label("OpenOrg Server", systemImage: "server.rack")
+      Label("Celorga Server", systemImage: "server.rack")
     } footer: {
       SettingsFooterText(server.isPaired
         ? "The server hosts thread links from its synced copy of the corpus on its Tailscale address. You can still pick a location each time you share."
@@ -699,7 +699,7 @@ private struct OpenOrgServerSettingsSection: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("OpenOrg stops the thread links this server hosts, revokes this Mac’s access on the server when it is reachable, and removes the pairing.")
+      Text("Celorga stops the thread links this server hosts, revokes this Mac’s access on the server when it is reachable, and removes the pairing.")
     }
   }
 
@@ -737,7 +737,7 @@ private struct MobileRemoteSettingsView: View {
   var body: some View {
     Form {
       Section {
-        Toggle("Allow OpenOrg for iOS to connect", isOn: Binding(
+        Toggle("Allow Celorga for iOS to connect", isOn: Binding(
           get: { remote.isEnabled },
           set: { remote.setEnabled($0) }
         ))
@@ -832,7 +832,7 @@ private struct MobileRemoteSettingsView: View {
         }
 
         LabeledContent("Status", value: remote.pushStatusText)
-        Text("The APNs authentication key is stored only in this Mac’s Keychain. OpenOrg sends a real-time push directly to Apple when an AI reply completes; the key and device token are never written to the corpus.")
+        Text("The APNs authentication key is stored only in this Mac’s Keychain. Celorga sends a real-time push directly to Apple when an AI reply completes; the key and device token are never written to the corpus.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {

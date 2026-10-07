@@ -168,7 +168,7 @@ final class AIChatThreadPublishingTests: XCTestCase {
 
     XCTAssertTrue(html.contains("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt; &amp; more"))
     XCTAssertTrue(html.contains("Avi &lt;admin&gt;"))
-    XCTAssertTrue(html.contains("<title>Plan &lt;b&gt; · OpenOrg</title>"))
+    XCTAssertTrue(html.contains("<title>Plan &lt;b&gt; · Celorga</title>"))
     XCTAssertTrue(html.contains("notes.pdf"))
     XCTAssertTrue(html.contains("id=\"openorg-live-root\""))
     let revision = AIChatThreadPublicationPage.revision(snapshot: snapshot, bodies: [:])
@@ -207,7 +207,7 @@ final class AIChatThreadPublishingTests: XCTestCase {
       rendererStylesheet: nil
     )
     XCTAssertTrue(html.contains(#"<meta property="og:title" content="Share &amp; preview">"#))
-    XCTAssertTrue(html.contains(#"<meta property="og:site_name" content="OpenOrg">"#))
+    XCTAssertTrue(html.contains(#"<meta property="og:site_name" content="Celorga">"#))
     XCTAssertTrue(html.contains(#"<meta name="twitter:card" content="summary">"#))
     XCTAssertTrue(html.contains(
       #"<meta property="og:description" content="How do we &quot;unfurl&quot; &lt;links&gt; in Slack? — AI chat · 2 messages">"#
@@ -221,7 +221,7 @@ final class AIChatThreadPublishingTests: XCTestCase {
       rendererStylesheet: nil
     )
     XCTAssertTrue(empty.contains(#"<meta property="og:title" content="AI Chat">"#))
-    XCTAssertTrue(empty.contains(#"<meta property="og:description" content="Shared AI chat from OpenOrg">"#))
+    XCTAssertTrue(empty.contains(#"<meta property="og:description" content="Shared AI chat from Celorga">"#))
   }
 
   func testThemeFollowsTheSelectedAppearanceMode() {

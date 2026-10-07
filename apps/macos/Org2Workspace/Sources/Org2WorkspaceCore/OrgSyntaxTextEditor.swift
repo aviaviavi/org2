@@ -3566,7 +3566,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
       guard let replacement else {
         WorkspaceSound.beep()
-        reportCommandStatus("No applicable Org2 structure at the cursor")
+        reportCommandStatus("No applicable Org structure at the cursor")
         return true
       }
       apply(replacement, actionName: actionName, to: textView)
@@ -3696,7 +3696,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       stack.frame = NSRect(x: 0, y: 0, width: 420, height: 54)
 
       let alert = NSAlert()
-      alert.messageText = "Insert Org2 Link"
+      alert.messageText = "Insert Org Link"
       alert.informativeText = "Enter a link target and optional visible description."
       alert.accessoryView = stack
       alert.addButton(withTitle: "Insert")
@@ -3718,7 +3718,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       stack.frame = NSRect(x: 0, y: 0, width: 420, height: 54)
 
       let alert = NSAlert()
-      alert.messageText = "Set Org2 Property"
+      alert.messageText = "Set Org Property"
       alert.informativeText = "The property is updated or added to the current heading."
       alert.accessoryView = stack
       alert.addButton(withTitle: "Set")

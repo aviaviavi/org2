@@ -39,7 +39,7 @@ public struct DailyNoteFormatSettingsSection: View {
     } header: {
       Label("Daily Note Format", systemImage: "calendar.badge.clock")
     } footer: {
-      SettingsFooterText("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and OpenOrg works out the pattern. The format is stored in org2.json as roam.dailyFileTemplate and is shared with this corpus.")
+      SettingsFooterText("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and Celorga works out the pattern. The format is stored in org2.json as roam.dailyFileTemplate and is shared with this corpus.")
     }
     .disabled(isBusy)
     .task(id: store.corpusRoot?.path) { await load() }
@@ -148,7 +148,7 @@ public struct DailyNoteFormatSettingsSection: View {
     guard let root = store.corpusRoot else { return }
     let panel = NSOpenPanel()
     panel.title = "Choose a Daily Note"
-    panel.message = "Choose one of your existing daily notes. OpenOrg uses its name and folder to find the others."
+    panel.message = "Choose one of your existing daily notes. Celorga uses its name and folder to find the others."
     panel.prompt = "Use This Note"
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
@@ -174,7 +174,7 @@ public struct DailyNoteFormatSettingsSection: View {
       draft = inference.candidates.first?.template ?? inference.example
       isEditing = true
       if inference.candidates.isEmpty {
-        error = "OpenOrg could not find a date in \(inference.example). Edit the format and add date tokens where the date appears."
+        error = "Celorga could not find a date in \(inference.example). Edit the format and add date tokens where the date appears."
       }
     } catch {
       self.error = error.localizedDescription
@@ -268,7 +268,7 @@ struct DailyNoteFormatSheet: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Daily Note Format")
         .font(.title2.weight(.semibold))
-      Text("Point OpenOrg at one of your existing daily notes so Today, Yesterday, and Tomorrow open your own files.")
+      Text("Point Celorga at one of your existing daily notes so Today, Yesterday, and Tomorrow open your own files.")
         .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

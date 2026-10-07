@@ -159,7 +159,7 @@ public enum AIChatSlashCommands {
       let rows = remote.map { "\($0.invocation) — \($0.summary)" }.joined(separator: "\n")
       remoteSection = "\n\nOpenClaw commands\n\n\(rows)"
     }
-    return "Org2 commands\n\n\(localRows)\(skillSection)\(remoteSection)\n\nUse // at the beginning to send a literal slash message."
+    return "\(WorkspaceProductIdentity.displayName) commands\n\n\(localRows)\(skillSection)\(remoteSection)\n\nUse // at the beginning to send a literal slash message."
   }
 
   public static func merged(

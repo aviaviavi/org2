@@ -103,8 +103,8 @@ struct SoftwareUpdateSettingsView: View {
         .disabled(!softwareUpdates.isAvailable || !softwareUpdates.automaticallyChecksForUpdates)
 
         Text(softwareUpdates.isAvailable
-          ? "When enabled, OpenOrg checks quietly at launch and every two hours. You can install immediately, install a downloaded update when you quit, be reminded later, or skip a version."
-          : "Automatic updates are available in signed OpenOrg releases.")
+          ? "When enabled, Celorga checks quietly at launch and every two hours. You can install immediately, install a downloaded update when you quit, be reminded later, or skip a version."
+          : "Automatic updates are available in signed Celorga releases.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {
