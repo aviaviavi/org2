@@ -115,6 +115,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
         <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
         <li>Synced chat history has deterministic repair without a model call, with a configurable background interval and an off option.</li>
         <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched. The original agent stays the room's default, so later messages without an <code>@mention</code> keep going to it; change the default from the composer at any time.</li>
+        <li>Agents can hand work to each other: when one agent's reply <code>@mentions</code> another agent in the room, that agent takes the next turn. A per-room limit (four in a row by default) keeps agents from looping until you reply, and background jobs can ask a room agent to respond with <code>celorga thread post --request-turn</code>.</li>
         <li>Agents can disagree, compare approaches, or propose explicit handoffs without Celorga hiding an autonomous loop behind the interface.</li>
       </ul>
       <p class="org2-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="agent-quickstart.html">Connect an agent</a></p>
