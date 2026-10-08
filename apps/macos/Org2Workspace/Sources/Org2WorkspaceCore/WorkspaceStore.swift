@@ -26693,7 +26693,7 @@ extension WorkspaceStore {
   }
 
   nonisolated static let aiChatOrphanedSendFailureText =
-    "This response stopped before OpenOrg received it. Retry to send it again."
+    "This response stopped before Celorga received it. Retry to send it again."
 
   /// Marks dispatched `sending` turns interrupted. Returns nil when nothing
   /// changed. Callers ensure no task in this process still drives the thread.
@@ -28421,7 +28421,7 @@ extension WorkspaceStore {
       },
       dynamicToolHandler: { [weak self] call in
         guard let self else {
-          return CodexDynamicToolResult(success: false, text: "OpenOrg was closed.")
+          return CodexDynamicToolResult(success: false, text: "Celorga was closed.")
         }
         return await self.handleCodexDynamicToolCall(call)
       }
@@ -28695,7 +28695,7 @@ extension WorkspaceStore {
       },
       dynamicToolHandler: { [weak self] call in
         guard let self else {
-          return CodexDynamicToolResult(success: false, text: "OpenOrg was closed.")
+          return CodexDynamicToolResult(success: false, text: "Celorga was closed.")
         }
         return await self.handleCodexDynamicToolCall(call)
       }

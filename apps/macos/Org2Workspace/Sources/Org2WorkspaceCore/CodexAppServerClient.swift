@@ -1734,7 +1734,7 @@ while True:
           "id": id,
           "error": .object([
             "code": .integer(-32601),
-            "message": .string("OpenOrg does not support \(method)")
+            "message": .string("Celorga does not support \(method)")
           ])
         ]))
       } catch {
