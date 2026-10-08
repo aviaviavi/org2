@@ -15,7 +15,7 @@ git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/cel
 Add the plugin runtime directory to your Vim config:
 
 #+begin_src vim
-set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-org2
+set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-celorga
 filetype plugin indent on
 syntax enable
 #+end_src
@@ -25,7 +25,7 @@ For Neovim, use the equivalent package path, for example =~/.local/share/nvim/si
 Generate help tags after installing:
 
 #+begin_src vim
-:helptags ~/.vim/pack/plugins/start/celorga/editors/vim-org2/doc
+:helptags ~/.vim/pack/plugins/start/celorga/editors/vim-celorga/doc
 #+end_src
 
 Then read =:help celorga=.

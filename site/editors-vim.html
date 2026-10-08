@@ -71,12 +71,12 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>For Vim 8+ native packages:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/celorga</code></pre>
 <p>Add the plugin runtime directory to your Vim config:</p>
-<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-org2
+<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-celorga
 filetype plugin indent on
 syntax enable</code></pre>
 <p>For Neovim, use the equivalent package path, for example <code>~/.local/share/nvim/site/pack/plugins/start/celorga</code>, and point <code>runtimepath</code> at the same plugin directory inside that clone.</p>
 <p>Generate help tags after installing:</p>
-<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">:helptags ~/.vim/pack/plugins/start/celorga/editors/vim-org2/doc</code></pre>
+<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">:helptags ~/.vim/pack/plugins/start/celorga/editors/vim-celorga/doc</code></pre>
 <p>Then read <code>:help celorga</code>.</p>
 </section>
 <section class="org2-headline level-1">

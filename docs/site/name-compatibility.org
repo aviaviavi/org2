@@ -31,6 +31,7 @@ Celorga was previously released as *OpenOrg* (the Mac app) and *Org2* (the runti
 | MCP server name in client examples | =org2=, =[mcp_servers.openorg]= | =celorga=, =[mcp_servers.celorga]= |
 | VS Code commands and settings | =org2.X= | =celorga.X=. The Marketplace listing keeps its original ID, =AviPress.org2-vscode=. |
 | Vim help | =:help org2= | =:help celorga= |
+| Vim plugin folder in the repository | =editors/vim-org2/= | =editors/vim-celorga/=. Update your =runtimepath= after pulling. |
 | AI job manifest version | ="schemaVersion": "org2-ai-job/v1"= | ="schemaVersion": "celorga-ai-job/v1"= |
 | Plugin package manifest and engine key | =org2-plugin.json=, ="engines": { "org2": ... }= | =celorga-plugin.json=, ="engines": { "celorga": ... }= |
 | Chart style variables and class | =--org2-chart-*=, =.org2-chart= | =--celorga-chart-*=, =.celorga-chart= |
@@ -56,7 +57,7 @@ These identifiers have no Celorga spelling yet. Use them as written.
 | Files Celorga generates for runs, ledger accounts, and workflows | the =.org2= extension |
 | Headless server configuration | =~/.local/state/openorg/server.json= |
 | Syncthing rescan hints | =defaults write org.org2.workspace OpenOrgSyncthingScanHints -bool false= turns them off |
-| Repository paths | =editors/vscode-org2/=, =editors/vim-org2/=, =apps/ios/Org2Mobile/= |
+| Repository paths | =editors/vscode-org2/=, =apps/ios/Org2Mobile/= |
 
 * For contributors
 

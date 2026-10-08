@@ -26,7 +26,7 @@ git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/org
 Then ensure the Vim runtime path includes the plugin directory:
 
 ```vim
-set runtimepath^=~/.vim/pack/plugins/start/org2/editors/vim-org2
+set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-celorga
 ```
 
 (Neovim: use `~/.local/share/nvim/site/pack/...` and `runtimepath` accordingly.)
@@ -36,7 +36,7 @@ set runtimepath^=~/.vim/pack/plugins/start/org2/editors/vim-org2
 After adding to `runtimepath`, generate helptags:
 
 ```vim
-:helptags editors/vim-org2/doc
+:helptags editors/vim-celorga/doc
 ```
 
 See `:help org2`.
