@@ -16,6 +16,8 @@ export function conciseGoal(prompt, fallback = "OpenClaw agent execution") {
 }
 
 export function shouldTrackMainTurn(prompt, ctx = {}) {
+  if (String(ctx.sessionKey || "").includes(":internal-session-effects:")
+    || String(ctx.runId || "").startsWith("skill-workshop-review:")) return false;
   if (ctx.trigger === "heartbeat") return false;
   if (ctx.jobId || String(ctx.sessionKey || "").includes(":cron:")) return false;
   if (workflowMarker(prompt)) return true;

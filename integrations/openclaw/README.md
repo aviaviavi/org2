@@ -5,7 +5,9 @@ It is deliberately maintained in the Celorga repository so lifecycle schema and 
 changes can be tested with the bridge that consumes them.
 
 The plugin tracks substantial main-agent turns, subagent executions, and cron
-executions. Celorga's destination-neutral scheduler is the portable default for
+executions. Internal runtime maintenance, including Skill Workshop background
+reviews in `internal-session-effects` sessions, does not create durable runs;
+explicitly requested skill work is still tracked. Celorga's destination-neutral scheduler is the portable default for
 plain prompt automations. As an optional runtime-native adapter, this plugin can
 also prepare manual Celorga workflow runs before agent execution, reconcile active
 schedule triggers from visible `workflows/*.org2` files into OpenClaw cron, and

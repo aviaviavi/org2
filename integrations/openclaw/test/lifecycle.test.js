@@ -20,6 +20,19 @@ test("tracks substantial work but not acknowledgements or heartbeats", () => {
   assert.equal(shouldTrackMainTurn("investigate the failed job", { trigger: "heartbeat" }), false);
 });
 
+test("excludes internal skill reviews without suppressing requested skill work", () => {
+  const prompt = "Skill review. Distill new durable learning from the full retained conversation.";
+  const ctx = {
+    sessionKey: "agent:org2:internal-session-effects:skill-workshop-review_7625c241",
+    runId: "skill-workshop-review:7625c241",
+  };
+  assert.equal(shouldTrackMainTurn(prompt, ctx), false);
+  assert.equal(shouldTrackMainTurn(prompt, { sessionKey: ctx.sessionKey }), false);
+  assert.equal(shouldTrackMainTurn(prompt, { runId: ctx.runId }), false);
+  assert.equal(shouldTrackMainTurn("Please review and update this skill", { sessionKey: "agent:org2:main" }), true);
+  assert.equal(shouldTrackMainTurn("ORG2_WORKFLOW_ID: weekly-review\nExecute the workflow", ctx), false);
+});
+
 test("maps terminal outcomes", () => {
   assert.equal(outcomeCommand("ok"), "complete");
   assert.equal(outcomeCommand("timeout"), "fail");
