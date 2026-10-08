@@ -57,7 +57,7 @@ function walkAndCanonicalize(value: unknown): void {
 }
 
 /**
- * Rewrite accepted Org2 input conveniences to ordinary Org surface syntax.
+ * Rewrite accepted Celorga input conveniences to ordinary Org surface syntax.
  *
  * The parser and default printer remain lossless. This explicit transformation
  * mutates a freshly parsed AST before canonical `.org` serialization.

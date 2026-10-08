@@ -12,7 +12,7 @@ public struct AIChatLocalEditWorkspaceContext: Equatable, Sendable {
 
   public func systemPrompt() -> String {
     """
-    Local Org2 edit node
+    Local Celorga edit node
 
     This chat turn can read and edit the active Mac app corpus through the paired node named "\(nodeDisplayName)". Its turnId is "\(turnID)". It may also read an additional corpus explicitly authorized in the workspace context, but writes remain scoped to the active corpus.
 

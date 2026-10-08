@@ -14,7 +14,7 @@ import {
 } from "./dailyNoteTemplate.js";
 import { configFilePath } from "./brandNames.js";
 
-const HELP = `org2 daily-config <show|infer|set> --dir CORPUS [options]
+const HELP = `celorga daily-config <show|infer|set> --dir CORPUS [options]
 
 Reads, infers, or previews where daily notes live. Output is JSON.
 
@@ -26,7 +26,7 @@ Reads, infers, or previews where daily notes live. Output is JSON.
          relative to the corpus. --date is the reference date used to rank
          ambiguous examples (default: today).
   set    (--template FORMAT | --clear) [--if-revision REVISION] [--apply]
-         Preview or write roam.dailyFileTemplate in org2.json. --clear restores
+         Preview or write roam.dailyFileTemplate in celorga.json (or org2.json). --clear restores
          the dailiesDir/YYYY-MM-DD.org convention.
 
 Formats are corpus-relative paths with date tokens:
@@ -59,9 +59,9 @@ function readConfig(file: string): { raw?: string; revision: string; config: Org
   const raw = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
   const revision = raw === undefined ? "absent" : guardedContentRevision(raw);
   const config = raw === undefined ? {} : JSON.parse(raw);
-  if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("org2.json must contain an object.");
+  if (!config || Array.isArray(config) || typeof config !== "object") throw new Error(`${path.basename(file)} must contain an object.`);
   if (config.roam !== undefined && (!config.roam || Array.isArray(config.roam) || typeof config.roam !== "object")) {
-    throw new Error("org2.json roam must contain an object.");
+    throw new Error(`${path.basename(file)} roam must contain an object.`);
   }
   return { raw, revision, config };
 }

@@ -102,9 +102,9 @@ test("recognizes prepared Org2 workflow runs", () => {
   assert.equal(shouldTrackMainTurn(prompt, { jobId: "cron-1" }), false);
   assert.match(prompt, /Provider draft: PROVIDER:TOOL:DRAFT_ID/);
   assert.match(prompt, /ORG2_AI_CHAT_THREAD_ID/);
-  assert.match(prompt, /org2 thread post THREAD_ID/);
+  assert.match(prompt, /celorga thread post THREAD_ID/);
   assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /artifact-review/);
-  assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /org2 run approval-resolve --decision-key/);
+  assert.match(workflowContinuationPrompt({ id: "weekly-review", version: "1.2.0", title: "Weekly review" }, "run-42"), /celorga run approval-resolve --decision-key/);
 });
 
 test("recognizes a workflow run already started by OpenOrg", async () => {

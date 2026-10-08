@@ -8,7 +8,7 @@ import { includesMarker, markerValue, schemaMatches } from "./brand.js";
 
 const execFileAsync = promisify(execFile);
 
-const backgroundThreadDeliveryInstruction = "If this prompt includes CELORGA_AI_CHAT_THREAD_ID or ORG2_AI_CHAT_THREAD_ID and this execution is expected to report after its parent turn ends, post the durable outcome once with `org2 thread post THREAD_ID --message TEXT --author NAME --source run:RUN_ID --idempotency-key KEY --apply`. Do not duplicate a normal foreground reply, and do not post before the reported run state or artifact is durable.";
+const backgroundThreadDeliveryInstruction = "If this prompt includes CELORGA_AI_CHAT_THREAD_ID or ORG2_AI_CHAT_THREAD_ID and this execution is expected to report after its parent turn ends, post the durable outcome once with `celorga thread post THREAD_ID --message TEXT --author NAME --source run:RUN_ID --idempotency-key KEY --apply`. Do not duplicate a normal foreground reply, and do not post before the reported run state or artifact is durable.";
 
 export function conciseGoal(prompt, fallback = "OpenClaw agent execution") {
   const clean = String(prompt || "").replace(/\s+/g, " ").trim();
@@ -62,12 +62,12 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     "",
     `Execute the Celorga workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
     ...(triggerId ? ["This is a scheduled attempt. The Celorga lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
-    "Read the workflow and durable run with the Celorga CLI (`org2`). Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
+    "Read the workflow and durable run with the Celorga CLI (`celorga`, or `org2` on installs that predate the rename). Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
     "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Celorga will explicitly continue the same run after every item in that boundary is decided.",
     "For a provider draft, keep the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line in the approval action. Reuse this run for revisions; never create a second review run for the same provider draft.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
     backgroundThreadDeliveryInstruction,
-    "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
+    "Do not bypass an approval, complete a run with a pending review boundary, or silently promote generated work into canonical notes. After a human review decision, record it with `celorga run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
   ].join("\n");
 }
 
@@ -79,10 +79,10 @@ export function workflowContinuationPrompt(workflow, runId) {
     "ORG2_WORKFLOW_RESUME: approval-decided",
     "",
     `Continue the Celorga workflow \"${workflow.title}\" using its existing durable run.`,
-    "Re-read the workflow and run with the Celorga CLI (`org2`). Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
-    "Use this run for every replacement approval. Resolve provider authority, including decided approvals, through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`; do not create a separate review run for a draft already represented here.",
+    "Re-read the workflow and run with the Celorga CLI (`celorga`, or `org2` on installs that predate the rename). Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
+    "Use this run for every replacement approval. Resolve provider authority, including decided approvals, through `celorga run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`; do not create a separate review run for a draft already represented here.",
     "Treat an approval as valid only for the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
-    "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
+    "When an approval resolves an artifact review boundary, record the artifact decision with `celorga run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
     backgroundThreadDeliveryInstruction,
   ].join("\n");
 }
@@ -93,7 +93,7 @@ export function draftContinuationPrompt(runId) {
     "ORG2_DRAFT_RESUME: approval-decided",
     "",
     "Continue the decided external-draft action using its existing durable run.",
-    "Re-read the run with the Celorga CLI (`org2`) and resolve the exact provider-draft authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
+    "Re-read the run with the Celorga CLI (`celorga`, or `org2` on installs that predate the rename) and resolve the exact provider-draft authority through `celorga run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
     "If the draft approval was rejected or canceled, do not send it; record that exclusion and close the existing run without performing the protected action.",
     "If it was approved, send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
     "Record either the provider send evidence or the declined-action outcome on the existing draft run.",
@@ -107,9 +107,9 @@ export function approvedRunContinuationPrompt(run) {
     "ORG2_RUN_RESUME: approval-decided",
     "",
     `Continue the existing Celorga run \"${run.goal}\" after every item in its approval boundary was decided.`,
-    "Re-read the durable run with the Celorga CLI (`org2`) and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
+    "Re-read the durable run with the Celorga CLI (`celorga`, or `org2` on installs that predate the rename) and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
     "Perform only exact actions whose review material is approved. Skip every rejected or canceled action, and do not substitute a new recipient, payload, command, or attachment.",
-    "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
+    "For provider drafts, resolve the exact authority through `celorga run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
     "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue.",
     backgroundThreadDeliveryInstruction,
   ].join("\n");
@@ -124,7 +124,7 @@ export function workflowRevisionPrompt(workflow, runId, approval) {
     "ORG2_WORKFLOW_RESUME: revision-requested",
     "",
     `Revise the review material for the Celorga workflow "${workflow.title}" using its existing durable run.`,
-    "Re-read the workflow and run with the Celorga CLI (`org2`). The reviewer requested changes in the approval decision note.",
+    "Re-read the workflow and run with the Celorga CLI (`celorga`, or `org2` on installs that predate the rename). The reviewer requested changes in the approval decision note.",
     `Requested changes: ${approval.decisionNote}`,
     "Apply that feedback to new review material, preserve the prior artifact and decision as history, and request a replacement approval for the revised action.",
     "Request the replacement on ORG2_WORKFLOW_RUN_ID. Preserve the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line so the CLI can supersede the prior version and reconcile both Review and Runs.",
@@ -291,7 +291,18 @@ export class Org2Lifecycle {
 
   async #exec(args) {
     if (!this.corpusDir) throw new Error("org2-lifecycle requires plugin config corpusDir");
-    const { stdout } = await execFileAsync("org2", [...args, "--dir", this.corpusDir], { maxBuffer: 2_000_000 });
+    const run = (executable) => execFileAsync(executable, [...args, "--dir", this.corpusDir], { maxBuffer: 2_000_000 });
+    if (this.cliExecutable) return (await run(this.cliExecutable)).stdout;
+    // Prefer `celorga`; hosts still on 0.8.x only have the `org2` executable.
+    try {
+      const { stdout } = await run("celorga");
+      this.cliExecutable = "celorga";
+      return stdout;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const { stdout } = await run("org2");
+    this.cliExecutable = "org2";
     return stdout;
   }
 

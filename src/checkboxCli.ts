@@ -3,12 +3,12 @@ import { updateCheckboxInText, updateCheckboxProgressCookiesInText, type Checkbo
 import { readGuardedFile, guardedWriteFile } from "./guardedFile.js";
 import { buildUnifiedDiff } from "./unifiedDiff.js";
 
-const HELP = `org2 checkbox
+const HELP = `celorga checkbox
 
 Usage:
-  org2 checkbox [cycle|toggle] --file FILE --line N [--apply]
-  org2 checkbox set --status unchecked|indeterminate|checked --file FILE --line N [--apply]
-  org2 checkbox fix-cookies --file FILE [--apply]
+  celorga checkbox [cycle|toggle] --file FILE --line N [--apply]
+  celorga checkbox set --status unchecked|indeterminate|checked --file FILE --line N [--apply]
+  celorga checkbox fix-cookies --file FILE [--apply]
 
 Cycles [ ] -> [-] -> [X] -> [ ] on the exact one-based list-item line.
 fix-cookies recalculates stale [n/m] and [p%] progress cookies using their

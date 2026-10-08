@@ -60,13 +60,13 @@ function googleTargetMediaType(destination: GoogleWorkspaceDestination): string 
 
 function usage(exitCode: number): never {
   console.error(`Usage:
-  org2 publish document --file FILE --to web --out-dir DIR [--line N] [--allow-indexing] [--replace-existing] [--apply] [--format text|json]
-  org2 publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--replace-existing] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-docs [--folder-id ID] [--line N] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-slides [--folder-id ID] [--line N] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-sheets [--folder-id ID] [--line N] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--line N] [--apply] [--format text|json]
-  org2 publish document --file FILE --to google-docs|google-slides|google-sheets --document-id ID [--if-version VERSION] --replace-existing [--apply] [--format text|json]
+  celorga publish document --file FILE --to web --out-dir DIR [--line N] [--allow-indexing] [--replace-existing] [--apply] [--format text|json]
+  celorga publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--replace-existing] [--apply] [--format text|json]
+  celorga publish document --file FILE --to google-docs [--folder-id ID] [--line N] [--apply] [--format text|json]
+  celorga publish document --file FILE --to google-slides [--folder-id ID] [--line N] [--apply] [--format text|json]
+  celorga publish document --file FILE --to google-sheets [--folder-id ID] [--line N] [--apply] [--format text|json]
+  celorga publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--line N] [--apply] [--format text|json]
+  celorga publish document --file FILE --to google-docs|google-slides|google-sheets --document-id ID [--if-version VERSION] --replace-existing [--apply] [--format text|json]
 
 Publishes a disclosure-safe document or subtree. Commands preview by default.
 Google credentials are read from ORG2_GOOGLE_DRIVE_ACCESS_TOKEN (or the

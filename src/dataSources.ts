@@ -235,7 +235,7 @@ export async function loadRemoteDataset(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RemoteDatasetLoadResult> {
   const profile = profiles?.[request.profile];
-  if (!profile) throw new Error(`No data source profile named "${request.profile}" was found in org2.json`);
+  if (!profile) throw new Error(`No data source profile named "${request.profile}" was found in celorga.json`);
   if (profile.type !== request.type) {
     throw new Error(`Data source profile "${request.profile}" is ${profile.type}, but the dataset requires ${request.type}`);
   }

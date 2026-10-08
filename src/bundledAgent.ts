@@ -1,4 +1,4 @@
-// A foreground executor. OpenOrg owns tools, permissions, edits and history;
+// A foreground executor. The Celorga app owns tools, permissions, edits and history;
 // this process only calls the configured model and requests tools over stdio.
 import { legacyToolName } from "./brandNames.js";
 export type ObjectValue = Record<string, unknown>;

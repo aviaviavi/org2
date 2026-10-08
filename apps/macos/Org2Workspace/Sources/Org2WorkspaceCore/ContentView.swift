@@ -5648,7 +5648,7 @@ private struct GoalsView: View {
       } else if store.agentGoals.isEmpty {
         EmptyStateView(
           title: "No Goals",
-          detail: "Goals created in this corpus appear here automatically. Agents can create one with org2 goal create."
+          detail: "Goals created in this corpus appear here automatically. Agents can create one with celorga goal create."
         )
       } else {
         WorkspaceLazyCollection {
@@ -9910,7 +9910,7 @@ private struct SourcesView: View {
         Spacer()
         EmptyStateView(
           title: "No Sources Configured",
-          detail: "Add a Slack workspace, Notion workspace, or email account. Settings go in this corpus’s org2.json; tokens and passwords stay in macOS Keychain.",
+          detail: "Add a Slack workspace, Notion workspace, or email account. Settings go in this corpus’s celorga.json (or org2.json); tokens and passwords stay in macOS Keychain.",
           action: "Add Source…"
         ) {
           store.presentNewSource(type: WorkspaceSourceCatalog.types[0])
@@ -10356,7 +10356,7 @@ private struct SourceScheduleSheet: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("\(profile.id.capitalized) Sync Schedule")
           .font(.title2.weight(.semibold))
-        Text("The schedule is stored with this connector in org2.json. Run Now remains available when scheduled sync is paused.")
+        Text("The schedule is stored with this connector in the corpus config (celorga.json or org2.json). Run Now remains available when scheduled sync is paused.")
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -12117,7 +12117,7 @@ private struct DataSourceConfigurationSheet: View {
       Toggle("Clear saved API key", isOn: $clearAPIKey)
         .disabled(!store.scarfMetabaseHasStoredAPIKey)
 
-      Text("The API key is stored in macOS Keychain. Non-secret data-source settings live in org2.json.")
+      Text("The API key is stored in macOS Keychain. Non-secret data-source settings live in the corpus config (celorga.json or org2.json).")
         .font(.caption)
         .foregroundStyle(.secondary)
 

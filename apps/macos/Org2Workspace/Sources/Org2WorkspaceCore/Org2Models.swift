@@ -2214,7 +2214,7 @@ public enum MeetingReadyAutomationThreadMode: String, CaseIterable, Codable, Ide
 
 public struct MeetingReadyAutomationSettings: Hashable, Codable, Sendable {
   public static let defaultPrompt = """
-  Process this completed meeting. Extract decisions, follow-ups, and durable context; update the relevant Org2 records; and create review or approval boundaries for any external action. Do not duplicate work if this meeting was already processed. Cite the Org2 files you use.
+  Process this completed meeting. Extract decisions, follow-ups, and durable context; update the relevant Celorga records; and create review or approval boundaries for any external action. Do not duplicate work if this meeting was already processed. Cite the corpus files you use.
   """
 
   public var isEnabled: Bool

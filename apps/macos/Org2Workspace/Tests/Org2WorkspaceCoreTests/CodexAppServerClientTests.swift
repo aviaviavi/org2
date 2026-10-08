@@ -231,14 +231,14 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(openClaw.contains("Runtime agent ID: scarf-support"))
     XCTAssertTrue(openClaw.contains("ORG2_SELECTED_AGENT_REF: scarf-support"))
     XCTAssertTrue(openClaw.contains("ORG2_SELECTED_GOAL_REF: customer-trust"))
-    XCTAssertTrue(openClaw.contains("org2 agent-profile resolve --runtime openclaw --runtime-agent-id scarf-support --dir /srv/example-corpus --json"))
+    XCTAssertTrue(openClaw.contains("celorga agent-profile resolve --runtime openclaw --runtime-agent-id scarf-support --dir /srv/example-corpus --json"))
     XCTAssertTrue(openClaw.contains("Never use =openclaw=, =codex=, =claude=, a model name, or a session ID as =AGENT_REF:="))
 
     let codex = context.codexSystemPrompt()
     XCTAssertTrue(codex.contains("Execution runtime: codex"))
-    XCTAssertTrue(codex.contains("org2 agent-profile resolve --runtime codex --runtime-agent-id default --dir /tmp/example-corpus --json"))
-    XCTAssertTrue(codex.contains("Org2 agent operating guidance"))
-    XCTAssertTrue(codex.contains("org2 agent capabilities"))
+    XCTAssertTrue(codex.contains("celorga agent-profile resolve --runtime codex --runtime-agent-id default --dir /tmp/example-corpus --json"))
+    XCTAssertTrue(codex.contains("Celorga agent operating guidance"))
+    XCTAssertTrue(codex.contains("celorga agent capabilities"))
 
     let claude = context.localAgentSystemPrompt(runtime: "claude", runtimeTitle: "Claude Code")
     // All chat destinations share the native-tool policy, including remote
@@ -247,7 +247,7 @@ final class CodexAppServerClientTests: XCTestCase {
       context.codexSystemPrompt(runtimeFilesystemAccess: true),
       context.systemPrompt(runtime: "bundled"),
       context.systemPrompt(runtime: "anthropic")] {
-      XCTAssertTrue(prompt.contains("Use Org2's native CLI by default"))
+      XCTAssertTrue(prompt.contains("Use Celorga's native CLI by default"))
       XCTAssertTrue(prompt.contains("client-required effective-text reads and reviewed writes take precedence"))
       XCTAssertTrue(prompt.contains("Do not invoke =emacs=, =emacsclient="))
       XCTAssertTrue(prompt.contains("Use Emacs only when the user explicitly requests an Emacs-specific task"))
@@ -258,7 +258,7 @@ final class CodexAppServerClientTests: XCTestCase {
     }
     XCTAssertTrue(claude.contains("Execution runtime: claude"))
     XCTAssertTrue(claude.contains("running locally through the installed Claude Code CLI"))
-    XCTAssertFalse(claude.contains("Use the client-provided Org2 workspace tools for any other corpus reads or writes."))
+    XCTAssertFalse(claude.contains("Use the client-provided Celorga workspace tools for any other corpus reads or writes."))
   }
 
   func testRemoteCodexPromptUsesRuntimeCorpusWithoutClientEditBroker() {
@@ -289,11 +289,11 @@ final class CodexAppServerClientTests: XCTestCase {
     XCTAssertTrue(prompt.contains("Runtime root: ~/avi.org2"))
     XCTAssertTrue(prompt.contains("--dir ~/avi.org2 --json"))
     XCTAssertTrue(prompt.contains("Use normal filesystem tools there"))
-    XCTAssertTrue(prompt.contains("User's OpenOrg machine: "))
+    XCTAssertTrue(prompt.contains("User's Celorga machine: "))
     XCTAssertTrue(prompt.contains("only the synced corpus is shared"))
     XCTAssertTrue(prompt.contains("link it with a corpus-relative path"))
     XCTAssertFalse(prompt.contains("accessible to the Mac"))
-    XCTAssertFalse(prompt.contains("Use the client-provided Org2 workspace tools"))
+    XCTAssertFalse(prompt.contains("Use the client-provided Celorga workspace tools"))
   }
 
   func testWorkspaceSnapshotIncludesAuthorizedCorporaAndCustomInstructions() {
@@ -327,19 +327,19 @@ final class CodexAppServerClientTests: XCTestCase {
     )
 
     for prompt in [context.systemPrompt(), context.codexSystemPrompt()] {
-      XCTAssertTrue(prompt.contains("Authorized Org2 corpora"))
+      XCTAssertTrue(prompt.contains("Authorized Celorga corpora"))
       XCTAssertTrue(prompt.contains("Personal (active; reads and reviewed writes; kind: personal)"))
       XCTAssertTrue(prompt.contains("Team (additional; read-only; kind: shared)"))
       XCTAssertTrue(prompt.contains("/tmp/team"))
       XCTAssertTrue(prompt.contains("/srv/team"))
       XCTAssertTrue(prompt.contains("User-configured AI chat instructions"))
       XCTAssertTrue(prompt.contains("Prefer concise answers and surface open TODOs."))
-      XCTAssertTrue(prompt.contains("Org2 response formatting contract"))
+      XCTAssertTrue(prompt.contains("Celorga response formatting contract"))
       XCTAssertTrue(prompt.contains("[[file:images/qr.png][QR code]]"))
-      XCTAssertTrue(prompt.contains("OpenOrg renders image links inline"))
+      XCTAssertTrue(prompt.contains("Celorga renders image links inline"))
       XCTAssertTrue(prompt.contains("opening Preview does not embed it"))
       XCTAssertTrue(prompt.contains("never link an absolute path outside the corpus"))
-      XCTAssertTrue(prompt.contains("Inline emphasis does not nest in Org2 v0."))
+      XCTAssertTrue(prompt.contains("Inline emphasis does not nest in Celorga's Org profile."))
       XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org2="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
       XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
@@ -374,7 +374,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     for prompt in [context.systemPrompt(), context.codexSystemPrompt()] {
       XCTAssertTrue(prompt.contains("ORG2_AI_CHAT_THREAD_ID: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
-      XCTAssertTrue(prompt.contains("org2_thread_post"))
+      XCTAssertTrue(prompt.contains("celorga_thread_post"))
       XCTAssertTrue(prompt.contains("Do not post a duplicate background message"))
     }
   }
@@ -829,7 +829,7 @@ final class CodexAppServerClientTests: XCTestCase {
 
     XCTAssertTrue(instructions.contains("normal filesystem and shell tools"))
     XCTAssertTrue(instructions.contains("does not need to broker, preview, or apply"))
-    XCTAssertFalse(instructions.contains("org2_workspace_patch_apply"))
+    XCTAssertFalse(instructions.contains("celorga_workspace_patch_apply"))
     XCTAssertTrue(CodexAppServerClient.dynamicTools(for: .runtimeFilesystem).isEmpty)
     XCTAssertFalse(CodexAppServerClient.dynamicTools(for: .clientWorkspaceTools).isEmpty)
   }
@@ -1869,7 +1869,7 @@ final class CodexAppServerClientTests: XCTestCase {
         ;;
       *'"method":"thread/start"'*)
         case "$line" in
-          *'"name":"org2_thread_post"'*) ;;
+          *'"name":"celorga_thread_post"'*) ;;
           *) printf '%s\n' '{"id":3,"error":{"message":"background thread-post tool missing"}}'; continue ;;
         esac
         case "$line" in

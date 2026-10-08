@@ -79,7 +79,7 @@ try {
     const actions = (line, only) => request("textDocument/codeAction", { textDocument: { uri }, range: { start: { line, character: 10 }, end: { line, character: 10 } }, context: { diagnostics: [], ...(only ? { only } : {}) } });
     const cycle = await actions(1);
     assert.equal(cycle.length, 1);
-    assert.equal(cycle[0].title, `Org2: Cycle checkbox to [${after}]`);
+    assert.equal(cycle[0].title, `Celorga: Cycle checkbox to [${after}]`);
     assert.deepEqual(cycle[0].edit.changes[uri], [{ range: { start: { line: 1, character: 5 }, end: { line: 1, character: 6 } }, newText: after }]);
     assert.equal((await actions(1, ["refactor"])).length, 1);
     assert.deepEqual(await actions(1, ["quickfix"]), []);

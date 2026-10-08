@@ -224,7 +224,7 @@ try {
 
   const textResult = runDoctor(root, false);
   assert.equal(textResult.status, 1, textResult.stderr || textResult.stdout);
-  assert.match(textResult.stdout, /^Org2 agentic workspace doctor$/m);
+  assert.match(textResult.stdout, /^Celorga agentic workspace doctor$/m);
   assert.match(textResult.stdout, /ERROR terminal-run-pending-approval/);
 
   const cleanRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-doctor-clean-"));

@@ -287,7 +287,7 @@ function corpusResourceFile(root: string, relative: string): string {
     || isDefaultArchivePath(normalizedRelative)
     || isDefaultIgnoredSyncArtifactPath(normalizedRelative)
     || components.some((component) => component.startsWith("."))) {
-    throw new Error("resource is not an Org2 source file exposed by this server");
+    throw new Error("resource is not a Celorga source file exposed by this server");
   }
   const lexicalRoot = path.resolve(root);
   const requested = path.resolve(lexicalRoot, normalizedRelative);
@@ -380,13 +380,13 @@ function legacyMcpTools(readOnly: boolean) {
   const readTools = [
     {
       name: "org2_search",
-      description: "Search the selected Org2 corpus and return bounded, ranked results with source citations",
+      description: "Search the selected Celorga corpus and return bounded, ranked results with source citations",
       inputSchema: { type: "object", required: ["query"], properties: { query: { type: "string" }, ...retrievalProperties() } },
       annotations: readOnlyAnnotations,
     },
     {
       name: "org2_fetch",
-      description: "Fetch one corpus node by stable Org2 ID with bounded source, backlinks, or neighbors",
+      description: "Fetch one corpus node by stable Celorga ID with bounded source, backlinks, or neighbors",
       inputSchema: { type: "object", required: ["id"], properties: { id: { type: "string" }, maxChars: { type: "integer", minimum: 1_000, maximum: 50_000, default: 12_000 }, include: { type: "array", items: { type: "string", enum: ["sources", "backlinks", "neighbors"] }, default: ["sources"] } } },
       annotations: readOnlyAnnotations,
     },
@@ -396,15 +396,15 @@ function legacyMcpTools(readOnly: boolean) {
       inputSchema: { type: "object", required: ["query"], properties: { query: { type: "string" }, ...retrievalProperties() } },
       annotations: readOnlyAnnotations,
     },
-    { name: "org2_agent_profile_resolve", description: "Resolve a runtime agent ID to a portable Org2 agent profile and primary goal", inputSchema: { type: "object", required: ["runtime", "runtimeAgentId"], properties: { runtime: { type: "string" }, runtimeAgentId: { type: "string" } } }, annotations: readOnlyAnnotations },
-    { name: "org2_run_list", description: "List durable Org2 runs and review state", inputSchema: { type: "object", properties: {} }, annotations: readOnlyAnnotations },
+    { name: "org2_agent_profile_resolve", description: "Resolve a runtime agent ID to a portable Celorga agent profile and primary goal", inputSchema: { type: "object", required: ["runtime", "runtimeAgentId"], properties: { runtime: { type: "string" }, runtimeAgentId: { type: "string" } } }, annotations: readOnlyAnnotations },
+    { name: "org2_run_list", description: "List durable Celorga runs and review state", inputSchema: { type: "object", properties: {} }, annotations: readOnlyAnnotations },
   ];
   if (readOnly) return readTools;
   return [
     ...readTools,
-    { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } }, annotations: writeAnnotations },
-    { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } }, annotations: writeAnnotations },
-    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat. It is context only unless requestTurn names shared-room agents (destination IDs or @mentions) that should each take a turn in response", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" }, requestTurn: { type: "array", items: { type: "string" }, maxItems: 8 } } }, annotations: writeAnnotations },
+    { name: "org2_run_create", description: "Create a durable Celorga agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } }, annotations: writeAnnotations },
+    { name: "org2_run_transition", description: "Transition a durable Celorga run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } }, annotations: writeAnnotations },
+    { name: "org2_thread_post", description: "Post an attributed background message to an existing Celorga AI chat. It is context only unless requestTurn names shared-room agents (destination IDs or @mentions) that should each take a turn in response", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" }, requestTurn: { type: "array", items: { type: "string" }, maxItems: 8 } } }, annotations: writeAnnotations },
   ];
 }
 
@@ -415,9 +415,9 @@ async function handle(root: string, request: JsonRpcRequest, options: McpServerO
   if (request.method === "initialize") return result({
     protocolVersion: ORG2_MCP_PROTOCOL_VERSION,
     capabilities: { resources: { listChanged: false }, tools: { listChanged: false }, prompts: { listChanged: false } },
-    serverInfo: { name: "org2", version: "0.3.0" },
+    serverInfo: { name: "celorga", version: "0.3.0" },
     instructions: readOnly
-      ? "Read-only Org2 corpus. Search with celorga_search, fetch stable IDs with celorga_fetch, and assemble cited context with celorga_context. Results are bounded and cite canonical source files and line ranges. Do not claim corpus facts without returned evidence."
+      ? "Read-only Celorga corpus. Search with celorga_search, fetch stable IDs with celorga_fetch, and assemble cited context with celorga_context. Results are bounded and cite canonical source files and line ranges. Do not claim corpus facts without returned evidence."
       : "Search with celorga_search before broad resource reads, fetch stable IDs with celorga_fetch, and use celorga_context for bounded cited context. Corpus source is canonical. Run and thread tools write immediately; use them only when the user requested the action.",
   });
   if (request.method === "notifications/initialized") return null;

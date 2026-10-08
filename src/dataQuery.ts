@@ -932,7 +932,7 @@ export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions 
         const request = remoteDatasetRequest(dataset);
         const profile = request ? dataSources?.[request.profile] : undefined;
         if (!request) continue;
-        if (!profile) diagnostics.push(diagnostic(`No data source profile named "${request.profile}" was found in org2.json`, { line: dataset.line, blockId: dataset.id }));
+        if (!profile) diagnostics.push(diagnostic(`No data source profile named "${request.profile}" was found in celorga.json`, { line: dataset.line, blockId: dataset.id }));
         else if (profile.type !== request.type) diagnostics.push(diagnostic(`Data source profile "${request.profile}" is ${profile.type}, but dataset "${dataset.id}" requires ${request.type}`, { line: dataset.line, blockId: dataset.id }));
       }
     } catch (error) {

@@ -253,8 +253,8 @@ final class WorkspaceActivityNavigationTests: XCTestCase {
     let prompt = HeadingWorkStatus.startWorkPrompt(title: "Ship it", reference: "notes/a.org:3", runID: "run-9", keepsCLIInstructions: true)
     XCTAssertTrue(prompt.contains("Task: Ship it"))
     XCTAssertTrue(prompt.contains("Source: notes/a.org:3"))
-    XCTAssertTrue(prompt.contains("org2 run complete run-9"))
-    XCTAssertFalse(HeadingWorkStatus.startWorkPrompt(title: "Ship it", reference: "x", runID: "run-9", keepsCLIInstructions: false).contains("org2 run"))
+    XCTAssertTrue(prompt.contains("celorga run complete run-9"))
+    XCTAssertFalse(HeadingWorkStatus.startWorkPrompt(title: "Ship it", reference: "x", runID: "run-9", keepsCLIInstructions: false).contains("celorga run"))
   }
 
   func testStoreDerivesHeadingBadgesFromLoadedRuns() async throws {

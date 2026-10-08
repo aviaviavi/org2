@@ -4,13 +4,13 @@
  * A corpus declares an `email` profile in `org2.json` `externalSources` with
  * non-secret account settings (IMAP host, port, security, username,
  * mailboxes, and optionally the account's SMTP submission server for
- * reference). Org2 reads mail over IMAP itself (no crawler binary), stages
- * new messages as raw captures plus review-required Org2 packets through the
+ * reference). Celorga reads mail over IMAP itself (no crawler binary), stages
+ * new messages as raw captures plus review-required Celorga packets through the
  * same import pipeline as Slack and Notion, and keeps a machine-local
  * UIDVALIDITY/UID cursor so later syncs fetch only new mail.
  *
  * Passwords never enter the corpus: they come from `ORG2_EMAIL_PASSWORD`, a
- * machine-local binding (`passwordEnv` or `passwordCommand`), or OpenOrg's
+ * machine-local binding (`passwordEnv` or `passwordCommand`), or the Celorga app's
  * Keychain, which passes them in the environment for one sync. Messages are
  * fetched with BODY.PEEK so syncing never marks mail as read.
  */
@@ -82,7 +82,7 @@ export function resolveEmailPassword(binding: EmailCredentialBinding, env: NodeJ
     if (password) return { password, source: "password-command" };
     return { source: "password-command (failed)" };
   }
-  return { source: `missing (set ${envName}, bind --password-env/--password-command, or save it in OpenOrg)` };
+  return { source: `missing (set ${envName}, bind --password-env/--password-command, or save it in the Celorga app)` };
 }
 
 export function emailCredentialAvailable(binding: EmailCredentialBinding, env: NodeJS.ProcessEnv = process.env): boolean {

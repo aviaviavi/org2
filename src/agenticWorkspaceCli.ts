@@ -166,63 +166,63 @@ function syncLinkedArtifactReviewStatus(corpus: string, artifactPath: string, re
 }
 
 const HELP = `Agentic workspace commands:
-  org2 doctor [--dir CORPUS] [--json]
-  org2 ledger list LEDGER [--eligible] [--state STATE] [--field KEY=VALUE] [--as-of ISO] [--cooldown-days N] [--json]
-  org2 ledger resolve LEDGER --identity KEY [--identity KEY] [--json]
-  org2 ledger show LEDGER ACCOUNT [--with-revision] [--json]
-  org2 ledger create LEDGER ACCOUNT --title TEXT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--apply]
-  org2 ledger update LEDGER ACCOUNT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--if-revision SHA256] [--apply]
-  org2 ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--decision-key KEY] [--external-id ID] [--source REF] [--data KEY=VALUE] [--actor NAME] [--note TEXT] [--if-revision SHA256] [--apply]
-  org2 corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
-  org2 workspace agent-state --dir CORPUS --json
-  org2 workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
-  org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
-  org2 thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
-  org2 thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
-  org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--request-turn AGENT ...] [--dir CORPUS] [--apply]
-  org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
-  org2 thread configure THREAD --agent-turn-limit N|default [--dir CORPUS] [--apply]
-  org2 thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
-  org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
-  org2 project create --title TEXT [--description TEXT] [--color none|NAME|#RRGGBB] [--file PATH] [--id UUID] [--apply]
-  org2 project adopt FILE --title TEXT [--color COLOR] [--id ID] [--if-revision SHA256] [--apply]
-  org2 project update ID [--thread UUID [--remove]] [--color COLOR] [--if-revision SHA256] [--apply]
-  org2 goal list|show|create|update [--dir CORPUS] [--apply]
-  org2 goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
-  org2 agent-profile list|show|create|update|resolve [--dir CORPUS] [--apply]
-  org2 agent-profile create ID --name TEXT [--default-runtime openclaw|codex|claude] [--binding RUNTIME:AGENT_ID] [--goal-ref ID] [--primary-goal-ref ID] [--responsibility TEXT] [--capability ID] [--skill ID]
-  org2 agent-profile update ID [--default-runtime openclaw|codex|claude|none]
-  org2 agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
-  org2 run create [--title TEXT] --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
-  org2 run show ID --with-revision --json
-  org2 run wait ID --until approval|blocked|needs-you|running|completed|failed|terminal|status:STATUS [--timeout SECONDS] [--json]
-  org2 run list|show|wait|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|artifact-review
-  org2 run block ID --reason "Specific clarification needed" [--separate-from-approval]
-  org2 run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
-  org2 run complete-external ID --summary "Where or how it was completed" --actor NAME
-  org2 run reopen-external ID --summary "Corrected open-run outcome" --actor NAME
-  org2 run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
-  org2 run runtime ID [--provider ID] [--model ID] [--tokens-used N] [--cost-used-usd N] [--elapsed-seconds N]
-  org2 run assign ID [--owner NAME] [--assignee NAME] [--agent-ref ID] [--goal-ref ID]
-  org2 run comment ID --author NAME --body TEXT
-  org2 run step ID STEP --status STATUS
-  org2 run artifact ID --path FILE [--role ROLE] [--review-status STATUS]
-  org2 run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
-  org2 run validation ID --name NAME --status passed|failed|warning|skipped
-  org2 run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
-  org2 run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--if-revision SHA256] [--note TEXT] [--receipt TEXT]
-  org2 run approval-resolve --decision-key PROVIDER_KEY [--json]
-  org2 run approval-reconcile [--apply] [--json]
-  org2 review list [--status pending] | org2 review show RUN
-  org2 workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|delete|migrate|package|corpus-template|install-builtin
-  org2 workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--model ID] [--reasoning-effort LEVEL] [--agent-ref ID] [--schedule EXPR --timezone IANA]
-  org2 workflow due [--host-ref HOST] [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
-  org2 workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] [--model ID|--clear-model] [--reasoning-effort LEVEL|--clear-reasoning-effort] | --disable
-  org2 workflow delete ID [--apply]
-  org2 artifact graph --manifest FILE | org2 artifact rebuild --manifest FILE
-  org2 runtime init|show|select|verify-paths
-  org2 mcp serve|clients|client-add|discover|snapshot
-  org2 eval run RUN --expect FILE | org2 eval replay WORKFLOW --fixture FILE | org2 eval fixture RUN --output FILE
+  celorga doctor [--dir CORPUS] [--json]
+  celorga ledger list LEDGER [--eligible] [--state STATE] [--field KEY=VALUE] [--as-of ISO] [--cooldown-days N] [--json]
+  celorga ledger resolve LEDGER --identity KEY [--identity KEY] [--json]
+  celorga ledger show LEDGER ACCOUNT [--with-revision] [--json]
+  celorga ledger create LEDGER ACCOUNT --title TEXT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--apply]
+  celorga ledger update LEDGER ACCOUNT [--state STATE] [--identity KEY] [--alias NAME] [--field KEY=VALUE] [--context TEXT] [--if-revision SHA256] [--apply]
+  celorga ledger event LEDGER ACCOUNT --type TYPE --key IDEMPOTENCY_KEY [--run RUN --approval APPROVAL] [--decision-key KEY] [--external-id ID] [--source REF] [--data KEY=VALUE] [--actor NAME] [--note TEXT] [--if-revision SHA256] [--apply]
+  celorga corpus show|validate|init [--dir CORPUS] [--id ID --name NAME --kind personal|shared|project] [--apply]
+  celorga workspace agent-state --dir CORPUS --json
+  celorga workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
+  celorga workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
+  celorga thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
+  celorga thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
+  celorga thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--request-turn AGENT ...] [--dir CORPUS] [--apply]
+  celorga thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
+  celorga thread configure THREAD --agent-turn-limit N|default [--dir CORPUS] [--apply]
+  celorga thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
+  celorga project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
+  celorga project create --title TEXT [--description TEXT] [--color none|NAME|#RRGGBB] [--file PATH] [--id UUID] [--apply]
+  celorga project adopt FILE --title TEXT [--color COLOR] [--id ID] [--if-revision SHA256] [--apply]
+  celorga project update ID [--thread UUID [--remove]] [--color COLOR] [--if-revision SHA256] [--apply]
+  celorga goal list|show|create|update [--dir CORPUS] [--apply]
+  celorga goal create ID --title TEXT [--description TEXT] [--status planned|active|achieved|canceled] [--parent-goal-ref ID] [--owner-agent-ref ID] [--measure TEXT]
+  celorga agent-profile list|show|create|update|resolve [--dir CORPUS] [--apply]
+  celorga agent-profile create ID --name TEXT [--default-runtime openclaw|codex|claude] [--binding RUNTIME:AGENT_ID] [--goal-ref ID] [--primary-goal-ref ID] [--responsibility TEXT] [--capability ID] [--skill ID]
+  celorga agent-profile update ID [--default-runtime openclaw|codex|claude|none]
+  celorga agent-profile resolve --runtime openclaw|codex --runtime-agent-id ID [--json]
+  celorga run create [--title TEXT] --goal TEXT [--goal-ref ID] [--agent-ref ID] [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
+  celorga run show ID --with-revision --json
+  celorga run wait ID --until approval|blocked|needs-you|running|completed|failed|terminal|status:STATUS [--timeout SECONDS] [--json]
+  celorga run list|show|wait|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|artifact-review
+  celorga run block ID --reason "Specific clarification needed" [--separate-from-approval]
+  celorga run complete ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
+  celorga run complete-external ID --summary "Where or how it was completed" --actor NAME
+  celorga run reopen-external ID --summary "Corrected open-run outcome" --actor NAME
+  celorga run outcome ID --summary "What happened" [--highlight TEXT] [--next-action TEXT]
+  celorga run runtime ID [--provider ID] [--model ID] [--tokens-used N] [--cost-used-usd N] [--elapsed-seconds N]
+  celorga run assign ID [--owner NAME] [--assignee NAME] [--agent-ref ID] [--goal-ref ID]
+  celorga run comment ID --author NAME --body TEXT
+  celorga run step ID STEP --status STATUS
+  celorga run artifact ID --path FILE [--role ROLE] [--review-status STATUS]
+  celorga run artifact-review ID ARTIFACT --status reviewed|promoted|rejected [--actor NAME]
+  celorga run validation ID --name NAME --status passed|failed|warning|skipped
+  celorga run approval-request ID --title TEXT --action TEXT [--risk CLASS] [--role ROLE]
+  celorga run approval-decide ID APPROVAL --decision approved|rejected|revised|canceled --actor NAME [--fingerprint SHA256] [--if-revision SHA256] [--note TEXT] [--receipt TEXT]
+  celorga run approval-resolve --decision-key PROVIDER_KEY [--json]
+  celorga run approval-reconcile [--apply] [--json]
+  celorga review list [--status pending] | celorga review show RUN
+  celorga workflow list|show|validate|create|save|run|due|triggers|signal|gate|activate|pause|draft|schedule|delete|migrate|package|corpus-template|install-builtin
+  celorga workflow create ID --title TEXT --prompt TEXT --destination-ref ID [--model ID] [--reasoning-effort LEVEL] [--agent-ref ID] [--schedule EXPR --timezone IANA]
+  celorga workflow due [--host-ref HOST] [--now ISO_TIMESTAMP] [--dir CORPUS] [--json]
+  celorga workflow schedule ID --cron EXPR [--timezone IANA] [--destination-ref ID] [--model ID|--clear-model] [--reasoning-effort LEVEL|--clear-reasoning-effort] | --disable
+  celorga workflow delete ID [--apply]
+  celorga artifact graph --manifest FILE | celorga artifact rebuild --manifest FILE
+  celorga runtime init|show|select|verify-paths
+  celorga mcp serve|clients|client-add|discover|snapshot
+  celorga eval run RUN --expect FILE | celorga eval replay WORKFLOW --fixture FILE | celorga eval fixture RUN --output FILE
 
 Writes are local, inspectable files under .org2/ or reviewable corpus zones. Consequential actions remain approval-gated.`;
 
@@ -671,7 +671,7 @@ function assertRequestedRunRevision(parsed: ParsedArgs, snapshot: AgentRunSnapsh
   }
   if (snapshot.sourceIssues.length > 0) {
     throw new Error(
-      `run source has out-of-band readable-state changes (${snapshot.sourceIssues.map((issue) => issue.field).join(", ")}); run org2 doctor and reconcile the source before writing: ${snapshot.file}`,
+      `run source has out-of-band readable-state changes (${snapshot.sourceIssues.map((issue) => issue.field).join(", ")}); run celorga doctor and reconcile the source before writing: ${snapshot.file}`,
     );
   }
 }

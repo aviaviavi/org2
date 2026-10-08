@@ -592,7 +592,7 @@ public struct Org2CLI: Sendable {
         status: Int(process.terminationStatus),
         message: stderrText?.isEmpty == false
           ? stderrText!
-          : (stdoutFailure ?? "org2 exited with status \(process.terminationStatus)")
+          : (stdoutFailure ?? "Celorga CLI exited with status \(process.terminationStatus)")
       )
     }
 
@@ -830,7 +830,7 @@ public enum Org2CLIError: LocalizedError, Equatable {
   public var errorDescription: String? {
     switch self {
     case .missingCLI(let path):
-      "Celorga CLI not found at \(path). Run npm run build in the org2 repo."
+      "Celorga CLI not found at \(path). Run npm run build in the Celorga repo."
     case .commandFailed(_, let message):
       message
     case .commandTimedOut(let seconds):

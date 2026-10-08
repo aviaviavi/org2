@@ -1046,7 +1046,7 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(accessibleTitle)}" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" style="font-variant-numeric: tabular-nums" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(yLabel)}" data-org2-chart-series="${escapeXml(series.join(","))}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${plotBottom.toFixed(1)}">`,
     `<title>${escapeXml(accessibleTitle)}</title>`,
-    `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(seriesLabel)} by ${escapeXml(candidate.spec.x)}</desc>`,
+    `<desc>Celorga ${candidate.spec.type} chart for ${escapeXml(seriesLabel)} by ${escapeXml(candidate.spec.x)}</desc>`,
     defs.length ? `<defs>${defs.join("")}</defs>` : "",
     ...header,
     ...legend,

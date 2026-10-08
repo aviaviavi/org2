@@ -70,15 +70,15 @@ final class BundledAgentTests: XCTestCase {
       )
       let unknown = try await workspace.execute("exec", arguments: .object([:]))
       XCTAssertFalse(unknown.success)
-      let forged = try await workspace.execute("org2_workspace_patch_apply", arguments: .object(["previewId": .string("forged")]))
+      let forged = try await workspace.execute("celorga_workspace_patch_apply", arguments: .object(["previewId": .string("forged")]))
       XCTAssertFalse(forged.success)
       XCTAssertEqual(reviews, 0)
-      let read = try await workspace.execute("org2_workspace_read", arguments: .object([
+      let read = try await workspace.execute("celorga_workspace_read", arguments: .object([
         "turnId": .string("model-forged-turn"), "path": .string("notes/task.org")
       ]))
       let readValue = try JSONDecoder().decode(JSONValue.self, from: Data(read.text.utf8))
       XCTAssertEqual(readValue["origin"]?.stringValue, "editor")
-      let preview = try await workspace.execute("org2_workspace_patch_preview", arguments: .object([
+      let preview = try await workspace.execute("celorga_workspace_patch_preview", arguments: .object([
         "edits": .array([.object([
           "path": .string("notes/task.org"),
           "expectedSha256": try XCTUnwrap(readValue["sha256"]),
@@ -88,11 +88,11 @@ final class BundledAgentTests: XCTestCase {
       XCTAssertTrue(preview.success)
       let previewValue = try JSONDecoder().decode(JSONValue.self, from: Data(preview.text.utf8))
       let applyArgs: JSONValue = .object(["previewId": try XCTUnwrap(previewValue["previewId"])])
-      let applied = try await workspace.execute("org2_workspace_patch_apply", arguments: applyArgs)
+      let applied = try await workspace.execute("celorga_workspace_patch_apply", arguments: applyArgs)
       XCTAssertEqual(applied.success, approves)
       XCTAssertEqual(writes, approves ? 1 : 0)
       XCTAssertEqual(reviews, 1)
-      let repeated = try await workspace.execute("org2_workspace_patch_apply", arguments: applyArgs)
+      let repeated = try await workspace.execute("celorga_workspace_patch_apply", arguments: applyArgs)
       XCTAssertFalse(repeated.success)
       XCTAssertEqual(reviews, 1)
       await broker.endTurn("host-turn")

@@ -339,14 +339,14 @@ export function workflowExecutionPrompt(
     ...(workflow.reasoningEffort ? [`ORG2_REASONING_EFFORT: ${workflow.reasoningEffort}`] : []),
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
-    `Execute the Org2 automation “${workflow.title}”.`,
+    `Execute the Celorga automation “${workflow.title}”.`,
     "",
     "Automation prompt:",
     run.goal,
     "",
-    "This automation already has a durable Org2 run. Do not create a replacement run.",
-    "If the Org2 CLI is available, continue this run, update its steps and artifacts as work progresses, preserve approval boundaries, and record its final outcome before completing it.",
-    "If the destination cannot access Org2 tools, return the complete result in this chat; OpenOrg will retain the destination thread with the automation history.",
+    "This automation already has a durable Celorga run. Do not create a replacement run.",
+    "If the Celorga CLI is available, continue this run, update its steps and artifacts as work progresses, preserve approval boundaries, and record its final outcome before completing it.",
+    "If the destination cannot access Celorga tools, return the complete result in this chat; the Celorga app will retain the destination thread with the automation history.",
   ].join("\n");
 }
 
@@ -397,7 +397,7 @@ function stripDuplicatedWorkflowHeaders(description: string, id: string): string
   // Older reads started at a document-level :END: and captured the generated
   // wrapper as prose. Only unwrap leading package headers for this workflow.
   while (true) {
-    const header = remaining.match(/^#\+TITLE:[ \t]+Org2 workflow package[ \t]*\r?\n(?:[ \t]*\r?\n)*\*[ \t]+[^\r\n]+\r?\n:PROPERTIES:[ \t]*\r?\n((?::[^\r\n]*\r?\n)*?):END:[ \t]*(?:\r?\n|$)/i);
+    const header = remaining.match(/^#\+TITLE:[ \t]+(?:Celorga|Org2) workflow package[ \t]*\r?\n(?:[ \t]*\r?\n)*\*[ \t]+[^\r\n]+\r?\n:PROPERTIES:[ \t]*\r?\n((?::[^\r\n]*\r?\n)*?):END:[ \t]*(?:\r?\n|$)/i);
     if (!header || header[1].match(/^:(?:CELORGA|ORG2)_WORKFLOW_ID:[ \t]*(.+)\r?$/mi)?.[1]?.trim() !== id) return remaining;
     remaining = remaining.slice(header[0].length).trimStart();
   }
@@ -428,7 +428,7 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
     : undefined;
   const description = stripDuplicatedWorkflowHeaders(visibleDescription ?? parsed.description, parsed.id);
   const instructions = raw.match(/^\*\* Instructions\s*\r?\n([\s\S]*?)\r?\n\*\* Machine state\s*$/m)?.[1]?.trim();
-  // The readable Org2 fields are authoring fields, not a decorative copy. The
+  // The readable Org fields are authoring fields, not a decorative copy. The
   // machine block carries the complete portable schema; editing these visible
   // fields in any text editor overrides their corresponding machine values and
   // the next structured save writes the normalized definition back out.

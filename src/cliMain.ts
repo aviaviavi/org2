@@ -1562,7 +1562,7 @@ function buildRoamGraphMaintenanceReport(
 
 function renderRoamGraphReportText(report: RoamGraphMaintenanceReport): string {
   const lines: string[] = [];
-  lines.push("Org2 roam maintenance report");
+  lines.push("Celorga roam maintenance report");
   lines.push("============================");
   lines.push("");
   lines.push(`Scanned files: ${report.summary.scannedFiles}`);
@@ -1764,7 +1764,7 @@ function buildGraphAuditReport(files: string[]): GraphAuditReport {
 
 function renderGraphAuditReportText(report: GraphAuditReport): string {
   const lines: string[] = [];
-  lines.push("Org2 graph quality audit");
+  lines.push("Celorga graph quality audit");
   lines.push("========================");
   lines.push(`Scanned files: ${report.summary.scannedFiles}`);
   lines.push(`Graph: ${report.summary.nodeCount} nodes, ${report.summary.edgeCount} edges`);
@@ -1793,7 +1793,7 @@ function escapeHtml(raw: string): string {
 }
 
 function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?: string }): string {
-  const title = opts?.title || "Org2 Roam Graph";
+  const title = opts?.title || "Celorga Roam Graph";
   const subtitle = opts?.dir ? `Source: ${opts.dir}` : "Static debug view";
   const isolatedCount = graph.nodes.filter((node) => node.degree === 0).length;
   const connectedNodes = graph.nodes.filter((node) => node.degree > 0);
@@ -5516,7 +5516,7 @@ async function runAgendaTui(options: {
       ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
       : "j/k arrows move, J/K detail scroll, Ctrl-d/u half-page detail, / search, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, A done+handoff, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
     const header = [
-      `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
+      `${ansi.bold}Celorga agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue${searchLabel}, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       ...(captureInputActive
         ? [
@@ -6558,7 +6558,7 @@ function readAiDraftSources(manifest: Record<string, unknown>, manifestDir: stri
   const input = nestedRecord(manifest, "input");
   const sourceFiles = expandAiSourceFiles(manifestDir, stringArrayField(input, "files"));
   if (sourceFiles.length === 0) {
-    throw new Error("org2 ai run currently writes draft artifacts from manifest input.files; add at least one matching input file");
+    throw new Error("celorga ai run currently writes draft artifacts from manifest input.files; add at least one matching input file");
   }
 
   return sourceFiles.map((file) => {
@@ -6889,7 +6889,7 @@ async function buildAiLinkSuggestionReport(options: { dir: string; recursive: bo
     model: "deterministic-link-entity-ranker",
     responder: (request) => ({
       schema: "org2:ai-adapter-response:v1",
-      text: "Ranked review-only link and entity suggestions from Org2 compiler graph/linkify context.",
+      text: "Ranked review-only link and entity suggestions from Celorga compiler graph/linkify context.",
       json: { suggestions: ranked, graph: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length } },
       citations: ranked.flatMap((suggestion) => suggestion.sourceRefs.map((source) => ({ source }))),
       metadata: {
@@ -6906,17 +6906,17 @@ async function buildAiLinkSuggestionReport(options: { dir: string; recursive: bo
     task: {
       type: "suggest-links",
       template: "link-entity-suggestions@v1",
-      instructions: "Rank and explain candidate links/entities using only compiler-provided Org2 graph, aliases, linkify suggestions, and source context.",
+      instructions: "Rank and explain candidate links/entities using only compiler-provided Celorga graph, aliases, linkify suggestions, and source context.",
     },
     prompt: [
-      { role: "system", content: "Use only supplied Org2 compiler context. Return review-only suggestions with citations; never edit canonical notes." },
+      { role: "system", content: "Use only supplied Celorga compiler context. Return review-only suggestions with citations; never edit canonical notes." },
       { role: "user", content: "Rank likely links and entities with confidence, reason, and source context." },
     ],
     context: [
       {
         id: "graph-state",
         type: "compiled-corpus",
-        title: "Org2 roam graph state",
+        title: "Celorga roam graph state",
         text: JSON.stringify({ nodes: graph.nodes, edges: graph.edges, aliasCollisions: maintenance.aliasCollisions }, null, 2),
       },
       {
@@ -6952,7 +6952,7 @@ async function buildAiLinkSuggestionReport(options: { dir: string; recursive: bo
 
 function renderAiLinkSuggestionReportText(report: AiLinkSuggestionReport): string {
   const lines: string[] = [];
-  lines.push("Org2 AI-assisted link/entity suggestions");
+  lines.push("Celorga AI-assisted link/entity suggestions");
   lines.push("=========================================");
   lines.push("");
   lines.push(`Scanned files: ${report.scanned}`);
@@ -7027,7 +7027,7 @@ function createMeetingSummaryAdapterResponse(manifest: Record<string, unknown>, 
   const model = stringField(adapter, "model") || "deterministic-meeting-summary";
   const json = buildMeetingSummaryJson(sources);
   const text = [
-    "Meeting summary draft generated from supplied Org2 source context.",
+    "Meeting summary draft generated from supplied Celorga source context.",
     "Review all sections against the citations before promotion.",
   ].join("\n");
 
@@ -7080,7 +7080,7 @@ async function generateAiDraftResponse(manifest: Record<string, unknown>, source
       instructions: stringField(task, "instructions"),
     },
     prompt: [
-      { role: "system", content: "Use only supplied Org2 transcript context. Preserve citations and produce reviewable output." },
+      { role: "system", content: "Use only supplied Celorga transcript context. Preserve citations and produce reviewable output." },
       { role: "user", content: stringField(task, "instructions") || `Run ${taskType}.` },
     ],
     context: buildAiAdapterContextItems(sources),
@@ -7155,7 +7155,7 @@ function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDr
     : `* Generated ${taskType === "extract-entities" ? "extraction" : "summary"}\n${taskType === "extract-entities" ? extraction : summaryBullets + "\n"}`;
   const modelRun = adapterResponse?.metadata.invocationId ? `- Adapter invocation: =${adapterResponse.metadata.invocationId}=\n` : "";
 
-  return `#+TITLE: ${title}\n${drawer}\n* Review checklist\n- [ ] Verify every generated claim against the cited source lines.\n- [ ] Edit this draft until it is safe for canonical notes.\n- [ ] Set =ORG2_REVIEW_STATUS= to =reviewed= before running =org2 ai promote=.\n\n* Job\n- Job: =${id}=\n- Task: =${taskType}=\n- Adapter: =${adapterName}=\n- Model: =${model}=\n${modelRun}${promptTemplate ? `- Prompt/template: =${promptTemplate}=\n` : ""}${instructions ? `- Instructions: ${instructions}\n` : ""}\n* Sources\n${sourceList}\n\n${generatedBody}\n* Source excerpts\n${excerpts.length > 0 ? excerpts.join("\n") : "- No source excerpts available."}\n`;
+  return `#+TITLE: ${title}\n${drawer}\n* Review checklist\n- [ ] Verify every generated claim against the cited source lines.\n- [ ] Edit this draft until it is safe for canonical notes.\n- [ ] Set =ORG2_REVIEW_STATUS= to =reviewed= before running =celorga ai promote=.\n\n* Job\n- Job: =${id}=\n- Task: =${taskType}=\n- Adapter: =${adapterName}=\n- Model: =${model}=\n${modelRun}${promptTemplate ? `- Prompt/template: =${promptTemplate}=\n` : ""}${instructions ? `- Instructions: ${instructions}\n` : ""}\n* Sources\n${sourceList}\n\n${generatedBody}\n* Source excerpts\n${excerpts.length > 0 ? excerpts.join("\n") : "- No source excerpts available."}\n`;
 }
 
 function removeTopPropertyDrawer(raw: string): string {
@@ -7256,10 +7256,10 @@ async function runIngestCommand(args: string[]): Promise<void> {
   };
 
   if (has("--help") || has("-h")) {
-    console.log(`org2 ingest
+    console.log(`celorga ingest
 
 Usage:
-  org2 ingest (--file FILE|--stdin|--json FILE) --corpus DIR [--apply]
+  celorga ingest (--file FILE|--stdin|--json FILE) --corpus DIR [--apply]
 
 Options:
   --corpus DIR       Corpus root; writes raw/ingest and views/ingest
@@ -9246,116 +9246,116 @@ function printGeneralUsage(exitCode: number): never {
   console.error(`Celorga CLI (celorga; org2 remains a compatibility alias)
 
 Usage:
-  org2 <command> [options]
+  celorga <command> [options]
 
 Core commands:
-  org2 doctor [--dir CORPUS] [--json]
-  org2 ledger <list|show|create|update|event> LEDGER [ACCOUNT] [options]
-  org2 corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
-  org2 workspace agent-state --dir CORPUS --json
-  org2 workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
-  org2 project <list|show|create|adopt|update> [options]
-  org2 goal <list|show|create|update> [options]
-  org2 agent-profile <list|show|create|update|resolve> [options]
-  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
-  org2 review <list|show> [options]
-  org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
-  org2 artifact <graph|rebuild> --manifest FILE [--apply]
-  org2 runtime <init|show|select|verify-paths> [POLICY] [--capability ID]...
-  org2 mcp <serve|clients|client-add|discover|snapshot> [options]
-  org2 skill install [--dir CORPUS] [--apply] [--format text|json]
-  org2 plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
-  org2 eval <run|fixture> RUN [options]
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
-  org2 todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
-  org2 daily-config <show|infer|set> --dir CORPUS [--file PATH] [--template FORMAT|--clear] [--apply]
-  org2 embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]
-  org2 checkbox [cycle|toggle|set|fix-cookies] --file FILE [--line N] [--status STATE] [--fix-cookies] [--apply]
-  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
-  org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
-  org2 browser-clip import --file CLIP.org2clip --dir CORPUS [--if-revision HASH --if-clip-revision HASH --apply]
-  org2 capture --file FILE --title TITLE [--template note|task] [--apply]
-  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
-  org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
-  org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
+  celorga doctor [--dir CORPUS] [--json]
+  celorga ledger <list|show|create|update|event> LEDGER [ACCOUNT] [options]
+  celorga corpus <show|validate|init> [--dir CORPUS] [--id ID --name NAME --kind KIND] [--apply]
+  celorga workspace agent-state --dir CORPUS --json
+  celorga workspace <agenda|search> [QUERY] --mount CORPUS [--mount CORPUS ...] [--json]
+  celorga project <list|show|create|adopt|update> [options]
+  celorga goal <list|show|create|update> [options]
+  celorga agent-profile <list|show|create|update|resolve> [options]
+  celorga run <create|list|show|validate|start|resume|retry|cancel|complete|complete-external|reopen-external|fail|block|fork|normalize|reconcile-source|assign|comment|outcome|runtime|step|artifact|artifact-review|validation|approval-request|approval-decide> [options]
+  celorga review <list|show> [options]
+  celorga workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
+  celorga artifact <graph|rebuild> --manifest FILE [--apply]
+  celorga runtime <init|show|select|verify-paths> [POLICY] [--capability ID]...
+  celorga mcp <serve|clients|client-add|discover|snapshot> [options]
+  celorga skill install [--dir CORPUS] [--apply] [--format text|json]
+  celorga plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
+  celorga eval <run|fixture> RUN [options]
+  celorga agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  celorga todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
+  celorga daily-config <show|infer|set> --dir CORPUS [--file PATH] [--template FORMAT|--clear] [--apply]
+  celorga embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]
+  celorga checkbox [cycle|toggle|set|fix-cookies] --file FILE [--line N] [--status STATE] [--fix-cookies] [--apply]
+  celorga todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  celorga approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
+  celorga plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  celorga crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
+  celorga browser-clip import --file CLIP.org2clip --dir CORPUS [--if-revision HASH --if-clip-revision HASH --apply]
+  celorga capture --file FILE --title TITLE [--template note|task] [--apply]
+  celorga capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
+  celorga archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
+  celorga refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
 
 Export / publish:
-  org2 export html --file FILE [--out FILE] [--apply]
-  org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
-  org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
-  org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
-  org2 publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
-  org2 publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
-  org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
-  org2 publish [PROJECT] [--config PATH] [--preview]
+  celorga export html --file FILE [--out FILE] [--apply]
+  celorga export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
+  celorga export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
+  celorga publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
+  celorga publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
+  celorga publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
+  celorga publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
+  celorga publish [PROJECT] [--config PATH] [--preview]
 
 Canvas:
-  org2 canvas show|targets|create|edit|import|export --dir DIR [--file FILE] [--json]
+  celorga canvas show|targets|create|edit|import|export --dir DIR [--file FILE] [--json]
 
 Roam / IDs:
-  org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
-  org2 backlinks --id UUID [--dir DIR] [--recursive]
-  org2 index --dir DIR [--recursive] [--include-archives] [--format text|json]
-  org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
-  org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
-  org2 query actions --object ID|TITLE|LINK [--recent-days N] [--dir DIR] [--recursive] [--format text|json]
-  org2 entity show NAME [--dir DIR] [--recursive] [--format text|json]
-  org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
-  org2 query clocks --dir DIR [--recursive] [--format text|json]
-  org2 clock --dir DIR [--recursive] [--format text|json]
-  org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
-  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
-  org2 property-view list|query|save|edit --dir CORPUS [--help]
-  org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
-  org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
-  org2 agent capabilities
-  org2 agent <context|search|fetch|bundle> [options]
-  org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
-  org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
-  org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
-  org2 brief node --id ID [--dir DIR] [--recursive] [--out views/node.org]
-  org2 ai validate-job --job FILE [--format text|json]
-  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
-  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
-  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
-  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
-  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
-  org2 roam db-sync --dir DIR [--recursive] [--apply]
-  org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
-  org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
-  org2 roam connections --dir DIR (--id ID | --file FILE) [--depth 1|2] [--format json]
-  org2 roam mention-link --dir DIR --file FILE --mention KEY --target ID --if-revision HASH [--apply]
-  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
-  org2 graph audit --dir DIR [--recursive] [--format report|json]
+  celorga id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
+  celorga backlinks --id UUID [--dir DIR] [--recursive]
+  celorga index --dir DIR [--recursive] [--include-archives] [--format text|json]
+  celorga search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  celorga query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  celorga query actions --object ID|TITLE|LINK [--recent-days N] [--dir DIR] [--recursive] [--format text|json]
+  celorga entity show NAME [--dir DIR] [--recursive] [--format text|json]
+  celorga query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
+  celorga query clocks --dir DIR [--recursive] [--format text|json]
+  celorga clock --dir DIR [--recursive] [--format text|json]
+  celorga compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
+  celorga render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  celorga property-view list|query|save|edit --dir CORPUS [--help]
+  celorga query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
+  celorga table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
+  celorga agent capabilities
+  celorga agent <context|search|fetch|bundle> [options]
+  celorga context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
+  celorga brief today [--dir DIR] [--recursive] [--out views/today.org]
+  celorga brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
+  celorga brief node --id ID [--dir DIR] [--recursive] [--out views/node.org]
+  celorga ai validate-job --job FILE [--format text|json]
+  celorga ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  celorga ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  celorga ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  celorga ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  celorga ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
+  celorga ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
+  celorga roam db-sync --dir DIR [--recursive] [--apply]
+  celorga roam node new --dir DIR --title TITLE [--id UUID] [--apply]
+  celorga roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
+  celorga roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
+  celorga roam connections --dir DIR (--id ID | --file FILE) [--depth 1|2] [--format json]
+  celorga roam mention-link --dir DIR --file FILE --mention KEY --target ID --if-revision HASH [--apply]
+  celorga roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
+  celorga graph audit --dir DIR [--recursive] [--format report|json]
 
 Maintenance / health:
-  org2 doctor [--dir CORPUS] [--json]
-  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
-  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
-  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
-  org2 ai validate-job --job FILE [--format text|json]
-  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
-  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
-  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
-  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
-  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
-  org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
-  org2 lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
-  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
+  celorga doctor [--dir CORPUS] [--json]
+  celorga index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
+  celorga approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--run-detail ID] [--format text|json]
+  celorga compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
+  celorga ai validate-job --job FILE [--format text|json]
+  celorga ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  celorga ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  celorga ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  celorga ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  celorga ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
+  celorga ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
+  celorga graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
+  celorga lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
 
 Other:
-  org2 version
-  org2 --version
-  org2 lsp
-  org2 server <init|start|status|pair|revoke|stop|permissions|token|mcp|assign|service|push-config> [options]
+  celorga version
+  celorga --version
+  celorga lsp
+  celorga server <init|start|status|pair|revoke|stop|permissions|token|mcp|assign|service|push-config> [options]
 
 Tips:
-  - Use --help with subcommands for detailed flags (e.g., org2 agenda --help).
+  - Use --help with subcommands for detailed flags (e.g., celorga agenda --help).
   - Use --format json for scriptable output where supported; --json is a shorthand alias.
   - Commands that mutate files preview by default and require --apply to write.`);
   process.exit(exitCode);
@@ -9381,10 +9381,10 @@ function printScopedUsage(
   let text = "";
 
   if (command === "agenda") {
-    text = `org2 agenda
+    text = `celorga agenda
 
 Usage:
-  org2 agenda --dir DIR [--recursive] [--include-archives] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  celorga agenda --dir DIR [--recursive] [--include-archives] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
 
 Flags:
   --dir DIR           Root directory to scan
@@ -9396,10 +9396,10 @@ Flags:
   --workload          Include JSON effort workload rollups by date/group/tag
   --format text|json  Output format`;
   } else if (command === "todo") {
-    text = `org2 todo ${options.todoAction}
+    text = `celorga todo ${options.todoAction}
 
 Usage:
-  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  celorga todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9413,10 +9413,10 @@ Flags:
   --now ISO           Override approval / closed timestamp
   --apply             Write changes instead of previewing`;
   } else if (command === "approvals") {
-    text = `org2 approvals
+    text = `celorga approvals
 
 Usage:
-  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
+  celorga approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
 
 Flags:
   --dir DIR           Root directory to scan
@@ -9426,10 +9426,10 @@ Flags:
   --run-detail ID     Include the current full run in JSON output; repeatable
   --format text|json  Output format`;
   } else if (command === "plan") {
-    text = `org2 plan ${options.planAction}
+    text = `celorga plan ${options.planAction}
 
 Usage:
-  org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  celorga plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9438,10 +9438,10 @@ Flags:
   --date YYYY-MM-DD   Planned date for 'set'
   --apply             Write changes instead of previewing`;
   } else if (command === "crypt") {
-    text = `org2 crypt ${options.cryptAction}
+    text = `celorga crypt ${options.cryptAction}
 
 Usage:
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
+  celorga crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9455,11 +9455,11 @@ Flags:
   --gpg-timeout SECONDS Maximum time to wait for gpg
   --apply             Write changes instead of previewing`;
   } else if (command === "capture") {
-    text = `org2 capture
+    text = `celorga capture
 
 Usage:
-  org2 capture --file FILE --title TITLE [--template note|task] [--body TEXT] [--apply]
-  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--author NAME] [--apply]
+  celorga capture --file FILE --title TITLE [--template note|task] [--body TEXT] [--apply]
+  celorga capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--author NAME] [--apply]
 
 Flags:
   --file FILE           Target file, or source file when --to is set
@@ -9474,10 +9474,10 @@ Flags:
   --template note|task  Capture template
   --apply               Write changes instead of previewing`;
   } else if (command === "archive") {
-    text = `org2 archive
+    text = `celorga archive
 
 Usage:
-  org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
+  celorga archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
 
 Flags:
   --file FILE          Source file
@@ -9486,10 +9486,10 @@ Flags:
   --format text|diff|json  Output format; diff/json include archive provenance preview
   --apply              Write changes instead of previewing`;
   } else if (command === "refile") {
-    text = `org2 refile
+    text = `celorga refile
 
 Usage:
-  org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
+  celorga refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
 
 Flags:
   --file FILE        Source file
@@ -9499,22 +9499,22 @@ Flags:
   --apply            Write changes instead of previewing`;
   } else if (command === "export") {
     text = options.exportAction === "beamer"
-      ? `org2 export beamer
+      ? `celorga export beamer
 
 Usage:
-  org2 export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
+  celorga export beamer --file FILE [--out FILE] [--pdf] [--latex-engine COMMAND] [--apply]
 
 Flags:
-  --file FILE             Input Org/Org2 presentation
+  --file FILE             Input Org presentation
   --out FILE              Output .tex or .pdf file
   --pdf                   Compile the generated Beamer source to PDF
   --latex-engine COMMAND  LaTeX engine command or path (default: pdflatex)
   --apply                 Write the output instead of previewing`
-      : `org2 export html
+      : `celorga export html
 
 Usage:
-  org2 export html --file FILE [--out FILE] [--apply]
-  org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
+  celorga export html --file FILE [--out FILE] [--apply]
+  celorga export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
 
 Flags:
   --file FILE      Single input file
@@ -9525,25 +9525,25 @@ Flags:
   --index FILE     Optional index file name
   --apply          Write files instead of previewing`;
   } else if (command === "publish") {
-    text = `org2 publish
+    text = `celorga publish
 
 Usage:
-  org2 publish [PROJECT] [--config PATH] [--preview]
-  org2 publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
-  org2 publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
-  org2 publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
-  org2 publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
+  celorga publish [PROJECT] [--config PATH] [--preview]
+  celorga publish document --file FILE --to web --out-dir DIR [--line N] [--apply]
+  celorga publish document --file FILE --to beamer-pdf --out-file FILE.pdf [--line N] [--apply]
+  celorga publish document --file FILE --to google-docs|google-slides|google-sheets [--folder-id ID] [--apply]
+  celorga publish document --file FILE --to google-drive-pdf --pdf-file FILE.pdf [--folder-id ID] [--apply]
 
 Flags:
   --config PATH   Publish config file
   --preview       Do not write project outputs
 
-Run 'org2 publish document --help' for single-document destinations and guarded Google Drive updates.`;
+Run 'celorga publish document --help' for single-document destinations and guarded Google Drive updates.`;
   } else if (command === "fmt") {
-    text = `org2 fmt
+    text = `celorga fmt
 
 Usage:
-  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
+  celorga fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--canonical-org] [--check] [--apply]
 
 Flags:
   --stdin         Read input from stdin
@@ -9555,15 +9555,15 @@ Flags:
   --check         Exit non-zero if formatting would change files
   --apply         Write changes instead of previewing`;
   } else if (command === "lsp") {
-    text = `org2 lsp
+    text = `celorga lsp
 
 Usage:
-  org2 lsp`;
+  celorga lsp`;
   } else if (command === "id") {
-    text = `org2 id ${options.idAction}
+    text = `celorga id ${options.idAction}
 
 Usage:
-  org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
+  celorga id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
 
 Flags:
   --file FILE       Target file
@@ -9572,10 +9572,10 @@ Flags:
   --format text|json Output format
   --apply           Write changes for 'ensure'`;
   } else if (command === "backlinks") {
-    text = `org2 backlinks
+    text = `celorga backlinks
 
 Usage:
-  org2 backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  celorga backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
   --id UUID         Target ID
@@ -9585,10 +9585,10 @@ Flags:
   --files FILE      One or more target files
   --format text|json Output format`;
   } else if (command === "index") {
-    text = `org2 index
+    text = `celorga index
 
 Usage:
-  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
+  celorga index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--incremental] [--format text|json]
 
 Builds a rebuildable exact-text search index under ${org2IndexHome()}/<corpus-slug>-<hash>/search-v1.json. Org files remain canonical; the index is disposable machine-local derived storage.
 
@@ -9601,10 +9601,10 @@ Flags:
   --incremental      Update only --file/--files in an existing compatible index
   --format text|json Output format`;
   } else if (command === "search") {
-    text = `org2 search
+    text = `celorga search
 
 Usage:
-  org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga search QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
 Search scans .org and .org2 files for literal, case-insensitive text and returns cited file/line matches. Directory scans are non-recursive unless --recursive is set.
 
@@ -9628,14 +9628,14 @@ Flags:
   --sort MODE        scan|relevance|date-desc|date-asc
   --format text|json Output format`;
   } else if (command === "query") {
-    text = `org2 query
+    text = `celorga query
 
 Usage:
-  org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query --id UUID [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query --text TEXT [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--include-archives] [--format text|json]
-  org2 query actions --object ID|TITLE|LINK [--recent-days N] [--open-limit N] [--completed-limit N] [--dir DIR] [--recursive] [--format text|json]
+  celorga query QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga query --id UUID [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga query --text TEXT [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  celorga query actions --object ID|TITLE|LINK [--recent-days N] [--open-limit N] [--completed-limit N] [--dir DIR] [--recursive] [--format text|json]
 
 Flags:
   --id UUID         Target ID lookup (legacy)
@@ -9662,10 +9662,10 @@ Flags:
   --sort MODE       scan|relevance|date-desc|date-asc
   --format text|json Output format`;
   } else if (command === "compile") {
-    text = `org2 compile corpus
+    text = `celorga compile corpus
 
 Usage:
-  org2 compile corpus [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
+  celorga compile corpus [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
 
 Flags:
   --dir DIR          Root directory to scan
@@ -9682,17 +9682,17 @@ Output:
   Stable schema-versioned corpus artifact for LLM/tool clients. Includes
   standardized generated-artifact metadata, source hashes, headings, IDs,
   aliases, links, backlinks, TODO/planning state, properties, source ranges,
-  and snippets. Org2 emits data only; it does not call an LLM.`;
+  and snippets. Celorga emits data only; it does not call an LLM.`;
   } else if (command === "render-chart") {
-    text = `org2 render-chart
+    text = `celorga render-chart
 
 Usage:
-  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
-  org2 render-chart --stdin [--out FILE] [--format svg|json]
+  celorga render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  celorga render-chart --stdin [--out FILE] [--format svg|json]
 
 Flags:
-  --file FILE       Source Org/Org2 file
-  --stdin           Read Org/Org2 input from standard input
+  --file FILE       Source Org file
+  --stdin           Read Org input from standard input
   --block-id ID     Select a chart by adjacent #+name
   --id ID           Alias for --block-id
   --line N          Select the first chart table at or after line N
@@ -9700,21 +9700,21 @@ Flags:
   --format FORMAT   svg (default) or json diagnostics envelope
 
 Output:
-  Deterministic SVG for #+chart or #+plot metadata attached to an org2 table.
+  Deterministic SVG for #+chart or #+plot metadata attached to an Org table.
   Line and bar charts accept comma-separated y columns for multiple series.
   JSON output includes ok, format, artifact, source, diagnostics, and svg.`;
   } else if (command === "query-data") {
-    text = `org2 query-data
+    text = `celorga query-data
 
 Usage:
-  org2 query-data --file FILE [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
-  org2 query-data --file FILE --all-results --apply [--format json]
-  org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
-  org2 query-data --file FILE --inspect
+  celorga query-data --file FILE [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
+  celorga query-data --file FILE --all-results --apply [--format json]
+  celorga query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
+  celorga query-data --file FILE --inspect
 
 Flags:
-  --file FILE         Source Org/Org2 file containing dataset and SQL blocks
-  --stdin             Read Org/Org2 input from standard input
+  --file FILE         Source Org file containing dataset and SQL blocks
+  --stdin             Read Org input from standard input
   --results NAME      SQL result block to run; optional when the file has one SQL block
   --all-results       Run every SQL result and apply them with one atomic file write
   --line N            Select the SQL result block containing or after line N
@@ -9730,7 +9730,7 @@ Input:
   type: csv|parquet|json plus path/url, type: table plus source:
   named_org_table, type: clickhouse plus profile/query, or type: metabase
   plus profile/question. Remote profiles are resolved from dataSources in the
-  nearest org2.json and secrets are read from profile-named environment
+  nearest celorga.json (or org2.json) and secrets are read from profile-named environment
   variables. Optional \`\`\`sql view=NAME blocks define reusable
   DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
   result names must be unique. Dataset names and SQL view names must not
@@ -9744,11 +9744,11 @@ Input:
   Refresh is explicit: this command may call configured remote sources, while
   HTML rendering never executes warehouse queries.`;
   } else if (command === "context") {
-    text = `org2 context
+    text = `celorga context
 
 Usage:
-  org2 context QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--budget 8k] [--limit N] [--include sources,backlinks,neighbors] [--format markdown|org|json]
-  org2 context --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format markdown|org|json]
+  celorga context QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--budget 8k] [--limit N] [--include sources,backlinks,neighbors] [--format markdown|org|json]
+  celorga context --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format markdown|org|json]
 
 Flags:
   --query QUERY      Retrieval query (or pass QUERY as first positional argument)
@@ -9763,23 +9763,23 @@ Flags:
 Output:
   Deterministic context pack for agents and humans: objective/query, cited notes with file:line provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and next actions.`;
   } else if (command === "brief") {
-    text = `org2 brief
+    text = `celorga brief
 
 Usage:
-  org2 brief today [--dir DIR] [--recursive] [--limit N] [--out views/today.org] [--format markdown|org|json]
-  org2 brief project NAME [--dir DIR] [--recursive] [--limit N] [--out views/NAME.org] [--format markdown|org|json]
-  org2 brief node --id ID [--dir DIR] [--recursive] [--out views/node.org] [--format markdown|org|json]
+  celorga brief today [--dir DIR] [--recursive] [--limit N] [--out views/today.org] [--format markdown|org|json]
+  celorga brief project NAME [--dir DIR] [--recursive] [--limit N] [--out views/NAME.org] [--format markdown|org|json]
+  celorga brief node --id ID [--dir DIR] [--recursive] [--out views/node.org] [--format markdown|org|json]
 
 Human-facing briefings from the agent context substrate. Output cites notes/raw sources and marks generated synthesis review-required.`;
   } else if (command === "agent") {
-    text = `org2 agent ${options.agentAction || "context"}
+    text = `celorga agent ${options.agentAction || "context"}
 
 Usage:
-  org2 agent capabilities
-  org2 agent bundle --query QUERY [--scope project:NAME] [--since 90d] [--source-type TYPE] [--review-status STATUS] [--max-tokens N]
-  org2 agent context --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
-  org2 agent search --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
-  org2 agent fetch --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+  celorga agent capabilities
+  celorga agent bundle --query QUERY [--scope project:NAME] [--since 90d] [--source-type TYPE] [--review-status STATUS] [--max-tokens N]
+  celorga agent context --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+  celorga agent search --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+  celorga agent fetch --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
 
 Flags:
   --query QUERY      Retrieval query for context/search
@@ -9800,20 +9800,20 @@ Output:
   Schema org2:agent-context:v1 with source ranges, citations, IDs, titles,
   tags, properties, optional backlinks/neighbors, and bounded context text.`;
   } else if (command === "graph") {
-    text = `org2 graph ${options.graphAction || "audit"}
+    text = `celorga graph ${options.graphAction || "audit"}
 
 Usage:
-  org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
-  org2 graph repair-candidates [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format json]
+  celorga graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
+  celorga graph repair-candidates [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format json]
 
 Checks:
   Broken links, orphan notes, duplicate IDs/entities, and stale generated artifacts.
   Findings separate deterministic fixes from review-gated suggestions.`;
   } else if (command === "lint") {
-    text = `org2 lint
+    text = `celorga lint
 
 Usage:
-  org2 lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  celorga lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -9829,16 +9829,16 @@ Checks:
   and ambiguous wiki labels), and conventional corpus-flow role/path
   mismatches.`;
   } else if (command === "ai") {
-    text = `org2 ai ${options.aiAction || "validate-job"}
+    text = `celorga ai ${options.aiAction || "validate-job"}
 
 Usage:
-  org2 ai validate-job --job FILE [--format text|json]
-  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
-  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
-  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
-  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
-  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
+  celorga ai validate-job --job FILE [--format text|json]
+  celorga ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  celorga ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  celorga ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  celorga ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  celorga ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
+  celorga ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
 
 Flags:
   --job FILE         AI job manifest JSON file
@@ -9856,10 +9856,10 @@ Checks:
   promote appends only reviewed drafts to canonical notes and marks the source promoted.`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
-      text = `org2 roam db-sync
+      text = `celorga roam db-sync
 
 Usage:
-  org2 roam db-sync --dir DIR [--recursive] [--apply] [--format text|json]
+  celorga roam db-sync --dir DIR [--recursive] [--apply] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -9867,18 +9867,18 @@ Flags:
   --format text|json Output format
   --apply           Write missing file IDs`;
     } else if (options.roamAction === "backlinks") {
-      text = `org2 roam backlinks
+      text = `celorga roam backlinks
 
 Usage:
-  org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  celorga roam backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
 
 Notes:
-  Alias for org2 backlinks, kept for namespaced editor flows.`;
+  Alias for celorga backlinks, kept for namespaced editor flows.`;
     } else if (options.roamAction === "node") {
-      text = `org2 roam node ${options.roamNodeAction}
+      text = `celorga roam node ${options.roamNodeAction}
 
 Usage:
-  org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply] [--format text|json]
+  celorga roam node new --dir DIR --title TITLE [--id UUID] [--apply] [--format text|json]
 
 Flags:
   --dir DIR         Output directory
@@ -9887,10 +9887,10 @@ Flags:
   --format text|json Output format
   --apply           Write the file instead of previewing`;
     } else if (options.roamAction === "link") {
-      text = `org2 roam link ${options.roamLinkAction}
+      text = `celorga roam link ${options.roamLinkAction}
 
 Usage:
-  org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply] [--format text|json]
+  celorga roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply] [--format text|json]
 
 Flags:
   --file FILE       Target file
@@ -9901,10 +9901,10 @@ Flags:
   --format text|json Output format
   --apply           Write changes instead of previewing`;
     } else if (options.roamAction === "linkify") {
-      text = `org2 roam linkify
+      text = `celorga roam linkify
 
 Usage:
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
+  celorga roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -9913,10 +9913,10 @@ Flags:
   --format text|json Output format
   --apply           Write linkified content instead of previewing`;
     } else if (options.roamAction === "graph") {
-      text = `org2 roam graph
+      text = `celorga roam graph
 
 Usage:
-  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
+  celorga roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -10144,19 +10144,19 @@ Flags:
   }
 
   if (command === "brief") {
-    if (!briefAction) { console.error("Error: org2 brief requires a subcommand (today, project, or node)"); process.exit(1); }
-    if (briefAction === "project" && !briefName.trim()) { console.error("Error: org2 brief project requires a project name"); process.exit(1); }
-    if (briefAction === "node" && !agentId.trim()) { console.error("Error: org2 brief node requires --id ID"); process.exit(1); }
+    if (!briefAction) { console.error("Error: celorga brief requires a subcommand (today, project, or node)"); process.exit(1); }
+    if (briefAction === "project" && !briefName.trim()) { console.error("Error: celorga brief project requires a project name"); process.exit(1); }
+    if (briefAction === "node" && !agentId.trim()) { console.error("Error: celorga brief node requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
         try { const config = loadConfig(configPath); const configDir = path.dirname(configPath); files = resolveFilesFromConfig(config, configDir); if (files.length === 0) { console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`); process.exit(1); } dir = configDir; }
         catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
-      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 brief"); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, --file, or celorga.json config for celorga brief"); process.exit(1); }
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
-    if (files.length === 0) { console.error("Error: no Org files found for org2 brief"); process.exit(1); }
+    if (files.length === 0) { console.error("Error: no Org files found for celorga brief"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set((agentIncludeRaw || "sources,backlinks").split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const today = brandEnv("ORG2_TODAY") || new Date().toISOString().slice(0, 10);
@@ -10172,10 +10172,10 @@ Flags:
       ? buildAgentContextPayload(corpus, { action: "fetch", id: agentId, limit: 1, maxChars: parseBudgetToChars(agentMaxCharsRaw), include: ["sources", "backlinks", "neighbors"], recencyWeight, salienceWeight })
       : buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
     const title = briefAction === "today"
-      ? `Org2 Briefing: Today (${today})`
+      ? `Celorga Briefing: Today (${today})`
       : briefAction === "node"
-        ? `Org2 Briefing: Node ${payload.results[0]?.title || agentId}`
-        : `Org2 Briefing: Project ${briefName}`;
+        ? `Celorga Briefing: Node ${payload.results[0]?.title || agentId}`
+        : `Celorga Briefing: Project ${briefName}`;
     const rendered = contextFormat === "json"
       ? JSON.stringify(payload, null, 2) + "\n"
       : (briefAction === "node" ? renderNodeBriefing(payload, title, contextFormat) : renderBriefing(payload, title, contextFormat)) + "\n";
@@ -10186,27 +10186,27 @@ Flags:
 
   if (command === "agent" || command === "context") {
     if (command === "context") agentAction = agentId.trim() ? "fetch" : "bundle";
-    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (capabilities, bundle, context, search, or fetch)"); process.exit(1); }
+    if (!agentAction) { console.error("Error: celorga agent requires a subcommand (capabilities, bundle, context, search, or fetch)"); process.exit(1); }
     if (agentAction === "capabilities") {
       process.stdout.write(JSON.stringify(buildOrg2CapabilityManifest(), null, 2) + "\n");
       return;
     }
-    if (command === "context" && agentQuery.trim() && agentId.trim()) { console.error("Error: org2 context accepts either QUERY/--query or --id ID, not both"); process.exit(1); }
+    if (command === "context" && agentQuery.trim() && agentId.trim()) { console.error("Error: celorga context accepts either QUERY/--query or --id ID, not both"); process.exit(1); }
     if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) {
-      console.error(command === "context" ? "Error: org2 context requires QUERY/--query or --id ID" : "Error: org2 agent/context requires --query QUERY");
+      console.error(command === "context" ? "Error: celorga context requires QUERY/--query or --id ID" : "Error: celorga agent/context requires --query QUERY");
       process.exit(1);
     }
-    if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
+    if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: celorga agent fetch requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
         try { const config = loadConfig(configPath); const configDir = path.dirname(configPath); files = resolveFilesFromConfig(config, configDir); if (files.length === 0) { console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`); process.exit(1); } dir = configDir; }
         catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
-      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 agent/context"); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, --file, or celorga.json config for celorga agent/context"); process.exit(1); }
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
-    if (files.length === 0) { console.error("Error: no Org files found for org2 agent/context retrieval"); process.exit(1); }
+    if (files.length === 0) { console.error("Error: no Org files found for celorga agent/context retrieval"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const corpus = compileCorpusIncremental(files, {
@@ -10223,7 +10223,7 @@ Flags:
 
   if (command === "ai") {
     if (!aiAction) {
-      console.error("Error: org2 ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
+      console.error("Error: celorga ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
       process.exit(1);
     }
 
@@ -10252,7 +10252,7 @@ Flags:
       }
 
       if (reviewFiles.length === 0) {
-        console.error("Error: org2 ai review requires --dir DIR or --files FILE... to list, or --file DRAFT --status reviewed|rejected|deferred to update");
+        console.error("Error: celorga ai review requires --dir DIR or --files FILE... to list, or --file DRAFT --status reviewed|rejected|deferred to update");
         process.exit(1);
       }
       const queue = collectAiReviewQueue(reviewFiles);
@@ -10273,11 +10273,11 @@ Flags:
 
     if (aiAction === "promote") {
       if (!aiPromoteFile) {
-        console.error("Error: org2 ai promote requires --file DRAFT");
+        console.error("Error: celorga ai promote requires --file DRAFT");
         process.exit(1);
       }
       if (!aiPromoteToFile) {
-        console.error("Error: org2 ai promote requires --to-file NOTE");
+        console.error("Error: celorga ai promote requires --to-file NOTE");
         process.exit(1);
       }
 
@@ -10318,13 +10318,13 @@ Flags:
 
     if (aiAction === "suggest-links") {
       if (!dir) {
-        console.error("Error: org2 ai suggest-links requires --dir DIR");
+        console.error("Error: celorga ai suggest-links requires --dir DIR");
         process.exit(1);
       }
       const report = await buildAiLinkSuggestionReport({ dir, recursive, targetFiles: files, out: aiOut || undefined });
       if (aiApply) {
         if (!aiOut) {
-          console.error("Error: org2 ai suggest-links --apply requires --out FILE; canonical notes are never edited directly");
+          console.error("Error: celorga ai suggest-links --apply requires --out FILE; canonical notes are never edited directly");
           process.exit(1);
         }
         const outputPath = resolveWorkspaceRelative(process.cwd(), aiOut, "--out");
@@ -10347,7 +10347,7 @@ Flags:
     }
 
     if (!aiJobFile && !(aiAction === "run" && aiTask && files.length > 0)) {
-      console.error(`Error: org2 ai ${aiAction} requires --job FILE${aiAction === "run" ? " or --task TASK --file FILE" : ""}`);
+      console.error(`Error: celorga ai ${aiAction} requires --job FILE${aiAction === "run" ? " or --task TASK --file FILE" : ""}`);
       process.exit(1);
     }
 
@@ -10375,7 +10375,7 @@ Flags:
           template: aiTask === "summarize-meeting" ? "meeting-summary@v1" : aiTask,
           instructions: aiTask === "summarize-meeting"
             ? "Summarize the meeting into a concise brief with key decisions, action items, entities, suggested links, and source citations."
-            : `Run ${aiTask} on the supplied Org2 source files.`,
+            : `Run ${aiTask} on the supplied Celorga source files.`,
         },
         adapter: { name: "local-test", model: aiTask === "summarize-meeting" ? "deterministic-meeting-summary" : "deterministic-fixture" },
         output: { target: aiOut ? "views" : "stdout", path: aiOut || undefined },
@@ -10436,7 +10436,7 @@ Flags:
       }
 
       if (!outputPath) {
-        console.error("Error: org2 ai run requires manifest output.path or --out FILE for non-stdout outputs");
+        console.error("Error: celorga ai run requires manifest output.path or --out FILE for non-stdout outputs");
         process.exit(1);
       }
 
@@ -10459,11 +10459,11 @@ Flags:
       return;
     }
 
-    console.error("Error: org2 ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
+    console.error("Error: celorga ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
     process.exit(1);
   }
 
-  // Treat `org2 roam backlinks ...` as a namespaced alias for `org2 backlinks ...`.
+  // Treat `celorga roam backlinks ...` as a namespaced alias for `celorga backlinks ...`.
   // This lets editor integrations stay under `roam` while sharing the same implementation.
   if (command === "roam" && roamAction === "backlinks") {
     command = "backlinks";
@@ -10471,29 +10471,29 @@ Flags:
 
   if (command === "roam") {
     if (roamAction !== "link" && !dir) {
-      console.error("Error: org2 roam requires --dir DIR");
+      console.error("Error: celorga roam requires --dir DIR");
       process.exit(1);
     }
 
     if (roamAction === "link") {
       if (roamLinkAction !== "insert-backlink") {
-        console.error("Error: org2 roam link requires a subcommand (insert-backlink)");
+        console.error("Error: celorga roam link requires a subcommand (insert-backlink)");
         process.exit(1);
       }
       if (!roamLinkFile) {
-        console.error("Error: org2 roam link insert-backlink requires --file FILE");
+        console.error("Error: celorga roam link insert-backlink requires --file FILE");
         process.exit(1);
       }
       if (!roamLinkPos) {
-        console.error("Error: org2 roam link insert-backlink requires --pos LINE[:COL]");
+        console.error("Error: celorga roam link insert-backlink requires --pos LINE[:COL]");
         process.exit(1);
       }
       if (!roamLinkTitle) {
-        console.error("Error: org2 roam link insert-backlink requires --title TITLE");
+        console.error("Error: celorga roam link insert-backlink requires --title TITLE");
         process.exit(1);
       }
       if (roamLinkStyle === "id" && !roamLinkId) {
-        console.error("Error: org2 roam link insert-backlink with --style id requires --id UUID");
+        console.error("Error: celorga roam link insert-backlink with --style id requires --id UUID");
         process.exit(1);
       }
 
@@ -10542,12 +10542,12 @@ Flags:
 
     if (roamAction === "node") {
       if (roamNodeAction !== "new") {
-        console.error("Error: org2 roam node requires a subcommand (new)");
+        console.error("Error: celorga roam node requires a subcommand (new)");
         process.exit(1);
       }
 
       if (!roamTitle) {
-        console.error("Error: org2 roam node new requires --title TITLE");
+        console.error("Error: celorga roam node new requires --title TITLE");
         process.exit(1);
       }
 
@@ -10582,7 +10582,7 @@ Flags:
           fs.writeFileSync(filePath, content, "utf8");
         }
       } else {
-        console.error("Error: org2 roam node new is mutating; pass --apply to write the file");
+        console.error("Error: celorga roam node new is mutating; pass --apply to write the file");
         process.exit(1);
       }
 
@@ -10686,7 +10686,7 @@ Flags:
           process.stdout.write(`${result.file}\t${result.replacements}\n`);
         }
         console.error(
-          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s)` +
+          `celorga roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s)` +
             (allFilesUnfiltered.length > allFiles.length ? `; excluded ${allFilesUnfiltered.length - allFiles.length} file(s)` : "") +
             `; ${changedFiles.length} file(s) changed; ` +
             `${replacementCount} link(s) inserted; ` +
@@ -10739,7 +10739,7 @@ Flags:
           process.stdout.write(reportText);
         }
       } else {
-        const html = renderRoamGraphHtml(graph, { title: "Org2 Roam Graph", dir });
+        const html = renderRoamGraphHtml(graph, { title: "Celorga Roam Graph", dir });
         fs.mkdirSync(path.dirname(outputPath), { recursive: true });
         fs.writeFileSync(outputPath, html, "utf8");
         process.stdout.write(outputPath + "\n");
@@ -10823,7 +10823,7 @@ Flags:
         process.stdout.write(filePath + "\n");
       }
       console.error(
-        `org2 roam db-sync: scanned ${allFiles.length} file(s); ${missing.length} missing file-level IDs` +
+        `celorga roam db-sync: scanned ${allFiles.length} file(s); ${missing.length} missing file-level IDs` +
           (roamApply ? `; applied IDs to ${applied} file(s)` : "")
       );
     }
@@ -10836,7 +10836,7 @@ Flags:
       ? path.resolve(publishConfigPath.trim())
       : findConfigFile(process.cwd());
     if (!configPathResolved) {
-      console.error("Error: publish requires an org2.json config (pass --config PATH or run from a configured directory)");
+      console.error("Error: publish requires a celorga.json config (pass --config PATH or run from a configured directory)");
       process.exit(1);
     }
 
@@ -11035,7 +11035,7 @@ Flags:
           || firstPass.metadata?.subtitle
           || firstParagraphText(firstPass.html)
           || firstPass.title
-          || "Org2 docs",
+          || "Celorga docs",
       ).trim();
       const ogDesc = truncateMetadataText(ogDescRaw, 200);
       const titleLines = wrapOpenGraphText(ogTitle, 30, 2);
@@ -11690,7 +11690,7 @@ Flags:
       }
 
       if (exportedForOutput.length === 0 && !indexOutput) {
-        process.stdout.write(`No Org/Org2 files found under ${sourceDirInput}\n`);
+        process.stdout.write(`No Org files found under ${sourceDirInput}\n`);
         return;
       }
 
@@ -11940,7 +11940,7 @@ Flags:
     const lines = raw.split("\n");
 
     if (idAction === "get" && idFormat === "diff") {
-      console.error("Error: org2 id get does not support --format diff");
+      console.error("Error: celorga id get does not support --format diff");
       process.exit(1);
     }
 
@@ -12244,13 +12244,13 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
 
     if (indexIncremental && files.length === 0) {
-      console.error("Error: org2 index --incremental requires --file or --files");
+      console.error("Error: celorga index --incremental requires --file or --files");
       process.exit(1);
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
@@ -12326,7 +12326,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -12342,7 +12342,7 @@ Flags:
       ),
     ).sort((a, b) => a.localeCompare(b));
     if (files.length === 0 && runs.length === 0) {
-      console.error("Error: no Org files found for org2 approvals");
+      console.error("Error: no Org files found for celorga approvals");
       process.exit(1);
     }
 
@@ -12461,7 +12461,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -12566,7 +12566,7 @@ Flags:
 
   if (command === "query" && queryActions) {
     if (!queryRelationObject) {
-      console.error("Error: org2 query actions requires --object ID|TITLE|LINK");
+      console.error("Error: celorga query actions requires --object ID|TITLE|LINK");
       process.exit(1);
     }
 
@@ -12597,14 +12597,14 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
     if (files.length === 0) {
-      console.error("Error: no Org files found for org2 query actions");
+      console.error("Error: no Org files found for celorga query actions");
       process.exit(1);
     }
 
@@ -12650,7 +12650,7 @@ Flags:
 
   if (command === "query" && queryRelations) {
     if (!queryRelationObject) {
-      console.error("Error: org2 query relations requires --object ID|TITLE|LINK");
+      console.error("Error: celorga query relations requires --object ID|TITLE|LINK");
       process.exit(1);
     }
 
@@ -12669,7 +12669,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -12737,7 +12737,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -12891,7 +12891,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -13107,7 +13107,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -13144,7 +13144,7 @@ Flags:
 
   if (command === "compile") {
     if (compileAction !== "corpus") {
-      console.error("Error: org2 compile requires a subcommand (corpus)");
+      console.error("Error: celorga compile requires a subcommand (corpus)");
       process.exit(1);
     }
 
@@ -13168,7 +13168,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -13203,8 +13203,8 @@ Flags:
 
 
   if (command === "entity") {
-    if (entityAction !== "show") { console.error("Error: org2 entity requires subcommand show"); process.exit(1); }
-    if (!entityName.trim()) { console.error("Error: org2 entity show requires an entity name/id/alias"); process.exit(1); }
+    if (entityAction !== "show") { console.error("Error: celorga entity requires subcommand show"); process.exit(1); }
+    if (!entityName.trim()) { console.error("Error: celorga entity show requires an entity name/id/alias"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
@@ -13214,7 +13214,7 @@ Flags:
           files = resolveFilesFromConfig(config, configDir);
           dir = configDir;
         } catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
-      } else { console.error("Error: provide either --dir, --files, or org2.json config"); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, or celorga.json config"); process.exit(1); }
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     if (files.length === 0) { console.error("Error: no Org files found to compile"); process.exit(1); }
@@ -13252,7 +13252,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -13291,7 +13291,7 @@ Flags:
           process.exit(1);
         }
       } else {
-        console.error("Error: provide either --dir, --files, or org2.json config");
+        console.error("Error: provide either --dir, --files, or celorga.json config");
         process.exit(1);
       }
     }
@@ -14530,7 +14530,7 @@ Flags:
         process.exit(1);
       }
     } else {
-      console.error("Error: provide either --dir, --files, or org2.json config");
+      console.error("Error: provide either --dir, --files, or celorga.json config");
       process.exit(1);
     }
   }

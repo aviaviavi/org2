@@ -69,7 +69,7 @@ public struct CorpusTodoSettingsSection: View {
     } header: {
       Label("TODO States", systemImage: "checklist")
     } footer: {
-      SettingsFooterText("Separate state names with spaces, in cycling order. Terminal states are finished outcomes, such as DONE, MISSED, or CANCELED. These defaults are shared with this corpus through org2.json. A file’s own TODO declaration takes precedence.")
+      SettingsFooterText("Separate state names with spaces, in cycling order. Terminal states are finished outcomes, such as DONE, MISSED, or CANCELED. These defaults are shared with this corpus through its config file (celorga.json or org2.json). A file’s own TODO declaration takes precedence.")
     }
     .disabled(isBusy)
     .task(id: store.corpusRoot?.path) { await load() }

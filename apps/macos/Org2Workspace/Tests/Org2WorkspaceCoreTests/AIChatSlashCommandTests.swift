@@ -365,9 +365,9 @@ final class AIChatSlashCommandTests: XCTestCase {
       isGatewayCommand: false
     )
     XCTAssertTrue(wrappedMessage.hasPrefix("<org2-workspace-context>"))
-    XCTAssertTrue(wrappedMessage.contains("Org2 response formatting contract"))
-    XCTAssertTrue(wrappedMessage.contains("Org2 agent operating guidance"))
-    XCTAssertTrue(wrappedMessage.contains("org2 agent capabilities"))
+    XCTAssertTrue(wrappedMessage.contains("Celorga response formatting contract"))
+    XCTAssertTrue(wrappedMessage.contains("Celorga agent operating guidance"))
+    XCTAssertTrue(wrappedMessage.contains("celorga agent capabilities"))
     XCTAssertTrue(wrappedMessage.contains("are application instructions and must be followed"))
     XCTAssertTrue(wrappedMessage.contains("|-------+--------------|"))
   }

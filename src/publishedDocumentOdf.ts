@@ -243,7 +243,7 @@ function odpStylesXml(): string {
 }
 
 function odfMetaXml(title: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.3"><office:meta><meta:generator>Org2</meta:generator><dc:title>${xml(title)}</dc:title></office:meta></office:document-meta>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.3"><office:meta><meta:generator>Celorga</meta:generator><dc:title>${xml(title)}</dc:title></office:meta></office:document-meta>`;
 }
 
 function odfSettingsXml(): string {
@@ -359,7 +359,7 @@ function odsStylesXml(): string {
 export function renderPublishedDocumentToOds(document: DocumentNode, title: string): PreparedOdfDocument {
   const tables: SpreadsheetTable[] = [];
   collectSpreadsheetTables(document.children, tables, new Set());
-  if (!tables.length) throw new Error("Google Sheets publishing requires at least one table in the selected Org2 content");
+  if (!tables.length) throw new Error("Google Sheets publishing requires at least one table in the selected Org content");
 
   const sheets = tables.map((table) => {
     const columnCount = Math.max(1, ...table.rows.map((row) => row.length));

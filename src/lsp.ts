@@ -1353,7 +1353,7 @@ class LSPServer {
       try {
         const edit = updateCheckboxInText(text, range.start.line + 1);
         actions.push({
-          title: `Org2: Cycle checkbox to [${checkboxMarkers[edit.newState]}]`,
+          title: `Celorga: Cycle checkbox to [${checkboxMarkers[edit.newState]}]`,
           kind: CodeActionKind.RefactorRewrite,
           edit: { changes: { [sourceUri]: [{
             range: { start: { line: range.start.line, character: edit.column },
@@ -1372,7 +1372,7 @@ class LSPServer {
 
     if (text.includes("\r\n")) {
       actions.push({
-        title: "Org2: Convert CRLF line endings to LF",
+        title: "Celorga: Convert CRLF line endings to LF",
         kind: CodeActionKind.QuickFix,
         diagnostics: parserDiagnostics.filter((diag) => String(diag?.message || "").includes("Unsupported line endings: CRLF")),
         isPreferred: true,
@@ -1391,7 +1391,7 @@ class LSPServer {
 
     if (text.includes("\t")) {
       actions.push({
-        title: "Org2: Replace tab characters with two spaces",
+        title: "Celorga: Replace tab characters with two spaces",
         kind: CodeActionKind.QuickFix,
         diagnostics: parserDiagnostics.filter((diag) =>
           String(diag?.message || "").includes("Unsupported construct: tab character")
@@ -1717,7 +1717,7 @@ class LSPServer {
 
     return idDefinitions.map((definition) => {
       const count = backlinkCounts.get(definition.id) ?? 0;
-      const title = count === 0 ? "Org2: no backlinks" : `Org2: ${count} backlink${count === 1 ? "" : "s"}`;
+      const title = count === 0 ? "Celorga: no backlinks" : `Celorga: ${count} backlink${count === 1 ? "" : "s"}`;
 
       return {
         range: definition.range,

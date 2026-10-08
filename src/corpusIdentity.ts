@@ -34,7 +34,7 @@ const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 export function validateCorpusIdentity(value: unknown): { valid: boolean; issues: CorpusIdentityIssue[]; identity?: Org2CorpusIdentity } {
   const issues: CorpusIdentityIssue[] = [];
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { valid: false, issues: [{ path: "corpus", message: "must be an object in org2.json" }] };
+    return { valid: false, issues: [{ path: "corpus", message: "must be an object in celorga.json" }] };
   }
   const raw = value as Record<string, unknown>;
   const schema = String(raw.schema || "").trim();

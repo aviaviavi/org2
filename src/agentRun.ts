@@ -585,7 +585,7 @@ export function transitionAgentRun(run: AgentRun, status: AgentRunStatus, option
     throw new Error("completing a run with pending approvals is not allowed");
   }
   if (status === "completed" && !completedExternally && run.artifacts.some((artifact) => artifact.reviewStatus === "review-required")) {
-    throw new Error("completing a run with review-required artifacts is not allowed; record the review with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed`");
+    throw new Error("completing a run with review-required artifacts is not allowed; record the review with `celorga run artifact-review RUN_ID ARTIFACT_ID --status reviewed`");
   }
   if (status === "completed" && !completionSummary) {
     throw new Error("completing a run requires --summary with a human-readable outcome");
@@ -1113,7 +1113,7 @@ export function renderAgentRunOrg(run: AgentRun): string {
 
 export function parseAgentRunOrg(raw: string): AgentRun {
   const match = /#\+begin_src\s+json\s+:org2-agent-run\s*\n([\s\S]*?)\n#\+end_src/i.exec(String(raw || "").replace(/\r\n/g, "\n"));
-  if (!match) throw new Error("Org2 agent run is missing its machine-state JSON block");
+  if (!match) throw new Error("Celorga agent run is missing its machine-state JSON block");
   const parsed = JSON.parse(match[1]!) as AgentRun;
   const value: AgentRun = {
     ...parsed,
@@ -1123,7 +1123,7 @@ export function parseAgentRunOrg(raw: string): AgentRun {
     })),
   };
   const validation = validateAgentRun(value);
-  if (!validation.valid) throw new Error(`invalid Org2 agent run: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
+  if (!validation.valid) throw new Error(`invalid Celorga agent run: ${validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; ")}`);
   return value;
 }
 
@@ -1186,7 +1186,7 @@ export function saveAgentRun(
     const issues = agentRunSourceConsistency(current);
     if (issues.length > 0) {
       throw new Error(
-        `run source has out-of-band readable-state changes (${issues.map((issue) => issue.field).join(", ")}); run org2 doctor and reconcile the source before writing: ${outputPath}`,
+        `run source has out-of-band readable-state changes (${issues.map((issue) => issue.field).join(", ")}); run celorga doctor and reconcile the source before writing: ${outputPath}`,
       );
     }
   }

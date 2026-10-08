@@ -148,7 +148,7 @@ try {
   const approval = explain({ run: "run-approval" });
   assert.equal(approval.state, "needs-you");
   assert.equal(approval.reason.code, "waiting-approval");
-  assert.match(approval.blocking[0].command, /org2 run approval-decide run-approval /u);
+  assert.match(approval.blocking[0].command, /celorga run approval-decide run-approval /u);
   assert.equal(approval.reportedBy.actor, "Codex");
   const blocked = explain({ run: "run-blocked" });
   assert.equal(blocked.blocking[0].kind, "question");

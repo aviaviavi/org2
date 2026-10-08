@@ -114,7 +114,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
   if (!authorized(request, options.accessTokens)) {
     response.setHeader("WWW-Authenticate", "Bearer");
-    json(response, 401, { error: "A valid read-only OpenOrg access token is required" });
+    json(response, 401, { error: "A valid read-only Celorga access token is required" });
     return;
   }
   if (request.method !== "POST") {

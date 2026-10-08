@@ -18,8 +18,8 @@ the correlated session with that durable decision note and instructs the agent
 to produce replacement review material on the same run without performing the
 protected action. Provider-backed approvals keep an exact
 `Provider draft: PROVIDER:TOOL:DRAFT_ID` line. OpenClaw discovers pending
-`decisionKeys` from `org2 approvals --format json` and resolves the canonical
-pending or decided authority through `org2 run approval-resolve --decision-key
+`decisionKeys` from `celorga approvals --format json` and resolves the canonical
+pending or decided authority through `celorga run approval-resolve --decision-key
 KEY --json`; the CLI owns idempotent request and decision reconciliation, so the
 adapter must not create a parallel review run for the same provider action.
 Scheduled executions retain one
@@ -36,7 +36,7 @@ A Celorga AI chat prompt can carry =ORG2_AI_CHAT_THREAD_ID= (or
 explicitly delegates asynchronous reporting, it should copy that exact marker,
 the active corpus root, readable author identity, source/run reference, and a
 stable idempotency key into the subagent or cron prompt. Lifecycle-generated
-workflow and continuation prompts teach workers to use =org2 thread post ...
+workflow and continuation prompts teach workers to use =celorga thread post ...
 --apply= only after the reported run state or artifact is durable. The plugin
 does not automatically mirror every completion into chat: foreground turns
 already have a normal reply path, and automatic mirroring would create
@@ -62,7 +62,7 @@ with a retry instruction instead of leaving a misleading `running` status.
 
 OpenClaw is the runtime adapter, not the portable worker identity. Before it
 creates or attaches a run, the plugin derives the configured OpenClaw agent ID
-from the hook/session identity and calls `org2 agent-profile resolve --runtime
+from the hook/session identity and calls `celorga agent-profile resolve --runtime
 openclaw --runtime-agent-id ID`. A matching active profile contributes its
 stable `agentRef` and optional primary `goalRef` to the run or workflow. The
 correlation comment retains the non-secret OpenClaw agent ID and resolved refs
@@ -152,9 +152,11 @@ primary; the pre-rename names keep working for several releases:
   agents and apps still on 0.8.x understand them.
 - Record types are accepted as `celorga:KIND:vN` or `org2:KIND:vN`.
 - The plugin ID (`org2-lifecycle`), package name, error codes (`ORG2_*_ERROR`),
-  its private state file (`~/.openclaw/org2-lifecycle/state.json`), and the
-  `org2` executable it runs (a permanent alias of `celorga`) are unchanged, so
-  existing OpenClaw configuration keeps working.
+  and its private state file (`~/.openclaw/org2-lifecycle/state.json`) are
+  unchanged, so existing OpenClaw configuration keeps working.
+- The plugin runs the `celorga` executable and falls back to `org2` (a
+  permanent alias) on hosts that predate the rename. Its prompts name
+  `celorga` commands and tell agents to use `org2` when `celorga` is missing.
 - The plugin does not read environment variables, `celorga.json`/`org2.json`,
   or the corpus state directory itself; it goes through the CLI, which applies
   the Celorga-first rules.

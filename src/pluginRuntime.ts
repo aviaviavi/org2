@@ -329,7 +329,7 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
     const languages = [...new Set(item.languages.map((language) => requiredString(language, `renderer ${contributionId} language`).toLowerCase()))];
     for (const language of languages) {
       if (!LANGUAGE_PATTERN.test(language)) throw new Error(`invalid renderer language ${language}`);
-      if (RESERVED_RENDERER_LANGUAGES.has(language)) throw new Error(`renderer language ${language} is reserved by the Org2 runtime`);
+      if (RESERVED_RENDERER_LANGUAGES.has(language)) throw new Error(`renderer language ${language} is reserved by the Celorga runtime`);
     }
     return {
       id: contributionId,
@@ -457,10 +457,10 @@ function compareSemanticVersions(left: SemanticVersion, right: SemanticVersion):
 
 function satisfiesComparator(version: SemanticVersion, comparator: string): boolean {
   const match = /^(>=|<=|>|<|=|\^|~)?\s*(v?\d+(?:\.\d+){0,2}(?:[-+][A-Za-z0-9.-]+)?)$/.exec(comparator.trim());
-  if (!match) throw new Error(`unsupported Org2 engine comparator: ${comparator}`);
+  if (!match) throw new Error(`unsupported Celorga engine comparator: ${comparator}`);
   const operator = match[1] || "=";
   const target = parseSemanticVersion(match[2]!);
-  if (!target) throw new Error(`invalid Org2 engine version: ${match[2]}`);
+  if (!target) throw new Error(`invalid Celorga engine version: ${match[2]}`);
   const comparison = compareSemanticVersions(version, target);
   if (operator === ">=") return comparison >= 0;
   if (operator === "<=") return comparison <= 0;
@@ -481,7 +481,7 @@ function satisfiesComparator(version: SemanticVersion, comparator: string): bool
 export function pluginEngineSatisfied(range: string | undefined, currentVersion: string): boolean {
   if (!range || range.trim() === "" || range.trim() === "*") return true;
   const version = parseSemanticVersion(currentVersion);
-  if (!version) throw new Error(`invalid installed Org2 version: ${currentVersion}`);
+  if (!version) throw new Error(`invalid installed Celorga version: ${currentVersion}`);
   return range.split(/\s*\|\|\s*/).some((alternative) => {
     const comparators = alternative.trim().split(/\s+/).filter(Boolean);
     return comparators.length > 0 && comparators.every((comparator) => satisfiesComparator(version, comparator));

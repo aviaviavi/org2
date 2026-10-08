@@ -222,9 +222,9 @@ public enum OpenOrgServerError: LocalizedError, Equatable, Sendable {
   public var errorDescription: String? {
     switch self {
     case .invalidEndpoint:
-      "Enter the server address, such as http://100.64.0.1:48922, or paste the pairing link from “org2 server pair”."
+      "Enter the server address, such as http://100.64.0.1:48922, or paste the pairing link from “celorga server pair”."
     case .missingCode:
-      "Enter the six-digit pairing code from “org2 server pair”."
+      "Enter the six-digit pairing code from “celorga server pair”."
     case .notPaired:
       "Pair this Mac with a Celorga server in Settings → Sharing first."
     case .connection(let detail):

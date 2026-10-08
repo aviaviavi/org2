@@ -771,7 +771,7 @@ function firstDocumentTitle(doc: DocumentNode): string {
     const title = inlinePlainText(node.title).trim();
     if (title) return title;
   }
-  return "Org2 Document";
+  return "Celorga Document";
 }
 
 function disclosureHeadIncludes(allowIndexing: boolean): string[] {

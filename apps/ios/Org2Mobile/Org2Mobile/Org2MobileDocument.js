@@ -5865,7 +5865,7 @@ ${rows}
     const headline = findTitleFromHeadlines(doc);
     if (headline) return headline;
     if (sourcePath) return node_path_default.basename(sourcePath);
-    return "Org2 Document";
+    return "Celorga Document";
   }
   function renderDocumentHeader(opts) {
     const title = String(opts.title || "").trim();

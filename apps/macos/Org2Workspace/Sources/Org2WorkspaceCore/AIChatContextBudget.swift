@@ -239,7 +239,7 @@ enum AIChatContextBudget {
           (
             key: key,
             text: """
-            OpenOrg workspace context removal
+            Celorga workspace context removal
 
             The previously supplied section \(sectionTitle(for: key)) is no longer present. Treat that section as removed and do not rely on its earlier contents.
             """
@@ -256,9 +256,9 @@ enum AIChatContextBudget {
       prompt = body
     } else {
       prompt = """
-      OpenOrg workspace context delta
+      Celorga workspace context delta
 
-      Only the application-provided sections below changed since the previous successful turn in this runtime session. Keep all other previously supplied OpenOrg instructions and context.
+      Only the application-provided sections below changed since the previous successful turn in this runtime session. Keep all other previously supplied Celorga instructions and context.
 
       \(body)
       """
@@ -329,14 +329,14 @@ enum AIChatContextBudget {
   private static func isProjectSection(_ key: String) -> Bool {
     key.hasPrefix("Project context#")
       || key.hasPrefix("Project notes linked to this chat#")
-      || key.hasPrefix("Org2 workspace operating context#")
-      || key.hasPrefix("Org2 workspace UI snapshot#")
-      || key.hasPrefix("Authorized Org2 corpora#")
-      || key.hasPrefix("Org2 goals and agent identity#")
-      || key.hasPrefix("Connected Org2 sources#")
+      || key.hasPrefix("Celorga workspace operating context#")
+      || key.hasPrefix("Celorga workspace UI snapshot#")
+      || key.hasPrefix("Authorized Celorga corpora#")
+      || key.hasPrefix("Celorga goals and agent identity#")
+      || key.hasPrefix("Connected Celorga sources#")
       || key.hasPrefix("User-selected chat agent#")
       || key.hasPrefix("Current UI selection#")
-      || key.hasPrefix("Selected org2 ")
+      || key.hasPrefix("Selected Org ")
       || key.hasPrefix("Computed backlinks#")
       || key.hasPrefix("Agenda snapshot#")
       || key.hasPrefix("Search context:#")

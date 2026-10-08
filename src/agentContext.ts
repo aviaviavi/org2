@@ -1432,7 +1432,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     ...(results.length === 0 ? ["No matching notes found for this query."] : []),
   ]);
 
-  lines.push(`${h1} Org2 Context Pack`);
+  lines.push(`${h1} Celorga Context Pack`);
   lines.push("");
   lines.push(`${h2} Objective / query`);
   lines.push(query ? `- ${escapeMarkdown(query)}` : "- (not provided)");
@@ -1657,7 +1657,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   }
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
-  if (caveats.length === 0) lines.push("- None surfaced by org2; verify any task-specific assumptions before acting.");
+  if (caveats.length === 0) lines.push("- None surfaced by Celorga; verify any task-specific assumptions before acting.");
   for (const caveat of caveats) lines.push(`- ${caveat}`);
   lines.push("");
   lines.push(`${h2} Suggested next actions`);

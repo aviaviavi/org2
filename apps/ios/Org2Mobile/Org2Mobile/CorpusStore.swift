@@ -840,7 +840,7 @@ final class CorpusStore: ObservableObject {
     let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
     let noteArgument = cleanNote?.isEmpty == false ? " --note \(cleanNote!)" : ""
     let body = """
-    Apply this native Org2 run approval decision with the shared CLI. Verify the immutable identity and fingerprint; do not edit the run machine-state block directly.
+    Apply this native Celorga run approval decision with the shared CLI. Verify the immutable identity and fingerprint; do not edit the run machine-state block directly.
 
     ORG2_RUN_ID: \(runID)
     ORG2_APPROVAL_ID: \(approvalID)
@@ -848,7 +848,7 @@ final class CorpusStore: ObservableObject {
     ORG2_APPROVAL_DECISION: \(decision)
 
     Command:
-    org2 run approval-decide \(runID) \(approvalID) --decision \(decision) --actor mobile\(fingerprintArgument)\(noteArgument)
+    celorga run approval-decide \(runID) \(approvalID) --decision \(decision) --actor mobile\(fingerprintArgument)\(noteArgument)
     """
     try appendAIChatRequest(
       action: .decide,

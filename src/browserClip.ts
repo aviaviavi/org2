@@ -117,7 +117,7 @@ export function importBrowserClip(input: { clip: unknown; root: string; apply?: 
 
 export async function runBrowserClipCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.length === 0) {
-    process.stdout.write("org2 browser-clip import --file CLIP.org2clip --dir CORPUS [--template note|task] [--if-revision HASH|absent --if-clip-revision HASH --apply] [--json]\nPreview first; imports create immutable raw/browser captures and append reviewable views/browser-clips.org.\n");
+    process.stdout.write("celorga browser-clip import --file CLIP.org2clip --dir CORPUS [--template note|task] [--if-revision HASH|absent --if-clip-revision HASH --apply] [--json]\nPreview first; imports create immutable raw/browser captures and append reviewable views/browser-clips.org.\n");
     return;
   }
   if (args[0] !== "import") throw new Error("Expected browser-clip import");

@@ -202,7 +202,7 @@ Context packs should include open questions, next actions, and source line prove
 
 const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encoding: "utf8" });
 const md = run("context", "scarf support triage", "--dir", tmp, "--recursive", "--budget", "8k", "--include", "sources,neighbors,backlinks");
-assert.match(md, /^# Org2 Context Pack/m);
+assert.match(md, /^# Celorga Context Pack/m);
 assert.match(md, /## Objective \/ query/);
 assert.match(md, /support\.org2:3-/);
 assert.match(md, /## Recent timeline entries/);
@@ -227,7 +227,7 @@ assert.match(md, /## Open questions \/ known uncertainty/);
 assert.match(md, /## Suggested next actions/);
 
 const selected = run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "markdown");
-assert.match(selected, /# Org2 Context Pack/);
+assert.match(selected, /# Celorga Context Pack/);
 assert.match(selected, /- scarf-support-1/);
 assert.match(selected, /## Related agent threads/);
 assert.match(selected, /Thread: Scarf triage help/);
@@ -340,7 +340,7 @@ assert.match(selectedThread, /Context attachments:/);
 assert.match(selectedThread, /id:scarf-support-1 -> Scarf support triage \(support\.org2:3-/);
 
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
-assert.match(org, /^\* Org2 Context Pack/m);
+assert.match(org, /^\* Celorga Context Pack/m);
 assert.match(org, /\*\* Top cited notes/);
 
 const json = JSON.parse(run("context", "scarf support triage", "--dir", tmp, "--format", "json", "--budget", "8000"));

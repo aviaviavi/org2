@@ -63,26 +63,26 @@ type ResolvedPluginSource = {
   ref?: string;
 };
 
-const HELP = `Org2 plugins
+const HELP = `Celorga plugins
 
 Usage:
-  org2 plugin list [--dir CORPUS] [--json]
-  org2 plugin init [--apply] [--dir CORPUS]
-  org2 plugin add GIT_SOURCE [--ref REF] [--subdir PATH] [--trust] [--apply] [--dir CORPUS]
-  org2 plugin remove PLUGIN_ID [--apply] [--dir CORPUS]
-  org2 plugin update [PLUGIN_ID] [--trust] [--apply] [--dir CORPUS]
-  org2 plugin sync [--apply] [--dir CORPUS]
-  org2 plugin trust PLUGIN_ID [--revoke] [--apply] [--dir CORPUS]
-  org2 plugin doctor [--dir CORPUS] [--json]
-  org2 plugin exec PLUGIN_ID COMMAND_ID [--dir CORPUS] -- [ARG ...]
-  org2 plugin template PLUGIN_ID:TEMPLATE_ID --out FILE [--apply] [--force] [--dir CORPUS]
-  org2 plugin actions [--context note|heading|thread|run|approval] [--dir CORPUS] [--json]
-  org2 plugin action run PLUGIN_ID:ACTION_ID --context note|heading --file FILE [--line N] [--apply] [--json]
-  org2 plugin action run PLUGIN_ID:ACTION_ID --context thread --thread ID | --context run|approval --run ID [--approval ID]
-  org2 plugin proposals list [--status pending|applied|dismissed] [--json]
-  org2 plugin proposals show|apply|dismiss PROPOSAL_ID [--only N[,N]] [--actor NAME] [--apply] [--json]
-  org2 plugin hooks list [--json]
-  org2 plugin hooks dispatch [--since ISO|DURATION] [--follow] [--apply] [--json]
+  celorga plugin list [--dir CORPUS] [--json]
+  celorga plugin init [--apply] [--dir CORPUS]
+  celorga plugin add GIT_SOURCE [--ref REF] [--subdir PATH] [--trust] [--apply] [--dir CORPUS]
+  celorga plugin remove PLUGIN_ID [--apply] [--dir CORPUS]
+  celorga plugin update [PLUGIN_ID] [--trust] [--apply] [--dir CORPUS]
+  celorga plugin sync [--apply] [--dir CORPUS]
+  celorga plugin trust PLUGIN_ID [--revoke] [--apply] [--dir CORPUS]
+  celorga plugin doctor [--dir CORPUS] [--json]
+  celorga plugin exec PLUGIN_ID COMMAND_ID [--dir CORPUS] -- [ARG ...]
+  celorga plugin template PLUGIN_ID:TEMPLATE_ID --out FILE [--apply] [--force] [--dir CORPUS]
+  celorga plugin actions [--context note|heading|thread|run|approval] [--dir CORPUS] [--json]
+  celorga plugin action run PLUGIN_ID:ACTION_ID --context note|heading --file FILE [--line N] [--apply] [--json]
+  celorga plugin action run PLUGIN_ID:ACTION_ID --context thread --thread ID | --context run|approval --run ID [--approval ID]
+  celorga plugin proposals list [--status pending|applied|dismissed] [--json]
+  celorga plugin proposals show|apply|dismiss PROPOSAL_ID [--only N[,N]] [--actor NAME] [--apply] [--json]
+  celorga plugin hooks list [--json]
+  celorga plugin hooks dispatch [--since ISO|DURATION] [--follow] [--apply] [--json]
 
 Sources:
   github:OWNER/REPOSITORY
@@ -97,7 +97,7 @@ macOS sandbox that denies corpus writes (and corpus reads or network unless
 the manifest requests read-corpus or network), and return proposals that stay
 pending under .org2/plugin-proposals/ until a person applies them.
 
-Source intent lives in org2.json. org2.plugins.lock.json pins an exact Git
+Source intent lives in celorga.json (or org2.json). org2.plugins.lock.json pins an exact Git
 commit and SHA-256 content hash. sync reproduces the lock without moving refs;
 update is the explicit operation that advances mutable refs. Plugin code runs
 only after its exact content hash is trusted on the current machine.`;
@@ -422,7 +422,7 @@ function doctor(corpus: string): { ok: boolean; issues: Array<{ severity: "warni
   }
   for (const entry of lock.plugins) {
     const status = plugins.find((item) => item.id === entry.id)!;
-    if (!status.desired) issues.push({ severity: "warning", pluginId: entry.id, message: "plugin is locked but no longer declared in org2.json" });
+    if (!status.desired) issues.push({ severity: "warning", pluginId: entry.id, message: "plugin is locked but no longer declared in celorga.json" });
     if (!status.installed) issues.push({ severity: "error", pluginId: entry.id, message: String(status.issue || "plugin is not installed") });
     if (!status.trusted) issues.push({ severity: "warning", pluginId: entry.id, message: "content hash is not trusted on this machine" });
     if (!status.compatible) issues.push({ severity: "error", pluginId: entry.id, message: String(status.compatibilityIssue) });
@@ -570,7 +570,7 @@ export async function runPluginCommand(args: string[]): Promise<boolean> {
     const apply = enabled(parsed, "apply");
     const desired = desiredPlugins(corpus);
     const lock = readPluginLock(corpus);
-    if (desired.length && !lock.plugins.length) throw new Error("plugins are declared but no lock exists; run org2 plugin update --apply");
+    if (desired.length && !lock.plugins.length) throw new Error("plugins are declared but no lock exists; run celorga plugin update --apply");
     const plugins = lock.plugins.map((entry) => ({ id: entry.id, ...materializeLockedPlugin(entry, apply) }));
     output(parsed, { $schema: "org2:plugin-sync:v1", applied: apply, plugins }, plugins.some((item) => item.changed)
       ? `${apply ? "materialized" : "would materialize"} ${plugins.filter((item) => item.changed).map((item) => item.id).join(", ")}`
@@ -651,7 +651,7 @@ export async function runPluginCommand(args: string[]): Promise<boolean> {
 
   if (action === "action") {
     const sub = parsed.positional[1];
-    if (sub !== "run") throw new Error("usage: org2 plugin action run PLUGIN_ID:ACTION_ID --context KIND ...");
+    if (sub !== "run") throw new Error("usage: celorga plugin action run PLUGIN_ID:ACTION_ID --context KIND ...");
     const selector = required(parsed.positional[2], "plugin action run requires PLUGIN_ID:ACTION_ID");
     const kind = required(flag(parsed, "context"), "--context is required");
     if (!(ORG2_PLUGIN_ACTION_CONTEXTS as readonly string[]).includes(kind)) throw new Error(`--context must be one of ${ORG2_PLUGIN_ACTION_CONTEXTS.join(", ")}`);
@@ -674,7 +674,7 @@ export async function runPluginCommand(args: string[]): Promise<boolean> {
     output(parsed, result, [
       result.text,
       result.proposal
-        ? `proposal ${result.proposal.id}: ${result.proposal.proposals.length} change(s) pending review\n${result.proposal.proposals.map((change, index) => `  #${index} ${change.kind} ${"path" in change ? change.path : "threadId" in change ? change.threadId : change.runId}${change.summary ? ` — ${change.summary}` : ""}`).join("\n")}\nApply with: org2 plugin proposals apply ${result.proposal.id} --apply`
+        ? `proposal ${result.proposal.id}: ${result.proposal.proposals.length} change(s) pending review\n${result.proposal.proposals.map((change, index) => `  #${index} ${change.kind} ${"path" in change ? change.path : "threadId" in change ? change.threadId : change.runId}${change.summary ? ` — ${change.summary}` : ""}`).join("\n")}\nApply with: celorga plugin proposals apply ${result.proposal.id} --apply`
         : "no proposals",
     ].filter(Boolean).join("\n"));
     return true;

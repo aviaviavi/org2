@@ -76,7 +76,7 @@ struct Org2WorkspaceScreenshotRenderer {
             AIChatMessage(
               role: .assistant,
               content: """
-              Added in OpenOrg Preview:
+              Added in Celorga Preview:
 
               - Subtle press feedback.
               - Smooth thread settlement and reopening.
@@ -91,7 +91,7 @@ struct Org2WorkspaceScreenshotRenderer {
               #+end_src
 
               #+begin_src sh
-              org2 lint --recursive
+              celorga lint --recursive
               #+end_src
               """,
               changeSummary: AIChatCorpusChangeSummary(files: [

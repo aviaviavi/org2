@@ -226,7 +226,7 @@ function parseMarker(file: string): StoreMarker | null {
 }
 
 /**
- * Per-writer commit points (`heads/<writer>.json`). Each OpenOrg host owns one
+ * Per-writer commit points (`heads/<writer>.json`). Each Celorga app host owns one
  * head so synchronized replicas never rewrite the same file. Newest first.
  */
 function parseHeads(storeRoot: string): Array<StoreMarker & { generation: number }> {

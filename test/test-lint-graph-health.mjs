@@ -168,7 +168,7 @@ assert.ok(audit.findings.some((finding) => finding.type === 'duplicate-entity' &
 assert.ok(audit.findings.some((finding) => finding.rule === 'artifact-source-hash-mismatch' && finding.deterministicFix && finding.reviewSuggestion));
 
 const auditText = execFileSync('node', [cli, 'graph', 'audit', '--dir', tmpDir, '--recursive'], { encoding: 'utf8' });
-assert.match(auditText, /Org2 graph quality audit/);
+assert.match(auditText, /Celorga graph quality audit/);
 assert.match(auditText, /deterministic fix:/);
 assert.match(auditText, /review suggestion:/);
 

@@ -693,7 +693,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("workflows").path))
     let skillURL = root.appendingPathComponent(".agents/skills/org2/SKILL.md")
     XCTAssertTrue(FileManager.default.fileExists(atPath: skillURL.path))
-    XCTAssertTrue(try String(contentsOf: skillURL, encoding: .utf8).contains("org2 agent capabilities"))
+    XCTAssertTrue(try String(contentsOf: skillURL, encoding: .utf8).contains("celorga agent capabilities"))
 
     let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
     XCTAssertTrue(welcome.contains("#+TITLE: Welcome to Celorga"))
@@ -2862,7 +2862,7 @@ final class Org2ModelsTests: XCTestCase {
     let threadID = try XCTUnwrap(store.selectedAIChatThreadID)
     store.renameAIChatThread(threadID, title: "Brief: Target Node")
 
-    await store.sendAIChatMessage(text: "Generate a concise, source-cited briefing for the selected org2 node \"Target Node\".")
+    await store.sendAIChatMessage(text: "Generate a concise, source-cited briefing for the selected Celorga node \"Target Node\".")
 
     let thread = try XCTUnwrap(store.aiChatThreads.first(where: { $0.id == threadID }))
     XCTAssertEqual(thread.title, "Brief: Target Node")
@@ -3864,7 +3864,7 @@ final class Org2ModelsTests: XCTestCase {
       runID: "durable-run-id",
       agentID: "main",
       gatewayMessage: "Exact persisted Gateway request",
-      contextSectionFingerprints: ["Org2 working rules#0": String(repeating: "a", count: 64)],
+      contextSectionFingerprints: ["Celorga working rules#0": String(repeating: "a", count: 64)],
       startedAt: Date(timeIntervalSince1970: 1_700_000_000)
     )
     let thread = AIChatThread(
@@ -3915,7 +3915,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(recoveredTurns.first?.gatewayMessage, "Exact persisted Gateway request")
     XCTAssertEqual(
       recoveredTurns.first?.contextSectionFingerprints,
-      ["Org2 working rules#0": String(repeating: "a", count: 64)]
+      ["Celorga working rules#0": String(repeating: "a", count: 64)]
     )
 
     let relaunchedAgain = try WorkspaceStore(
@@ -10897,10 +10897,10 @@ final class Org2ModelsTests: XCTestCase {
       aiChatTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       aiChatSendHandler: { messages, _, _, context in
         let prompt = try XCTUnwrap(messages.last?.content)
-        XCTAssertTrue(prompt.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\""))
+        XCTAssertTrue(prompt.contains("Generate a concise, source-cited briefing for the selected Celorga node \"Target Node\""))
         XCTAssertTrue(prompt.contains("Target artifact relative path: \(artifactRelativePath)"))
         XCTAssertTrue(prompt.contains("Target artifact path for the current AI runtime:"))
-        XCTAssertTrue(prompt.contains(":ORG2_GENERATOR: OpenOrg AI chat node brief"))
+        XCTAssertTrue(prompt.contains(":ORG2_GENERATOR: Celorga AI chat node brief"))
         XCTAssertFalse(prompt.contains("Target artifact path for OpenClaw:"))
         XCTAssertTrue(prompt.contains(":ORG2_ARTIFACT_ROLE: view"))
         XCTAssertTrue(prompt.contains(":ORG2_REVIEW_STATUS: review-required"))
@@ -10918,7 +10918,7 @@ final class Org2ModelsTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Open questions: unresolved questions/unknowns/risks, including waiting-on-response states"))
         XCTAssertTrue(prompt.contains("Do not present stable IDs, artifact metadata, file paths, provenance fields, review status, schema fields, or the mere existence of a title/ID as facts or highlights."))
         XCTAssertTrue(prompt.contains("Mention metadata only in \"Node health issues\""))
-        XCTAssertTrue(prompt.contains("do not run org2 brief"))
+        XCTAssertTrue(prompt.contains("do not run celorga brief"))
         XCTAssertFalse(prompt.contains("* Review checklist"))
         XCTAssertFalse(prompt.contains("* Reference clusters"))
         XCTAssertFalse(prompt.contains("Deterministic org2 context pack"))
@@ -11027,7 +11027,7 @@ final class Org2ModelsTests: XCTestCase {
     let recordedCalls = await recorder.recordedCalls()
     let requestMessages = try XCTUnwrap(recordedCalls.first)
     XCTAssertEqual(requestMessages.first?.content, "Existing context")
-    XCTAssertTrue(requestMessages.last?.content.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\"") == true)
+    XCTAssertTrue(requestMessages.last?.content.contains("Generate a concise, source-cited briefing for the selected Celorga node \"Target Node\"") == true)
   }
 
   func testRelatedBacklinkNodesFilterGenericStructuralHeadingsAndKeepEvidence() {
@@ -14772,16 +14772,16 @@ final class Org2ModelsTests: XCTestCase {
 
     let prompt = context.systemPrompt()
 
-    XCTAssertTrue(prompt.contains("Remote org2 root for OpenClaw: \(remoteRoot)"))
+    XCTAssertTrue(prompt.contains("Remote corpus root for OpenClaw: \(remoteRoot)"))
     XCTAssertTrue(prompt.contains("Agent-thread directories: \(remoteRoot)/agents, \(remoteRoot)/notes/openclaw"))
     XCTAssertTrue(prompt.contains("Do not write generated Backlinks sections"))
     XCTAssertTrue(prompt.contains("OpenClaw handoff rules"))
     XCTAssertTrue(prompt.contains(":KIND: agent-thread"))
     XCTAssertTrue(prompt.contains("Context attachments"))
-    XCTAssertTrue(prompt.contains("org2 agent capabilities"))
-    XCTAssertTrue(prompt.contains("org2 search <query> --dir <root>"))
-    XCTAssertTrue(prompt.contains("Connected Org2 sources"))
-    XCTAssertTrue(prompt.contains("external-source profiles in its root org2.json"))
+    XCTAssertTrue(prompt.contains("celorga agent capabilities"))
+    XCTAssertTrue(prompt.contains("celorga search <query> --dir <root>"))
+    XCTAssertTrue(prompt.contains("Connected Celorga sources"))
+    XCTAssertTrue(prompt.contains("external-source profiles in its root celorga.json (or org2.json)"))
     XCTAssertTrue(prompt.contains("Do not make the user explain or select source infrastructure"))
     XCTAssertTrue(prompt.contains("team-knowledge — type: knowledge-base; enabled; ready; healthy; scopes: workspace-a"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/raw/connectors/knowledge/team"))

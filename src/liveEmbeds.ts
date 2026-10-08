@@ -134,10 +134,10 @@ export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?:
 
 export async function runEmbedCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log("Usage: org2 embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]\nRead-only validation returns a portable #+EMBED directive and source location; it never copies content or writes files.");
+    console.log("Usage: celorga embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]\nRead-only validation returns a portable #+EMBED directive and source location; it never copies content or writes files.");
     return;
   }
-  if (args[0] !== "resolve") throw new Error("Use org2 embed resolve --help");
+  if (args[0] !== "resolve") throw new Error("Use celorga embed resolve --help");
   let target = "", file = "", rootDir: string | undefined;
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--target") target = args[++i] ?? "";

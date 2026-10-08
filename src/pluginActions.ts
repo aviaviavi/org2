@@ -13,7 +13,7 @@
  * - it returns *proposals* (exact-text edits, new files under `views/`, chat
  *   posts, run comments) that are stored as pending records under
  *   `.org2/plugin-proposals/` and change the corpus only when a person applies
- *   them with `org2 plugin proposals apply ID --apply` or OpenOrg's review
+ *   them with `celorga plugin proposals apply ID --apply` or the Celorga app's review
  *   sheet.
  */
 import crypto from "node:crypto";
@@ -324,7 +324,7 @@ export function invokePluginSandboxed(
   timeoutMs = 20_000,
 ): { result: JSONRecord; sandbox: PluginProposalRecord["sandbox"] } {
   assertPluginEngineCompatible(entry.manifest);
-  if (!isPluginTrusted(entry.contentHash)) throw new Error(`plugin ${entry.id} is not trusted on this machine; run org2 plugin trust ${entry.id} --apply after reviewing it`);
+  if (!isPluginTrusted(entry.contentHash)) throw new Error(`plugin ${entry.id} is not trusted on this machine; run celorga plugin trust ${entry.id} --apply after reviewing it`);
   const stored = verifyPluginStore(entry);
   if (!stored.valid) throw new Error(`plugin ${entry.id} is unavailable: ${stored.issue}`);
   const executable = pluginEntryPath(stored.root, relativeEntry);

@@ -1,21 +1,21 @@
 import { editPropertyViewSource, listPropertyViews, loadPropertyView, queryPropertyView, savePropertyView, suggestPropertyView } from "./propertyViews.js";
 
-const HELP = `org2 property-view
+const HELP = `celorga property-view
 
 Saved, portable table/card views over canonical note and heading properties.
 Usage:
-  org2 property-view list --dir CORPUS
-  org2 property-view query --dir CORPUS (--view ID | --definition JSON)
-  org2 property-view suggest --prompt TEXT [--dir CORPUS]
-  org2 property-view save --dir CORPUS --definition JSON [--if-revision SHA] [--apply]
-  org2 property-view edit --dir CORPUS --file FILE --kind file|heading --line N --property KEY --value TEXT --if-revision SHA [--apply]
+  celorga property-view list --dir CORPUS
+  celorga property-view query --dir CORPUS (--view ID | --definition JSON)
+  celorga property-view suggest --prompt TEXT [--dir CORPUS]
+  celorga property-view save --dir CORPUS --definition JSON [--if-revision SHA] [--apply]
+  celorga property-view edit --dir CORPUS --file FILE --kind file|heading --line N --property KEY --value TEXT --if-revision SHA [--apply]
 
 All responses are JSON. Writes preview by default. Existing view saves require
 --if-revision; source edits always require the revision returned by query.
 Definitions live in views/ID.org2-view.json and contain scope, columns, filters,
 sort and groupBy. Filters support matches (regex), on/before/after (dates) and
 query-time date variables such as {today}, {yesterday} and {today-7d}.
-OpenOrg's Saved Views builder needs no SQL. Properties use
+The Celorga app's Saved Views builder needs no SQL. Properties use
 shared compiler inheritance; edits create a local override in the selected source.
 Identity/built-in fields, ORG2 runtime metadata, raw/ and hidden paths are read-only.
 Use --help for this contract; see the tooling reference for the definition schema.`;

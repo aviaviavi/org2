@@ -116,15 +116,15 @@ public struct WorkspaceSourceType: Identifiable, Equatable, Sendable {
       "- \(field.label)\(field.isRequired ? " (required)" : "")\(field.help.map { ": \($0)" } ?? "")"
     }.joined(separator: "\n")
     let secretLine = secret.map {
-      "It authenticates with a \($0.label.lowercased()). Never put it in org2.json, a file, or a command line; ask me to save it with the source's “Add \($0.label)” button in OpenOrg's Sources view (macOS Keychain) instead."
+      "It authenticates with a \($0.label.lowercased()). Never put it in celorga.json (or org2.json), a file, or a command line; ask me to save it with the source's “Add \($0.label)” button in Celorga's Sources view (macOS Keychain) instead."
     } ?? "It needs no stored credential."
     return """
     Help me set up a \(displayName) source for this corpus. \(summary)
 
-    Ask me for anything you need, then preview the entry with `org2 source add PROFILE --source-json '<JSON>'` and apply it with `--apply` after I confirm. Settings:
+    Ask me for anything you need, then preview the entry with `celorga source add PROFILE --source-json '<JSON>'` and apply it with `--apply` after I confirm. Settings:
     \(fieldList)
 
-    \(secretLine) Finish with `org2 source doctor PROFILE` and tell me what, if anything, still needs setup.
+    \(secretLine) Finish with `celorga source doctor PROFILE` and tell me what, if anything, still needs setup.
     """
   }
 }

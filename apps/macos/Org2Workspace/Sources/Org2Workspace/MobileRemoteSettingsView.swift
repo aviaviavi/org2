@@ -132,7 +132,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Corpus", systemImage: "folder")
       } footer: {
-        SettingsFooterText("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in org2.json.")
+        SettingsFooterText("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in the corpus config (celorga.json or org2.json).")
       }
       if store.corpusRoot != nil {
         Section {
@@ -160,7 +160,7 @@ private struct GeneralSettingsView: View {
         } header: {
           Label("Automations", systemImage: "clock.arrow.circlepath")
         } footer: {
-          SettingsFooterText("Scheduler ownership applies to every automation in this corpus and is configured in org2.json.")
+          SettingsFooterText("Scheduler ownership applies to every automation in this corpus and is configured in the corpus config (celorga.json or org2.json).")
         }
       }
       if store.corpusRoot != nil { CorpusTodoSettingsSection() }
@@ -683,7 +683,7 @@ private struct OpenOrgServerSettingsSection: View {
     } footer: {
       SettingsFooterText(server.isPaired
         ? "The server hosts thread links from its synced copy of the corpus on its Tailscale address. You can still pick a location each time you share."
-        : "Run “org2 server pair” on the server, then paste the pairing link or enter its address and code here. Both machines must be on the same tailnet. The access token is stored in this Mac’s Keychain.")
+        : "Run “celorga server pair” on the server, then paste the pairing link or enter its address and code here. Both machines must be on the same tailnet. The access token is stored in this Mac’s Keychain.")
     }
     .task {
       if server.isPaired, server.reachability == .unknown {

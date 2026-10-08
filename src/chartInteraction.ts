@@ -1,6 +1,6 @@
 /**
- * Browser-side behavior for Org2 SVG charts, shared by every surface that
- * shows them: OpenOrg documents, AI chat messages, and app HTML previews.
+ * Browser-side behavior for Celorga SVG charts, shared by every surface that
+ * shows them: Celorga app documents, AI chat messages, and app HTML previews.
  *
  * The script defines `window.__org2InstallCharts(root)`, which is idempotent
  * per figure, and installs once for the current document. Hosts that replace

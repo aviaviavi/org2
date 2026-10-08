@@ -168,7 +168,7 @@ assert.equal(fencedJson.source.blockId, "fetch_buckets");
 assert.equal(fencedJson.source.line, 19);
 assert.equal(fencedJson.source.endLine, 31);
 assert.match(fencedJson.svg, /Fetch buckets/);
-assert.match(fencedJson.svg, /Org2 histogram chart/);
+assert.match(fencedJson.svg, /Celorga histogram chart/);
 assert.match(fencedJson.svg, /<rect /);
 assert.ok(fencedJson.svg.indexOf("<title>11-50: 32</title>") < fencedJson.svg.indexOf("<title>0-10: 14</title>"));
 
@@ -194,7 +194,7 @@ assert.match(futureSourceJson.svg, /<rect /);
 const canonicalChartJson = JSON.parse(cli(["render-chart", "--file", canonicalChartNote, "--block-id", "canonical_chart", "--format", "json"]));
 assert.equal(canonicalChartJson.ok, true);
 assert.equal(canonicalChartJson.source.blockId, "canonical_chart");
-assert.match(canonicalChartJson.svg, /Org2 histogram chart/);
+assert.match(canonicalChartJson.svg, /Celorga histogram chart/);
 
 const multiLineChartJson = JSON.parse(cli(["render-chart", "--file", multiLineChartNote, "--block-id", "quarterly_metrics", "--format", "json"]));
 assert.equal(multiLineChartJson.ok, true);

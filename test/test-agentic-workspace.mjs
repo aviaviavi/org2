@@ -987,7 +987,7 @@ try {
   input.end(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "resources/list", params: {} })}\n${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "org2://corpus/notes/outside-corpus.org2" } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "org2://corpus/notes/source.org2" } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 6, method: "resources/read", params: { uri: "org2://corpus/package.json" } })}\n`);
   await serving;
   const messages = response.trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(messages[0].result.serverInfo.name, "org2");
+  assert.equal(messages[0].result.serverInfo.name, "celorga");
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "celorga_run_create"), true);
   assert.equal(messages[1].result.tools.some((tool) => tool.name === "celorga_agent_profile_resolve"), true);
   assert.equal(messages[2].result.resources.some((resource) => resource.name === "notes/outside-corpus.org2"), false);
@@ -997,7 +997,7 @@ try {
   assert.match(messages[3].error.message, /resource is a symbolic link/);
   assert.equal(messages[4].result.contents[0].text, "changed\n");
   assert.equal(messages[5].error.code, -32603);
-  assert.match(messages[5].error.message, /resource is not an Org2 source file/);
+  assert.match(messages[5].error.message, /resource is not a Celorga source file/);
   fs.unlinkSync(linkedResource);
 
   const invalidInput = new PassThrough(); const invalidOutput = new PassThrough(); let invalidResponse = "";

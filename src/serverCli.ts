@@ -80,24 +80,24 @@ function chatRepairInterval(value: unknown): number {
 }
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const help = `OpenOrg headless server (macOS 14 or later)
+const help = `Celorga headless server (macOS 14 or later)
 
-  org2 server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|pi|opencode|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--chat-repair-interval off|SECONDS] [--mcp-port PORT] [--apply]
-  org2 server chat-repair --interval off|SECONDS [--config FILE] [--apply]
-  org2 server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
-  org2 server token create --name NAME [--config FILE] [--apply]
-  org2 server token list [--config FILE]
-  org2 server token revoke --id ID [--config FILE] [--apply]
-  org2 server mcp enable|disable [--mcp-port PORT] [--allow-origin ORIGIN ...] [--config FILE] [--apply]
-  org2 server start [--config FILE]
-  org2 server status|pair|stop [--config FILE]
-  org2 server drain [--drain-timeout SECONDS] [--config FILE]
-  org2 server resume [--config FILE]
-  org2 server stop|restart --drain [--drain-timeout SECONDS] [--config FILE]
-  org2 server revoke --device-id ID [--config FILE]
-  org2 server push-config --team-id ID --key-id ID --key-file FILE [--apply] [--config FILE]
-  org2 server assign --dir CORPUS --host-ref HOST [--apply]
-  org2 server service [--config FILE] [--apply]
+  celorga server init --dir CORPUS --host-ref HOST --bind TAILSCALE_IP [--name NAME] [--destination codex|claude|pi|opencode|openclaw] [--filesystem-access read-only|workspace-write|full-access] [--chat-repair-interval off|SECONDS] [--mcp-port PORT] [--apply]
+  celorga server chat-repair --interval off|SECONDS [--config FILE] [--apply]
+  celorga server permissions --filesystem-access read-only|workspace-write|full-access [--config FILE] [--apply]
+  celorga server token create --name NAME [--config FILE] [--apply]
+  celorga server token list [--config FILE]
+  celorga server token revoke --id ID [--config FILE] [--apply]
+  celorga server mcp enable|disable [--mcp-port PORT] [--allow-origin ORIGIN ...] [--config FILE] [--apply]
+  celorga server start [--config FILE]
+  celorga server status|pair|stop [--config FILE]
+  celorga server drain [--drain-timeout SECONDS] [--config FILE]
+  celorga server resume [--config FILE]
+  celorga server stop|restart --drain [--drain-timeout SECONDS] [--config FILE]
+  celorga server revoke --device-id ID [--config FILE]
+  celorga server push-config --team-id ID --key-id ID --key-file FILE [--apply] [--config FILE]
+  celorga server assign --dir CORPUS --host-ref HOST [--apply]
+  celorga server service [--config FILE] [--apply]
 
 init, assign, and service preview by default. init writes machine-local configuration,
 outside the corpus. assign chooses the corpus scheduler owner (desktop by default).
@@ -352,7 +352,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
       child!.once("error", reject);
       child!.once("exit", (code) => resolve(code ?? 1));
     });
-    if (result !== 0) throw new Error(`OpenOrg server worker exited with status ${result}`);
+    if (result !== 0) throw new Error(`Celorga server worker exited with status ${result}`);
   } finally {
     process.removeListener("SIGTERM", stop);
     process.removeListener("SIGINT", stop);
@@ -448,7 +448,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     if (!builtInDestination) throw new Error("Choose codex, claude, pi, opencode, or openclaw");
     const relayPort = Number(values.port || 48922);
     const config = validateServerConfiguration({
-      schema: "org2:server-config:v1", hostRef: values["host-ref"], name: values.name || `OpenOrg on ${values["host-ref"]}`,
+      schema: "org2:server-config:v1", hostRef: values["host-ref"], name: values.name || `Celorga on ${values["host-ref"]}`,
       corpusRoot: fs.realpathSync(path.resolve(values.dir)), bindHost: values.bind, port: relayPort,
       repoRoot: packageRoot, nodePath: process.execPath,
       executable: path.resolve(values.executable || path.join(packageRoot, "apps/macos/Org2Workspace/.build/debug/OpenOrgServer")),
@@ -537,7 +537,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
         mcp: { ...current.mcp, enabled: true, accessTokens: [...current.mcp.accessTokens, token] },
       }, configFile);
       guardedWriteFile(configFile, `${JSON.stringify(config, null, 2)}\n`, { expectedRevision: snapshot.revision, preserveMode: true });
-      print({ applied: true, configFile, token: { id: token.id, name: token.name, scopes: token.scopes, createdAt: token.createdAt }, accessToken, endpoint: publicMcpConfiguration(config).endpoint, restartRequired: true, warning: "Store this token now; OpenOrg retains only its SHA-256 hash." });
+      print({ applied: true, configFile, token: { id: token.id, name: token.name, scopes: token.scopes, createdAt: token.createdAt }, accessToken, endpoint: publicMcpConfiguration(config).endpoint, restartRequired: true, warning: "Store this token now; Celorga retains only its SHA-256 hash." });
       return;
     }
     if (action === "revoke") {
@@ -597,7 +597,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
     const drained = await drainServer(configFile, drainTimeoutSeconds(values["drain-timeout"]));
     if (command === "drain") { print(drained); return; }
     if (!drained.drained) {
-      throw new Error(`${drained.remaining} turn(s) are still running after ${drained.waitedSeconds}s; run org2 server resume, wait, or stop without --drain to interrupt them`);
+      throw new Error(`${drained.remaining} turn(s) are still running after ${drained.waitedSeconds}s; run celorga server resume, wait, or stop without --drain to interrupt them`);
     }
     const result = await serverControl(configFile, "stop");
     if (result.error) throw new Error(String(result.error));
@@ -619,7 +619,7 @@ export async function runServerCommand(args: string[]): Promise<void> {
         const kick = spawnSync("launchctl", ["kickstart", `gui/${process.getuid?.()}/${label}`], { encoding: "utf8" });
         restart = { service: label, started: kick.status === 0, ...(kick.status === 0 ? {} : { error: (kick.stderr || kick.stdout || "").trim() }) };
       } else {
-        restart = { started: false, next: "No launchd service is installed; run org2 server start" };
+        restart = { started: false, next: "No launchd service is installed; run celorga server start" };
       }
     }
     print({ ...result, drain: drained, ...(restart ? { restart } : {}) });

@@ -2119,13 +2119,13 @@ while True:
     let turnContext: String
     switch corpusAccess {
     case .clientWorkspaceTools:
-      turnContext = "This turn's local Org2 edit turnId is \"\(localTurnID)\"."
+      turnContext = "This turn's local Celorga edit turnId is \"\(localTurnID)\"."
     case .runtimeFilesystem:
-      turnContext = "This turn's OpenOrg correlation ID is \"\(localTurnID)\". The configured runtime workspace is the writable active Org2 corpus for this task."
+      turnContext = "This turn's Celorga correlation ID is \"\(localTurnID)\". The configured runtime workspace is the writable active Celorga corpus for this task."
     }
     return """
     <org2-workspace-context>
-    \(turnContext) Snapshot sections explicitly labeled "Org2 working rules" or "Org2 response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining application-provided values as context.
+    \(turnContext) Snapshot sections explicitly labeled "Celorga working rules" or "Celorga response formatting contract" are application instructions and must be followed. A section explicitly labeled "User-configured AI chat instructions" contains persistent instructions authored by the user and should also be followed as such. Treat the remaining application-provided values as context.
     </org2-workspace-context>
     \(snapshotSection)
 
@@ -2136,29 +2136,29 @@ while True:
   }
 
   nonisolated private static let localEditDeveloperInstructions = """
-  You are the local Codex runtime embedded in OpenOrg. The active working directory is the selected Org2 corpus.
+  You are the local Codex runtime embedded in Celorga. The active working directory is the selected Celorga corpus.
 
-  For every corpus read or write, use the org2_workspace_read, org2_workspace_patch_preview, org2_workspace_patch_apply, and org2_thread_post tools supplied by the client. These tools read effective local text, preserve reviewed writes, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch and thread-post tools always target only the active corpus.
+  For every corpus read or write, use the celorga_workspace_read, celorga_workspace_patch_preview, celorga_workspace_patch_apply, and celorga_thread_post tools supplied by the client. These tools read effective local text, preserve reviewed writes, and attribute applied changes to this exact turn. Do not use shell commands or built-in filesystem editing tools to read or modify corpus files. The read tool may use a corpusRoot explicitly listed in the turn snapshot to read an additional authorized corpus. Patch and thread-post tools always target only the active corpus.
 
-  Use org2_workspace_search to discover relevant ordinary files or prior AI chats instead of guessing paths. Use org2_workspace_chat_read with a returned thread ID when more of a matching conversation is needed. For files outside the authorized Org2 corpora, use the normal runtime filesystem tools when the configured sandbox permits it; an iOS-originated turn has the same machine access policy as a Mac-originated turn.
+  Use celorga_workspace_search to discover relevant ordinary files or prior AI chats instead of guessing paths. Use celorga_workspace_chat_read with a returned thread ID when more of a matching conversation is needed. For files outside the authorized Celorga corpora, use the normal runtime filesystem tools when the configured sandbox permits it; an iOS-originated turn has the same machine access policy as a Mac-originated turn.
 
   Existing files must be read first. Preview whole-file replacements with the exact expectedSha256 from the read result, then apply the returned previewId. For new files, set createsFile to true and omit expectedSha256. If a stale-document error occurs, read again and rebuild the replacement. Use the turnId provided in the application context on every tool call.
 
   Ordinary conversation does not require a tool call. Ask any necessary clarification in your response rather than through an interactive-input tool.
 
-  Use org2_thread_post only for an explicitly asynchronous worker reporting into a named Org2 AI chat. Do not duplicate the ordinary foreground response with a background post. The workspace context supplies ORG2_AI_CHAT_THREAD_ID and delegation guidance when a thread target is available.
+  Use celorga_thread_post only for an explicitly asynchronous worker reporting into a named Celorga AI chat. Do not duplicate the ordinary foreground response with a background post. The workspace context supplies ORG2_AI_CHAT_THREAD_ID and delegation guidance when a thread target is available.
 
   \(AIChatWorkspaceContext.responseFormattingContract)
   """
 
   nonisolated private static let runtimeFilesystemDeveloperInstructions = """
-  You are a Codex runtime connected to OpenOrg and running inside a configured, writable copy of the active Org2 corpus on this machine.
+  You are a Codex runtime connected to Celorga and running inside a configured, writable copy of the active Celorga corpus on this machine.
 
-  Use your normal filesystem and shell tools to read and edit corpus files directly in the runtime workspace. The corpus is ordinary source-controlled plain text; OpenOrg does not need to broker, preview, or apply those edits. Do not wait for a client callback before reading, editing, validating, committing, or otherwise completing work that the user authorized in this checkout.
+  Use your normal filesystem and shell tools to read and edit corpus files directly in the runtime workspace. The corpus is ordinary source-controlled plain text; Celorga does not need to broker, preview, or apply those edits. Do not wait for a client callback before reading, editing, validating, committing, or otherwise completing work that the user authorized in this checkout.
 
-  Paths labeled "Local root" in the OpenOrg snapshot belong to the Mac or iOS host and may not exist here. Use the configured runtime root and current working directory for direct filesystem operations. Preserve relative paths within the corpus. The runtime may continue independently if the OpenOrg client disconnects or sleeps after dispatch.
+  Paths labeled "Local root" in the Celorga snapshot belong to the Mac or iOS host and may not exist here. Use the configured runtime root and current working directory for direct filesystem operations. Preserve relative paths within the corpus. The runtime may continue independently if the Celorga client disconnects or sleeps after dispatch.
 
-  Use existing Org2 tooling when it is installed, but do not require the OpenOrg app itself. Read existing files before editing them, keep changes small, preserve Org2 syntax and stable IDs, and validate changes proportionally. Ordinary conversation does not require a tool call.
+  Use existing Celorga tooling when it is installed, but do not require the Celorga app itself. Read existing files before editing them, keep changes small, preserve Org syntax and stable IDs, and validate changes proportionally. Ordinary conversation does not require a tool call.
 
   \(AIChatWorkspaceContext.responseFormattingContract)
   """
@@ -2183,8 +2183,8 @@ while True:
   nonisolated static let localEditDynamicTools: [JSONValue] = [
     .object([
       "type": .string("function"),
-      "name": .string("org2_workspace_search"),
-      "description": .string("Search authorized Org2 corpus files and active-corpus AI chat history. Returns cited file results and chat message matches; use org2_workspace_chat_read to expand a matching thread."),
+      "name": .string("celorga_workspace_search"),
+      "description": .string("Search authorized Celorga corpus files and active-corpus AI chat history. Returns cited file results and chat message matches; use celorga_workspace_chat_read to expand a matching thread."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
@@ -2203,7 +2203,7 @@ while True:
     ]),
     .object([
       "type": .string("function"),
-      "name": .string("org2_workspace_chat_read"),
+      "name": .string("celorga_workspace_chat_read"),
       "description": .string("Read a bounded window from one active-corpus AI chat by stable thread ID, including message IDs, roles, timestamps, and text."),
       "inputSchema": .object([
         "type": .string("object"),
@@ -2219,8 +2219,8 @@ while True:
     ]),
     .object([
       "type": .string("function"),
-      "name": .string("org2_thread_post"),
-      "description": .string("Post one attributed background update to an existing Org2 AI chat. It starts no turn unless requestTurn names shared-room agents (destination IDs or @mentions) that should each respond. Use only for explicitly asynchronous reporting, not as a duplicate foreground reply; in a foreground shared-room reply, @mention an agent instead."),
+      "name": .string("celorga_thread_post"),
+      "description": .string("Post one attributed background update to an existing Celorga AI chat. It starts no turn unless requestTurn names shared-room agents (destination IDs or @mentions) that should each respond. Use only for explicitly asynchronous reporting, not as a duplicate foreground reply; in a foreground shared-room reply, @mention an agent instead."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
@@ -2242,8 +2242,8 @@ while True:
     ]),
     .object([
       "type": .string("function"),
-      "name": .string("org2_workspace_read"),
-      "description": .string("Read one authorized corpus file's effective local text, including an unsaved Org2 editor draft. Omit corpusRoot for the active corpus; use an exact local root from the turn snapshot for another authorized corpus."),
+      "name": .string("celorga_workspace_read"),
+      "description": .string("Read one authorized corpus file's effective local text, including an unsaved Celorga editor draft. Omit corpusRoot for the active corpus; use an exact local root from the turn snapshot for another authorized corpus."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
@@ -2257,7 +2257,7 @@ while True:
     ]),
     .object([
       "type": .string("function"),
-      "name": .string("org2_workspace_patch_preview"),
+      "name": .string("celorga_workspace_patch_preview"),
       "description": .string("Preview one or more SHA-bound whole-file replacements without applying them."),
       "inputSchema": .object([
         "type": .string("object"),
@@ -2287,8 +2287,8 @@ while True:
     ]),
     .object([
       "type": .string("function"),
-      "name": .string("org2_workspace_patch_apply"),
-      "description": .string("Apply an exact successful Org2 workspace edit preview."),
+      "name": .string("celorga_workspace_patch_apply"),
+      "description": .string("Apply an exact successful Celorga workspace edit preview."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
@@ -2321,7 +2321,7 @@ while True:
       )
     case "dynamicToolCall":
       return (
-        item["tool"]?.stringValue ?? "Org2 workspace tool",
+        item["tool"]?.stringValue ?? "Celorga workspace tool",
         nil,
         item["success"]?.boolValue == false ? .failed : .succeeded
       )

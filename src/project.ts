@@ -51,7 +51,7 @@ export function parseProjectNote(root: string, file: string, raw: string): Proje
   const color = value("PROJECT_COLOR") || "none";
   if (color !== "none" && !(PROJECT_COLORS as readonly string[]).includes(color) && !/^#[0-9a-f]{6}$/i.test(color)) throw new Error(`Invalid project color: ${color}`);
   const threadIDs = [...new Set(value("PROJECT_THREADS").split(/\s+/).filter(Boolean).map(x => x.toLowerCase()))];
-  if (threadIDs.some(x => !uuid.test(x))) throw new Error("PROJECT_THREADS must contain stable OpenOrg thread UUIDs");
+  if (threadIDs.some(x => !uuid.test(x))) throw new Error("PROJECT_THREADS must contain stable Celorga thread UUIDs");
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
   const metadataLines = new Set<number>();
   for (const node of doc.children) if (node.type === "PropertyDrawer" || node.type === "KeywordLine") {
@@ -149,7 +149,7 @@ export function updateProjectNote(root: string, id: string, input: { threadID?: 
   const previousRevision = guardedContentRevision(content);
   if (previousRevision !== project.revision) throw new Error("Project changed; refresh and try again");
   if (input.threadID) {
-    if (!uuid.test(input.threadID)) throw new Error("A stable OpenOrg thread UUID is required");
+    if (!uuid.test(input.threadID)) throw new Error("A stable Celorga thread UUID is required");
     const threadID = input.threadID.toLowerCase();
     const ids = input.remove ? project.threadIDs.filter(id => id !== threadID) : [...new Set([...project.threadIDs, threadID])];
     content = setKeyword(content, "PROJECT_THREADS", ids.join(" "));

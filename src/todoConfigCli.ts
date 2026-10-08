@@ -6,9 +6,9 @@ import { configFilePath } from "./brandNames.js";
 
 export async function runTodoConfigCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`org2 todo-config <show|set> --dir CORPUS [--sequences-json '["TODO WAITING | DONE CANCELED"]'] [--if-revision REVISION] [--apply]
+    console.log(`celorga todo-config <show|set> --dir CORPUS [--sequences-json '["TODO WAITING | DONE CANCELED"]'] [--if-revision REVISION] [--apply]
 
-Reads or previews corpus-wide TODO defaults in org2.json. Output is JSON.
+Reads or previews corpus-wide TODO defaults in celorga.json (or org2.json). Output is JSON.
 set requires --sequences-json; [] restores built-in defaults. File-local
 #+TODO:, #+SEQ_TODO:, and #+TYP_TODO: declarations override these defaults.
 Writes require --apply; use --if-revision from show/preview to reject stale edits.`);
@@ -33,8 +33,8 @@ Writes require --apply; use --if-revision from show/preview to reject stale edit
   const expected = flags.get("--if-revision");
   if (expected !== undefined && expected !== revision) throw new Error("Corpus settings changed since they were loaded. Reload the settings before saving.");
   const config = raw === undefined ? {} : JSON.parse(raw);
-  if (!config || Array.isArray(config) || typeof config !== "object") throw new Error("org2.json must contain an object.");
-  if (config.todo !== undefined && (!config.todo || Array.isArray(config.todo) || typeof config.todo !== "object")) throw new Error("org2.json todo must contain an object.");
+  if (!config || Array.isArray(config) || typeof config !== "object") throw new Error(`${path.basename(file)} must contain an object.`);
+  if (config.todo !== undefined && (!config.todo || Array.isArray(config.todo) || typeof config.todo !== "object")) throw new Error(`${path.basename(file)} todo must contain an object.`);
   const previous = config.todo?.sequences ?? [];
   const sequences = action === "set" ? JSON.parse(flags.get("--sequences-json") ?? "null") : previous;
   const parsed = parseTodoSequenceDefinitions(sequences);

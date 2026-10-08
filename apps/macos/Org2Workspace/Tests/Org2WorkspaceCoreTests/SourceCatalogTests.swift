@@ -19,8 +19,8 @@ final class SourceCatalogTests: XCTestCase {
       XCTAssertEqual(Set(type.fields.map(\.id)).count, type.fields.count, "\(type.id) field ids are unique")
       let secret = try? XCTUnwrap(type.secret, "\(type.id) offers a Keychain credential")
       XCTAssertFalse(secret?.environmentVariable.isEmpty ?? true)
-      XCTAssertTrue(type.agentSetupPrompt.contains("org2 source add"), "\(type.id) keeps agent setup as an option")
-      XCTAssertTrue(type.agentSetupPrompt.contains("Never put it in org2.json"))
+      XCTAssertTrue(type.agentSetupPrompt.contains("celorga source add"), "\(type.id) keeps agent setup as an option")
+      XCTAssertTrue(type.agentSetupPrompt.contains("Never put it in celorga.json (or org2.json)"))
       if !type.fields.contains(where: \.isRequired) {
         XCTAssertNil(WorkspaceSourceDraft(type: type).validationMessage, "\(type.id) defaults are valid")
       }

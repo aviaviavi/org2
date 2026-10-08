@@ -426,7 +426,7 @@ export function saveWorkLedgerAccount(
     const issues = workLedgerSourceConsistency(current);
     if (issues.length > 0) {
       throw new Error(
-        `work-ledger source has out-of-band event-history changes; run org2 doctor and reconcile the source before writing: ${outputPath}`,
+        `work-ledger source has out-of-band event-history changes; run celorga doctor and reconcile the source before writing: ${outputPath}`,
       );
     }
   }

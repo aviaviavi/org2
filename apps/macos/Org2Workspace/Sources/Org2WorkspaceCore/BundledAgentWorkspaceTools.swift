@@ -28,13 +28,13 @@ final class BundledAgentWorkspaceTools {
   static var definitions: [JSONValue] {
     CodexAppServerClient.localEditDynamicTools.filter {
       [
-        "org2_workspace_read",
-        "org2_workspace_patch_preview",
-        "org2_workspace_patch_apply",
+        "celorga_workspace_read",
+        "celorga_workspace_patch_preview",
+        "celorga_workspace_patch_apply",
       ].contains($0["name"]?.stringValue ?? "")
     } + [.object([
-      "name": .string("org2_workspace_search"),
-      "description": .string("Search the active corpus on disk for up to ten cited results. Read a result with org2_workspace_read before editing; search may not include unsaved drafts."),
+      "name": .string("celorga_workspace_search"),
+      "description": .string("Search the active corpus on disk for up to ten cited results. Read a result with celorga_workspace_read before editing; search may not include unsaved drafts."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object(["query": .object(["type": .string("string")])]),

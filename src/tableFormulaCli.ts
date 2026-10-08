@@ -4,7 +4,7 @@ import { guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { recalculateOrgTableFormulas } from "./tableFormula.js";
 
 function usage(exitCode: number): never {
-  console.error(`Usage: org2 table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
+  console.error(`Usage: celorga table recalculate --file FILE [--line N] [--formula-index N] [--apply] [--format text|diff|json]
 
 Recalculates one formula-backed Org table. The command previews by default;
 --apply performs an atomic revision-guarded write.`);

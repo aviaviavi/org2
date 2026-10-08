@@ -270,7 +270,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
   let newKeyword: string;
   if (opts.keyword) {
     const keyword = todoKeywordInWorkflow(opts.keyword, sequences);
-    if (!keyword) throw new Error(`Unknown TODO keyword "${opts.keyword}". Declare it with #+TODO: active | terminal or in org2.json todo.sequences.`);
+    if (!keyword) throw new Error(`Unknown TODO keyword "${opts.keyword}". Declare it with #+TODO: active | terminal or in celorga.json todo.sequences.`);
     newKeyword = keyword;
   } else if (opts.toggle && sequence) {
     newKeyword = sequence.keywords[(sequence.keywords.indexOf(oldKeyword!) + 1) % sequence.keywords.length];

@@ -919,7 +919,7 @@ export function auditAgenticWorkspace(corpusRoot: string): AgenticDoctorReport {
 
 export function renderAgenticDoctorReport(report: AgenticDoctorReport): string {
   const lines = [
-    "Org2 agentic workspace doctor",
+    "Celorga agentic workspace doctor",
     `Root: ${report.root}`,
     `Scanned ${report.summary.validRuns}/${report.summary.runFiles} runs, ${report.summary.validWorkflows}/${report.summary.workflowFiles} workflows, ${report.summary.validLedgerAccounts}/${report.summary.ledgerFiles} ledger accounts, and ${report.summary.corpusFiles} corpus files (${report.summary.linkedHeadlines} linked headings).`,
     `Findings: ${report.summary.errorCount} error(s), ${report.summary.warningCount} warning(s), ${report.summary.infoCount} info.`,

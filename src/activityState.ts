@@ -466,7 +466,7 @@ export interface PendingInboxMessage {
   file: string;
 }
 
-/** Background replies queued with `org2 thread post` that the app has not imported yet. */
+/** Background replies queued with `celorga thread post` that the app has not imported yet. */
 export function pendingInboxMessages(corpusRoot: string, threadID?: string): PendingInboxMessage[] {
   const directory = aiChatInboxDirectory(corpusRoot);
   let names: string[] = [];
@@ -724,7 +724,7 @@ function approvalBlocker(run: AgentRun, approval: AgentRunApproval): ActivityBlo
     fingerprint: approval.fingerprint,
     ...(approval.requestedFrom ? { requestedFrom: approval.requestedFrom } : {}),
     requestedAt: approval.requestedAt,
-    command: `org2 run approval-decide ${run.id} ${approval.id} --decision approved --fingerprint ${approval.fingerprint} --actor NAME`,
+    command: `celorga run approval-decide ${run.id} ${approval.id} --decision approved --fingerprint ${approval.fingerprint} --actor NAME`,
   };
 }
 
@@ -738,7 +738,7 @@ function runBlockers(run: AgentRun): ActivityBlocker[] {
       summary: run.blockedReason,
       runId: run.id,
       ...(run.outcome?.nextActions.length ? { nextActions: run.outcome.nextActions } : {}),
-      command: `org2 run resume ${run.id} --actor NAME`,
+      command: `celorga run resume ${run.id} --actor NAME`,
     });
   }
   return blockers;
@@ -863,7 +863,7 @@ export function explainRun(run: AgentRun, context: RunContext): ActivityExplanat
             runId: run.id,
             artifactId: artifact.id,
             path: artifact.path,
-            command: `org2 run artifact-review ${run.id} ${artifact.id} --status reviewed --actor NAME`,
+            command: `celorga run artifact-review ${run.id} ${artifact.id} --status reviewed --actor NAME`,
           })),
         );
       }

@@ -220,7 +220,7 @@ enum HeadingWorkStatus {
       "- Mark the heading DONE only if the task is actually complete.",
     ]
     if keepsCLIInstructions {
-      lines.append("- If you can run the org2 CLI, close the run with `org2 run complete \(runID) --summary \"…\"`, or `org2 run block \(runID) --reason \"…\"` when you need me.")
+      lines.append("- If you can run the Celorga CLI, close the run with `celorga run complete \(runID) --summary \"…\"`, or `celorga run block \(runID) --reason \"…\"` when you need me.")
     }
     return lines.joined(separator: "\n")
   }

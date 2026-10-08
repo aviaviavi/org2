@@ -2405,7 +2405,7 @@ function resolveTitle(doc: DocumentNode, explicitTitle: string | undefined, sour
   if (headline) return headline;
 
   if (sourcePath) return path.basename(sourcePath);
-  return "Org2 Document";
+  return "Celorga Document";
 }
 
 function renderDocumentHeader(opts: { title: string; subtitle?: string }): string {
@@ -2751,7 +2751,7 @@ export function renderOrgExportIndexToHtml(opts: {
   headIncludes?: string[];
   includeDefaultStyle?: boolean;
 }): { html: string; title: string } {
-  const title = String(opts.title || "").trim() || (opts.sourcePath ? path.basename(opts.sourcePath) : "Org2 Export Index");
+  const title = String(opts.title || "").trim() || (opts.sourcePath ? path.basename(opts.sourcePath) : "Celorga Export Index");
   const items = Array.isArray(opts.items) ? opts.items : [];
 
   const listHtml = items

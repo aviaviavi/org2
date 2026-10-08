@@ -33,7 +33,7 @@ Link again to [[id:copper-1][Copper launch]].
 `, "utf8");
 
 const projectBrief = execFileSync("node", ["dist/cli.js", "brief", "project", "copper", "--dir", tmp, "--recursive", "--limit", "5"], { encoding: "utf8", env: cliEnvironment });
-assert.match(projectBrief, /# Org2 Briefing: Project copper/);
+assert.match(projectBrief, /# Celorga Briefing: Project copper/);
 assert.match(projectBrief, /Source-backed notes/);
 assert.match(projectBrief, /notes\.org2:1-16/);
 assert.match(projectBrief, /review-required/i);
@@ -42,7 +42,7 @@ assert.match(projectBrief, /Active work surfaced: TODO Follow up on briefing UX/
 assert.doesNotMatch(projectBrief, /Possible stale open work:.*Follow up on briefing UX/);
 
 const nodeBrief = execFileSync("node", ["dist/cli.js", "brief", "node", "--id", "copper-1", "--dir", tmp, "--recursive"], { encoding: "utf8", env: cliEnvironment });
-assert.match(nodeBrief, /# Org2 Briefing: Node Copper launch/);
+assert.match(nodeBrief, /# Celorga Briefing: Node Copper launch/);
 assert.match(nodeBrief, /Backlinks: 2 references across 1 file/);
 assert.match(nodeBrief, /## Referencing files/);
 assert.match(nodeBrief, /references\.org2 \(2\)/);
@@ -52,11 +52,11 @@ const out = path.join(tmp, "views", "copper-brief.org");
 const writeMsg = execFileSync("node", ["dist/cli.js", "brief", "project", "copper", "--dir", tmp, "--out", out, "--format", "org"], { encoding: "utf8", env: cliEnvironment });
 assert.match(writeMsg, /Wrote briefing/);
 const stored = fs.readFileSync(out, "utf8");
-assert.match(stored, /^\* Org2 Briefing: Project copper/m);
+assert.match(stored, /^\* Celorga Briefing: Project copper/m);
 assert.match(stored, /REVIEW REQUIRED|Source-backed/);
 
 const today = execFileSync("node", ["dist/cli.js", "brief", "today", "--dir", tmp, "--recursive", "--limit", "3"], { encoding: "utf8", env: { ...cliEnvironment, ORG2_TODAY: "2026-06-07" } });
-assert.match(today, /Org2 Briefing: Today \(2026-06-07\)/);
+assert.match(today, /Celorga Briefing: Today \(2026-06-07\)/);
 assert.match(today, /Follow up on briefing UX/);
 
 console.log("brief tests passed");

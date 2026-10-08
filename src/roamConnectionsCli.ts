@@ -3,8 +3,8 @@ import { linkRoamMention, readRoamConnections } from "./roamConnections.js";
 
 export async function runRoamConnectionsCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`org2 roam connections --dir DIR (--id ID | --file FILE [--line N]) [--depth 1|2] [--format json]
-org2 roam mention-link --dir DIR --file FILE --mention KEY --target ID --if-revision HASH [--apply] [--format json]
+    console.log(`celorga roam connections --dir DIR (--id ID | --file FILE [--line N]) [--depth 1|2] [--format json]
+celorga roam mention-link --dir DIR --file FILE --mention KEY --target ID --if-revision HASH [--apply] [--format json]
 
 Connections returns a bounded local graph (60 nodes) and exact unlinked mentions (200).
 Linking previews one occurrence by default. --apply requires its unchanged source revision.

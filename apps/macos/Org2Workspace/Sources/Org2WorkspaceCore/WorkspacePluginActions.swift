@@ -177,7 +177,7 @@ extension WorkspaceStore {
     guard action.trusted else {
       activePluginReview = WorkspacePluginReview(
         id: action.id, title: action.title, text: nil, preview: nil,
-        error: "\(action.pluginName) is not trusted on this Mac. Review it, then run “org2 plugin trust \(action.pluginId) --apply”."
+        error: "\(action.pluginName) is not trusted on this Mac. Review it, then run “celorga plugin trust \(action.pluginId) --apply”."
       )
       return
     }

@@ -5,12 +5,12 @@ import { canvasTargets, createJSONCanvas, editJSONCanvas, exportJSONCanvas, show
 
 export async function runJSONCanvasCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h") || args.length < 2) {
-    console.log(`org2 canvas show --dir DIR --file FILE [--json]
-org2 canvas targets --dir DIR [--query TEXT] [--json]
-org2 canvas create --dir DIR --file FILE [--apply] [--json]
-org2 canvas edit --dir DIR --file FILE --if-revision HASH --stdin [--apply] [--json]
-org2 canvas import --dir DIR --file NEW_FILE --from FILE [--apply] [--json]
-org2 canvas export --dir DIR --file FILE --out NEW_FILE [--apply] [--json]
+    console.log(`celorga canvas show --dir DIR --file FILE [--json]
+celorga canvas targets --dir DIR [--query TEXT] [--json]
+celorga canvas create --dir DIR --file FILE [--apply] [--json]
+celorga canvas edit --dir DIR --file FILE --if-revision HASH --stdin [--apply] [--json]
+celorga canvas import --dir DIR --file NEW_FILE --from FILE [--apply] [--json]
+celorga canvas export --dir DIR --file FILE --out NEW_FILE [--apply] [--json]
 
 JSON Canvas 1.0 files remain canonical. Edits read a JSON operation array from stdin.
 Operations: add-node {node}, update-node {id,patch}, remove-node {id};

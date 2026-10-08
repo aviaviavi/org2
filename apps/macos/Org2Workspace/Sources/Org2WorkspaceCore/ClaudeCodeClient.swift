@@ -379,7 +379,7 @@ public actor ClaudeCodeClient {
     return """
     \(message)
 
-    OpenOrg attached temporary local copies of these files for this turn:
+    Celorga attached temporary local copies of these files for this turn:
     \(paths)
     Read them when relevant. Do not modify these temporary copies.
     """

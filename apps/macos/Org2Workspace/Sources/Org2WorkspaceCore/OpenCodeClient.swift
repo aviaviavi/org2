@@ -251,7 +251,7 @@ public actor OpenCodeClient {
       "$schema": "https://opencode.ai/config.json",
       "agent": [
         "openorg": [
-          "description": "OpenOrg workspace agent",
+          "description": "Celorga workspace agent",
           "mode": "primary",
           "prompt": systemPrompt,
           "permission": permissions

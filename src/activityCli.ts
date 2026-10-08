@@ -17,20 +17,20 @@ import {
   type ThreadWaitCondition,
 } from "./activityEvents.js";
 
-const HELP = `Usage: org2 activity <explain|hosts|events> [options]
+const HELP = `Usage: celorga activity <explain|hosts|events> [options]
 
-  org2 activity explain [--thread ID | --run ID | --workflow ID] [--all] [--dir DIR] [--json]
+  celorga activity explain [--thread ID | --run ID | --workflow ID] [--all] [--dir DIR] [--json]
       Explain why each thread, run, and workflow is working or needs attention:
       the reporting host/runtime, last heartbeat or transition, whether the
       state is live, cached, or uncertain, and the exact blocking approval or
       question. Derived from structured presence, transcript, and run records.
 
-  org2 activity hosts [--dir DIR] [--json]
-      List OpenOrg hosts sharing this corpus with online/reconnecting/
+  celorga activity hosts [--dir DIR] [--json]
+      List Celorga app hosts sharing this corpus with online/reconnecting/
       authentication-needed/stale/offline state, active turns, last-seen time,
       and failover candidates.
 
-  org2 activity events [--since ISO|DURATION] [--follow] [--type TYPE[,TYPE]]
+  celorga activity events [--since ISO|DURATION] [--follow] [--type TYPE[,TYPE]]
                        [--thread ID] [--run ID] [--workflow ID] [--limit N]
                        [--interval-ms N] [--dir DIR] [--json]
       Print activity events (NDJSON with --json). Without --follow, replays
@@ -39,8 +39,8 @@ const HELP = `Usage: org2 activity <explain|hosts|events> [options]
       run.* or approval.*.
 
 Related waits:
-  org2 thread wait ID --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO] [--timeout SECONDS]
-  org2 run wait ID --until approval|blocked|needs-you|running|completed|failed|terminal|status:STATUS [--timeout SECONDS]
+  celorga thread wait ID --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO] [--timeout SECONDS]
+  celorga run wait ID --until approval|blocked|needs-you|running|completed|failed|terminal|status:STATUS [--timeout SECONDS]
   Waits check durable state first, so events that land before the wait starts
   are not missed. Exit status: 0 matched, 2 unreachable, 124 timed out.
 
@@ -176,7 +176,7 @@ function controllerForSignals(): { signal: AbortSignal; dispose: () => void } {
   return { signal: controller.signal, dispose: () => { process.off("SIGINT", stop); process.off("SIGTERM", stop); } };
 }
 
-/** `org2 thread wait ID --until ...` */
+/** `celorga thread wait ID --until ...` */
 export async function runThreadWaitCommand(corpus: string, id: string | undefined, flags: Map<string, string[]>): Promise<void> {
   if (!id) throw new Error("thread id is required");
   const until = flags.get("until")?.at(-1) ?? "reply";
@@ -198,7 +198,7 @@ export async function runThreadWaitCommand(corpus: string, id: string | undefine
   }
 }
 
-/** `org2 run wait ID --until ...` */
+/** `celorga run wait ID --until ...` */
 export async function runRunWaitCommand(corpus: string, id: string | undefined, flags: Map<string, string[]>): Promise<void> {
   if (!id) throw new Error("run id is required");
   const until = flags.get("until")?.at(-1) ?? "terminal";

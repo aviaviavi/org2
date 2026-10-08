@@ -60,8 +60,8 @@ try {
   const initialize = await request({ jsonrpc: "2.0", id: 3, method: "initialize", params: { protocolVersion: "2025-03-26" } });
   assert.equal(initialize.status, 200);
   const initialized = await initialize.json();
-  assert.equal(initialized.result.serverInfo.name, "org2");
-  assert.match(initialized.result.instructions, /Read-only Org2 corpus/);
+  assert.equal(initialized.result.serverInfo.name, "celorga");
+  assert.match(initialized.result.instructions, /Read-only Celorga corpus/);
 
   const listed = await request({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
   const tools = (await listed.json()).result.tools;
@@ -132,7 +132,7 @@ try {
   const hiddenResource = await request({ jsonrpc: "2.0", id: 10, method: "resources/read", params: { uri: "org2://corpus/.org2/runs/private.org2" } });
   const hiddenError = await hiddenResource.json();
   assert.equal(hiddenError.error.code, -32603);
-  assert.match(hiddenError.error.message, /not an Org2 source file exposed by this server/);
+  assert.match(hiddenError.error.message, /not a Celorga source file exposed by this server/);
 
   const linkedResource = await request({ jsonrpc: "2.0", id: 11, method: "resources/read", params: { uri: "org2://corpus/linked-notes/billing.org" } });
   const linkedError = await linkedResource.json();

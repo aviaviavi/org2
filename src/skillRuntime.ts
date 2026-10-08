@@ -25,7 +25,7 @@ export function packagedOrg2SkillPath(moduleUrl: string = import.meta.url): stri
 function skillSource(sourcePath: string): string {
   const source = fs.readFileSync(sourcePath, "utf8");
   if (!source.startsWith("---\n") || !source.includes("\nname: org2\n")) {
-    throw new Error(`packaged Org2 skill is invalid: ${sourcePath}`);
+    throw new Error(`packaged Celorga skill is invalid: ${sourcePath}`);
   }
   return source;
 }

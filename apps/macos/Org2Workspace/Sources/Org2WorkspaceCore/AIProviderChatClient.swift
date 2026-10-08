@@ -108,7 +108,7 @@ public struct AIProviderChatClient: Sendable {
     let statelessContext = workspaceContext.replacingThreadContinuation(nil)
 
     let system = """
-    You are connected directly to OpenOrg as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex, Claude Code, or OpenClaw.
+    You are connected directly to Celorga as \(destinationName). You can discuss the supplied context, but this direct model connection has no tools, filesystem access, or permission to perform side effects. Never claim that you changed a file or external service. When the user asks for an action, explain that they should use a harness destination such as Codex, Claude Code, or OpenClaw.
 
     \(statelessContext.systemPrompt(runtime: settings.adapter.rawValue, runtimeAgentID: destinationName))
     """

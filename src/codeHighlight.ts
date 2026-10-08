@@ -1,5 +1,5 @@
 /**
- * Small, dependency-free syntax highlighter for OpenOrg's rendered views.
+ * Small, dependency-free syntax highlighter for Celorga's rendered views.
  *
  * It covers the common lexical classes (comments, strings, keywords, numbers,
  * literals, types, function calls, decorators, markup tags) of the major

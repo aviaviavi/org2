@@ -330,7 +330,7 @@ export class SlackFixtureConnector implements AgentIngestConnector {
     id: "fixture.slack",
     sourceType: this.kind,
     displayName: "Slack fixture connector",
-    auth: { mode: "external", note: "Fixture input is exported outside org2 core; real Slack auth belongs in a connector/plugin." },
+    auth: { mode: "external", note: "Fixture input is exported outside Celorga core; real Slack auth belongs in a connector/plugin." },
     capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
     privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
   };
@@ -372,7 +372,7 @@ export class MessageThreadFixtureConnector implements AgentIngestConnector {
     id: "fixture.message-thread",
     sourceType: this.kind,
     displayName: "Message/thread fixture connector",
-    auth: { mode: "external", note: "Fixture input is exported outside org2 core; iMessage/SMS/WhatsApp auth and device/API access belong in optional connector plugins." },
+    auth: { mode: "external", note: "Fixture input is exported outside Celorga core; iMessage/SMS/WhatsApp auth and device/API access belong in optional connector plugins." },
     capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
     privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
   };
@@ -433,7 +433,7 @@ export class CallTranscriptFixtureConnector implements AgentIngestConnector {
     id: "fixture.call-transcript",
     sourceType: this.kind,
     displayName: "Phone call/transcript fixture connector",
-    auth: { mode: "external", note: "Fixture input is exported outside org2 core; phone, voice-call, recording, and transcription access belong in optional connector plugins." },
+    auth: { mode: "external", note: "Fixture input is exported outside Celorga core; phone, voice-call, recording, and transcription access belong in optional connector plugins." },
     capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
     privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
   };
@@ -498,7 +498,7 @@ export class GmailFixtureConnector implements AgentIngestConnector {
     id: "fixture.gmail",
     sourceType: this.kind,
     displayName: "Gmail fixture connector",
-    auth: { mode: "external", note: "Fixture input is exported outside org2 core; OAuth/API access belongs in an optional connector/plugin." },
+    auth: { mode: "external", note: "Fixture input is exported outside Celorga core; OAuth/API access belongs in an optional connector/plugin." },
     capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
     privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
   };

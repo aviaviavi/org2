@@ -98,14 +98,14 @@ const out = path.join(tmpDir, 'graph.html');
 const stdout = execFileSync('node', [cli, 'roam', 'graph', '--dir', tmpDir, '--recursive', '--out', out], { encoding: 'utf8' });
 assert.equal(stdout.trim(), out);
 const html = fs.readFileSync(out, 'utf8');
-assert.match(html, /Org2 Roam Graph/);
+assert.match(html, /Celorga Roam Graph/);
 assert.match(html, /Hover a node/);
 assert.match(html, /const payload = /);
 assert.match(html, /"label":"Alpha"/);
 assert.match(html, /"label":"Delta"/);
 
 const report = execFileSync('node', [cli, 'roam', 'graph', '--dir', tmpDir, '--recursive', '--format', 'report'], { encoding: 'utf8' });
-assert.match(report, /Org2 roam maintenance report/);
+assert.match(report, /Celorga roam maintenance report/);
 assert.match(report, /Alias\/title collisions/);
 assert.match(report, /unresolved-wiki-link/);
 assert.match(report, /ambiguous-wiki-link/);
@@ -115,6 +115,6 @@ assert.match(report, /delta -> Delta @/);
 const reportOut = path.join(tmpDir, 'graph-report.txt');
 const reportStdout = execFileSync('node', [cli, 'roam', 'graph', '--dir', tmpDir, '--recursive', '--format', 'report', '--out', reportOut], { encoding: 'utf8' });
 assert.equal(reportStdout.trim(), reportOut);
-assert.match(fs.readFileSync(reportOut, 'utf8'), /Org2 roam maintenance report/);
+assert.match(fs.readFileSync(reportOut, 'utf8'), /Celorga roam maintenance report/);
 
 console.log('✓ roam-graph');

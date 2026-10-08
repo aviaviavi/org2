@@ -249,13 +249,13 @@ function assertCorpusRelative(id: string, key: string, value: unknown): void {
 
 function assertNoSecrets(id: string, value: unknown, where: string): void {
   if (typeof value === "string") {
-    if (SECRET_VALUE_PATTERN.test(value.trim())) throw new Error(`external source ${id} ${where} looks like a credential; keep secrets out of org2.json`);
+    if (SECRET_VALUE_PATTERN.test(value.trim())) throw new Error(`external source ${id} ${where} looks like a credential; keep secrets out of celorga.json`);
     return;
   }
   if (Array.isArray(value)) { value.forEach((item, index) => assertNoSecrets(id, item, `${where}[${index}]`)); return; }
   if (value && typeof value === "object") {
     for (const [key, child] of Object.entries(value)) {
-      if (SECRET_KEY_PATTERN.test(key)) throw new Error(`external source ${id} must not store ${key} in org2.json; credentials stay machine-local`);
+      if (SECRET_KEY_PATTERN.test(key)) throw new Error(`external source ${id} must not store ${key} in celorga.json; credentials stay machine-local`);
       assertNoSecrets(id, child, where ? `${where}.${key}` : key);
     }
   }
@@ -263,7 +263,7 @@ function assertNoSecrets(id: string, value: unknown, where: string): void {
 
 /**
  * Validates one org2.json externalSources entry. The shared contract behind
- * `org2 source add` and OpenOrg's source sheet: only known, non-secret keys.
+ * `celorga source add` and the Celorga app's source sheet: only known, non-secret keys.
  */
 export function validateExternalSourceProfile(id: string, value: unknown): Org2ExternalSourceConfig {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id)) throw new Error("source PROFILE ids use letters, digits, ., _, or - (at most 64 characters)");
@@ -325,24 +325,24 @@ export function mergeExternalSourceProfile(existing: Org2ExternalSourceConfig, u
 
 function usage(): string {
   return `External source commands:
-  org2 source list [--dir CORPUS] [--json]
-  org2 source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
-  org2 source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--password-env VAR] [--password-command CMD] [--dir CORPUS] [--apply] [--json]
-  org2 source add PROFILE --source-json JSON [--update] [--dir CORPUS] [--apply] [--json]
-  org2 source add-email PROFILE --host HOST --username USER [--port 993] [--security tls|starttls] [--mailbox INBOX]... [--smtp-host HOST --smtp-port 587] [--dir CORPUS] [--apply] [--json]
-  org2 source schedule PROFILE (--pause|--resume) [--dir CORPUS] [--apply] [--json]
-  org2 source schedule PROFILE --kind interval --every-minutes N [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
-  org2 source schedule PROFILE --kind daily --time HH:MM [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
-  org2 source status [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
-  org2 source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
-  org2 source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
+  celorga source list [--dir CORPUS] [--json]
+  celorga source doctor [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
+  celorga source bind PROFILE [--binary PATH] [--config PATH] [--working-directory PATH] [--password-env VAR] [--password-command CMD] [--dir CORPUS] [--apply] [--json]
+  celorga source add PROFILE --source-json JSON [--update] [--dir CORPUS] [--apply] [--json]
+  celorga source add-email PROFILE --host HOST --username USER [--port 993] [--security tls|starttls] [--mailbox INBOX]... [--smtp-host HOST --smtp-port 587] [--dir CORPUS] [--apply] [--json]
+  celorga source schedule PROFILE (--pause|--resume) [--dir CORPUS] [--apply] [--json]
+  celorga source schedule PROFILE --kind interval --every-minutes N [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
+  celorga source schedule PROFILE --kind daily --time HH:MM [--timezone ZONE] [--dir CORPUS] [--apply] [--json]
+  celorga source status [PROFILE...] [--timeout SECONDS] [--dir CORPUS] [--json]
+  celorga source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
+  celorga source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
 
-The corpus declares non-secret externalSources in org2.json; \`source add\` validates one entry of any
+The corpus declares non-secret externalSources in celorga.json (or org2.json); \`source add\` validates one entry of any
 supported type (${EXTERNAL_SOURCE_TYPES.join(", ")}) and refuses credential-like keys or values. Machine-local bindings are stored
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Slack and Notion sync delegates to
 slacrawl/notcrawl. Email profiles read IMAP directly (read-only EXAMINE and BODY.PEEK, so mail is not
 marked read) and keep a machine-local UID cursor; the password comes from ORG2_EMAIL_PASSWORD, a
---password-env or --password-command binding, or OpenOrg's Keychain, and never enters the corpus.`;
+--password-env or --password-command binding, or the Celorga app's Keychain, and never enters the corpus.`;
 }
 
 function optionValue(args: string[], index: number, option: string): string {
@@ -483,7 +483,7 @@ function parseArgs(args: string[]) {
 function resolveCorpus(dir: string): { root: string; configFile: string; profiles: Record<string, Org2ExternalSourceConfig> } {
   const start = path.resolve(dir || process.cwd());
   const configFile = findConfigFile(start);
-  if (!configFile) throw new Error(`no org2.json found from ${start}`);
+  if (!configFile) throw new Error(`no celorga.json or org2.json found from ${start}`);
   const root = path.dirname(configFile);
   return { root, configFile, profiles: loadConfig(configFile).externalSources || {} };
 }
@@ -588,10 +588,10 @@ function emailStatus(id: string, profile: Org2ExternalSourceConfig, binding: Sou
     media: profile.media || "metadata-only",
     ...(profile.schedule ? { schedule: normalizedSchedule(id, profile) } : {}),
     bindingPath: bindingFile,
-    binary: "org2 (built-in IMAP)",
+    binary: "celorga (built-in IMAP)",
     binaryAvailable: true,
     configAvailable: !setupError,
-    // The password may also arrive from OpenOrg's Keychain at sync time.
+    // The password may also arrive from the Celorga app's Keychain at sync time.
     ready: profile.enabled !== false && !setupError,
     ...(email ? { email } : {}),
     credentialAvailable,
@@ -756,7 +756,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
         continue;
       }
       if (!item.enabled || !item.ready) {
-        result.push({ id: item.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
+        result.push({ id: item.id, ok: false, skipped: true, error: "source binding is not ready; run celorga source doctor" });
         continue;
       }
       const child = spawnSync(item.binary, ["--config", item.configPath!, "status", "--json"], {
@@ -786,7 +786,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
 
   if (action === "schedule") {
     const id = selected[0];
-    if (!id || selected.length !== 1) throw new Error("org2 source schedule requires exactly one PROFILE");
+    if (!id || selected.length !== 1) throw new Error("celorga source schedule requires exactly one PROFILE");
     if (parsed.pause && parsed.resume) throw new Error("source schedule accepts only one of --pause or --resume");
     const isToggle = parsed.pause || parsed.resume;
     const hasScheduleFields = parsed.scheduleKind !== undefined
@@ -847,7 +847,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
 
   if (action === "bind") {
     const id = selected[0];
-    if (!id || selected.length !== 1) throw new Error("org2 source bind requires exactly one PROFILE");
+    if (!id || selected.length !== 1) throw new Error("celorga source bind requires exactly one PROFILE");
     const envelope = readBindings(root);
     const current = envelope.bindings[id] || {};
     const next = {
@@ -871,8 +871,8 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
 
   if (action === "add") {
     const id = selected[0];
-    if (!id || selected.length !== 1) throw new Error("org2 source add requires exactly one PROFILE");
-    if (!parsed.sourceJSON) throw new Error("org2 source add requires --source-json with an externalSources entry");
+    if (!id || selected.length !== 1) throw new Error("celorga source add requires exactly one PROFILE");
+    if (!parsed.sourceJSON) throw new Error("celorga source add requires --source-json with an externalSources entry");
     let requested: unknown;
     try { requested = JSON.parse(parsed.sourceJSON); } catch { throw new Error("--source-json must be valid JSON"); }
     if (!requested || typeof requested !== "object" || Array.isArray(requested)) throw new Error("--source-json must be a JSON object");
@@ -889,8 +889,8 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       writeJSONAtomic(configFile, config);
     }
     const credential = profile.type === "email"
-      ? `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, org2 source bind ${id} --password-command CMD --apply, or OpenOrg's Sources view`
-      : `Provide the crawler token through its environment (${profile.type === "slack" ? "SLACK_BOT_TOKEN" : "NOTION_TOKEN"}) or OpenOrg's Sources view, and bind a non-default crawler with org2 source bind ${id} --binary PATH --config PATH --apply`;
+      ? `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, celorga source bind ${id} --password-command CMD --apply, or the Celorga app's Sources view`
+      : `Provide the crawler token through its environment (${profile.type === "slack" ? "SLACK_BOT_TOKEN" : "NOTION_TOKEN"}) or the Celorga app's Sources view, and bind a non-default crawler with celorga source bind ${id} --binary PATH --config PATH --apply`;
     emit({
       schema: "org2:source-add:v1",
       root,
@@ -901,14 +901,14 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       created: !existing,
       changed,
       applied: parsed.apply,
-      next: `${credential}; then org2 source doctor ${id}.`,
+      next: `${credential}; then celorga source doctor ${id}.`,
     }, parsed.json);
     return true;
   }
 
   if (action === "add-email") {
     const id = selected[0] ?? parsed.positional[0];
-    if (!id || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id)) throw new Error("org2 source add-email requires a PROFILE id (letters, digits, ., _, -)");
+    if (!id || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id)) throw new Error("celorga source add-email requires a PROFILE id (letters, digits, ., _, -)");
     if (profiles[id]) throw new Error(`external source ${id} already exists`);
     if (!parsed.host || !parsed.username) throw new Error("source add-email requires --host and --username");
     const profile: Org2ExternalSourceConfig = {
@@ -937,7 +937,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       profile: id,
       source: profile,
       applied: parsed.apply,
-      next: `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, org2 source bind ${id} --password-command CMD --apply, or OpenOrg's Sources view; then org2 source doctor ${id}.`,
+      next: `Provide the password with ${DEFAULT_EMAIL_PASSWORD_ENV}, celorga source bind ${id} --password-command CMD --apply, or the Celorga app's Sources view; then celorga source doctor ${id}.`,
     }, parsed.json);
     return true;
   }
@@ -961,7 +961,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
       }
     }
     results.push(...requested.filter((status) => status.type !== "email").map((status) => {
-      if (!status.ready) return { id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" };
+      if (!status.ready) return { id: status.id, ok: false, skipped: true, error: "source binding is not ready; run celorga source doctor" };
       try {
         const imported = importCrawlerArchive({
           root,
@@ -1018,7 +1018,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
         continue;
       }
       if (!status.ready) {
-        results.push({ id: status.id, ok: false, skipped: true, error: "source binding is not ready; run org2 source doctor" });
+        results.push({ id: status.id, ok: false, skipped: true, error: "source binding is not ready; run celorga source doctor" });
         continue;
       }
       const profile = profiles[status.id]!;
@@ -1070,7 +1070,7 @@ export async function runSourceCommand(args: string[]): Promise<boolean> {
               id: status.id,
               ok: false,
               status: child.status,
-              error: `crawler sync succeeded but Org2 import failed: ${error instanceof Error ? error.message : String(error)}`,
+              error: `crawler sync succeeded but Celorga import failed: ${error instanceof Error ? error.message : String(error)}`,
               ...(parsed.json ? { stdout: truncateOutput(child.stdout), stderr: truncateOutput(child.stderr) } : {}),
             });
             continue;

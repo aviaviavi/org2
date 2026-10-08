@@ -5,7 +5,7 @@ final class AIChatContextBudgetTests: XCTestCase {
   func testPersistentContextUsesRecoveryThenDeltaOnly() throws {
     let transcript = "Selected AI chat thread continuation\n\n" + String(repeating: "old turn ", count: 8_000)
     let initialPrompt = [
-      "Org2 working rules\n\nKeep citations stable.",
+      "Celorga working rules\n\nKeep citations stable.",
       "Project context\n\nVersion one.",
       transcript,
     ].joined(separator: "\n\n---\n\n")
@@ -52,7 +52,7 @@ final class AIChatContextBudgetTests: XCTestCase {
     XCTAssertFalse(try XCTUnwrap(changed.prompt).contains("Selected AI chat thread continuation"))
 
     let removed = AIChatContextBudget.persistentEnvelope(
-      fullPrompt: "Org2 working rules\n\nKeep citations stable.",
+      fullPrompt: "Celorga working rules\n\nKeep citations stable.",
       previousSections: changed.sectionSnapshot,
       forceRecovery: false,
       includesTranscript: true
@@ -103,7 +103,7 @@ final class AIChatContextBudgetTests: XCTestCase {
   func testPersistentContinuationBenchmarkMeetsRegressionBudget() {
     let baseProject = "Project context\n\n" + String(repeating: "project ", count: 1_000)
     let fullPrompt = [
-      "Org2 working rules\n\n" + String(repeating: "rules ", count: 2_000),
+      "Celorga working rules\n\n" + String(repeating: "rules ", count: 2_000),
       baseProject,
       "Selected AI chat thread continuation\n\n" + String(repeating: "history ", count: 4_000),
     ].joined(separator: "\n\n---\n\n")
@@ -160,9 +160,9 @@ final class AIChatContextBudgetTests: XCTestCase {
 
   func testTelemetryClassifiesDynamicWorkspaceContextAndExcludesCurrentRequest() {
     let system = [
-      "Org2 workspace operating context\n\nCorpus roots",
+      "Celorga workspace operating context\n\nCorpus roots",
       "Project notes linked to this chat\n\nProject brief",
-      "Org2 working rules\n\nStable instruction",
+      "Celorga working rules\n\nStable instruction",
     ].joined(separator: "\n\n---\n\n")
     let history = [
       AIChatMessage(role: .assistant, content: "Earlier answer"),
@@ -338,7 +338,7 @@ final class AIChatContextBudgetTests: XCTestCase {
 
   private var persistentPrompt: String {
     [
-      "Org2 working rules\n\nKeep citations stable.",
+      "Celorga working rules\n\nKeep citations stable.",
       "Selected AI chat thread continuation\n\nEarlier turn.",
     ].joined(separator: "\n\n---\n\n")
   }

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-/** Use the same native transcript engine as OpenOrg, without launching an app or model. */
+/** Use the same native transcript engine as the Celorga app, without launching an app or model. */
 export async function runAIChatRepair(options: {
   corpusRoot: string; apply: boolean; watch: boolean; interval?: string;
   expectedRevision?: string; executable?: string;

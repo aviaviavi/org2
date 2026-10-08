@@ -42,13 +42,15 @@ const declaredCommands = new Set(
 );
 const help = runCli(["--help"]).stderr;
 const publicFamilies = new Set();
-for (const match of help.matchAll(/^\s+org2\s+([^\s<]+)(?:\s|$)/gm)) {
+for (const match of help.matchAll(/^\s+(?:celorga|org2)\s+([^\s<]+)(?:\s|$)/gm)) {
   publicFamilies.add(match[1]);
 }
 
 for (const family of [...publicFamilies].sort()) {
-  const covered = [...declaredCommands].some((command) => command === `org2 ${family}` || command.startsWith(`org2 ${family} `));
-  if (!covered) fail(`top-level command '${family}' is missing from org2 agent capabilities`);
+  const covered = [...declaredCommands].some((command) =>
+    ["celorga", "org2"].some((cli) => command === `${cli} ${family}` || command.startsWith(`${cli} ${family} `)),
+  );
+  if (!covered) fail(`top-level command '${family}' is missing from celorga agent capabilities`);
 }
 
 const requiredDocs = new Map([
@@ -125,10 +127,10 @@ for (const [label, text] of [
   }
 }
 if (!generalSkill.includes("name: org2") || !mentionsCommand(generalSkill, "agent capabilities")) {
-  fail("general Org2 skill is missing required discovery guidance");
+  fail("general Celorga skill is missing required discovery guidance");
 }
 if (!(packageJson.files || []).includes("skills/org2/SKILL.md")) {
-  fail("npm package does not include the general Org2 skill");
+  fail("npm package does not include the general Celorga skill");
 }
 if (!publishConfig.includes("mcp-and-skills.html")) {
   fail("site navigation is missing MCP and agent skills");

@@ -63,7 +63,7 @@ export const AI_CHAT_MAX_REQUESTED_RESPONDERS = 8;
 
 /**
  * Normalizes `--request-turn` values to bare, lowercase destination tokens.
- * OpenOrg resolves each token against the room's agents by destination ID or
+ * The Celorga app resolves each token against the room's agents by destination ID or
  * @mention; agent mentions are app settings the CLI cannot see.
  */
 export function normalizedRequestedResponders(values: readonly string[] | undefined): string[] {
@@ -151,7 +151,7 @@ export function queueAIChatInboxMessage(
       && delivered.authorAgentRef === message.authorAgentRef
       && delivered.source === message.source;
     // Delivered transcript messages do not record the request itself; the
-    // requested turn already ran (or was refused) when OpenOrg delivered it.
+    // requested turn already ran (or was refused) when the Celorga app delivered it.
     if (!matches) {
       throw new Error(`AI chat idempotency key already delivered a different message to ${canonicalThreadID}`);
     }

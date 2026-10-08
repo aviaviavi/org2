@@ -1,20 +1,21 @@
-# Celorga (formerly OpenOrg / Org2) Agent Guide
+# Celorga Agent Guide
 
-The product is being renamed to **Celorga**: one brand for the app, runtime,
-and CLI (`celorga`, with `org2` kept as a compatibility alias). Follow
+The product is being renamed from OpenOrg (app) and Org2 (runtime, CLI) to
+**Celorga**: one brand for the app, runtime, and CLI. The CLI is `celorga`;
+`org2` remains a permanent alias, and older installs only have `org2`. Follow
 `docs/rename/celorga.org` for what to rename in user-facing text and which
 identifiers must keep their old spelling (bundle IDs, `.org2`, `org2.json`,
-`ORG2_*`, schema IDs, Keychain and preference keys). Check progress with
-`node tools/celorga-rename-audit.mjs`. The rest of this guide still uses the
-old names for the two layers:
+`ORG2_*`, schema IDs, Keychain and preference keys, source identifiers such as
+`Org2Workspace`). Check progress with `node tools/celorga-rename-audit.mjs`.
 
 This repository contains two closely related layers:
 
-- **OpenOrg** is the user-facing macOS and iOS workspace.
-- **Org2** is the independently specified compiler/runtime and semantic profile
-  for ordinary `.org` documents, plus the CLI, schemas, publishing system,
-  plugin runtime, and editor tooling beneath OpenOrg. Existing `.org2` files
-  and structured runtime records remain supported for compatibility.
+- **The Celorga app** is the user-facing macOS and iOS workspace.
+- **The Celorga runtime** is the independently specified compiler/runtime and
+  semantic profile for ordinary `.org` documents, plus the CLI, schemas,
+  publishing system, plugin runtime, and editor tooling beneath the app.
+  Existing `.org2` files and structured runtime records remain supported for
+  compatibility.
 
 These instructions are runtime-neutral. OpenClaw, Codex, Claude Code, and other
 agents may work here, but no agent runtime, app cache, generated index, or model
@@ -24,9 +25,9 @@ memory is the source of truth.
 
 1. Read this file, inspect `git status --short --branch`, and check the current
    worktree before editing. Preserve unrelated work in a dirty checkout.
-2. Decide whether the request changes this repository or an Org2 corpus. This
+2. Decide whether the request changes this repository or a Celorga corpus. This
    file governs repository work. Corpus work also follows the nearest corpus
-   `AGENTS.md` and `org2.json`; ordinary `.org2` and `.org` files remain
+   `AGENTS.md` and `celorga.json` (or the legacy `org2.json`); ordinary `.org2` and `.org` files remain
    canonical there.
 3. In a fresh checkout, install the locked dependencies with `npm ci`. Reuse
    an existing `node_modules/` only when the lockfile has not changed.
@@ -40,18 +41,19 @@ memory is the source of truth.
    npm run org2 -- COMMAND --help
    ```
 
-   Prefer `npm run org2 -- ...` or `node dist/cli.js ...` during development.
-   A globally installed `org2` may expose a different version.
+   Prefer `npm run org2 -- ...` (the npm script keeps its old name) or
+   `node dist/cli.js ...` during development. A globally installed `celorga`
+   or `org2` may expose a different version.
 5. Choose the smallest affected surface and its focused tests before making a
    broad change. Check documentation impact at the same time as code impact.
 
-## Native Org2 tooling
+## Native Celorga tooling
 
-Use Org2's native CLI by default for Org/Org2 operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Org2 workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with `org2 agent capabilities` and `org2 COMMAND --help` before choosing a workaround. Org2 is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.
+Use Celorga's native CLI by default for Org operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Celorga workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with `celorga agent capabilities` and `celorga COMMAND --help` before choosing a workaround. Celorga is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.
 
-Do not invoke `emacs`, `emacsclient`, batch Emacs Lisp, or an Emacs Org exporter as an implicit fallback. Do not assume Emacs is installed, probe for it, or install it for ordinary Org2 work. Use Emacs only when the user explicitly requests an Emacs-specific task. This does not prohibit other tools for work outside Org2's scope.
+Do not invoke `emacs`, `emacsclient`, batch Emacs Lisp, or an Emacs Org exporter as an implicit fallback. Do not assume Emacs is installed, probe for it, or install it for ordinary Celorga work. Use Emacs only when the user explicitly requests an Emacs-specific task. This does not prohibit other tools for work outside Celorga's scope.
 
-If a native operation appears missing or broken, check the installed version, capabilities, and relevant help first. Distinguish a missing executable, permission restriction, or unavailable tool from a confirmed Org2 capability gap; do not bypass access or review boundaries. State the exact limitation and use a small, supported, reviewable alternative when available. Never silently substitute GNU Org behavior or execute preserved unsupported formulas or source blocks. If this is authorized OpenOrg/Org2 development with repository access, reproduce and fix the shortcoming and add a focused regression test. Otherwise, suggest opening an issue at https://github.com/aviaviavi/celorga/issues and prepare a sanitized report with the version, command/tool, minimal input, expected and actual behavior, and workaround. Do not publish an issue or private corpus content without the user's authorization. If shell execution is unavailable, use the exposed tools and explain any remaining limitation rather than inventing command results.
+If a native operation appears missing or broken, check the installed version, capabilities, and relevant help first. Distinguish a missing executable, permission restriction, or unavailable tool from a confirmed Celorga capability gap; do not bypass access or review boundaries. State the exact limitation and use a small, supported, reviewable alternative when available. Never silently substitute GNU Org behavior or execute preserved unsupported formulas or source blocks. If this is authorized Celorga development with repository access, reproduce and fix the shortcoming and add a focused regression test. Otherwise, suggest opening an issue at https://github.com/aviaviavi/celorga/issues and prepare a sanitized report with the version, command/tool, minimal input, expected and actual behavior, and workaround. Do not publish an issue or private corpus content without the user's authorization. If shell execution is unavailable, use the exposed tools and explain any remaining limitation rather than inventing command results.
 
 ## Source of truth and safety
 
@@ -60,7 +62,7 @@ If a native operation appears missing or broken, check the installed version, ca
   reconstructible.
 - Preserve source ranges, stable IDs, file/line citations, provenance, hashes,
   and review state across compiler and agent workflows.
-- Most Org2 mutations preview by default and require `--apply`. Inspect the
+- Most Celorga mutations preview by default and require `--apply`. Inspect the
   preview or JSON envelope before applying it.
 - Keep generated or uncertain corpus work in reviewable zones such as `views/`
   or `compiled/`; promotion into canonical `notes/` is an explicit action.
@@ -68,7 +70,7 @@ If a native operation appears missing or broken, check the installed version, ca
 - Never put credentials, tokens, cookies, private keys, model credentials, or
   machine-local bindings in source, fixtures, corpora, runs, plugins, generated
   artifacts, or documentation examples.
-- Multi-corpus reads require explicit mounts. A corpus visible in OpenOrg is not
+- Multi-corpus reads require explicit mounts. A corpus visible in the Celorga app is not
   implicit agent authority, and writes remain scoped to one active corpus.
 - Do not perform external side effects such as sending messages, creating
   tickets, publishing, installing plugins, restarting services, or changing a
@@ -100,7 +102,7 @@ If a native operation appears missing or broken, check the installed version, ca
   publishing, plugin contracts, and LSP behavior. Build output goes to `dist/`.
 - Apps and editor integrations consume shared semantics. Do not create a second
   parser, a private canonical database, or app-only language behavior.
-- `apps/macos/Org2Workspace/` is the native OpenOrg workspace. It supports
+- `apps/macos/Org2Workspace/` is the native Celorga app workspace. It supports
   local and explicitly mounted corpora, reading/editing, capture, meetings,
   publishing, data views, plugins, durable agent work, and per-thread AI chat
   through configured runtimes such as OpenClaw and Codex.
@@ -112,9 +114,9 @@ If a native operation appears missing or broken, check the installed version, ca
   or corpus state.
 - The plugin runtime installs content-addressed Git packages, pins exact commits
   and SHA-256 contents in the corpus lock, and requires machine-local trust
-  before contributed commands or sandboxed renderers execute. CLI and OpenOrg
-  use the same renderer contribution; there is no separate app-only plugin ABI.
-- Prefer one coherent Org2 standard over bug-for-bug GNU Org compatibility.
+  before contributed commands or sandboxed renderers execute. The CLI and the
+  app use the same renderer contribution; there is no separate app-only plugin ABI.
+- Prefer one coherent Celorga standard over bug-for-bug GNU Org compatibility.
   Keep AI/provider behavior optional above deterministic compiler output.
 
 ## Agent runtimes and durable work
@@ -122,22 +124,22 @@ If a native operation appears missing or broken, check the installed version, ca
 - Goals are portable `org2:goal:v1` records and named workers are
   `org2:agent-profile:v1` records. OpenClaw, Codex, Claude Code, model names,
   and session IDs are execution details, not `AGENT_REF` values.
-- Resolve the current runtime binding with `org2 agent-profile resolve` before
+- Resolve the current runtime binding with `celorga agent-profile resolve` before
   creating delegated work. Preserve an existing `AGENT_REF` or `GOAL_REF`;
   if no binding resolves, leave the refs unset rather than guessing.
-- Use `org2 run` for durable delegated work and `org2 workflow` for reusable
+- Use `celorga run` for durable delegated work and `celorga workflow` for reusable
   recipes. Use the CLI lifecycle commands instead of rewriting run files.
 - Treat approvals, clarifications, failed checks, and `review-required`
   artifacts as open boundaries. An agent turn succeeding does not by itself
   complete the durable run.
-- Use `org2 approvals` for the unified decision queue and
-  `org2 run approval-decide` for run-backed decisions. Preserve the exact run,
+- Use `celorga approvals` for the unified decision queue and
+  `celorga run approval-decide` for run-backed decisions. Preserve the exact run,
   approval, fingerprint, and provider decision-key identity; do not create a
   duplicate heading for the same decision.
 - Blocking requires a specific question or next action. Completion requires a
   concise reviewer-facing outcome and no unresolved approval or artifact review.
   Only a person may confirm whole-run completion outside the workflow.
-- Use `org2 thread post` or the matching MCP tool only when an explicitly
+- Use `celorga thread post` or the matching MCP tool only when an explicitly
   asynchronous worker must report into a named AI chat. Foreground agents reply
   normally and must not duplicate their response through the inbox.
 - When changing the OpenClaw adapter, preserve its configured single-corpus
@@ -152,7 +154,7 @@ If a native operation appears missing or broken, check the installed version, ca
 - `test/`: Node integration and regression tests; `test/agent/` contains
   focused agent/context coverage.
 - `spec/v0/`: language, schema, and conformance contracts.
-- `apps/macos/Org2Workspace/`: Swift package for OpenOrg on macOS, support
+- `apps/macos/Org2Workspace/`: Swift package for the Celorga app on macOS, support
   executables, and Swift tests.
 - `apps/ios/Org2Mobile/`: iOS app, share extension, and mobile navigation
   contract.
@@ -184,7 +186,7 @@ If a native operation appears missing or broken, check the installed version, ca
   risk.
 - Keep deterministic behavior below optional AI integrations. Tests must not
   require live provider credentials or mutate a user's real corpus.
-- Preserve compatibility across the CLI, OpenOrg, editors, and agent adapters
+- Preserve compatibility across the CLI, the app, editors, and agent adapters
   when changing a shared capability.
 - If a failure predates the change, record evidence and prove the change does
   not introduce a new failure.
@@ -233,7 +235,7 @@ contract that reads this file.
   repository publish command and use `npm run check:generated` when the
   generated contract is in scope.
 - When adding or removing a public capability, keep
-  `org2 agent capabilities`, `docs/site/agent-quickstart.org`,
+  `celorga agent capabilities`, `docs/site/agent-quickstart.org`,
   `docs/site/llms.txt`, `docs/site/features.org`, and the relevant
   reference/editor page aligned.
 - Keep public positioning provider-neutral. Runtime-specific integration details

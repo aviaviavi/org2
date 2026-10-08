@@ -1,12 +1,12 @@
 import path from "node:path";
 import { installPackagedOrg2Skill } from "./skillRuntime.js";
 
-const HELP = `org2 skill install
+const HELP = `celorga skill install
 
-Install the packaged general Org2 agent skill into a corpus.
+Install the packaged general Celorga agent skill into a corpus.
 
 Usage:
-  org2 skill install [--dir CORPUS] [--apply] [--format text|json]
+  celorga skill install [--dir CORPUS] [--apply] [--format text|json]
 
 The command previews by default. --apply creates
 .agents/skills/org2/SKILL.md only when that path is absent. It never overwrites
@@ -40,13 +40,13 @@ export async function runSkillCommand(args: string[]): Promise<boolean> {
   if (flag(values, "format") === "json" || values.includes("--json")) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.status === "would-create") {
-    process.stdout.write(`would install Org2 skill at ${result.destination}\nRun again with --apply to create it.\n`);
+    process.stdout.write(`would install Celorga skill at ${result.destination}\nRun again with --apply to create it.\n`);
   } else if (result.status === "created") {
-    process.stdout.write(`installed Org2 skill at ${result.destination}\n`);
+    process.stdout.write(`installed Celorga skill at ${result.destination}\n`);
   } else if (result.status === "unchanged") {
-    process.stdout.write(`Org2 skill is already current at ${result.destination}\n`);
+    process.stdout.write(`Celorga skill is already current at ${result.destination}\n`);
   } else {
-    process.stdout.write(`kept existing Org2 skill at ${result.destination}\nThe installer never overwrites a user-managed copy.\n`);
+    process.stdout.write(`kept existing Celorga skill at ${result.destination}\nThe installer never overwrites a user-managed copy.\n`);
   }
   if (result.status === "conflict") process.exitCode = 2;
   return true;

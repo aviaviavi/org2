@@ -5,16 +5,28 @@ final class AIChatWorkspaceDiscoveryTests: XCTestCase {
   func testCodexWorkspaceToolsExposeCorpusAndChatDiscovery() throws {
     let tools = CodexAppServerClient.localEditDynamicTools
     let names = tools.compactMap { $0["name"]?.stringValue }
-    XCTAssertTrue(names.contains("org2_workspace_search"))
-    XCTAssertTrue(names.contains("org2_workspace_chat_read"))
+    XCTAssertTrue(names.contains("celorga_workspace_search"))
+    XCTAssertTrue(names.contains("celorga_workspace_chat_read"))
 
     let search = try XCTUnwrap(tools.first {
-      $0["name"]?.stringValue == "org2_workspace_search"
+      $0["name"]?.stringValue == "celorga_workspace_search"
     })
     XCTAssertEqual(
       search["inputSchema"]?["required"]?.arrayValue?.compactMap(\.stringValue),
       ["turnId", "query"]
     )
+    XCTAssertFalse(names.contains { $0.hasPrefix("org2_") }, "advertise Celorga tool names only")
+  }
+
+  @MainActor
+  func testBundledAgentToolsAdvertiseCelorgaNames() {
+    let names = BundledAgentWorkspaceTools.definitions.compactMap { $0["name"]?.stringValue }
+    XCTAssertEqual(Set(names), [
+      "celorga_workspace_read",
+      "celorga_workspace_patch_preview",
+      "celorga_workspace_patch_apply",
+      "celorga_workspace_search",
+    ])
   }
 
   func testChatHistorySearchReturnsStableCitationsAndBoundedReadWindow() throws {

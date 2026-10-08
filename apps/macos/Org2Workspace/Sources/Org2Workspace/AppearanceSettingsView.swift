@@ -178,7 +178,7 @@ struct WorkspaceThemePreview: View {
         HStack(spacing: 3) {
           Text("See").foregroundStyle(color(.text))
           Text("docs").foregroundStyle(color(.link)).underline()
-          Text("=org2=")
+          Text("=celorga=")
             .foregroundStyle(color(.text))
             .background(color(.code).opacity(0.18))
         }
