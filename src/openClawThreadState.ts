@@ -2,8 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  AI_CHAT_MAX_ROOM_AGENT_TURN_LIMIT,
   AI_CHAT_OPERATION_SCHEMA,
   type AIChatOperation,
+  isValidRoomAgentTurnLimit,
   loadAIChatOperations,
   nextAIChatOperationIdentity,
   queueAIChatOperation,
@@ -54,6 +56,9 @@ export interface OpenClawChatThreadRecord {
   runtimeThreadID?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  isSharedRoom?: boolean;
+  roomDestinationIDs?: string[];
+  roomAgentTurnLimit?: number | null;
   [key: string]: unknown;
 }
 
@@ -776,6 +781,15 @@ function applyOperation(state: OpenClawThreadState, operation: AIChatOperation):
     state.threads[index] = reopenedThread(state.threads[index]!);
     return [state.threads[index]!.id];
   }
+  if (operation.kind === "configure-room-agent-turns") {
+    const index = matchingThreadIndex(state.threads, operation.threadID);
+    if (index < 0 || roomAgentTurnLimitSetting(state.threads[index]!) === operation.agentTurnLimit) return [];
+    const thread = { ...state.threads[index]! };
+    if (operation.agentTurnLimit === null) delete thread.roomAgentTurnLimit;
+    else thread.roomAgentTurnLimit = operation.agentTurnLimit;
+    state.threads[index] = thread;
+    return [thread.id];
+  }
   if (operation.kind === "configure-auto-settle") {
     if (state.settlementSettings.autoSettleAfterSeconds === operation.autoSettleAfterSeconds) return [];
     state.settlementSettings = { autoSettleAfterSeconds: operation.autoSettleAfterSeconds };
@@ -986,6 +1000,43 @@ export function configureOpenClawThreadSettlement(
     autoSettleAfterSeconds,
   };
   return mutationResult(corpusRoot, state, operation, ["settings"], options.apply === true);
+}
+
+/** The room's stored agent-turn limit, or null when it follows the default. */
+export function roomAgentTurnLimitSetting(thread: OpenClawChatThreadRecord): number | null {
+  const value = thread.roomAgentTurnLimit;
+  return typeof value === "number" && isValidRoomAgentTurnLimit(value) ? value : null;
+}
+
+/**
+ * Sets how many agent-requested turns may run back to back in one shared room
+ * before a person must reply. `0` turns agent hand-offs off; `null` restores
+ * the default of AI_CHAT_DEFAULT_ROOM_AGENT_TURN_LIMIT.
+ */
+export function configureOpenClawRoomAgentTurnLimit(
+  corpusRoot: string,
+  threadID: string,
+  agentTurnLimit: number | null,
+  options: { apply?: boolean } = {},
+): OpenClawThreadMutationResult {
+  if (!isValidRoomAgentTurnLimit(agentTurnLimit)) {
+    throw new Error(`agent turn limit must be an integer from 0 to ${AI_CHAT_MAX_ROOM_AGENT_TURN_LIMIT}, or default`);
+  }
+  const state = loadOpenClawThreadState(corpusRoot);
+  const thread = findOpenClawThread(state, threadID);
+  if (!thread) throw new Error(`unknown OpenClaw thread: ${threadID}`);
+  if (thread.isSharedRoom !== true) {
+    throw new Error("agent turn limits apply to shared AI rooms; this thread has a single agent");
+  }
+  if (roomAgentTurnLimitSetting(thread) === agentTurnLimit) return unchangedMutationResult(state);
+  const operation: AIChatOperation = {
+    schema: AI_CHAT_OPERATION_SCHEMA,
+    ...nextAIChatOperationIdentity(),
+    kind: "configure-room-agent-turns",
+    threadID: thread.id,
+    agentTurnLimit,
+  };
+  return mutationResult(corpusRoot, state, operation, [thread.id], options.apply === true);
 }
 
 export function autoSettleOpenClawThreads(

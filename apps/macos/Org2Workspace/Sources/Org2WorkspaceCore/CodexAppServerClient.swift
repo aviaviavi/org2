@@ -2220,7 +2220,7 @@ while True:
     .object([
       "type": .string("function"),
       "name": .string("org2_thread_post"),
-      "description": .string("Post one attributed background update to an existing Org2 AI chat without starting or steering a model turn. Use only for explicitly asynchronous reporting, not as a duplicate foreground reply."),
+      "description": .string("Post one attributed background update to an existing Org2 AI chat. It starts no turn unless requestTurn names shared-room agents (destination IDs or @mentions) that should each respond. Use only for explicitly asynchronous reporting, not as a duplicate foreground reply; in a foreground shared-room reply, @mention an agent instead."),
       "inputSchema": .object([
         "type": .string("object"),
         "properties": .object([
@@ -2229,7 +2229,12 @@ while True:
           "author": .object(["type": .string("string")]),
           "agentRef": .object(["type": .string("string")]),
           "source": .object(["type": .string("string")]),
-          "idempotencyKey": .object(["type": .string("string")])
+          "idempotencyKey": .object(["type": .string("string")]),
+          "requestTurn": .object([
+            "type": .string("array"),
+            "items": .object(["type": .string("string")]),
+            "maxItems": .integer(8)
+          ])
         ]),
         "required": .array([.string("threadId"), .string("message"), .string("author")]),
         "additionalProperties": .bool(false)

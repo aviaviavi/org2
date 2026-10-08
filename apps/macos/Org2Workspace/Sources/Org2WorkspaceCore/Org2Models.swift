@@ -2265,6 +2265,14 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
   /// When the execution host took responsibility for a message another host
   /// handed to it. Absent while the hand-off is still pending.
   public var acceptedAt: Date?
+  /// For a turn another agent requested in a shared room (by @mentioning it
+  /// or with `org2 thread post --request-turn`): who asked. On the user-role
+  /// dispatch message and on the reply it produced.
+  public var requestedByLabel: String?
+  /// The requesting agent's room destination, when an agent reply asked.
+  public var requestedByDestinationID: String?
+  /// The visible message that made the request.
+  public var requestedByMessageID: UUID?
 
   public init(
     originClient: Client? = nil,
@@ -2273,7 +2281,10 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
     receivedByHostName: String? = nil,
     executionHostRef: String? = nil,
     executionHostName: String? = nil,
-    acceptedAt: Date? = nil
+    acceptedAt: Date? = nil,
+    requestedByLabel: String? = nil,
+    requestedByDestinationID: String? = nil,
+    requestedByMessageID: UUID? = nil
   ) {
     self.originClient = originClient
     self.originDeviceName = originDeviceName
@@ -2282,12 +2293,22 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
     self.executionHostRef = executionHostRef
     self.executionHostName = executionHostName
     self.acceptedAt = acceptedAt
+    self.requestedByLabel = requestedByLabel
+    self.requestedByDestinationID = requestedByDestinationID
+    self.requestedByMessageID = requestedByMessageID
   }
 
   public var isEmpty: Bool {
     originClient == nil && originDeviceName == nil && receivedByHostRef == nil
       && receivedByHostName == nil && executionHostRef == nil
       && executionHostName == nil && acceptedAt == nil
+      && requestedByLabel == nil && requestedByDestinationID == nil
+      && requestedByMessageID == nil
+  }
+
+  /// Whether this message is a turn another agent requested.
+  public var isAgentTurnRequest: Bool {
+    requestedByLabel != nil || requestedByDestinationID != nil
   }
 
   /// A short caption such as "iPhone via press · ran on press".
@@ -2319,6 +2340,9 @@ public struct AIChatMessageProvenance: Hashable, Codable, Sendable {
       }
     } else if let executionHostName, !executionHostName.isEmpty {
       parts.append("ran on \(executionHostName)")
+    }
+    if let requestedByLabel, !requestedByLabel.isEmpty {
+      parts.insert("requested by \(requestedByLabel)", at: 0)
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
@@ -3732,8 +3756,19 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
   /// `nil` means it was never chosen and follows the room's first agent;
   /// `noRoomDefaultDestinationID` means the user chose to post context only.
   public let roomDefaultDestinationID: String?
+  /// How many agent-requested turns may run back to back in this shared
+  /// room before a person must reply. `nil` follows
+  /// `defaultRoomAgentTurnLimit`; `0` turns agent hand-offs off.
+  public let roomAgentTurnLimit: Int?
 
   public static let noRoomDefaultDestinationID = ""
+  public static let defaultRoomAgentTurnLimit = 4
+  public static let maxRoomAgentTurnLimit = 50
+
+  /// The agent-requested turn limit this room enforces.
+  public var effectiveRoomAgentTurnLimit: Int {
+    roomAgentTurnLimit ?? Self.defaultRoomAgentTurnLimit
+  }
 
   public init(
     id: UUID = UUID(),
@@ -3764,6 +3799,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomDestinationIDs: [String] = [],
     roomModelsByDestination: [String: String] = [:],
     roomDefaultDestinationID: String? = nil,
+    roomAgentTurnLimit: Int? = nil,
     agentRef: String? = nil
   ) {
     self.agentRef = agentRef
@@ -3799,6 +3835,9 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       : []
     self.roomModelsByDestination = isSharedRoom ? roomModelsByDestination : [:]
     self.roomDefaultDestinationID = isSharedRoom ? roomDefaultDestinationID : nil
+    self.roomAgentTurnLimit = isSharedRoom
+      ? roomAgentTurnLimit.map { min(max($0, 0), Self.maxRoomAgentTurnLimit) }
+      : nil
   }
 
   public var messageCount: Int {
@@ -3867,6 +3906,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     case roomDestinationIDs
     case roomModelsByDestination
     case roomDefaultDestinationID
+    case roomAgentTurnLimit
   }
 
   public init(from decoder: Decoder) throws {
@@ -3953,6 +3993,11 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomDefaultDestinationID = isSharedRoom
       ? try container.decodeIfPresent(String.self, forKey: .roomDefaultDestinationID)
       : nil
+    roomAgentTurnLimit = isSharedRoom
+      ? (try? container.decodeIfPresent(Int.self, forKey: .roomAgentTurnLimit))
+        .flatMap { $0 }
+        .map { min(max($0, 0), Self.maxRoomAgentTurnLimit) }
+      : nil
   }
 
   /// The agent that receives shared-room messages without an @mention: the
@@ -4012,7 +4057,8 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
     roomModels nextRoomModels: AIChatRoomModelSelection? = nil,
     roomDestinationIDs nextRoomDestinationIDs: [String]? = nil,
     roomModelsByDestination nextRoomModelsByDestination: [String: String]? = nil,
-    roomDefaultDestinationID nextRoomDefaultDestinationID: String?? = nil
+    roomDefaultDestinationID nextRoomDefaultDestinationID: String?? = nil,
+    roomAgentTurnLimit nextRoomAgentTurnLimit: Int?? = nil
   ) -> AIChatThread {
     let archived = nextIsArchived ?? isArchived
     let settlement = nextSettledAt ?? (archived ? settledAt : nil)
@@ -4045,6 +4091,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: nextRoomDestinationIDs ?? roomDestinationIDs,
       roomModelsByDestination: nextRoomModelsByDestination ?? roomModelsByDestination,
       roomDefaultDestinationID: nextRoomDefaultDestinationID ?? roomDefaultDestinationID,
+      roomAgentTurnLimit: nextRoomAgentTurnLimit ?? roomAgentTurnLimit,
       agentRef: nextAgentRef ?? agentRef
     )
   }
@@ -4079,6 +4126,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: roomAgentTurnLimit,
       agentRef: agentRef
     )
   }
@@ -4113,6 +4161,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: roomAgentTurnLimit,
       agentRef: agentRef
     )
   }
@@ -4166,6 +4215,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: roomAgentTurnLimit,
       agentRef: agentRef
     )
   }
@@ -4200,6 +4250,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: roomAgentTurnLimit,
       agentRef: agentRef
     )
   }
@@ -4235,6 +4286,7 @@ public struct AIChatThread: Identifiable, Hashable, Codable, Sendable {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: roomAgentTurnLimit,
       agentRef: agentRef
     )
   }

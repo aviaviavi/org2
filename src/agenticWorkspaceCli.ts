@@ -75,6 +75,7 @@ import { ORG2_CORPUS_KINDS, corpusIdentityStatus, initializeCorpusIdentity } fro
 import { federatedAgenda, federatedSearch } from "./federatedWorkspace.js";
 import {
   autoSettleOpenClawThreads,
+  configureOpenClawRoomAgentTurnLimit,
   configureOpenClawThreadSettlement,
   findOpenClawThread,
   isOpenClawThreadSettled,
@@ -178,8 +179,9 @@ const HELP = `Agentic workspace commands:
   org2 workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
   org2 thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
   org2 thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
-  org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--dir CORPUS] [--apply]
+  org2 thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--request-turn AGENT ...] [--dir CORPUS] [--apply]
   org2 thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
+  org2 thread configure THREAD --agent-turn-limit N|default [--dir CORPUS] [--apply]
   org2 thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
   org2 project list|show|create|adopt|update [--dir CORPUS] [--json] [--apply]
   org2 project create --title TEXT [--description TEXT] [--color none|NAME|#RRGGBB] [--file PATH] [--id UUID] [--apply]
@@ -600,13 +602,15 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
         authorAgentRef: flag(parsed, "agent-ref"),
         source: flag(parsed, "source"),
         idempotencyKey: flag(parsed, "idempotency-key"),
+        requestedResponders: flags(parsed, "request-turn"),
         apply,
       },
     );
+    const responders = result.message.requestedResponders?.map((token) => `@${token}`).join(", ");
     output(
       parsed,
       result,
-      `${result.applied ? "queued" : result.changed ? "would queue" : "already queued"} message for ${id}\n${result.file}`,
+      `${result.applied ? "queued" : result.changed ? "would queue" : "already queued"} message for ${id}${responders ? ` requesting a turn from ${responders}` : ""}\n${result.file}`,
     );
     return;
   }
@@ -620,6 +624,18 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
     const id = required(parsed.positional[1], "thread id is required");
     const result = reopenOpenClawThread(corpus, id, { apply });
     output(parsed, result, `${result.queued ? "queued reopening for" : result.changed ? "would queue reopening for" : "already active"} ${id}`);
+    return;
+  }
+  if (action === "configure" && enabled(parsed, "agent-turn-limit")) {
+    if (enabled(parsed, "auto-settle")) throw new Error("configure --auto-settle and --agent-turn-limit separately");
+    const id = required(parsed.positional[1], "thread id is required for --agent-turn-limit");
+    const raw = required(flag(parsed, "agent-turn-limit"), "--agent-turn-limit needs a number or default").trim();
+    const limit = raw === "default" ? null : /^\d+$/u.test(raw) ? Number(raw) : Number.NaN;
+    if (limit !== null && !Number.isInteger(limit)) {
+      throw new Error("--agent-turn-limit must be a whole number (0 turns hand-offs off) or default");
+    }
+    const result = configureOpenClawRoomAgentTurnLimit(corpus, id, limit, { apply });
+    output(parsed, result, `${result.queued ? "queued" : result.changed ? "would queue" : "unchanged"} agent turn limit ${limit ?? "default"} for ${id}`);
     return;
   }
   if (action === "configure") {

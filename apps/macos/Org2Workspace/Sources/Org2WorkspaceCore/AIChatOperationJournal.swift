@@ -8,6 +8,8 @@ public enum AIChatOperation: Sendable, Equatable {
   case settleThread(threadID: String, settledAt: Date)
   case reopenThread(threadID: String)
   case configureAutoSettle(afterSeconds: Double?)
+  /// Sets a shared room's agent-requested turn limit; `nil` restores the default.
+  case configureRoomAgentTurns(threadID: String, limit: Int?)
   case autoSettle(evaluatedAt: Date)
 }
 
@@ -342,6 +344,28 @@ public enum AIChatOperationJournal {
       } else {
         throw JournalFileError.invalid(
           "Invalid configure-auto-settle operation in \(file.lastPathComponent)."
+        )
+      }
+    case "configure-room-agent-turns":
+      guard let threadID = fields["threadID"] as? String,
+            isValidIdentifier(threadID),
+            fields.keys.contains("agentTurnLimit")
+      else {
+        throw JournalFileError.invalid(
+          "Invalid configure-room-agent-turns operation in \(file.lastPathComponent)."
+        )
+      }
+      if fields["agentTurnLimit"] is NSNull {
+        operation = .configureRoomAgentTurns(threadID: threadID, limit: nil)
+      } else if let number = fields["agentTurnLimit"] as? NSNumber,
+                CFGetTypeID(number) != CFBooleanGetTypeID(),
+                number.doubleValue.rounded() == number.doubleValue,
+                number.intValue >= 0,
+                number.intValue <= AIChatThread.maxRoomAgentTurnLimit {
+        operation = .configureRoomAgentTurns(threadID: threadID, limit: number.intValue)
+      } else {
+        throw JournalFileError.invalid(
+          "Invalid configure-room-agent-turns operation in \(file.lastPathComponent)."
         )
       }
     case "auto-settle":

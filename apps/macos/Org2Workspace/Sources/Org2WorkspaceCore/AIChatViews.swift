@@ -3586,6 +3586,10 @@ struct AIChatComposerView: View {
     .help("Choose the agent identity, instructions, and runtime")
   }
 
+  static func roomAgentTurnLimitOptions(including current: Int) -> [Int] {
+    Array(Set([0, 1, 2, 3, 4, 6, 8, 12, current])).sorted()
+  }
+
   /// Picks the agent that receives un-mentioned messages in a shared room.
   private func roomDefaultDestinationPicker(iconOnly: Bool = false) -> some View {
     let defaultID = store.selectedAIChatRoomDefaultDestinationID
@@ -3608,6 +3612,22 @@ struct AIChatComposerView: View {
         } label: {
           Label("No agent (post context only)", systemImage: defaultID == nil ? "checkmark" : "text.bubble")
         }
+      }
+      let turnLimit = store.selectedAIChatRoomAgentTurnLimit ?? AIChatThread.defaultRoomAgentTurnLimit
+      Section("Agents can @mention each other") {
+        Picker("Agent turns in a row", selection: Binding(
+          get: { turnLimit },
+          set: { store.setSelectedAIChatRoomAgentTurnLimit($0) }
+        )) {
+          ForEach(Self.roomAgentTurnLimitOptions(including: turnLimit), id: \.self) { limit in
+            Text(limit == 0
+              ? "Off"
+              : "Up to \(limit) in a row\(limit == AIChatThread.defaultRoomAgentTurnLimit ? " (default)" : "")"
+            ).tag(limit)
+          }
+        }
+        .accessibilityIdentifier("ai-chat-room-agent-turn-limit")
+        .help("How many turns agents can start for each other by @mentioning, before you need to reply.")
       }
     } label: {
       HStack(spacing: 4) {

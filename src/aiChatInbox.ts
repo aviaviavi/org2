@@ -18,12 +18,18 @@ export interface AIChatInboxMessage {
   authorLabel: string;
   authorAgentRef?: string;
   source?: string;
+  /**
+   * Shared-room agents (destination IDs or @mentions) asked to take a turn
+   * in response to this message. Absent means the post is context only.
+   */
+  requestedResponders?: string[];
 }
 
 export interface QueueAIChatInboxMessageOptions {
   authorLabel?: string;
   authorAgentRef?: string;
   source?: string;
+  requestedResponders?: string[];
   idempotencyKey?: string;
   apply?: boolean;
   now?: Date;
@@ -53,6 +59,35 @@ function uuidForIdempotencyKey(key: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export const AI_CHAT_MAX_REQUESTED_RESPONDERS = 8;
+
+/**
+ * Normalizes `--request-turn` values to bare, lowercase destination tokens.
+ * OpenOrg resolves each token against the room's agents by destination ID or
+ * @mention; agent mentions are app settings the CLI cannot see.
+ */
+export function normalizedRequestedResponders(values: readonly string[] | undefined): string[] {
+  const result: string[] = [];
+  for (const raw of values || []) {
+    for (const part of raw.split(",")) {
+      const token = part.trim().replace(/^@/u, "").toLowerCase();
+      if (!token) continue;
+      if (token.length > 200 || !/^[a-z0-9][a-z0-9._-]*$/u.test(token)) {
+        throw new Error(`invalid --request-turn agent: ${part.trim()}`);
+      }
+      if (!result.includes(token)) result.push(token);
+    }
+  }
+  if (result.length > AI_CHAT_MAX_REQUESTED_RESPONDERS) {
+    throw new Error(`--request-turn accepts at most ${AI_CHAT_MAX_REQUESTED_RESPONDERS} agents`);
+  }
+  return result;
+}
+
+function sameResponders(left: string[] | undefined, right: string[] | undefined): boolean {
+  return JSON.stringify(left || []) === JSON.stringify(right || []);
+}
+
 function sameDelivery(left: AIChatInboxMessage, right: AIChatInboxMessage): boolean {
   return left.schema === right.schema
     && left.id === right.id
@@ -60,7 +95,8 @@ function sameDelivery(left: AIChatInboxMessage, right: AIChatInboxMessage): bool
     && left.content === right.content
     && left.authorLabel === right.authorLabel
     && left.authorAgentRef === right.authorAgentRef
-    && left.source === right.source;
+    && left.source === right.source
+    && sameResponders(left.requestedResponders, right.requestedResponders);
 }
 
 export function queueAIChatInboxMessage(
@@ -92,6 +128,10 @@ export function queueAIChatInboxMessage(
   if (!Number.isFinite(now.getTime())) throw new Error("AI chat message time must be valid");
   const source = normalizedOptional(options.source);
   if (source && source.length > 2_000) throw new Error("AI chat source exceeds 2000 characters");
+  const requestedResponders = normalizedRequestedResponders(options.requestedResponders);
+  if (requestedResponders.length > 0 && thread.isSharedRoom !== true) {
+    throw new Error("--request-turn needs a shared AI room; this thread has a single agent");
+  }
   const message: AIChatInboxMessage = {
     schema: AI_CHAT_INBOX_SCHEMA,
     id,
@@ -101,6 +141,7 @@ export function queueAIChatInboxMessage(
     authorLabel,
     ...(authorAgentRef ? { authorAgentRef } : {}),
     ...(source ? { source } : {}),
+    ...(requestedResponders.length > 0 ? { requestedResponders } : {}),
   };
   const file = path.join(aiChatInboxDirectory(corpusRoot), `${id}.json`);
   const delivered = thread.messages?.find((item) => item.id === id);
@@ -109,6 +150,8 @@ export function queueAIChatInboxMessage(
       && delivered.authorLabel === message.authorLabel
       && delivered.authorAgentRef === message.authorAgentRef
       && delivered.source === message.source;
+    // Delivered transcript messages do not record the request itself; the
+    // requested turn already ran (or was refused) when OpenOrg delivered it.
     if (!matches) {
       throw new Error(`AI chat idempotency key already delivered a different message to ${canonicalThreadID}`);
     }

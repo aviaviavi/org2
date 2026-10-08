@@ -398,7 +398,7 @@ function mcpTools(readOnly: boolean) {
     ...readTools,
     { name: "org2_run_create", description: "Create a durable Org2 agent run from a reusable workflow", inputSchema: { type: "object", required: ["workflow"], properties: { workflow: { type: "string" }, inputs: { type: "object" }, owner: { type: "string" }, agentRef: { type: "string" }, goalRef: { type: "string" } } }, annotations: writeAnnotations },
     { name: "org2_run_transition", description: "Transition a durable Org2 run. Completion requires a concise, human-readable summary.", inputSchema: { type: "object", required: ["run", "status"], properties: { run: { type: "string" }, status: { type: "string" }, actor: { type: "string" }, reason: { type: "string" }, summary: { type: "string" }, highlights: { type: "array", items: { type: "string" } }, nextActions: { type: "array", items: { type: "string" } } } }, annotations: writeAnnotations },
-    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat without starting or steering a model turn", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" } } }, annotations: writeAnnotations },
+    { name: "org2_thread_post", description: "Post an attributed background message to an existing Org2 AI chat. It is context only unless requestTurn names shared-room agents (destination IDs or @mentions) that should each take a turn in response", inputSchema: { type: "object", required: ["threadId", "message", "author"], properties: { threadId: { type: "string" }, message: { type: "string" }, author: { type: "string" }, agentRef: { type: "string" }, source: { type: "string" }, idempotencyKey: { type: "string" }, requestTurn: { type: "array", items: { type: "string" }, maxItems: 8 } } }, annotations: writeAnnotations },
   ];
 }
 
@@ -463,6 +463,7 @@ async function handle(root: string, request: JsonRpcRequest, options: McpServerO
           authorAgentRef: optionalString(args.agentRef, "agentRef"),
           source: optionalString(args.source, "source"),
           idempotencyKey: optionalString(args.idempotencyKey, "idempotencyKey"),
+          requestedResponders: stringArray(args.requestTurn, "requestTurn"),
           apply: true,
         },
       );

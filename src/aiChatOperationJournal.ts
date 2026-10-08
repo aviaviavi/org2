@@ -27,6 +27,24 @@ export interface ConfigureAIChatAutoSettlementOperation extends AIChatOperationB
   autoSettleAfterSeconds: number | null;
 }
 
+/** Caps consecutive agent-requested turns in one shared room; null restores the default. */
+export interface ConfigureAIChatRoomAgentTurnsOperation extends AIChatOperationBase {
+  kind: "configure-room-agent-turns";
+  threadID: string;
+  agentTurnLimit: number | null;
+}
+
+export const AI_CHAT_DEFAULT_ROOM_AGENT_TURN_LIMIT = 4;
+export const AI_CHAT_MAX_ROOM_AGENT_TURN_LIMIT = 50;
+
+export function isValidRoomAgentTurnLimit(value: unknown): value is number | null {
+  return value === null
+    || (typeof value === "number"
+      && Number.isInteger(value)
+      && value >= 0
+      && value <= AI_CHAT_MAX_ROOM_AGENT_TURN_LIMIT);
+}
+
 export interface AutoSettleAIChatThreadsOperation extends AIChatOperationBase {
   kind: "auto-settle";
   evaluatedAt: string;
@@ -36,6 +54,7 @@ export type AIChatOperation =
   | SettleAIChatThreadOperation
   | ReopenAIChatThreadOperation
   | ConfigureAIChatAutoSettlementOperation
+  | ConfigureAIChatRoomAgentTurnsOperation
   | AutoSettleAIChatThreadsOperation;
 
 export interface QueueAIChatOperationResult {
@@ -107,6 +126,12 @@ function parseAIChatOperation(value: unknown, file: string): AIChatOperation {
           && Number.isFinite(value.autoSettleAfterSeconds)
           && value.autoSettleAfterSeconds > 0))) {
     return value as unknown as ConfigureAIChatAutoSettlementOperation;
+  }
+  if (value.kind === "configure-room-agent-turns"
+      && validIdentifier(value.threadID)
+      && "agentTurnLimit" in value
+      && isValidRoomAgentTurnLimit(value.agentTurnLimit)) {
+    return value as unknown as ConfigureAIChatRoomAgentTurnsOperation;
   }
   if (value.kind === "auto-settle" && validDate(value.evaluatedAt)) {
     return value as unknown as AutoSettleAIChatThreadsOperation;

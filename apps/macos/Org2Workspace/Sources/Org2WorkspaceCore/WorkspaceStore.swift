@@ -858,6 +858,8 @@ private struct AIChatInboxMessage: Decodable, Sendable {
   let authorLabel: String
   let authorAgentRef: String?
   let source: String?
+  /// Shared-room agents (IDs or mentions) asked to respond to this post.
+  let requestedResponders: [String]?
 }
 
 private struct AIChatInboxFileLoad: Sendable {
@@ -23165,6 +23167,142 @@ extension WorkspaceStore {
     } ?? "Messages without an @mention post context only"
   }
 
+  public var selectedAIChatRoomAgentTurnLimit: Int? {
+    guard let thread = selectedAIChatThread, thread.isSharedRoom else { return nil }
+    return thread.effectiveRoomAgentTurnLimit
+  }
+
+  /// Sets how many agent-requested turns may run back to back in the open
+  /// shared room before a person must reply. `0` turns hand-offs off and
+  /// `nil` restores the default.
+  public func setSelectedAIChatRoomAgentTurnLimit(_ limit: Int?) {
+    guard let selectedAIChatThreadID,
+          let index = aiChatThreads.firstIndex(where: { $0.id == selectedAIChatThreadID }),
+          aiChatThreads[index].isSharedRoom
+    else { return }
+    let stored = limit.map { min(max($0, 0), AIChatThread.maxRoomAgentTurnLimit) }
+    guard aiChatThreads[index].roomAgentTurnLimit != stored else { return }
+    aiChatThreads[index] = aiChatThreads[index].replacingAIChatMetadata(
+      roomAgentTurnLimit: .some(stored)
+    )
+    persistAIChatTranscript()
+    let effective = aiChatThreads[index].effectiveRoomAgentTurnLimit
+    aiChatStatusText = effective == 0
+      ? "Agents can no longer start each other's turns in this room"
+      : "Agents can start up to \(effective) turn\(effective == 1 ? "" : "s") in a row"
+  }
+
+  /// Queues the turns an agent message asks for in a shared room: room agents
+  /// it @mentions (`mentionedIn`) or explicitly requested responder tokens
+  /// (`responderTokens`, from a background post). Returns the transcript with
+  /// hidden dispatch messages (and any refusal notice) appended, plus the
+  /// dispatch IDs to enqueue once that transcript is stored.
+  func appendingAIChatAgentTurnRequests(
+    to messages: [AIChatMessage],
+    in thread: AIChatThread,
+    from request: AIChatMessage,
+    requesterLabel: String,
+    requesterDestinationID: String?,
+    mentionedIn reply: String? = nil,
+    responderTokens: [String] = []
+  ) -> (messages: [AIChatMessage], dispatchIDs: [UUID]) {
+    guard thread.isSharedRoom else { return (messages, []) }
+    let destinations = enabledAIChatDestinations
+    var requestedIDs: [String] = []
+    var notices: [String] = []
+    if let reply {
+      requestedIDs = AIChatAgentTurnRequests.requestedDestinationIDs(
+        inReply: reply,
+        authorDestinationID: requesterDestinationID,
+        roomDestinationIDs: thread.roomDestinationIDs,
+        destinations: destinations
+      )
+    }
+    if !responderTokens.isEmpty {
+      let resolved = AIChatAgentTurnRequests.resolveResponderTokens(
+        responderTokens,
+        roomDestinationIDs: thread.roomDestinationIDs,
+        destinations: destinations
+      )
+      for id in resolved.destinationIDs where !requestedIDs.contains(id) && id != requesterDestinationID {
+        requestedIDs.append(id)
+      }
+      if !resolved.unresolved.isEmpty {
+        let names = resolved.unresolved.map { "@\($0)" }.joined(separator: ", ")
+        notices.append("\(requesterLabel) asked \(names) to respond, but no enabled agent in this room has that name.")
+      }
+    }
+    guard !requestedIDs.isEmpty || !notices.isEmpty else { return (messages, []) }
+
+    let limit = thread.effectiveRoomAgentTurnLimit
+    let used = AIChatAgentTurnRequests.consecutiveRequestedTurnCount(in: messages)
+    let admitted = AIChatAgentTurnRequests.admittedCount(
+      requested: requestedIDs.count,
+      alreadyUsed: used,
+      limit: limit
+    )
+    let refused = Array(requestedIDs.dropFirst(admitted))
+    let accepted = Array(requestedIDs.prefix(admitted))
+    // An agent that only mentions another agent while hand-offs are off
+    // stays quiet; an explicit request always explains why nothing ran.
+    if !refused.isEmpty, limit > 0 || !responderTokens.isEmpty {
+      let names = refused.map(aiChatDestinationTitle).joined(separator: " + ")
+      notices.append(limit == 0
+        ? "\(requesterLabel) asked \(names) to respond, but agent hand-offs are off in this room."
+        : "\(requesterLabel) asked \(names) to respond, but agents already started \(limit) turn\(limit == 1 ? "" : "s") in a row here. Reply to let them continue, or raise the limit in the room menu.")
+    }
+
+    var nextMessages = messages
+    var dispatchIDs: [UUID] = []
+    let createdAt = max(Date(), request.createdAt)
+    for destinationID in accepted {
+      var provenance = aiChatUserMessageProvenance(origin: nil, routedTo: nil, at: createdAt)
+      provenance.originClient = .automation
+      provenance.requestedByLabel = requesterLabel
+      provenance.requestedByDestinationID = requesterDestinationID
+      provenance.requestedByMessageID = request.id
+      let dispatch = AIChatMessage(
+        role: .user,
+        content: request.content,
+        createdAt: createdAt,
+        deliveryStatus: .sending,
+        deliveryKind: .turn,
+        audience: AIChatAudience(runtime: aiChatDestinationRuntime(destinationID)),
+        targetRuntime: aiChatDestinationRuntime(destinationID),
+        audienceDestinationIDs: [destinationID],
+        targetDestinationID: destinationID,
+        isRoomDispatchCopy: true,
+        roomRoundID: UUID(),
+        provenance: provenance
+      )
+      nextMessages.append(dispatch)
+      dispatchIDs.append(dispatch.id)
+    }
+    for notice in notices {
+      nextMessages.append(AIChatMessage(role: .system, content: notice, createdAt: createdAt))
+    }
+    return (nextMessages, dispatchIDs)
+  }
+
+  /// Enqueues stored agent-requested dispatches and starts the room's queue
+  /// unless a running drain (or another host's turn) will reach them.
+  func enqueueAIChatAgentTurnRequests(_ dispatchIDs: [UUID], in threadID: UUID) {
+    guard !dispatchIDs.isEmpty else { return }
+    for id in dispatchIDs { enqueueAIChatUserMessage(id, in: threadID) }
+    let names = aiChatMessages(for: threadID)
+      .filter { dispatchIDs.contains($0.id) }
+      .compactMap { $0.targetDestinationID.map(aiChatDestinationTitle) }
+    if selectedAIChatThreadID == threadID, !names.isEmpty {
+      aiChatStatusText = "Asking \(names.joined(separator: " + "))…"
+    }
+    guard !drainingAIChatThreadIDs.contains(threadID) else { return }
+    if let ownerID = aiChatThreads.first(where: { $0.id == threadID })?.pendingTurn?.dispatchOwnerID,
+       ownerID != Self.aiChatDispatchOwnerID {
+      return
+    }
+    Task { @MainActor [weak self] in await self?.drainAIChatSendQueue(for: threadID) }
+  }
+
   public func setSelectedAIChatAudience(_ audience: AIChatAudience) {
     guard let selectedAIChatThreadID,
           let index = aiChatThreads.firstIndex(where: {
@@ -24306,9 +24444,31 @@ extension WorkspaceStore {
           )
         )
         let current = aiChatThreads.first(where: { $0.id == envelope.threadID }) ?? thread
-        let messages = (current.messages + [message]).sorted {
+        var messages = (current.messages + [message]).sorted {
           if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
           return $0.id.uuidString < $1.id.uuidString
+        }
+        var requestedDispatchIDs: [UUID] = []
+        if let tokens = envelope.requestedResponders, !tokens.isEmpty {
+          if current.isSharedRoom,
+             canRequestAIChatAgentTurns(in: current.id, transcriptURL: aiChatTranscriptURL) {
+            let requested = appendingAIChatAgentTurnRequests(
+              to: messages,
+              in: current,
+              from: message,
+              requesterLabel: authorLabel,
+              requesterDestinationID: nil,
+              responderTokens: tokens
+            )
+            messages = requested.messages
+            requestedDispatchIDs = requested.dispatchIDs
+          } else if !current.isSharedRoom {
+            messages.append(AIChatMessage(
+              role: .system,
+              content: "\(authorLabel) asked for a turn, but only shared rooms accept agent turn requests.",
+              createdAt: message.createdAt
+            ))
+          }
         }
         updateAIChatThread(
           current.id,
@@ -24316,6 +24476,7 @@ extension WorkspaceStore {
           notifiesForNewAssistantMessages: true,
           shouldPersist: false
         )
+        enqueueAIChatAgentTurnRequests(requestedDispatchIDs, in: current.id)
       }
 
       // Delete the envelope only after this exact state generation reaches
@@ -24422,6 +24583,15 @@ extension WorkspaceStore {
       if lastArchivedAIChatThreadID == threadID {
         lastArchivedAIChatThreadID = nil
       }
+    case .configureRoomAgentTurns(let rawThreadID, let limit):
+      let threadID = try resolveAIChatOperationThreadID(rawThreadID)
+      guard let index = aiChatThreads.firstIndex(where: { $0.id == threadID }),
+            aiChatThreads[index].isSharedRoom,
+            aiChatThreads[index].roomAgentTurnLimit != limit
+      else { return }
+      aiChatThreads[index] = aiChatThreads[index].replacingAIChatMetadata(
+        roomAgentTurnLimit: .some(limit)
+      )
     case .configureAutoSettle(let afterSeconds):
       aiChatThreadSettlementSettings = AIChatThreadSettlementSettings(
         autoSettleAfterSeconds: afterSeconds
@@ -24482,7 +24652,9 @@ extension WorkspaceStore {
           guard !content.isEmpty, content.count <= 200_000,
                 !authorLabel.isEmpty, authorLabel.count <= 200,
                 (envelope.authorAgentRef?.count ?? 0) <= 1_000,
-                (envelope.source?.count ?? 0) <= 2_000
+                (envelope.source?.count ?? 0) <= 2_000,
+                (envelope.requestedResponders?.count ?? 0) <= 8,
+                envelope.requestedResponders?.allSatisfy({ !$0.isEmpty && $0.count <= 200 }) ?? true
           else {
             throw CocoaError(
               .validationMissingMandatoryProperty,
@@ -27460,6 +27632,8 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: aiChatRoomHandoffMentions(in: thread, excluding: destination.id),
+          agentTurnLimit: thread.effectiveRoomAgentTurnLimit,
           through: userMessage.id
         )
       : messages
@@ -27608,6 +27782,8 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: aiChatRoomHandoffMentions(in: thread, excluding: destinationID),
+          agentTurnLimit: thread.effectiveRoomAgentTurnLimit,
           through: userMessage.id
         )
       : messages
@@ -27701,6 +27877,8 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: aiChatRoomHandoffMentions(in: thread, excluding: destinationID),
+          agentTurnLimit: thread.effectiveRoomAgentTurnLimit,
           through: userMessage.id
         )
       : messages
@@ -27802,6 +27980,8 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: aiChatRoomHandoffMentions(in: thread, excluding: destinationID),
+          agentTurnLimit: thread.effectiveRoomAgentTurnLimit,
           through: userMessage.id
         )
       : messages
@@ -28033,6 +28213,8 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: aiChatRoomHandoffMentions(in: thread, excluding: destinationID),
+          agentTurnLimit: thread.effectiveRoomAgentTurnLimit,
           through: userMessage.id
         )
       : messages
@@ -28968,6 +29150,10 @@ extension WorkspaceStore {
       let value = values[name]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       if !value.isEmpty { cliArguments.append(contentsOf: [flag, value]) }
     }
+    for responder in values["requestTurn"]?.arrayValue ?? [] {
+      let value = responder.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !value.isEmpty { cliArguments.append(contentsOf: ["--request-turn", value]) }
+    }
 
     do {
       let output = try await cli.run(cliArguments)
@@ -29346,6 +29532,11 @@ extension WorkspaceStore {
           destinationNamesByID: Dictionary(
             uniqueKeysWithValues: enabledAIChatDestinations.map { ($0.id, $0.name) }
           ),
+          handoffMentions: threadConfiguration.map {
+            aiChatRoomHandoffMentions(in: $0, excluding: destinationID)
+          } ?? [],
+          agentTurnLimit: threadConfiguration?.effectiveRoomAgentTurnLimit
+            ?? AIChatThread.defaultRoomAgentTurnLimit,
           through: originalUserMessage.id
         )
       : expandedMessages
@@ -29951,6 +30142,8 @@ extension WorkspaceStore {
     targetDestinationName: String,
     targetDestinationID: String,
     destinationNamesByID: [String: String] = [:],
+    handoffMentions: [String] = [],
+    agentTurnLimit: Int = AIChatThread.defaultRoomAgentTurnLimit,
     through userMessageID: UUID
   ) -> [AIChatMessage] {
     guard let targetIndex = messages.firstIndex(where: { $0.id == userMessageID }) else {
@@ -29967,7 +30160,8 @@ extension WorkspaceStore {
         let audienceTitle = destinationNames.isEmpty
           ? (message.audience?.title ?? "room")
           : destinationNames.joined(separator: " + ")
-        speaker = "Avi → \(audienceTitle)"
+        let requester = message.provenance?.requestedByLabel ?? "Avi"
+        speaker = "\(requester) → \(audienceTitle)"
       case .assistant:
         speaker = message.authorLabel
           ?? message.authorDestinationID.flatMap { destinationNamesByID[$0] }
@@ -29991,7 +30185,12 @@ extension WorkspaceStore {
     let currentMessage = messages[targetIndex]
     let currentContent = currentMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
     let currentRequest = "\(speaker(for: currentMessage)):\n\(currentContent.isEmpty ? "[Attachment-only request]" : currentContent)"
-    let historyMessages = visibleTranscript.filter { $0.id != userMessageID }
+    // A requested turn carries the requesting message verbatim as its
+    // current request; do not repeat it in the history.
+    let requestingMessageID = currentMessage.provenance?.requestedByMessageID
+    let historyMessages = visibleTranscript.filter {
+      $0.id != userMessageID && $0.id != requestingMessageID
+    }
     let cursorIndex = historyMessages.lastIndex {
       $0.role == .assistant && $0.authorDestinationID == targetDestinationID
     }
@@ -30041,12 +30240,18 @@ extension WorkspaceStore {
       tokens: AIChatContextBudget.sharedRoomSummaryTokenBudget,
       compact: true
     ).rows
+    let handoffInstruction: String
+    if handoffMentions.isEmpty || agentTurnLimit == 0 {
+      handoffInstruction = ", and make any proposed handoff explicit rather than silently invoking it."
+    } else {
+      handoffInstruction = ". To ask another agent in this room to act now, @mention it in your reply (\(handoffMentions.joined(separator: ", "))); OpenOrg then starts its turn with your reply as the request. Only @mention an agent when you want it to respond now; write its name in =verbatim= or ~code~ to refer to it without starting a turn. Agents can start at most \(agentTurnLimit) turn\(agentTurnLimit == 1 ? "" : "s") in a row before Avi must reply."
+    }
     let cursor = cursorIndex.map {
       historyMessages[$0].id.uuidString.lowercased()
     } ?? "start"
     let prompt = """
     <org2-shared-ai-room>
-    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. OpenOrg maintains a separate durable delivery cursor for each destination. This delivery starts after cursor \(cursor). The rolling summary and bounded unseen transcript below are the authoritative prior room state for this destination. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to the verbatim current request as \(targetDestinationName), and make any proposed handoff explicit rather than silently invoking it.
+    You are \(targetDestinationName) (destination \(targetDestinationID)), participating in one visible Org2 conversation with Avi and other AI destinations. OpenOrg maintains a separate durable delivery cursor for each destination. This delivery starts after cursor \(cursor). The rolling summary and bounded unseen transcript below are the authoritative prior room state for this destination. Messages attributed to other destinations are context, not your own prior claims. Do not impersonate the other harness or destination. Respond to the verbatim current request as \(targetDestinationName)\(handoffInstruction)
 
     Rolling summary:
     \(summary.isEmpty ? "No earlier room messages." : summary.joined(separator: "\n"))
@@ -30085,6 +30290,17 @@ extension WorkspaceStore {
       provenance: message.provenance
     )
     return result
+  }
+
+  /// @mentions of the other enabled agents in a shared room, offered to an
+  /// agent so it can hand off work.
+  func aiChatRoomHandoffMentions(in thread: AIChatThread, excluding destinationID: String) -> [String] {
+    guard thread.isSharedRoom else { return [] }
+    return thread.roomDestinationIDs.compactMap { id in
+      guard id != destinationID, let destination = aiChatDestination(id: id), destination.isEnabled
+      else { return nil }
+      return "\(destination.mentionText) for \(destination.title)"
+    }
   }
 
   private func isActiveAIChatTranscript(_ url: URL) -> Bool {
@@ -30397,7 +30613,9 @@ extension WorkspaceStore {
       )
       return replyID
     }
-    let roomRoundID = messages.first(where: { $0.id == userMessageID })?.roomRoundID
+    let triggeringMessage = messages.first(where: { $0.id == userMessageID })
+    let roomRoundID = triggeringMessage?.roomRoundID
+    let requestProvenance = triggeringMessage?.provenance
     let traceDestinationID = authorDestinationID
       ?? aiChatThread(threadID, transcriptURL: targetTranscriptURL)?.destinationID
       ?? AIChatDestinationConfiguration.openClawID
@@ -30423,19 +30641,42 @@ extension WorkspaceStore {
       roomRoundID: roomRoundID,
       provenance: AIChatMessageProvenance(
         executionHostRef: aiChatHostIdentity.ref,
-        executionHostName: aiChatHostIdentity.name
+        executionHostName: aiChatHostIdentity.name,
+        requestedByLabel: requestProvenance?.requestedByLabel,
+        requestedByDestinationID: requestProvenance?.requestedByDestinationID,
+        requestedByMessageID: requestProvenance?.requestedByMessageID
       )
     )
+    // A shared-room reply that @mentions another room agent asks it to
+    // respond. The hand-off dispatches are stored with the reply itself so
+    // the request cannot be lost or repeated across a relaunch.
+    let roomThread = aiChatThread(threadID, transcriptURL: targetTranscriptURL)
+    let replyAuthorDestinationID = authorDestinationID ?? triggeringMessage?.targetDestinationID
+    func withAgentTurnRequests(_ messages: [AIChatMessage]) -> (messages: [AIChatMessage], dispatchIDs: [UUID]) {
+      guard let roomThread, roomThread.isSharedRoom,
+            canRequestAIChatAgentTurns(in: threadID, transcriptURL: targetTranscriptURL)
+      else { return (messages, []) }
+      return appendingAIChatAgentTurnRequests(
+        to: messages,
+        in: roomThread,
+        from: assistantMessage,
+        requesterLabel: replyAuthorDestinationID.map(aiChatDestinationTitle) ?? "An agent",
+        requesterDestinationID: replyAuthorDestinationID,
+        mentionedIn: reply
+      )
+    }
     guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       messages.append(assistantMessage)
+      let requested = withAgentTurnRequests(messages)
       updateAIChatThread(
         threadID,
-        messages: messages,
+        messages: requested.messages,
         notifiesForNewAssistantMessages: true,
         transcriptURL: targetTranscriptURL,
         shouldPersist: true,
         pendingTurnUpdate: .replace(nil)
       )
+      enqueueAIChatAgentTurnRequests(requested.dispatchIDs, in: threadID)
       return assistantMessage.id
     }
     messages[index] = messages[index].replacingDeliveryStatus(.sent, sendFailure: nil)
@@ -30455,15 +30696,29 @@ extension WorkspaceStore {
       insertionIndex = messages.endIndex
     }
     messages.insert(assistantMessage, at: insertionIndex)
+    let requested = withAgentTurnRequests(messages)
     updateAIChatThread(
       threadID,
-      messages: messages,
+      messages: requested.messages,
       notifiesForNewAssistantMessages: true,
       transcriptURL: targetTranscriptURL,
       shouldPersist: true,
       pendingTurnUpdate: .replace(nil)
     )
+    enqueueAIChatAgentTurnRequests(requested.dispatchIDs, in: threadID)
     return assistantMessage.id
+  }
+
+  /// Hand-offs run through this process's send queue, which always drains
+  /// the transcript of the room's send origin (or the active transcript).
+  private func canRequestAIChatAgentTurns(in threadID: UUID, transcriptURL: URL) -> Bool {
+    guard !stoppedAIChatThreadIDs.contains(threadID),
+          !isPreparingForTermination
+    else { return false }
+    if let origin = aiChatSendOriginsByThreadID[threadID] {
+      return origin.transcriptURL.standardizedFileURL.path == transcriptURL.standardizedFileURL.path
+    }
+    return isActiveAIChatTranscript(transcriptURL)
   }
 
   private func insertSharedRoomFailure(
@@ -32420,6 +32675,7 @@ extension WorkspaceStore {
       roomDestinationIDs: roomDestinationIDs,
       roomModelsByDestination: roomModelsByDestination,
       roomDefaultDestinationID: roomDefaultDestinationID,
+      roomAgentTurnLimit: source.isSharedRoom ? source.roomAgentTurnLimit : nil,
       agentRef: source.agentRef
     )
     aiChatThreads.insert(forked, at: 0)
@@ -33529,6 +33785,7 @@ extension WorkspaceStore {
       roomDestinationIDs: current.roomDestinationIDs,
       roomModelsByDestination: current.roomModelsByDestination,
       roomDefaultDestinationID: current.roomDefaultDestinationID,
+      roomAgentTurnLimit: current.roomAgentTurnLimit,
       agentRef: current.agentRef
     )
   }
@@ -42331,6 +42588,10 @@ extension WorkspaceStore {
     let isLocal = (provenance.receivedByHostRef ?? here) == here
       && (provenance.executionHostRef ?? here) == here
       && (provenance.originClient == nil || provenance.originClient == .desktop)
+    if isLocal, provenance.isAgentTurnRequest {
+      // Keep the hand-off visible; only the host details are redundant here.
+      return provenance.requestedByLabel.map { "requested by \($0)" }
+    }
     guard !isLocal else { return nil }
     return provenance.caption(role: message.role)
   }
