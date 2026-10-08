@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { brandEnv } from "./brandNames.js";
 
 function expandHome(input: string): string {
   if (input === "~") return os.homedir();
@@ -18,7 +19,7 @@ function slugForPath(input: string): string {
 }
 
 export function org2IndexHome(): string {
-  const configured = String(process.env.ORG2_INDEX_HOME || "").trim();
+  const configured = String(brandEnv("ORG2_INDEX_HOME") || "").trim();
   if (configured) return path.resolve(expandHome(configured));
   return path.join(os.homedir(), ".org2", "index");
 }

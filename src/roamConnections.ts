@@ -8,6 +8,7 @@ import {
   normalizeRoamLinkLabel, readRoamSourceStructure, renderRoamLink, splitRoamLinkifyProtectedSegments,
   type RoamGraphData, type RoamGraphNode, type RoamLinkifyCandidate,
 } from "./roam.js";
+import { configFilePath } from "./brandNames.js";
 
 export interface RoamMention {
   id: string;
@@ -25,7 +26,7 @@ export interface RoamMention {
 
 /** Respect the active root, corpus ignores, default archive boundaries, and no symlink traversal. */
 export function connectionFiles(root: string): string[] {
-  const configFile = path.join(root, "org2.json");
+  const configFile = configFilePath(root);
   const config = fs.existsSync(configFile) ? loadConfig(configFile) : {};
   return resolveFilesFromDir(root, ["**/*.org", "**/*.org2"], [
     "**/node_modules", "**/dist", "**/build", "**/DerivedData", "**/sync-conflicts",

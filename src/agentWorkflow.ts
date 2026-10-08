@@ -10,6 +10,7 @@ import {
   type AgentRunPlanStep,
   type AgentRunRiskClass,
 } from "./agentRun.js";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const ORG2_WORKFLOW_SCHEMA = "org2:workflow:v1" as const;
 export const WORKFLOW_SCHEDULE_TRIGGER_ID = "schedule" as const;
@@ -237,7 +238,7 @@ export function promptAutomation(input: PromptAutomationInput): AgentWorkflow {
 
 export function validateWorkflow(workflow: AgentWorkflow): WorkflowValidationResult {
   const issues: WorkflowValidationResult["issues"] = [];
-  if (workflow.schema !== ORG2_WORKFLOW_SCHEMA) issues.push({ path: "schema", message: `must equal ${ORG2_WORKFLOW_SCHEMA}` });
+  if (!schemaMatches(workflow.schema, ORG2_WORKFLOW_SCHEMA)) issues.push({ path: "schema", message: `must equal ${ORG2_WORKFLOW_SCHEMA}` });
   try { safeIdentifier(workflow.id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` }); } catch (error) { issues.push({ path: "id", message: (error as Error).message }); }
   if (!workflow.title?.trim()) issues.push({ path: "title", message: "is required" });
   if (workflow.destinationRef !== undefined && !String(workflow.destinationRef).trim()) issues.push({ path: "destinationRef", message: "must not be empty when present" });
@@ -350,7 +351,7 @@ export function workflowExecutionPrompt(
 }
 
 export function workflowDirectory(root: string): string { return path.join(path.resolve(root), "workflows"); }
-export function legacyWorkflowDirectory(root: string): string { return path.join(path.resolve(root), ".org2", "workflows"); }
+export function legacyWorkflowDirectory(root: string): string { return stateDir(path.resolve(root), "workflows"); }
 export function workflowPath(root: string, id: string): string { return path.join(workflowDirectory(root), `${safeIdentifier(id, { invalidMessage: (raw) => `invalid workflow id: ${raw}` })}.org2`); }
 
 export function workflowSourcePath(root: string, id: string): string {
@@ -397,7 +398,7 @@ function stripDuplicatedWorkflowHeaders(description: string, id: string): string
   // wrapper as prose. Only unwrap leading package headers for this workflow.
   while (true) {
     const header = remaining.match(/^#\+TITLE:[ \t]+Org2 workflow package[ \t]*\r?\n(?:[ \t]*\r?\n)*\*[ \t]+[^\r\n]+\r?\n:PROPERTIES:[ \t]*\r?\n((?::[^\r\n]*\r?\n)*?):END:[ \t]*(?:\r?\n|$)/i);
-    if (!header || header[1].match(/^:ORG2_WORKFLOW_ID:[ \t]*(.+)\r?$/mi)?.[1]?.trim() !== id) return remaining;
+    if (!header || header[1].match(/^:(?:CELORGA|ORG2)_WORKFLOW_ID:[ \t]*(.+)\r?$/mi)?.[1]?.trim() !== id) return remaining;
     remaining = remaining.slice(header[0].length).trimStart();
   }
 }
@@ -416,7 +417,7 @@ export function parseWorkflowOrg(raw: string): AgentWorkflow {
   const properties = drawer?.[1] || "";
   const state = properties.match(/^:WORKFLOW_STATE:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const riskClass = properties.match(/^:RISK_CLASS:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
-  const version = properties.match(/^:ORG2_WORKFLOW_VERSION:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
+  const version = properties.match(/^:(?:CELORGA|ORG2)_WORKFLOW_VERSION:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const agentRef = properties.match(/^:AGENT_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const goalRef = properties.match(/^:GOAL_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();
   const destinationRef = properties.match(/^:AI_DESTINATION_REF:[ \t]*(.+)\r?$/mi)?.[1]?.trim();

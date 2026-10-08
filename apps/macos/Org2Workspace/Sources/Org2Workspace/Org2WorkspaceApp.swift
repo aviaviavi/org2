@@ -13,6 +13,7 @@ struct Org2WorkspaceApp: App {
   private let globalCaptureHotKey = GlobalCaptureHotKey()
 
   init() {
+    CelorgaNames.mirrorCelorgaEnvironment()
     NSWindow.allowsAutomaticWindowTabbing = false
     AppIconInstaller.install()
 

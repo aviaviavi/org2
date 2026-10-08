@@ -126,14 +126,14 @@ extension WorkspaceStore {
     return latestByDestination.filter { $0.value.failed && enabled.contains($0.key) }.map(\.key).sorted()
   }
 
-  /// Reads the corpus scheduler owner from `org2.json`.
+  /// Reads the corpus scheduler owner from `celorga.json` or `org2.json`.
   func refreshCorpusAutomationHostRef() {
     guard let corpusRoot else {
       corpusAutomationHostRef = nil
       return
     }
-    let url = corpusRoot.appendingPathComponent("org2.json")
-    guard let data = try? Data(contentsOf: url),
+    guard let url = CelorgaNames.configFile(in: corpusRoot),
+          let data = try? Data(contentsOf: url),
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
       corpusAutomationHostRef = "desktop"

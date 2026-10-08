@@ -1,6 +1,7 @@
 import { parseIsoCalendarDate } from "./calendarDate.js";
 import type { CompiledCorpus, CompiledCorpusEntityProfile, CompiledCorpusNode } from "./corpusCompile.js";
 import { isActiveTodoKeyword, terminalTodoStatusFromKeyword } from "./todo.js";
+import { brandProperty, withNameAliases } from "./brandNames.js";
 
 export type AgentInclude = "backlinks" | "neighbors" | "sources";
 export type AgentAction = "context" | "search" | "fetch" | "bundle";
@@ -322,7 +323,7 @@ function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[
 }
 
 function propertyValue(node: CompiledCorpusNode, names: string[]): string {
-  for (const name of names) {
+  for (const name of withNameAliases(names)) {
     const value = (node.effectiveProperties || node.properties)[name.toUpperCase()];
     if (value) return value;
   }
@@ -409,17 +410,17 @@ function parseDateMs(raw: string | null | undefined): number | null {
 
 function claimStateFor(node: CompiledCorpusNode, nowMs = Date.now()): AgentClaimState {
   const props = node.effectiveProperties || node.properties || {};
-  const reviewStatus = String(props.ORG2_REVIEW_STATUS || "unknown").trim().toLowerCase() as AgentReviewState;
-  const observedAt = props.ORG2_OBSERVED_AT || null;
-  const validAsOf = props.ORG2_VALID_AS_OF || null;
-  const staleAfter = props.ORG2_STALE_AFTER || null;
-  const expiresAt = props.ORG2_EXPIRES_AT || null;
+  const reviewStatus = String(brandProperty(props, "ORG2_REVIEW_STATUS") || "unknown").trim().toLowerCase() as AgentReviewState;
+  const observedAt = brandProperty(props, "ORG2_OBSERVED_AT") || null;
+  const validAsOf = brandProperty(props, "ORG2_VALID_AS_OF") || null;
+  const staleAfter = brandProperty(props, "ORG2_STALE_AFTER") || null;
+  const expiresAt = brandProperty(props, "ORG2_EXPIRES_AT") || null;
   const expiresMs = parseDateMs(expiresAt);
   const staleMs = parseDateMs(staleAfter);
   const freshness: AgentFreshnessState = expiresMs !== null && expiresMs < nowMs ? "expired" : staleMs !== null && staleMs < nowMs ? "stale" : (observedAt || validAsOf) ? "fresh" : "unknown";
   return {
     reviewStatus: ["generated", "review-required", "reviewed", "promoted"].includes(reviewStatus) ? reviewStatus : "unknown",
-    claimState: props.ORG2_CLAIM_STATE || null,
+    claimState: brandProperty(props, "ORG2_CLAIM_STATE") || null,
     observedAt,
     validAsOf,
     staleAfter,
@@ -625,7 +626,7 @@ function normalizeTypedKind(raw: string | null | undefined): string {
 
 function kindPropertyFor(node: CompiledCorpusNode): string {
   const props = node.properties || {};
-  return normalizeTypedKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE);
+  return normalizeTypedKind(props.KIND || brandProperty(props, "ORG2_KIND") || props.TYPE || brandProperty(props, "ORG2_TYPE"));
 }
 
 function isAgentThreadNode(node: CompiledCorpusNode): boolean {
@@ -753,18 +754,18 @@ function agentThreadMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode
   const props = node.effectiveProperties || node.properties || {};
   const propertyAttachments = [
     ...parseContextAttachmentList(props.CONTEXT),
-    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(brandProperty(props, "ORG2_CONTEXT")),
     ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
-    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(brandProperty(props, "ORG2_CONTEXT_ATTACHMENTS")),
   ];
   const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
   const contextAttachments = resolveAttachmentTargets(corpus, mergeAttachments([...propertyAttachments, ...linkAttachments]));
   return {
-    ...(props.AGENT || props.ORG2_AGENT ? { agent: props.AGENT || props.ORG2_AGENT } : {}),
-    ...(props.SESSION || props.ORG2_SESSION ? { session: props.SESSION || props.ORG2_SESSION } : {}),
-    ...(props.STATUS || props.ORG2_STATUS ? { status: props.STATUS || props.ORG2_STATUS } : {}),
-    ...(props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT ? { transcript: props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT } : {}),
-    ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) } : {}),
+    ...(props.AGENT || brandProperty(props, "ORG2_AGENT") ? { agent: props.AGENT || brandProperty(props, "ORG2_AGENT") } : {}),
+    ...(props.SESSION || brandProperty(props, "ORG2_SESSION") ? { session: props.SESSION || brandProperty(props, "ORG2_SESSION") } : {}),
+    ...(props.STATUS || brandProperty(props, "ORG2_STATUS") ? { status: props.STATUS || brandProperty(props, "ORG2_STATUS") } : {}),
+    ...(props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || brandProperty(props, "ORG2_TRANSCRIPT") ? { transcript: props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || brandProperty(props, "ORG2_TRANSCRIPT") } : {}),
+    ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || brandProperty(props, "ORG2_STORAGE")) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || brandProperty(props, "ORG2_STORAGE")) } : {}),
     contextAttachments,
   };
 }
@@ -842,7 +843,7 @@ function parseStrictNumericValue(raw: string): number | null {
 }
 
 function numericDataProperty(props: Record<string, string>, names: string[]): number | undefined {
-  for (const name of names) {
+  for (const name of withNameAliases(names)) {
     const raw = props[name];
     if (!raw) continue;
     const parsed = parseStrictNumericValue(raw);
@@ -852,7 +853,7 @@ function numericDataProperty(props: Record<string, string>, names: string[]): nu
 }
 
 function stringDataProperty(props: Record<string, string>, names: string[]): string | undefined {
-  for (const name of names) {
+  for (const name of withNameAliases(names)) {
     const value = String(props[name] || "").trim();
     if (value) return value;
   }
@@ -1128,7 +1129,7 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
 }
 
 function booleanProperty(props: Record<string, string>, names: string[]): boolean | undefined {
-  for (const name of names) {
+  for (const name of withNameAliases(names)) {
     if (!(name in props)) continue;
     const value = String(props[name] || "").trim().toLowerCase();
     if (/^(1|true|yes|y|on|allow|allowed|required)$/i.test(value)) return true;
@@ -1233,9 +1234,9 @@ function dataLinkAttachmentsFor(corpus: CompiledCorpus, node: CompiledCorpusNode
   const props = node.properties || {};
   const propertyAttachments = [
     ...parseContextAttachmentList(props.CONTEXT),
-    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(brandProperty(props, "ORG2_CONTEXT")),
     ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
-    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(brandProperty(props, "ORG2_CONTEXT_ATTACHMENTS")),
     ...parseUntypedAttachmentList(props.TARGET),
     ...parseUntypedAttachmentList(props.TARGETS),
     ...parseUntypedAttachmentList(props.TARGET_ID, "id"),

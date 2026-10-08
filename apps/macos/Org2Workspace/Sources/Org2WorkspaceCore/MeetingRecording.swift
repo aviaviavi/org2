@@ -554,25 +554,25 @@ public struct LocalWhisperConfiguration: Sendable {
   }
 
   public var requestedModel: String? {
-    modelOverride ?? environment["ORG2_WORKSPACE_WHISPER_MODEL"]?
+    modelOverride ?? CelorgaNames.environment("ORG2_WORKSPACE_WHISPER_MODEL", in: environment)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
   }
 
   public var overrideCommand: String? {
-    commandOverride ?? environment["ORG2_WORKSPACE_WHISPER_COMMAND"]?
+    commandOverride ?? CelorgaNames.environment("ORG2_WORKSPACE_WHISPER_COMMAND", in: environment)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
   }
 
   public var requestedLanguage: String {
-    languageOverride ?? environment["ORG2_WORKSPACE_WHISPER_LANGUAGE"]?
+    languageOverride ?? CelorgaNames.environment("ORG2_WORKSPACE_WHISPER_LANGUAGE", in: environment)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty ?? "en"
   }
 
   public var requestedThreadCount: Int {
-    if let raw = environment["ORG2_WORKSPACE_WHISPER_THREADS"]?
+    if let raw = CelorgaNames.environment("ORG2_WORKSPACE_WHISPER_THREADS", in: environment)?
       .trimmingCharacters(in: .whitespacesAndNewlines),
       let parsed = Int(raw),
       parsed > 0 {

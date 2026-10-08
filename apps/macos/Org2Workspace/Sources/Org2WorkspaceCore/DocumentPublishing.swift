@@ -172,20 +172,20 @@ public struct GoogleDrivePublicationBinding: Identifiable, Hashable, Sendable {
 
     return DocumentPublishDestination.googleDrive.formats.compactMap { format in
       guard let stem = propertyStem(for: format),
-            let fileID = normalizedPropertyValue(properties["\(stem)_FILE_ID"]),
-            let urlText = normalizedPropertyValue(properties["\(stem)_URL"]),
+            let fileID = normalizedPropertyValue(CelorgaNames.property("\(stem)_FILE_ID", in: properties)),
+            let urlText = normalizedPropertyValue(CelorgaNames.property("\(stem)_URL", in: properties)),
             let url = URL(string: urlText),
             url.scheme?.lowercased() == "https",
             ["docs.google.com", "drive.google.com"].contains(url.host?.lowercased() ?? "")
       else { return nil }
 
-      let publishedAt = normalizedPropertyValue(properties["\(stem)_PUBLISHED_AT"])
+      let publishedAt = normalizedPropertyValue(CelorgaNames.property("\(stem)_PUBLISHED_AT", in: properties))
         .flatMap { ISO8601DateFormatter().date(from: $0) }
       return GoogleDrivePublicationBinding(
         format: format,
         fileID: fileID,
         url: url,
-        version: normalizedPropertyValue(properties["\(stem)_VERSION"]),
+        version: normalizedPropertyValue(CelorgaNames.property("\(stem)_VERSION", in: properties)),
         publishedAt: publishedAt,
         scopeLine: target.scopeLine
       )
@@ -226,12 +226,16 @@ public struct GoogleDrivePublicationBinding: Identifiable, Hashable, Sendable {
     if let drawer = target.drawer {
       var drawerEnd = drawer.upperBound
       for (key, value) in values {
+        // Update a CELORGA_ spelling in place; new properties keep ORG2_.
         let existingIndex = (drawer.lowerBound + 1..<drawerEnd).first { index in
+          propertyKey(in: lines[index]) == CelorgaNames.celorgaName(key)
+        } ?? (drawer.lowerBound + 1..<drawerEnd).first { index in
           propertyKey(in: lines[index]) == key
         }
         if let value {
           if let existingIndex {
-            lines[existingIndex] = ":\(key): \(value)"
+            let existingKey = propertyKey(in: lines[existingIndex]) ?? key
+            lines[existingIndex] = ":\(existingKey): \(value)"
           } else {
             lines.insert(":\(key): \(value)", at: drawerEnd)
             drawerEnd += 1
@@ -558,7 +562,7 @@ public enum GoogleDriveOAuthConfiguration {
     resolvedClientID(
       managedCandidates: [
         Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
-        ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
+        CelorgaNames.environment(clientIDEnvironmentKey),
       ],
       savedClientID: nil
     )
@@ -567,7 +571,7 @@ public enum GoogleDriveOAuthConfiguration {
   public static func managedClientSecret() -> String? {
     [
       Bundle.main.object(forInfoDictionaryKey: clientSecretInfoKey) as? String,
-      ProcessInfo.processInfo.environment[clientSecretEnvironmentKey],
+      CelorgaNames.environment(clientSecretEnvironmentKey),
     ].compactMap(normalizedClientSecret).first
   }
 
@@ -575,7 +579,7 @@ public enum GoogleDriveOAuthConfiguration {
     resolvedClientID(
       managedCandidates: [
         Bundle.main.object(forInfoDictionaryKey: clientIDInfoKey) as? String,
-        ProcessInfo.processInfo.environment[clientIDEnvironmentKey],
+        CelorgaNames.environment(clientIDEnvironmentKey),
       ],
       savedClientID: UserDefaults.standard.string(forKey: clientIDDefaultsKey)
     )

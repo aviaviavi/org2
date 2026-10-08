@@ -8,6 +8,78 @@
   "activationEvents": [
     "onLanguage:org2",
     "onLanguage:org",
+    "onCommand:celorga.openAgenda",
+    "onCommand:celorga.openBacklinks",
+    "onCommand:celorga.refreshBacklinks",
+    "onCommand:celorga.formatWorkspaceCheck",
+    "onCommand:celorga.formatWorkspaceApply",
+    "onCommand:celorga.lintWorkspaceCorpus",
+    "onCommand:celorga.compileWorkspaceCorpus",
+    "onCommand:celorga.aiPromoteDraft",
+    "onCommand:celorga.aiRunDraft",
+    "onCommand:celorga.aiSuggestLinks",
+    "onCommand:celorga.searchWorkspace",
+    "onCommand:celorga.queryWorkspace",
+    "onCommand:celorga.roamLinkifyPreview",
+    "onCommand:celorga.roamLinkifyApply",
+    "onCommand:celorga.roamGraph",
+    "onCommand:celorga.formatCurrentFileCheck",
+    "onCommand:celorga.formatCurrentFilePreviewDiff",
+    "onCommand:celorga.formatCurrentFileApply",
+    "onCommand:celorga.exportCurrentFileHtml",
+    "onCommand:celorga.exportWorkspaceHtml",
+    "onCommand:celorga.captureQuickEntry",
+    "onCommand:celorga.toggleTodo",
+    "onCommand:celorga.insertListItemBelow",
+    "onCommand:celorga.setTodoStatus",
+    "onCommand:celorga.setPriority",
+    "onCommand:celorga.setTodoTODO",
+    "onCommand:celorga.setTodoInProgress",
+    "onCommand:celorga.setTodoDone",
+    "onCommand:celorga.setTodoCanceled",
+    "onCommand:celorga.markDoneAndHandoff",
+    "onCommand:celorga.assignTodoToAgent",
+    "onCommand:celorga.setScheduled",
+    "onCommand:celorga.setScheduledToday",
+    "onCommand:celorga.setScheduledTomorrow",
+    "onCommand:celorga.setScheduledNextWeek",
+    "onCommand:celorga.setScheduledNextMonth",
+    "onCommand:celorga.setDeadline",
+    "onCommand:celorga.setDeadlineToday",
+    "onCommand:celorga.cryptDecryptSubtree",
+    "onCommand:celorga.cryptEncryptSubtree",
+    "onCommand:celorga.cryptReencryptSubtree",
+    "onCommand:celorga.pickAgendaStatusFilter",
+    "onCommand:celorga.archiveSubtree",
+    "onCommand:celorga.refileSubtree",
+    "onCommand:celorga.roamDailiesGotoToday",
+    "onCommand:celorga.roamDailiesGotoYesterday",
+    "onCommand:celorga.roamDailiesGotoTomorrow",
+    "onCommand:celorga.roamDailiesGotoDate",
+    "onCommand:celorga.roamNodeNew",
+    "onCommand:celorga.roamCopyIdLink",
+    "onCommand:celorga.roamCopyIdLinkById",
+    "onCommand:celorga.roamInsertBacklink",
+    "onCommand:celorga.roamOpenId",
+    "onCommand:celorga.roamOpenTitle",
+    "onCommand:celorga.roamShowBacklinks",
+    "onCommand:celorga.roamShowBacklinksById",
+    "onCommand:celorga.roamOpenBacklink",
+    "onCommand:celorga.roamOpenBacklinkById",
+    "onCommand:celorga.roamDbSync",
+    "onCommand:celorga.rerunAutoFold",
+    "onCommand:celorga.graphAuditWorkspace",
+    "onCommand:celorga.aiReviewWorkspace",
+    "onCommand:celorga.aiMarkReviewed",
+    "onCommand:celorga.aiMarkRejected",
+    "onCommand:celorga.aiMarkDeferred",
+    "onCommand:celorga.promoteSubtree",
+    "onCommand:celorga.demoteSubtree",
+    "onCommand:celorga.moveSubtreeUp",
+    "onCommand:celorga.moveSubtreeDown",
+    "onCommand:celorga.openReview",
+    "onCommand:celorga.refreshReview",
+    "onCommand:celorga.openReviewItem",
     "onCommand:org2.openAgenda",
     "onCommand:org2.openBacklinks",
     "onCommand:org2.refreshBacklinks",
@@ -131,321 +203,638 @@
     },
     "commands": [
       {
-        "command": "org2.openAgenda",
+        "command": "celorga.openAgenda",
         "title": "Celorga: Open Agenda"
       },
       {
-        "command": "org2.refreshAgenda",
+        "command": "celorga.refreshAgenda",
         "title": "Celorga: Refresh Agenda",
         "icon": "$(refresh)"
       },
       {
-        "command": "org2.openBacklinks",
+        "command": "celorga.openBacklinks",
         "title": "Celorga: Open Backlinks Pane"
       },
       {
-        "command": "org2.refreshBacklinks",
+        "command": "celorga.refreshBacklinks",
         "title": "Celorga: Refresh Backlinks Pane",
         "icon": "$(refresh)"
       },
       {
-        "command": "org2.formatWorkspaceCheck",
+        "command": "celorga.formatWorkspaceCheck",
         "title": "Celorga: Formatter — Check Workspace Drift"
       },
       {
-        "command": "org2.formatWorkspaceApply",
+        "command": "celorga.formatWorkspaceApply",
         "title": "Celorga: Formatter — Apply Workspace Formatting"
       },
       {
-        "command": "org2.lintWorkspaceCorpus",
+        "command": "celorga.lintWorkspaceCorpus",
         "title": "Celorga: Corpus Lint — Graph & Artifact Health"
       },
       {
-        "command": "org2.compileWorkspaceCorpus",
+        "command": "celorga.compileWorkspaceCorpus",
         "title": "Celorga: Compile Workspace Corpus Artifact"
       },
       {
-        "command": "org2.moveSubtreeDown",
+        "command": "celorga.moveSubtreeDown",
         "title": "Celorga: Move Subtree Down"
       },
       {
-        "command": "org2.moveSubtreeUp",
+        "command": "celorga.moveSubtreeUp",
         "title": "Celorga: Move Subtree Up"
       },
       {
-        "command": "org2.demoteSubtree",
+        "command": "celorga.demoteSubtree",
         "title": "Celorga: Demote Subtree"
       },
       {
-        "command": "org2.promoteSubtree",
+        "command": "celorga.promoteSubtree",
         "title": "Celorga: Promote Subtree"
       },
       {
-        "command": "org2.aiMarkDeferred",
+        "command": "celorga.aiMarkDeferred",
         "title": "Celorga: AI — Mark Draft Deferred"
       },
       {
-        "command": "org2.aiMarkRejected",
+        "command": "celorga.aiMarkRejected",
         "title": "Celorga: AI — Mark Draft Rejected"
       },
       {
-        "command": "org2.aiMarkReviewed",
+        "command": "celorga.aiMarkReviewed",
         "title": "Celorga: AI — Mark Draft Reviewed"
       },
       {
-        "command": "org2.aiReviewWorkspace",
+        "command": "celorga.aiReviewWorkspace",
         "title": "Celorga: AI — Review Workspace / Active File"
       },
       {
-        "command": "org2.graphAuditWorkspace",
+        "command": "celorga.graphAuditWorkspace",
         "title": "Celorga: Graph Audit Workspace"
       },
       {
-        "command": "org2.aiRunDraft",
+        "command": "celorga.aiRunDraft",
         "title": "Celorga: AI — Write Draft Artifact"
       },
       {
-        "command": "org2.aiSuggestLinks",
+        "command": "celorga.aiSuggestLinks",
         "title": "Celorga: AI — Suggest Links & Entities"
       },
       {
-        "command": "org2.aiPromoteDraft",
+        "command": "celorga.aiPromoteDraft",
         "title": "Celorga: AI — Promote Reviewed Draft"
       },
       {
-        "command": "org2.searchWorkspace",
+        "command": "celorga.searchWorkspace",
         "title": "Celorga: Search Workspace Notes"
       },
       {
-        "command": "org2.queryWorkspace",
+        "command": "celorga.queryWorkspace",
         "title": "Celorga: Query Workspace Notes (Cited)"
       },
       {
-        "command": "org2.roamLinkifyPreview",
+        "command": "celorga.roamLinkifyPreview",
         "title": "Celorga: Roam — Linkify Preview"
       },
       {
-        "command": "org2.roamLinkifyApply",
+        "command": "celorga.roamLinkifyApply",
         "title": "Celorga: Roam — Linkify Apply"
       },
       {
-        "command": "org2.roamGraph",
+        "command": "celorga.roamGraph",
         "title": "Celorga: Roam — Graph Report"
       },
       {
-        "command": "org2.formatCurrentFileCheck",
+        "command": "celorga.formatCurrentFileCheck",
         "title": "Celorga: Formatter — Check Current File Drift"
       },
       {
-        "command": "org2.formatCurrentFilePreviewDiff",
+        "command": "celorga.formatCurrentFilePreviewDiff",
         "title": "Celorga: Formatter — Preview Current File Diff"
       },
       {
-        "command": "org2.formatCurrentFileApply",
+        "command": "celorga.formatCurrentFileApply",
         "title": "Celorga: Formatter — Apply Current File Formatting"
       },
       {
-        "command": "org2.exportCurrentFileHtml",
+        "command": "celorga.exportCurrentFileHtml",
         "title": "Celorga: Export Current File to HTML"
       },
       {
-        "command": "org2.exportWorkspaceHtml",
+        "command": "celorga.exportWorkspaceHtml",
         "title": "Celorga: Export Workspace Org Files to HTML"
       },
       {
-        "command": "org2.captureQuickEntry",
+        "command": "celorga.captureQuickEntry",
         "title": "Celorga: Capture Quick Entry"
       },
       {
-        "command": "org2.pickAgendaFilter",
+        "command": "celorga.pickAgendaFilter",
         "title": "Celorga: Agenda Filter",
         "icon": "$(filter)"
       },
       {
-        "command": "org2.pickAgendaStatusFilter",
+        "command": "celorga.pickAgendaStatusFilter",
         "title": "Celorga: Agenda Status Filter",
         "icon": "$(checklist)"
       },
       {
-        "command": "org2.openAgendaItem",
+        "command": "celorga.openAgendaItem",
         "title": "Celorga: Open Agenda Item"
       },
       {
-        "command": "org2.toggleTodo",
+        "command": "celorga.toggleTodo",
         "title": "Celorga: Toggle Todo Status"
       },
       {
-        "command": "org2.insertListItemBelow",
+        "command": "celorga.insertListItemBelow",
         "title": "Celorga: Insert List Item Below"
       },
       {
-        "command": "org2.setTodoStatus",
+        "command": "celorga.setTodoStatus",
         "title": "Celorga: Set Todo Status"
       },
       {
-        "command": "org2.setPriority",
+        "command": "celorga.setPriority",
         "title": "Celorga: Set Priority"
       },
       {
-        "command": "org2.setTodoTODO",
+        "command": "celorga.setTodoTODO",
         "title": "Celorga: Set Todo → TODO"
       },
       {
-        "command": "org2.setTodoInProgress",
+        "command": "celorga.setTodoInProgress",
         "title": "Celorga: Set Todo → IN_PROGRESS"
       },
       {
-        "command": "org2.setTodoDone",
+        "command": "celorga.setTodoDone",
         "title": "Celorga: Set Todo → DONE"
       },
       {
-        "command": "org2.setTodoCanceled",
+        "command": "celorga.setTodoCanceled",
         "title": "Celorga: Set Todo → CANCELED"
       },
       {
-        "command": "org2.markDoneAndHandoff",
+        "command": "celorga.markDoneAndHandoff",
         "title": "Celorga: Assign Todo to Agent"
       },
       {
-        "command": "org2.assignTodoToAgent",
+        "command": "celorga.assignTodoToAgent",
         "title": "Celorga: Assign Todo to Agent"
       },
       {
-        "command": "org2.setScheduled",
+        "command": "celorga.setScheduled",
         "title": "Celorga: Set SCHEDULED"
       },
       {
-        "command": "org2.setScheduledToday",
+        "command": "celorga.setScheduledToday",
         "title": "Celorga: Set SCHEDULED to Today"
       },
       {
-        "command": "org2.setScheduledTomorrow",
+        "command": "celorga.setScheduledTomorrow",
         "title": "Celorga: Set SCHEDULED to Tomorrow"
       },
       {
-        "command": "org2.setScheduledNextWeek",
+        "command": "celorga.setScheduledNextWeek",
         "title": "Celorga: Set SCHEDULED to Next Week"
       },
       {
-        "command": "org2.setScheduledNextMonth",
+        "command": "celorga.setScheduledNextMonth",
         "title": "Celorga: Set SCHEDULED to Next Month"
       },
       {
-        "command": "org2.setDeadline",
+        "command": "celorga.setDeadline",
         "title": "Celorga: Set DEADLINE"
       },
       {
-        "command": "org2.setDeadlineToday",
+        "command": "celorga.setDeadlineToday",
         "title": "Celorga: Set DEADLINE to Today"
       },
       {
-        "command": "org2.cryptDecryptSubtree",
+        "command": "celorga.cryptDecryptSubtree",
         "title": "Celorga: Crypt Decrypt Subtree"
       },
       {
-        "command": "org2.cryptEncryptSubtree",
+        "command": "celorga.cryptEncryptSubtree",
         "title": "Celorga: Crypt Encrypt Subtree"
       },
       {
-        "command": "org2.cryptReencryptSubtree",
+        "command": "celorga.cryptReencryptSubtree",
         "title": "Celorga: Crypt Re-encrypt Subtree"
       },
       {
-        "command": "org2.archiveSubtree",
+        "command": "celorga.archiveSubtree",
         "title": "Celorga: Archive Subtree"
       },
       {
-        "command": "org2.refileSubtree",
+        "command": "celorga.refileSubtree",
         "title": "Celorga: Refile Subtree"
       },
       {
-        "command": "org2.roamDailiesGotoToday",
+        "command": "celorga.roamDailiesGotoToday",
         "title": "Celorga: Roam Dailies — Go to Today"
       },
       {
-        "command": "org2.roamDailiesGotoYesterday",
+        "command": "celorga.roamDailiesGotoYesterday",
         "title": "Celorga: Roam Dailies — Go to Yesterday"
       },
       {
-        "command": "org2.roamDailiesGotoTomorrow",
+        "command": "celorga.roamDailiesGotoTomorrow",
         "title": "Celorga: Roam Dailies — Go to Tomorrow"
       },
       {
-        "command": "org2.roamDailiesGotoDate",
+        "command": "celorga.roamDailiesGotoDate",
         "title": "Celorga: Roam Dailies — Go to Date"
       },
       {
-        "command": "org2.roamNodeNew",
+        "command": "celorga.roamNodeNew",
         "title": "Celorga: Roam — New Node"
       },
       {
-        "command": "org2.roamCopyIdLink",
+        "command": "celorga.roamCopyIdLink",
         "title": "Celorga: Roam — Copy ID Link (Current Heading/File)"
       },
       {
-        "command": "org2.roamCopyIdLinkById",
+        "command": "celorga.roamCopyIdLinkById",
         "title": "Celorga: Roam — Copy ID Link (Prompt/Link)"
       },
       {
-        "command": "org2.roamInsertBacklink",
+        "command": "celorga.roamInsertBacklink",
         "title": "Celorga: Roam — Insert Backlink (Prompt/Link)"
       },
       {
-        "command": "org2.roamOpenId",
+        "command": "celorga.roamOpenId",
         "title": "Celorga: Roam — Open ID (Prompt/Link)"
       },
       {
-        "command": "org2.roamOpenTitle",
+        "command": "celorga.roamOpenTitle",
         "title": "Celorga: Roam — Open Title Link (Prompt/Link)"
       },
       {
-        "command": "org2.roamShowBacklinks",
+        "command": "celorga.roamShowBacklinks",
         "title": "Celorga: Roam — Show Backlinks (Current Heading/File)"
       },
       {
-        "command": "org2.roamShowBacklinksById",
+        "command": "celorga.roamShowBacklinksById",
         "title": "Celorga: Roam — Show Backlinks (Prompt/Link)"
       },
       {
-        "command": "org2.roamOpenBacklink",
+        "command": "celorga.roamOpenBacklink",
         "title": "Celorga: Roam — Open Backlink Source (Current Heading/File)"
       },
       {
-        "command": "org2.roamOpenBacklinkById",
+        "command": "celorga.roamOpenBacklinkById",
         "title": "Celorga: Roam — Open Backlink Source (Prompt/Link)"
       },
       {
-        "command": "org2.roamDbSync",
+        "command": "celorga.roamDbSync",
         "title": "Celorga: Roam — DB Sync (Ensure File IDs)"
       },
       {
-        "command": "org2.rerunAutoFold",
+        "command": "celorga.rerunAutoFold",
         "title": "Celorga: Re-run Auto-Fold"
       },
       {
-        "command": "org2.toggleFoldHere",
+        "command": "celorga.toggleFoldHere",
         "title": "Celorga: Toggle Fold Here"
       },
       {
-        "command": "org2.debugFoldingRanges",
+        "command": "celorga.debugFoldingRanges",
         "title": "Celorga: Debug Folding Ranges"
       },
       {
-        "command": "org2.debugListLinks",
+        "command": "celorga.debugListLinks",
         "title": "Celorga: Debug List Links"
       },
       {
-        "command": "org2.openReview",
+        "command": "celorga.openReview",
         "title": "Celorga: Open Review Queue"
       },
       {
-        "command": "org2.refreshReview",
+        "command": "celorga.refreshReview",
         "title": "Celorga: Refresh Review Queue",
         "icon": "$(refresh)"
       },
       {
-        "command": "org2.openReviewItem",
+        "command": "celorga.openReviewItem",
         "title": "Celorga: Open Review Item"
+      },
+      {
+        "command": "org2.openAgenda",
+        "title": "Celorga: Open Agenda (legacy org2 id)"
+      },
+      {
+        "command": "org2.refreshAgenda",
+        "title": "Celorga: Refresh Agenda (legacy org2 id)",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "org2.openBacklinks",
+        "title": "Celorga: Open Backlinks Pane (legacy org2 id)"
+      },
+      {
+        "command": "org2.refreshBacklinks",
+        "title": "Celorga: Refresh Backlinks Pane (legacy org2 id)",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "org2.formatWorkspaceCheck",
+        "title": "Celorga: Formatter — Check Workspace Drift (legacy org2 id)"
+      },
+      {
+        "command": "org2.formatWorkspaceApply",
+        "title": "Celorga: Formatter — Apply Workspace Formatting (legacy org2 id)"
+      },
+      {
+        "command": "org2.lintWorkspaceCorpus",
+        "title": "Celorga: Corpus Lint — Graph & Artifact Health (legacy org2 id)"
+      },
+      {
+        "command": "org2.compileWorkspaceCorpus",
+        "title": "Celorga: Compile Workspace Corpus Artifact (legacy org2 id)"
+      },
+      {
+        "command": "org2.moveSubtreeDown",
+        "title": "Celorga: Move Subtree Down (legacy org2 id)"
+      },
+      {
+        "command": "org2.moveSubtreeUp",
+        "title": "Celorga: Move Subtree Up (legacy org2 id)"
+      },
+      {
+        "command": "org2.demoteSubtree",
+        "title": "Celorga: Demote Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.promoteSubtree",
+        "title": "Celorga: Promote Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiMarkDeferred",
+        "title": "Celorga: AI — Mark Draft Deferred (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiMarkRejected",
+        "title": "Celorga: AI — Mark Draft Rejected (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiMarkReviewed",
+        "title": "Celorga: AI — Mark Draft Reviewed (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiReviewWorkspace",
+        "title": "Celorga: AI — Review Workspace / Active File (legacy org2 id)"
+      },
+      {
+        "command": "org2.graphAuditWorkspace",
+        "title": "Celorga: Graph Audit Workspace (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiRunDraft",
+        "title": "Celorga: AI — Write Draft Artifact (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiSuggestLinks",
+        "title": "Celorga: AI — Suggest Links & Entities (legacy org2 id)"
+      },
+      {
+        "command": "org2.aiPromoteDraft",
+        "title": "Celorga: AI — Promote Reviewed Draft (legacy org2 id)"
+      },
+      {
+        "command": "org2.searchWorkspace",
+        "title": "Celorga: Search Workspace Notes (legacy org2 id)"
+      },
+      {
+        "command": "org2.queryWorkspace",
+        "title": "Celorga: Query Workspace Notes (Cited) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamLinkifyPreview",
+        "title": "Celorga: Roam — Linkify Preview (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamLinkifyApply",
+        "title": "Celorga: Roam — Linkify Apply (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamGraph",
+        "title": "Celorga: Roam — Graph Report (legacy org2 id)"
+      },
+      {
+        "command": "org2.formatCurrentFileCheck",
+        "title": "Celorga: Formatter — Check Current File Drift (legacy org2 id)"
+      },
+      {
+        "command": "org2.formatCurrentFilePreviewDiff",
+        "title": "Celorga: Formatter — Preview Current File Diff (legacy org2 id)"
+      },
+      {
+        "command": "org2.formatCurrentFileApply",
+        "title": "Celorga: Formatter — Apply Current File Formatting (legacy org2 id)"
+      },
+      {
+        "command": "org2.exportCurrentFileHtml",
+        "title": "Celorga: Export Current File to HTML (legacy org2 id)"
+      },
+      {
+        "command": "org2.exportWorkspaceHtml",
+        "title": "Celorga: Export Workspace Org Files to HTML (legacy org2 id)"
+      },
+      {
+        "command": "org2.captureQuickEntry",
+        "title": "Celorga: Capture Quick Entry (legacy org2 id)"
+      },
+      {
+        "command": "org2.pickAgendaFilter",
+        "title": "Celorga: Agenda Filter (legacy org2 id)",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "org2.pickAgendaStatusFilter",
+        "title": "Celorga: Agenda Status Filter (legacy org2 id)",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "org2.openAgendaItem",
+        "title": "Celorga: Open Agenda Item (legacy org2 id)"
+      },
+      {
+        "command": "org2.toggleTodo",
+        "title": "Celorga: Toggle Todo Status (legacy org2 id)"
+      },
+      {
+        "command": "org2.insertListItemBelow",
+        "title": "Celorga: Insert List Item Below (legacy org2 id)"
+      },
+      {
+        "command": "org2.setTodoStatus",
+        "title": "Celorga: Set Todo Status (legacy org2 id)"
+      },
+      {
+        "command": "org2.setPriority",
+        "title": "Celorga: Set Priority (legacy org2 id)"
+      },
+      {
+        "command": "org2.setTodoTODO",
+        "title": "Celorga: Set Todo → TODO (legacy org2 id)"
+      },
+      {
+        "command": "org2.setTodoInProgress",
+        "title": "Celorga: Set Todo → IN_PROGRESS (legacy org2 id)"
+      },
+      {
+        "command": "org2.setTodoDone",
+        "title": "Celorga: Set Todo → DONE (legacy org2 id)"
+      },
+      {
+        "command": "org2.setTodoCanceled",
+        "title": "Celorga: Set Todo → CANCELED (legacy org2 id)"
+      },
+      {
+        "command": "org2.markDoneAndHandoff",
+        "title": "Celorga: Assign Todo to Agent (legacy org2 id)"
+      },
+      {
+        "command": "org2.assignTodoToAgent",
+        "title": "Celorga: Assign Todo to Agent (legacy org2 id)"
+      },
+      {
+        "command": "org2.setScheduled",
+        "title": "Celorga: Set SCHEDULED (legacy org2 id)"
+      },
+      {
+        "command": "org2.setScheduledToday",
+        "title": "Celorga: Set SCHEDULED to Today (legacy org2 id)"
+      },
+      {
+        "command": "org2.setScheduledTomorrow",
+        "title": "Celorga: Set SCHEDULED to Tomorrow (legacy org2 id)"
+      },
+      {
+        "command": "org2.setScheduledNextWeek",
+        "title": "Celorga: Set SCHEDULED to Next Week (legacy org2 id)"
+      },
+      {
+        "command": "org2.setScheduledNextMonth",
+        "title": "Celorga: Set SCHEDULED to Next Month (legacy org2 id)"
+      },
+      {
+        "command": "org2.setDeadline",
+        "title": "Celorga: Set DEADLINE (legacy org2 id)"
+      },
+      {
+        "command": "org2.setDeadlineToday",
+        "title": "Celorga: Set DEADLINE to Today (legacy org2 id)"
+      },
+      {
+        "command": "org2.cryptDecryptSubtree",
+        "title": "Celorga: Crypt Decrypt Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.cryptEncryptSubtree",
+        "title": "Celorga: Crypt Encrypt Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.cryptReencryptSubtree",
+        "title": "Celorga: Crypt Re-encrypt Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.archiveSubtree",
+        "title": "Celorga: Archive Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.refileSubtree",
+        "title": "Celorga: Refile Subtree (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamDailiesGotoToday",
+        "title": "Celorga: Roam Dailies — Go to Today (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamDailiesGotoYesterday",
+        "title": "Celorga: Roam Dailies — Go to Yesterday (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamDailiesGotoTomorrow",
+        "title": "Celorga: Roam Dailies — Go to Tomorrow (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamDailiesGotoDate",
+        "title": "Celorga: Roam Dailies — Go to Date (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamNodeNew",
+        "title": "Celorga: Roam — New Node (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamCopyIdLink",
+        "title": "Celorga: Roam — Copy ID Link (Current Heading/File) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamCopyIdLinkById",
+        "title": "Celorga: Roam — Copy ID Link (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamInsertBacklink",
+        "title": "Celorga: Roam — Insert Backlink (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamOpenId",
+        "title": "Celorga: Roam — Open ID (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamOpenTitle",
+        "title": "Celorga: Roam — Open Title Link (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamShowBacklinks",
+        "title": "Celorga: Roam — Show Backlinks (Current Heading/File) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamShowBacklinksById",
+        "title": "Celorga: Roam — Show Backlinks (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamOpenBacklink",
+        "title": "Celorga: Roam — Open Backlink Source (Current Heading/File) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamOpenBacklinkById",
+        "title": "Celorga: Roam — Open Backlink Source (Prompt/Link) (legacy org2 id)"
+      },
+      {
+        "command": "org2.roamDbSync",
+        "title": "Celorga: Roam — DB Sync (Ensure File IDs) (legacy org2 id)"
+      },
+      {
+        "command": "org2.rerunAutoFold",
+        "title": "Celorga: Re-run Auto-Fold (legacy org2 id)"
+      },
+      {
+        "command": "org2.toggleFoldHere",
+        "title": "Celorga: Toggle Fold Here (legacy org2 id)"
+      },
+      {
+        "command": "org2.debugFoldingRanges",
+        "title": "Celorga: Debug Folding Ranges (legacy org2 id)"
+      },
+      {
+        "command": "org2.debugListLinks",
+        "title": "Celorga: Debug List Links (legacy org2 id)"
+      },
+      {
+        "command": "org2.openReview",
+        "title": "Celorga: Open Review Queue (legacy org2 id)"
+      },
+      {
+        "command": "org2.refreshReview",
+        "title": "Celorga: Refresh Review Queue (legacy org2 id)",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "org2.openReviewItem",
+        "title": "Celorga: Open Review Item (legacy org2 id)"
       }
     ],
     "views": {
@@ -467,1182 +856,2205 @@
     "menus": {
       "view/title": [
         {
-          "command": "org2.refreshAgenda",
+          "command": "celorga.refreshAgenda",
           "when": "view == org2Agenda",
           "group": "navigation"
         },
         {
-          "command": "org2.pickAgendaFilter",
+          "command": "celorga.pickAgendaFilter",
           "when": "view == org2Agenda",
           "group": "navigation"
         },
         {
-          "command": "org2.pickAgendaStatusFilter",
+          "command": "celorga.pickAgendaStatusFilter",
           "when": "view == org2Agenda",
           "group": "navigation"
         },
         {
-          "command": "org2.refreshBacklinks",
+          "command": "celorga.refreshBacklinks",
           "when": "view == org2Backlinks",
           "group": "navigation"
         },
         {
-          "command": "org2.refreshReview",
+          "command": "celorga.refreshReview",
           "when": "view == org2Review",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "org2.setTodoTODO",
+          "command": "celorga.setTodoTODO",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@10"
         },
         {
-          "command": "org2.setTodoInProgress",
+          "command": "celorga.setTodoInProgress",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@11"
         },
         {
-          "command": "org2.setTodoDone",
+          "command": "celorga.setTodoDone",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@12"
         },
         {
-          "command": "org2.setTodoCanceled",
+          "command": "celorga.setTodoCanceled",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@13"
         },
         {
-          "command": "org2.toggleTodo",
+          "command": "celorga.toggleTodo",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@14"
         },
         {
-          "command": "org2.assignTodoToAgent",
+          "command": "celorga.assignTodoToAgent",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@14.05"
         },
         {
-          "command": "org2.setPriority",
+          "command": "celorga.setPriority",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@14.1"
         },
         {
-          "command": "org2.setScheduled",
+          "command": "celorga.setScheduled",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@15"
         },
         {
-          "command": "org2.setScheduledToday",
+          "command": "celorga.setScheduledToday",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@16"
         },
         {
-          "command": "org2.setScheduledTomorrow",
+          "command": "celorga.setScheduledTomorrow",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@16.1"
         },
         {
-          "command": "org2.setScheduledNextWeek",
+          "command": "celorga.setScheduledNextWeek",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@16.2"
         },
         {
-          "command": "org2.setScheduledNextMonth",
+          "command": "celorga.setScheduledNextMonth",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@16.3"
         },
         {
-          "command": "org2.setDeadline",
+          "command": "celorga.setDeadline",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@17"
         },
         {
-          "command": "org2.setDeadlineToday",
+          "command": "celorga.setDeadlineToday",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@18"
         },
         {
-          "command": "org2.archiveSubtree",
+          "command": "celorga.archiveSubtree",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@19"
         },
         {
-          "command": "org2.refileSubtree",
+          "command": "celorga.refileSubtree",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@20"
         }
       ],
       "editor/context": [
         {
-          "command": "org2.toggleTodo",
+          "command": "celorga.toggleTodo",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@10"
         },
         {
-          "command": "org2.insertListItemBelow",
+          "command": "celorga.insertListItemBelow",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@10.5"
         },
         {
-          "command": "org2.setTodoStatus",
+          "command": "celorga.setTodoStatus",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11"
         },
         {
-          "command": "org2.assignTodoToAgent",
+          "command": "celorga.assignTodoToAgent",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11.05"
         },
         {
-          "command": "org2.setPriority",
+          "command": "celorga.setPriority",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11.1"
         },
         {
-          "command": "org2.setScheduled",
+          "command": "celorga.setScheduled",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@12"
         },
         {
-          "command": "org2.setDeadline",
+          "command": "celorga.setDeadline",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13"
         },
         {
-          "command": "org2.cryptDecryptSubtree",
+          "command": "celorga.cryptDecryptSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13.1"
         },
         {
-          "command": "org2.cryptEncryptSubtree",
+          "command": "celorga.cryptEncryptSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13.2"
         },
         {
-          "command": "org2.cryptReencryptSubtree",
+          "command": "celorga.cryptReencryptSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13.3"
         },
         {
-          "command": "org2.archiveSubtree",
+          "command": "celorga.archiveSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@14"
         },
         {
-          "command": "org2.refileSubtree",
+          "command": "celorga.refileSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15"
         },
         {
-          "command": "org2.captureQuickEntry",
+          "command": "celorga.captureQuickEntry",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15.4"
         },
         {
-          "command": "org2.exportCurrentFileHtml",
+          "command": "celorga.exportCurrentFileHtml",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15.5"
         },
         {
-          "command": "org2.exportWorkspaceHtml",
+          "command": "celorga.exportWorkspaceHtml",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15.6"
         },
         {
-          "command": "org2.roamShowBacklinks",
+          "command": "celorga.roamShowBacklinks",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15"
         },
         {
-          "command": "org2.roamShowBacklinksById",
+          "command": "celorga.roamShowBacklinksById",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@16"
         },
         {
-          "command": "org2.roamCopyIdLinkById",
+          "command": "celorga.roamCopyIdLinkById",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@17"
         },
         {
-          "command": "org2.roamOpenBacklink",
+          "command": "celorga.roamOpenBacklink",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@17"
         },
         {
-          "command": "org2.roamOpenBacklinkById",
+          "command": "celorga.roamOpenBacklinkById",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@18"
         },
         {
-          "command": "org2.roamNodeNew",
+          "command": "celorga.roamNodeNew",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@19"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "org2.openAgenda",
+          "when": "false"
+        },
+        {
+          "command": "org2.refreshAgenda",
+          "when": "false"
+        },
+        {
+          "command": "org2.openBacklinks",
+          "when": "false"
+        },
+        {
+          "command": "org2.refreshBacklinks",
+          "when": "false"
+        },
+        {
+          "command": "org2.formatWorkspaceCheck",
+          "when": "false"
+        },
+        {
+          "command": "org2.formatWorkspaceApply",
+          "when": "false"
+        },
+        {
+          "command": "org2.lintWorkspaceCorpus",
+          "when": "false"
+        },
+        {
+          "command": "org2.compileWorkspaceCorpus",
+          "when": "false"
+        },
+        {
+          "command": "org2.moveSubtreeDown",
+          "when": "false"
+        },
+        {
+          "command": "org2.moveSubtreeUp",
+          "when": "false"
+        },
+        {
+          "command": "org2.demoteSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.promoteSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiMarkDeferred",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiMarkRejected",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiMarkReviewed",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiReviewWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "org2.graphAuditWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiRunDraft",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiSuggestLinks",
+          "when": "false"
+        },
+        {
+          "command": "org2.aiPromoteDraft",
+          "when": "false"
+        },
+        {
+          "command": "org2.searchWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "org2.queryWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamLinkifyPreview",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamLinkifyApply",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamGraph",
+          "when": "false"
+        },
+        {
+          "command": "org2.formatCurrentFileCheck",
+          "when": "false"
+        },
+        {
+          "command": "org2.formatCurrentFilePreviewDiff",
+          "when": "false"
+        },
+        {
+          "command": "org2.formatCurrentFileApply",
+          "when": "false"
+        },
+        {
+          "command": "org2.exportCurrentFileHtml",
+          "when": "false"
+        },
+        {
+          "command": "org2.exportWorkspaceHtml",
+          "when": "false"
+        },
+        {
+          "command": "org2.captureQuickEntry",
+          "when": "false"
+        },
+        {
+          "command": "org2.pickAgendaFilter",
+          "when": "false"
+        },
+        {
+          "command": "org2.pickAgendaStatusFilter",
+          "when": "false"
+        },
+        {
+          "command": "org2.openAgendaItem",
+          "when": "false"
+        },
+        {
+          "command": "org2.toggleTodo",
+          "when": "false"
+        },
+        {
+          "command": "org2.insertListItemBelow",
+          "when": "false"
+        },
+        {
+          "command": "org2.setTodoStatus",
+          "when": "false"
+        },
+        {
+          "command": "org2.setPriority",
+          "when": "false"
+        },
+        {
+          "command": "org2.setTodoTODO",
+          "when": "false"
+        },
+        {
+          "command": "org2.setTodoInProgress",
+          "when": "false"
+        },
+        {
+          "command": "org2.setTodoDone",
+          "when": "false"
+        },
+        {
+          "command": "org2.setTodoCanceled",
+          "when": "false"
+        },
+        {
+          "command": "org2.markDoneAndHandoff",
+          "when": "false"
+        },
+        {
+          "command": "org2.assignTodoToAgent",
+          "when": "false"
+        },
+        {
+          "command": "org2.setScheduled",
+          "when": "false"
+        },
+        {
+          "command": "org2.setScheduledToday",
+          "when": "false"
+        },
+        {
+          "command": "org2.setScheduledTomorrow",
+          "when": "false"
+        },
+        {
+          "command": "org2.setScheduledNextWeek",
+          "when": "false"
+        },
+        {
+          "command": "org2.setScheduledNextMonth",
+          "when": "false"
+        },
+        {
+          "command": "org2.setDeadline",
+          "when": "false"
+        },
+        {
+          "command": "org2.setDeadlineToday",
+          "when": "false"
+        },
+        {
+          "command": "org2.cryptDecryptSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.cryptEncryptSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.cryptReencryptSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.archiveSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.refileSubtree",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamDailiesGotoToday",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamDailiesGotoYesterday",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamDailiesGotoTomorrow",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamDailiesGotoDate",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamNodeNew",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamCopyIdLink",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamCopyIdLinkById",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamInsertBacklink",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamOpenId",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamOpenTitle",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamShowBacklinks",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamShowBacklinksById",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamOpenBacklink",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamOpenBacklinkById",
+          "when": "false"
+        },
+        {
+          "command": "org2.roamDbSync",
+          "when": "false"
+        },
+        {
+          "command": "org2.rerunAutoFold",
+          "when": "false"
+        },
+        {
+          "command": "org2.toggleFoldHere",
+          "when": "false"
+        },
+        {
+          "command": "org2.debugFoldingRanges",
+          "when": "false"
+        },
+        {
+          "command": "org2.debugListLinks",
+          "when": "false"
+        },
+        {
+          "command": "org2.openReview",
+          "when": "false"
+        },
+        {
+          "command": "org2.refreshReview",
+          "when": "false"
+        },
+        {
+          "command": "org2.openReviewItem",
+          "when": "false"
+        }
       ]
     },
-    "configuration": {
-      "title": "Celorga",
-      "properties": {
-        "org2.agenda.command": {
-          "type": "string",
-          "default": "org2",
-          "description": "Command used to run the Celorga CLI. The default, 'org2', prefers 'celorga' when it is on PATH and otherwise runs 'org2' (a permanent compatibility alias). Use 'node' with org2.agenda.args for a source checkout."
-        },
-        "org2.agenda.args": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "string"
+    "configuration": [
+      {
+        "title": "Celorga",
+        "properties": {
+          "celorga.agenda.command": {
+            "type": "string",
+            "default": "org2",
+            "description": "Command used to run the Celorga CLI. The default, 'org2', prefers 'celorga' when it is on PATH and otherwise runs 'org2' (a permanent compatibility alias). Use 'node' with celorga.agenda.args for a source checkout."
           },
-          "description": "Extra args prefixed when calling the Celorga CLI (advanced; useful for 'node /path/to/dist/cli.js')."
-        },
-        "org2.agenda.scope": {
-          "type": "string",
-          "enum": [
-            "workspace",
-            "files"
-          ],
-          "default": "workspace",
-          "description": "Where to read org files from. 'workspace' scans org2.agenda.dir (or the workspace folder if unset); 'files' uses org2.agenda.files."
-        },
-        "org2.agenda.dir": {
-          "type": "string",
-          "default": "",
-          "description": "Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace."
-        },
-        "org2.agenda.recursive": {
-          "type": "boolean",
-          "default": true,
-          "description": "When scope='workspace', recursively scan org2.agenda.dir for .org/.org2 files. If false, scans only the top-level directory."
-        },
-        "org2.roam.dailiesDir": {
-          "type": "string",
-          "default": "",
-          "description": "Root directory for Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
-        },
-        "org2.roam.indexDir": {
-          "type": "string",
-          "default": "",
-          "description": "Root directory for Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
-        },
-        "org2.roam.nodesDir": {
-          "type": "string",
-          "default": "",
-          "description": "Directory for Roam node creation (`celorga roam node new`). Absolute paths are used directly; relative paths are resolved against org2.roam.indexDir (or org2.agenda.dir/workspace root). If empty, uses org2.roam.indexDir or org2.agenda.dir/workspace root."
-        },
-        "org2.agenda.files": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "string"
+          "celorga.agenda.args": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra args prefixed when calling the Celorga CLI (advanced; useful for 'node /path/to/dist/cli.js')."
           },
-          "description": "List of org/org2 files (absolute or workspace-relative) to include when scope='files'."
-        },
-        "org2.agenda.days": {
-          "type": "number",
-          "default": 7,
-          "minimum": 1,
-          "maximum": 365,
-          "description": "Default agenda window (in days) for the 'Next N days' filter."
-        },
-        "org2.agenda.startDate": {
-          "type": "string",
-          "default": "",
-          "description": "Optional agenda start date override (YYYY-MM-DD). When set, this replaces the CLI --today anchor for agenda range calculations."
-        },
-        "org2.agenda.endDate": {
-          "type": "string",
-          "default": "",
-          "description": "Optional agenda end date override (YYYY-MM-DD). When set, this replaces the default days-based end date for agenda range calculations."
-        },
-        "org2.agenda.limit": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 5000,
-          "description": "Maximum number of agenda rows to render after sorting (0 = no limit)."
-        },
-        "org2.agenda.dayLimit": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 1000,
-          "description": "Optional per-date row cap applied after sort/group ordering and before overall `org2.agenda.limit` (0 = no per-date cap)."
-        },
-        "org2.agenda.includeOverdue": {
-          "type": "boolean",
-          "default": true,
-          "description": "Include overdue items in the agenda view."
-        },
-        "org2.agenda.statusFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "active",
-            "actionable",
-            "open",
-            "todo",
-            "in_progress",
-            "done",
-            "canceled",
-            "closed",
-            "custom"
-          ],
-          "default": "all",
-          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
-        },
-        "org2.agenda.excludeStatusFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "active",
-            "actionable",
-            "open",
-            "todo",
-            "in_progress",
-            "done",
-            "canceled",
-            "closed",
-            "custom"
-          ],
-          "default": "all",
-          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
-        },
-        "org2.agenda.kindFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "scheduled",
-            "deadline"
-          ],
-          "default": "all",
-          "description": "Filter agenda rows by planning kind before rendering. all=both SCHEDULED and DEADLINE items."
-        },
-        "org2.agenda.excludeKindFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "scheduled",
-            "deadline"
-          ],
-          "default": "all",
-          "description": "Exclude agenda rows by planning kind before rendering. all=no exclusion, scheduled/deadline hide matching planning rows."
-        },
-        "org2.agenda.whenFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "overdue",
-            "today",
-            "upcoming"
-          ],
-          "default": "all",
-          "description": "Filter agenda rows by time bucket before rendering. all=overdue+today+upcoming, upcoming=rows after today in the current agenda window."
-        },
-        "org2.agenda.excludeWhenFilter": {
-          "type": "string",
-          "enum": [
-            "all",
-            "overdue",
-            "today",
-            "upcoming"
-          ],
-          "default": "all",
-          "description": "Exclude agenda rows by time bucket before rendering. all=no exclusion, overdue/today/upcoming hide matching buckets from the current agenda window."
-        },
-        "org2.agenda.weekdayFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by weekday tokens before rendering. Supports comma-separated values like `mon,wed`, full names (`monday`), plus `weekday` and `weekend` aliases (use `all` to disable)."
-        },
-        "org2.agenda.excludeWeekdayFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by weekday tokens before rendering. Supports comma-separated values like `sat,sun`, full names, and `weekday`/`weekend` aliases (use `all` for no exclusion)."
-        },
-        "org2.agenda.weekFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by ISO week number before rendering. Supports comma-separated values like `1,w2,week10` (use `all` to disable)."
-        },
-        "org2.agenda.excludeWeekFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by ISO week number before rendering. Supports comma-separated values like `w1,week52` (use `all` for no exclusion)."
-        },
-        "org2.agenda.dayOfMonthFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,15,31` (use `all` to disable)."
-        },
-        "org2.agenda.excludeDayOfMonthFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,31` (use `all` for no exclusion)."
-        },
-        "org2.agenda.monthFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (`jan`, `february`, `mar`) (use `all` to disable)."
-        },
-        "org2.agenda.excludeMonthFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (use `all` for no exclusion)."
-        },
-        "org2.agenda.quarterFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q1`/`quarter2` (use `all` to disable)."
-        },
-        "org2.agenda.excludeQuarterFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q3` (use `all` for no exclusion)."
-        },
-        "org2.agenda.yearFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by year before rendering. Supports comma-separated positive year numbers like `2025,2026` (use `all` to disable)."
-        },
-        "org2.agenda.excludeYearFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by year before rendering. Supports comma-separated positive year numbers like `2026` (use `all` for no exclusion)."
-        },
-        "org2.agenda.dateFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Filter agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01,2026-03-15` (use `all` to disable)."
-        },
-        "org2.agenda.excludeDateFilter": {
-          "type": "string",
-          "default": "all",
-          "description": "Exclude agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01` (use `all` for no exclusion)."
-        },
-        "org2.agenda.levelFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2,3` (empty = no level filter)."
-        },
-        "org2.agenda.excludeLevelFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2` (empty = no level exclusion)."
-        },
-        "org2.agenda.matchFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row matches when any term is present."
-        },
-        "org2.agenda.excludeMatchFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row is hidden when any term is present."
-        },
-        "org2.agenda.tagFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row matches when any tag is present."
-        },
-        "org2.agenda.idFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row matches when any ID/CUSTOM_ID term is present."
-        },
-        "org2.agenda.todoKeywordFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row matches when any keyword is present."
-        },
-        "org2.agenda.todoOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for TODO keywords used by `agenda --sort todo` / `--group todo` (comma-separated, for example `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering)."
-        },
-        "org2.agenda.statusOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma- or semicolon-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `wait`, `hold`, `paused`, `completed`, and `closed` are accepted and normalized before CLI args are built)."
-        },
-        "org2.agenda.kindOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for planning kinds used by `agenda --sort kind` / `--group kind` (comma-separated values from `scheduled`, `deadline`; blank keeps default lexical ordering)."
-        },
-        "org2.agenda.priorityOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
-        },
-        "org2.agenda.tagOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for tags used by `agenda --sort tags` / `--group tags` (comma-separated tag names, case-insensitive; rows with listed tags are ranked first in the provided order, and unlisted tags keep lexical fallback ordering)."
-        },
-        "org2.agenda.effortOrder": {
-          "type": "string",
-          "default": "",
-          "description": "Optional custom ordering for effort values used by `agenda --sort effort` / `--group effort` (comma-separated effort tokens like `0:30,45m,2h`; aliases `none`, `empty`, `unset`, and `no-effort` target rows without `:EFFORT:`)."
-        },
-        "org2.agenda.priorityFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
-        },
-        "org2.agenda.timeFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`."
-        },
-        "org2.agenda.effortFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
-        },
-        "org2.agenda.propertyFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
-        },
-        "org2.agenda.excludeTagFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row is hidden when any tag matches."
-        },
-        "org2.agenda.excludeIdFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row is hidden when any ID/CUSTOM_ID term matches."
-        },
-        "org2.agenda.excludeTodoKeywordFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row is hidden when any keyword matches."
-        },
-        "org2.agenda.excludePriorityFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
-        },
-        "org2.agenda.excludeTimeFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`."
-        },
-        "org2.agenda.excludeEffortFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
-        },
-        "org2.agenda.excludePropertyFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
-        },
-        "org2.agenda.fileFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Filter agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row matches when its file path contains any term."
-        },
-        "org2.agenda.excludeFileFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row is hidden when its file path contains any term."
-        },
-        "org2.agenda.sortBy": {
-          "type": "string",
-          "default": "default",
-          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
-        },
-        "org2.agenda.groupBy": {
-          "type": "string",
-          "default": "default",
-          "description": "Group agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for reverse group ordering. Use `default` to disable grouping."
-        },
-        "org2.agenda.groupLimit": {
-          "type": "number",
-          "minimum": 0,
-          "default": 0,
-          "description": "Optional per-date per-group row cap when `org2.agenda.groupBy` is set (0 = no per-group cap)."
-        },
-        "org2.agenda.dateOrder": {
-          "type": "string",
-          "enum": [
-            "asc",
-            "desc"
-          ],
-          "default": "asc",
-          "description": "Overall date ordering for agenda groups. Use `asc` for oldest-first or `desc` for newest-first."
-        },
-        "org2.formatter.fileFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)."
-        },
-        "org2.formatter.excludeFileFilter": {
-          "type": "string",
-          "default": "",
-          "description": "Exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)."
-        },
-        "org2.formatter.configFile": {
-          "type": "string",
-          "default": "",
-          "description": "Optional org2.json path for workspace formatter commands. When set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `org2.agenda.dir` recursively."
-        },
-        "org2.capture.defaultFile": {
-          "type": "string",
-          "default": "",
-          "description": "Optional default target file for `Celorga: Capture Quick Entry`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
-        },
-        "org2.capture.defaultTemplate": {
-          "type": "string",
-          "enum": [
-            "note",
-            "task"
-          ],
-          "default": "note",
-          "description": "Default template ordering for `Celorga: Capture Quick Entry` (`note` or `task`)."
-        },
-        "org2.capture.defaultTodoKeyword": {
-          "type": "string",
-          "default": "TODO",
-          "description": "Default TODO keyword ordering for task captures in `Celorga: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`)."
-        },
-        "org2.capture.useSelectionAsBody": {
-          "type": "boolean",
-          "default": true,
-          "description": "When enabled, `Celorga: Capture Quick Entry` passes the current editor selection as capture body text (`--body`)."
-        },
-        "org2.export.outputDir": {
-          "type": "string",
-          "default": "_site",
-          "description": "Output directory for `Celorga: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
-        },
-        "org2.export.indexFile": {
-          "type": "string",
-          "default": "index.html",
-          "description": "Optional index file path for workspace HTML export (`--index`). Empty disables index generation. Relative paths are resolved inside org2.export.outputDir."
-        },
-        "org2.export.indexTitle": {
-          "type": "string",
-          "default": "Celorga Export Index",
-          "description": "Title used for the generated workspace export index page (`--index-title`). Ignored when org2.export.indexFile is empty."
-        },
-        "org2.export.stylesheets": {
-          "type": "string",
-          "default": "",
-          "description": "Optional comma/newline-separated stylesheet URLs or paths passed as repeated `--css` flags to HTML export commands."
-        },
-        "org2.export.includeDefaultStyle": {
-          "type": "boolean",
-          "default": true,
-          "description": "When enabled, HTML export includes Celorga's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
-        },
-        "org2.export.includeToc": {
-          "type": "boolean",
-          "default": false,
-          "description": "When enabled, HTML export includes a generated table of contents with heading anchors (`--toc`)."
-        },
-        "org2.export.tocDepth": {
-          "type": "integer",
-          "default": 0,
-          "minimum": 0,
-          "description": "Optional TOC heading depth limit for HTML export. Values >0 pass `--toc-depth N` (and implicitly enable TOC); 0 keeps full-depth TOC behavior."
-        },
-        "org2.export.numberHeadings": {
-          "type": "boolean",
-          "default": false,
-          "description": "When enabled, HTML export prefixes headings (and TOC entries when present) with generated section numbers (`--number-headings`)."
-        },
-        "org2.export.numberHeadingsDepth": {
-          "type": "integer",
-          "default": 0,
-          "minimum": 0,
-          "description": "Optional heading-number depth limit for HTML export. Values >0 pass `--number-headings-depth N` (and implicitly enable heading numbers); 0 keeps full-depth numbering behavior."
-        },
-        "org2.export.rewriteFileLinks": {
-          "type": "boolean",
-          "default": false,
-          "description": "When enabled, HTML export rewrites Org file links to `.html` targets for published output and emits heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)."
-        },
-        "org2.formatOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto-format Org tables on save. Canonical syntax conversion for `.org` files still runs when accepted fenced/backtick shorthand is present; `.org2` files retain lossless spelling."
-        },
-        "org2.todo.writeTransitionLogbook": {
-          "type": "boolean",
-          "default": false,
-          "description": "When enabled, TODO status updates from VS Code pass `--logbook` to the Celorga CLI so state transitions are recorded in a LOGBOOK drawer."
-        },
-        "org2.editor.restoreSelectionAfterCliApply": {
-          "type": "boolean",
-          "default": true,
-          "description": "Restore the previous selection after TODO/planning/archive commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
-        },
-        "org2.editor.refreshAfterCliApply": {
-          "type": "boolean",
-          "default": true,
-          "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning/archive commands. TODO/planning only refresh when CLI output reports an actual change. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
-        },
-        "org2.editor.skipRefreshWhenInSync": {
-          "type": "boolean",
-          "default": true,
-          "description": "When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn)."
-        },
-        "org2.editor.allowGlobalRefreshFallback": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow fallback to global `workbench.action.files.revert` when target-file `revertResource` is unavailable. Keep disabled to avoid global refresh side-effects (including fold churn in other editors)."
-        },
-        "org2.editor.navigationReveal": {
-          "type": "string",
-          "enum": [
-            "default",
-            "center",
-            "outside",
-            "none"
-          ],
-          "default": "outside",
-          "description": "Reveal behavior after Celorga non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
-        },
-        "org2.editor.navigationRevealFromAgenda": {
-          "type": "string",
-          "enum": [
-            "default",
-            "center",
-            "outside",
-            "none"
-          ],
-          "default": "none",
-          "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); default inherits org2.editor.navigationReveal, while outside/center force agenda-specific recentering."
-        },
-        "org2.folding.autoFoldMaxHeadingLevel": {
-          "type": "number",
-          "default": 1,
-          "minimum": 0,
-          "description": "Auto-fold headings at this exact level (1 = fold top-level sections, 2 = fold level-2 sections, 0 = disable auto-folding headings)."
-        },
-        "org2.folding.autoFoldPropertyDrawers": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto-fold :PROPERTIES: drawers when a document is opened (once per file)."
-        },
-        "org2.links.renderDescriptions": {
-          "type": "boolean",
-          "default": true,
-          "description": "Style described links ([[url][desc]]) for readability without changing layout/whitespace."
-        },
-        "org2.links.renderDescriptionsMode": {
-          "type": "string",
-          "enum": [
-            "safe",
-            "full"
-          ],
-          "default": "safe",
-          "description": "Reserved for future link-rendering modes. Currently both modes use layout-safe styling only."
-        },
-        "org2.keymap.power": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Celorga power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org editors."
-        },
-        "org2.vim.visibleLineNavigation": {
-          "type": "boolean",
-          "default": false,
-          "description": "When VSCodeVim is active in Normal mode, remap j/k in Org editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
-        },
-        "org2.crypt.recipients": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "string"
+          "celorga.agenda.scope": {
+            "type": "string",
+            "enum": [
+              "workspace",
+              "files"
+            ],
+            "default": "workspace",
+            "description": "Where to read org files from. 'workspace' scans celorga.agenda.dir (or the workspace folder if unset); 'files' uses celorga.agenda.files."
           },
-          "description": "Default GPG recipients for Celorga crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys."
-        },
-        "org2.crypt.recipientFiles": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "string"
+          "celorga.agenda.dir": {
+            "type": "string",
+            "default": "",
+            "description": "Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace."
           },
-          "description": "Default GPG recipient files passed to `celorga crypt` encrypt/reencrypt."
-        },
-        "org2.crypt.encryptOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically encrypt plaintext :crypt: subtrees before saving Org files. Save is canceled if encryption fails."
-        },
-        "org2.crypt.passphrase": {
-          "type": "string",
-          "default": "",
-          "description": "Optional symmetric passphrase for automatic :crypt: encryption on save. Prefer org2.crypt.recipients or org2.crypt.recipientFiles for public-key encryption."
-        },
-        "org2.crypt.gpgProgram": {
-          "type": "string",
-          "default": "gpg",
-          "description": "GPG executable used for automatic :crypt: encryption on save."
+          "celorga.agenda.recursive": {
+            "type": "boolean",
+            "default": true,
+            "description": "When scope='workspace', recursively scan celorga.agenda.dir for .org/.org2 files. If false, scans only the top-level directory."
+          },
+          "celorga.roam.dailiesDir": {
+            "type": "string",
+            "default": "",
+            "description": "Root directory for Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to celorga.roam.indexDir, then celorga.agenda.dir, then the VS Code workspace folder."
+          },
+          "celorga.roam.indexDir": {
+            "type": "string",
+            "default": "",
+            "description": "Root directory for Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against celorga.agenda.dir (or workspace root). If empty, uses celorga.agenda.dir/workspace root."
+          },
+          "celorga.roam.nodesDir": {
+            "type": "string",
+            "default": "",
+            "description": "Directory for Roam node creation (`celorga roam node new`). Absolute paths are used directly; relative paths are resolved against celorga.roam.indexDir (or celorga.agenda.dir/workspace root). If empty, uses celorga.roam.indexDir or celorga.agenda.dir/workspace root."
+          },
+          "celorga.agenda.files": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "List of org/org2 files (absolute or workspace-relative) to include when scope='files'."
+          },
+          "celorga.agenda.days": {
+            "type": "number",
+            "default": 7,
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Default agenda window (in days) for the 'Next N days' filter."
+          },
+          "celorga.agenda.startDate": {
+            "type": "string",
+            "default": "",
+            "description": "Optional agenda start date override (YYYY-MM-DD). When set, this replaces the CLI --today anchor for agenda range calculations."
+          },
+          "celorga.agenda.endDate": {
+            "type": "string",
+            "default": "",
+            "description": "Optional agenda end date override (YYYY-MM-DD). When set, this replaces the default days-based end date for agenda range calculations."
+          },
+          "celorga.agenda.limit": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 5000,
+            "description": "Maximum number of agenda rows to render after sorting (0 = no limit)."
+          },
+          "celorga.agenda.dayLimit": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Optional per-date row cap applied after sort/group ordering and before overall `celorga.agenda.limit` (0 = no per-date cap)."
+          },
+          "celorga.agenda.includeOverdue": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include overdue items in the agenda view."
+          },
+          "celorga.agenda.statusFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "actionable",
+              "open",
+              "todo",
+              "in_progress",
+              "done",
+              "canceled",
+              "closed",
+              "custom"
+            ],
+            "default": "all",
+            "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
+          },
+          "celorga.agenda.excludeStatusFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "actionable",
+              "open",
+              "todo",
+              "in_progress",
+              "done",
+              "canceled",
+              "closed",
+              "custom"
+            ],
+            "default": "all",
+            "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
+          },
+          "celorga.agenda.kindFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "scheduled",
+              "deadline"
+            ],
+            "default": "all",
+            "description": "Filter agenda rows by planning kind before rendering. all=both SCHEDULED and DEADLINE items."
+          },
+          "celorga.agenda.excludeKindFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "scheduled",
+              "deadline"
+            ],
+            "default": "all",
+            "description": "Exclude agenda rows by planning kind before rendering. all=no exclusion, scheduled/deadline hide matching planning rows."
+          },
+          "celorga.agenda.whenFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "upcoming"
+            ],
+            "default": "all",
+            "description": "Filter agenda rows by time bucket before rendering. all=overdue+today+upcoming, upcoming=rows after today in the current agenda window."
+          },
+          "celorga.agenda.excludeWhenFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "upcoming"
+            ],
+            "default": "all",
+            "description": "Exclude agenda rows by time bucket before rendering. all=no exclusion, overdue/today/upcoming hide matching buckets from the current agenda window."
+          },
+          "celorga.agenda.weekdayFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by weekday tokens before rendering. Supports comma-separated values like `mon,wed`, full names (`monday`), plus `weekday` and `weekend` aliases (use `all` to disable)."
+          },
+          "celorga.agenda.excludeWeekdayFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by weekday tokens before rendering. Supports comma-separated values like `sat,sun`, full names, and `weekday`/`weekend` aliases (use `all` for no exclusion)."
+          },
+          "celorga.agenda.weekFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by ISO week number before rendering. Supports comma-separated values like `1,w2,week10` (use `all` to disable)."
+          },
+          "celorga.agenda.excludeWeekFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by ISO week number before rendering. Supports comma-separated values like `w1,week52` (use `all` for no exclusion)."
+          },
+          "celorga.agenda.dayOfMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,15,31` (use `all` to disable)."
+          },
+          "celorga.agenda.excludeDayOfMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,31` (use `all` for no exclusion)."
+          },
+          "celorga.agenda.monthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (`jan`, `february`, `mar`) (use `all` to disable)."
+          },
+          "celorga.agenda.excludeMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (use `all` for no exclusion)."
+          },
+          "celorga.agenda.quarterFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q1`/`quarter2` (use `all` to disable)."
+          },
+          "celorga.agenda.excludeQuarterFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q3` (use `all` for no exclusion)."
+          },
+          "celorga.agenda.yearFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by year before rendering. Supports comma-separated positive year numbers like `2025,2026` (use `all` to disable)."
+          },
+          "celorga.agenda.excludeYearFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by year before rendering. Supports comma-separated positive year numbers like `2026` (use `all` for no exclusion)."
+          },
+          "celorga.agenda.dateFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Filter agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01,2026-03-15` (use `all` to disable)."
+          },
+          "celorga.agenda.excludeDateFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Exclude agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01` (use `all` for no exclusion)."
+          },
+          "celorga.agenda.levelFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2,3` (empty = no level filter)."
+          },
+          "celorga.agenda.excludeLevelFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2` (empty = no level exclusion)."
+          },
+          "celorga.agenda.matchFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row matches when any term is present."
+          },
+          "celorga.agenda.excludeMatchFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row is hidden when any term is present."
+          },
+          "celorga.agenda.tagFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row matches when any tag is present."
+          },
+          "celorga.agenda.idFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row matches when any ID/CUSTOM_ID term is present."
+          },
+          "celorga.agenda.todoKeywordFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row matches when any keyword is present."
+          },
+          "celorga.agenda.todoOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for TODO keywords used by `agenda --sort todo` / `--group todo` (comma-separated, for example `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering)."
+          },
+          "celorga.agenda.statusOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma- or semicolon-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `wait`, `hold`, `paused`, `completed`, and `closed` are accepted and normalized before CLI args are built)."
+          },
+          "celorga.agenda.kindOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for planning kinds used by `agenda --sort kind` / `--group kind` (comma-separated values from `scheduled`, `deadline`; blank keeps default lexical ordering)."
+          },
+          "celorga.agenda.priorityOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
+          },
+          "celorga.agenda.tagOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for tags used by `agenda --sort tags` / `--group tags` (comma-separated tag names, case-insensitive; rows with listed tags are ranked first in the provided order, and unlisted tags keep lexical fallback ordering)."
+          },
+          "celorga.agenda.effortOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Optional custom ordering for effort values used by `agenda --sort effort` / `--group effort` (comma-separated effort tokens like `0:30,45m,2h`; aliases `none`, `empty`, `unset`, and `no-effort` target rows without `:EFFORT:`)."
+          },
+          "celorga.agenda.priorityFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
+          },
+          "celorga.agenda.timeFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`."
+          },
+          "celorga.agenda.effortFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
+          },
+          "celorga.agenda.propertyFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
+          },
+          "celorga.agenda.excludeTagFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row is hidden when any tag matches."
+          },
+          "celorga.agenda.excludeIdFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row is hidden when any ID/CUSTOM_ID term matches."
+          },
+          "celorga.agenda.excludeTodoKeywordFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row is hidden when any keyword matches."
+          },
+          "celorga.agenda.excludePriorityFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
+          },
+          "celorga.agenda.excludeTimeFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`."
+          },
+          "celorga.agenda.excludeEffortFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
+          },
+          "celorga.agenda.excludePropertyFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
+          },
+          "celorga.agenda.fileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Filter agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row matches when its file path contains any term."
+          },
+          "celorga.agenda.excludeFileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row is hidden when its file path contains any term."
+          },
+          "celorga.agenda.sortBy": {
+            "type": "string",
+            "default": "default",
+            "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
+          },
+          "celorga.agenda.groupBy": {
+            "type": "string",
+            "default": "default",
+            "description": "Group agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for reverse group ordering. Use `default` to disable grouping."
+          },
+          "celorga.agenda.groupLimit": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Optional per-date per-group row cap when `celorga.agenda.groupBy` is set (0 = no per-group cap)."
+          },
+          "celorga.agenda.dateOrder": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "asc",
+            "description": "Overall date ordering for agenda groups. Use `asc` for oldest-first or `desc` for newest-first."
+          },
+          "celorga.formatter.fileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)."
+          },
+          "celorga.formatter.excludeFileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)."
+          },
+          "celorga.formatter.configFile": {
+            "type": "string",
+            "default": "",
+            "description": "Optional celorga.json (or legacy org2.json) path for workspace formatter commands. When set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `celorga.agenda.dir` recursively."
+          },
+          "celorga.capture.defaultFile": {
+            "type": "string",
+            "default": "",
+            "description": "Optional default target file for `Celorga: Capture Quick Entry`. Absolute paths are used directly; relative paths are resolved against celorga.agenda.dir (or workspace root)."
+          },
+          "celorga.capture.defaultTemplate": {
+            "type": "string",
+            "enum": [
+              "note",
+              "task"
+            ],
+            "default": "note",
+            "description": "Default template ordering for `Celorga: Capture Quick Entry` (`note` or `task`)."
+          },
+          "celorga.capture.defaultTodoKeyword": {
+            "type": "string",
+            "default": "TODO",
+            "description": "Default TODO keyword ordering for task captures in `Celorga: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`)."
+          },
+          "celorga.capture.useSelectionAsBody": {
+            "type": "boolean",
+            "default": true,
+            "description": "When enabled, `Celorga: Capture Quick Entry` passes the current editor selection as capture body text (`--body`)."
+          },
+          "celorga.export.outputDir": {
+            "type": "string",
+            "default": "_site",
+            "description": "Output directory for `Celorga: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against celorga.agenda.dir (or workspace root)."
+          },
+          "celorga.export.indexFile": {
+            "type": "string",
+            "default": "index.html",
+            "description": "Optional index file path for workspace HTML export (`--index`). Empty disables index generation. Relative paths are resolved inside celorga.export.outputDir."
+          },
+          "celorga.export.indexTitle": {
+            "type": "string",
+            "default": "Celorga Export Index",
+            "description": "Title used for the generated workspace export index page (`--index-title`). Ignored when celorga.export.indexFile is empty."
+          },
+          "celorga.export.stylesheets": {
+            "type": "string",
+            "default": "",
+            "description": "Optional comma/newline-separated stylesheet URLs or paths passed as repeated `--css` flags to HTML export commands."
+          },
+          "celorga.export.includeDefaultStyle": {
+            "type": "boolean",
+            "default": true,
+            "description": "When enabled, HTML export includes Celorga's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
+          },
+          "celorga.export.includeToc": {
+            "type": "boolean",
+            "default": false,
+            "description": "When enabled, HTML export includes a generated table of contents with heading anchors (`--toc`)."
+          },
+          "celorga.export.tocDepth": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Optional TOC heading depth limit for HTML export. Values >0 pass `--toc-depth N` (and implicitly enable TOC); 0 keeps full-depth TOC behavior."
+          },
+          "celorga.export.numberHeadings": {
+            "type": "boolean",
+            "default": false,
+            "description": "When enabled, HTML export prefixes headings (and TOC entries when present) with generated section numbers (`--number-headings`)."
+          },
+          "celorga.export.numberHeadingsDepth": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Optional heading-number depth limit for HTML export. Values >0 pass `--number-headings-depth N` (and implicitly enable heading numbers); 0 keeps full-depth numbering behavior."
+          },
+          "celorga.export.rewriteFileLinks": {
+            "type": "boolean",
+            "default": false,
+            "description": "When enabled, HTML export rewrites Org file links to `.html` targets for published output and emits heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)."
+          },
+          "celorga.formatOnSave": {
+            "type": "boolean",
+            "default": true,
+            "description": "Auto-format Org tables on save. Canonical syntax conversion for `.org` files still runs when accepted fenced/backtick shorthand is present; `.org2` files retain lossless spelling."
+          },
+          "celorga.todo.writeTransitionLogbook": {
+            "type": "boolean",
+            "default": false,
+            "description": "When enabled, TODO status updates from VS Code pass `--logbook` to the Celorga CLI so state transitions are recorded in a LOGBOOK drawer."
+          },
+          "celorga.editor.restoreSelectionAfterCliApply": {
+            "type": "boolean",
+            "default": true,
+            "description": "Restore the previous selection after TODO/planning/archive commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
+          },
+          "celorga.editor.refreshAfterCliApply": {
+            "type": "boolean",
+            "default": true,
+            "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning/archive commands. TODO/planning only refresh when CLI output reports an actual change. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
+          },
+          "celorga.editor.skipRefreshWhenInSync": {
+            "type": "boolean",
+            "default": true,
+            "description": "When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn)."
+          },
+          "celorga.editor.allowGlobalRefreshFallback": {
+            "type": "boolean",
+            "default": false,
+            "description": "Allow fallback to global `workbench.action.files.revert` when target-file `revertResource` is unavailable. Keep disabled to avoid global refresh side-effects (including fold churn in other editors)."
+          },
+          "celorga.editor.navigationReveal": {
+            "type": "string",
+            "enum": [
+              "default",
+              "center",
+              "outside",
+              "none"
+            ],
+            "default": "outside",
+            "description": "Reveal behavior after Celorga non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
+          },
+          "celorga.editor.navigationRevealFromAgenda": {
+            "type": "string",
+            "enum": [
+              "default",
+              "center",
+              "outside",
+              "none"
+            ],
+            "default": "none",
+            "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); default inherits celorga.editor.navigationReveal, while outside/center force agenda-specific recentering."
+          },
+          "celorga.folding.autoFoldMaxHeadingLevel": {
+            "type": "number",
+            "default": 1,
+            "minimum": 0,
+            "description": "Auto-fold headings at this exact level (1 = fold top-level sections, 2 = fold level-2 sections, 0 = disable auto-folding headings)."
+          },
+          "celorga.folding.autoFoldPropertyDrawers": {
+            "type": "boolean",
+            "default": true,
+            "description": "Auto-fold :PROPERTIES: drawers when a document is opened (once per file)."
+          },
+          "celorga.links.renderDescriptions": {
+            "type": "boolean",
+            "default": true,
+            "description": "Style described links ([[url][desc]]) for readability without changing layout/whitespace."
+          },
+          "celorga.links.renderDescriptionsMode": {
+            "type": "string",
+            "enum": [
+              "safe",
+              "full"
+            ],
+            "default": "safe",
+            "description": "Reserved for future link-rendering modes. Currently both modes use layout-safe styling only."
+          },
+          "celorga.keymap.power": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable Celorga power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org editors."
+          },
+          "celorga.vim.visibleLineNavigation": {
+            "type": "boolean",
+            "default": false,
+            "description": "When VSCodeVim is active in Normal mode, remap j/k in Org editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
+          },
+          "celorga.crypt.recipients": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Default GPG recipients for Celorga crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys."
+          },
+          "celorga.crypt.recipientFiles": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Default GPG recipient files passed to `celorga crypt` encrypt/reencrypt."
+          },
+          "celorga.crypt.encryptOnSave": {
+            "type": "boolean",
+            "default": true,
+            "description": "Automatically encrypt plaintext :crypt: subtrees before saving Org files. Save is canceled if encryption fails."
+          },
+          "celorga.crypt.passphrase": {
+            "type": "string",
+            "default": "",
+            "description": "Optional symmetric passphrase for automatic :crypt: encryption on save. Prefer celorga.crypt.recipients or celorga.crypt.recipientFiles for public-key encryption."
+          },
+          "celorga.crypt.gpgProgram": {
+            "type": "string",
+            "default": "gpg",
+            "description": "GPG executable used for automatic :crypt: encryption on save."
+          }
+        }
+      },
+      {
+        "title": "Celorga (legacy org2.* settings)",
+        "properties": {
+          "org2.agenda.command": {
+            "type": "string",
+            "default": "org2",
+            "description": "Deprecated: use celorga.agenda.command. Command used to run the Celorga CLI. The default, 'org2', prefers 'celorga' when it is on PATH and otherwise runs 'org2' (a permanent compatibility alias). Use 'node' with org2.agenda.args for a source checkout.",
+            "deprecationMessage": "Renamed to celorga.agenda.command. org2.agenda.command still works when celorga.agenda.command is not set."
+          },
+          "org2.agenda.args": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Deprecated: use celorga.agenda.args. Extra args prefixed when calling the Celorga CLI (advanced; useful for 'node /path/to/dist/cli.js').",
+            "deprecationMessage": "Renamed to celorga.agenda.args. org2.agenda.args still works when celorga.agenda.args is not set."
+          },
+          "org2.agenda.scope": {
+            "type": "string",
+            "enum": [
+              "workspace",
+              "files"
+            ],
+            "default": "workspace",
+            "description": "Deprecated: use celorga.agenda.scope. Where to read org files from. 'workspace' scans org2.agenda.dir (or the workspace folder if unset); 'files' uses org2.agenda.files.",
+            "deprecationMessage": "Renamed to celorga.agenda.scope. org2.agenda.scope still works when celorga.agenda.scope is not set."
+          },
+          "org2.agenda.dir": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.dir. Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace.",
+            "deprecationMessage": "Renamed to celorga.agenda.dir. org2.agenda.dir still works when celorga.agenda.dir is not set."
+          },
+          "org2.agenda.recursive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.agenda.recursive. When scope='workspace', recursively scan org2.agenda.dir for .org/.org2 files. If false, scans only the top-level directory.",
+            "deprecationMessage": "Renamed to celorga.agenda.recursive. org2.agenda.recursive still works when celorga.agenda.recursive is not set."
+          },
+          "org2.roam.dailiesDir": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.roam.dailiesDir. Root directory for Roam dailies files (new files use YYYY-MM-DD.org; existing .org2 dailies remain discoverable). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder.",
+            "deprecationMessage": "Renamed to celorga.roam.dailiesDir. org2.roam.dailiesDir still works when celorga.roam.dailiesDir is not set."
+          },
+          "org2.roam.indexDir": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.roam.indexDir. Root directory for Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root.",
+            "deprecationMessage": "Renamed to celorga.roam.indexDir. org2.roam.indexDir still works when celorga.roam.indexDir is not set."
+          },
+          "org2.roam.nodesDir": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.roam.nodesDir. Directory for Roam node creation (`celorga roam node new`). Absolute paths are used directly; relative paths are resolved against org2.roam.indexDir (or org2.agenda.dir/workspace root). If empty, uses org2.roam.indexDir or org2.agenda.dir/workspace root.",
+            "deprecationMessage": "Renamed to celorga.roam.nodesDir. org2.roam.nodesDir still works when celorga.roam.nodesDir is not set."
+          },
+          "org2.agenda.files": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Deprecated: use celorga.agenda.files. List of org/org2 files (absolute or workspace-relative) to include when scope='files'.",
+            "deprecationMessage": "Renamed to celorga.agenda.files. org2.agenda.files still works when celorga.agenda.files is not set."
+          },
+          "org2.agenda.days": {
+            "type": "number",
+            "default": 7,
+            "minimum": 1,
+            "maximum": 365,
+            "description": "Deprecated: use celorga.agenda.days. Default agenda window (in days) for the 'Next N days' filter.",
+            "deprecationMessage": "Renamed to celorga.agenda.days. org2.agenda.days still works when celorga.agenda.days is not set."
+          },
+          "org2.agenda.startDate": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.startDate. Optional agenda start date override (YYYY-MM-DD). When set, this replaces the CLI --today anchor for agenda range calculations.",
+            "deprecationMessage": "Renamed to celorga.agenda.startDate. org2.agenda.startDate still works when celorga.agenda.startDate is not set."
+          },
+          "org2.agenda.endDate": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.endDate. Optional agenda end date override (YYYY-MM-DD). When set, this replaces the default days-based end date for agenda range calculations.",
+            "deprecationMessage": "Renamed to celorga.agenda.endDate. org2.agenda.endDate still works when celorga.agenda.endDate is not set."
+          },
+          "org2.agenda.limit": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 5000,
+            "description": "Deprecated: use celorga.agenda.limit. Maximum number of agenda rows to render after sorting (0 = no limit).",
+            "deprecationMessage": "Renamed to celorga.agenda.limit. org2.agenda.limit still works when celorga.agenda.limit is not set."
+          },
+          "org2.agenda.dayLimit": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Deprecated: use celorga.agenda.dayLimit. Optional per-date row cap applied after sort/group ordering and before overall `org2.agenda.limit` (0 = no per-date cap).",
+            "deprecationMessage": "Renamed to celorga.agenda.dayLimit. org2.agenda.dayLimit still works when celorga.agenda.dayLimit is not set."
+          },
+          "org2.agenda.includeOverdue": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.agenda.includeOverdue. Include overdue items in the agenda view.",
+            "deprecationMessage": "Renamed to celorga.agenda.includeOverdue. org2.agenda.includeOverdue still works when celorga.agenda.includeOverdue is not set."
+          },
+          "org2.agenda.statusFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "actionable",
+              "open",
+              "todo",
+              "in_progress",
+              "done",
+              "canceled",
+              "closed",
+              "custom"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.statusFilter. Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored.",
+            "deprecationMessage": "Renamed to celorga.agenda.statusFilter. org2.agenda.statusFilter still works when celorga.agenda.statusFilter is not set."
+          },
+          "org2.agenda.excludeStatusFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "actionable",
+              "open",
+              "todo",
+              "in_progress",
+              "done",
+              "canceled",
+              "closed",
+              "custom"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeStatusFilter. Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeStatusFilter. org2.agenda.excludeStatusFilter still works when celorga.agenda.excludeStatusFilter is not set."
+          },
+          "org2.agenda.kindFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "scheduled",
+              "deadline"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.kindFilter. Filter agenda rows by planning kind before rendering. all=both SCHEDULED and DEADLINE items.",
+            "deprecationMessage": "Renamed to celorga.agenda.kindFilter. org2.agenda.kindFilter still works when celorga.agenda.kindFilter is not set."
+          },
+          "org2.agenda.excludeKindFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "scheduled",
+              "deadline"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeKindFilter. Exclude agenda rows by planning kind before rendering. all=no exclusion, scheduled/deadline hide matching planning rows.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeKindFilter. org2.agenda.excludeKindFilter still works when celorga.agenda.excludeKindFilter is not set."
+          },
+          "org2.agenda.whenFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "upcoming"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.whenFilter. Filter agenda rows by time bucket before rendering. all=overdue+today+upcoming, upcoming=rows after today in the current agenda window.",
+            "deprecationMessage": "Renamed to celorga.agenda.whenFilter. org2.agenda.whenFilter still works when celorga.agenda.whenFilter is not set."
+          },
+          "org2.agenda.excludeWhenFilter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "overdue",
+              "today",
+              "upcoming"
+            ],
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeWhenFilter. Exclude agenda rows by time bucket before rendering. all=no exclusion, overdue/today/upcoming hide matching buckets from the current agenda window.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeWhenFilter. org2.agenda.excludeWhenFilter still works when celorga.agenda.excludeWhenFilter is not set."
+          },
+          "org2.agenda.weekdayFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.weekdayFilter. Filter agenda rows by weekday tokens before rendering. Supports comma-separated values like `mon,wed`, full names (`monday`), plus `weekday` and `weekend` aliases (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.weekdayFilter. org2.agenda.weekdayFilter still works when celorga.agenda.weekdayFilter is not set."
+          },
+          "org2.agenda.excludeWeekdayFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeWeekdayFilter. Exclude agenda rows by weekday tokens before rendering. Supports comma-separated values like `sat,sun`, full names, and `weekday`/`weekend` aliases (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeWeekdayFilter. org2.agenda.excludeWeekdayFilter still works when celorga.agenda.excludeWeekdayFilter is not set."
+          },
+          "org2.agenda.weekFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.weekFilter. Filter agenda rows by ISO week number before rendering. Supports comma-separated values like `1,w2,week10` (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.weekFilter. org2.agenda.weekFilter still works when celorga.agenda.weekFilter is not set."
+          },
+          "org2.agenda.excludeWeekFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeWeekFilter. Exclude agenda rows by ISO week number before rendering. Supports comma-separated values like `w1,week52` (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeWeekFilter. org2.agenda.excludeWeekFilter still works when celorga.agenda.excludeWeekFilter is not set."
+          },
+          "org2.agenda.dayOfMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.dayOfMonthFilter. Filter agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,15,31` (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.dayOfMonthFilter. org2.agenda.dayOfMonthFilter still works when celorga.agenda.dayOfMonthFilter is not set."
+          },
+          "org2.agenda.excludeDayOfMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeDayOfMonthFilter. Exclude agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,31` (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeDayOfMonthFilter. org2.agenda.excludeDayOfMonthFilter still works when celorga.agenda.excludeDayOfMonthFilter is not set."
+          },
+          "org2.agenda.monthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.monthFilter. Filter agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (`jan`, `february`, `mar`) (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.monthFilter. org2.agenda.monthFilter still works when celorga.agenda.monthFilter is not set."
+          },
+          "org2.agenda.excludeMonthFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeMonthFilter. Exclude agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeMonthFilter. org2.agenda.excludeMonthFilter still works when celorga.agenda.excludeMonthFilter is not set."
+          },
+          "org2.agenda.quarterFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.quarterFilter. Filter agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q1`/`quarter2` (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.quarterFilter. org2.agenda.quarterFilter still works when celorga.agenda.quarterFilter is not set."
+          },
+          "org2.agenda.excludeQuarterFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeQuarterFilter. Exclude agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q3` (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeQuarterFilter. org2.agenda.excludeQuarterFilter still works when celorga.agenda.excludeQuarterFilter is not set."
+          },
+          "org2.agenda.yearFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.yearFilter. Filter agenda rows by year before rendering. Supports comma-separated positive year numbers like `2025,2026` (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.yearFilter. org2.agenda.yearFilter still works when celorga.agenda.yearFilter is not set."
+          },
+          "org2.agenda.excludeYearFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeYearFilter. Exclude agenda rows by year before rendering. Supports comma-separated positive year numbers like `2026` (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeYearFilter. org2.agenda.excludeYearFilter still works when celorga.agenda.excludeYearFilter is not set."
+          },
+          "org2.agenda.dateFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.dateFilter. Filter agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01,2026-03-15` (use `all` to disable).",
+            "deprecationMessage": "Renamed to celorga.agenda.dateFilter. org2.agenda.dateFilter still works when celorga.agenda.dateFilter is not set."
+          },
+          "org2.agenda.excludeDateFilter": {
+            "type": "string",
+            "default": "all",
+            "description": "Deprecated: use celorga.agenda.excludeDateFilter. Exclude agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01` (use `all` for no exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeDateFilter. org2.agenda.excludeDateFilter still works when celorga.agenda.excludeDateFilter is not set."
+          },
+          "org2.agenda.levelFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.levelFilter. Filter agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2,3` (empty = no level filter).",
+            "deprecationMessage": "Renamed to celorga.agenda.levelFilter. org2.agenda.levelFilter still works when celorga.agenda.levelFilter is not set."
+          },
+          "org2.agenda.excludeLevelFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeLevelFilter. Exclude agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2` (empty = no level exclusion).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeLevelFilter. org2.agenda.excludeLevelFilter still works when celorga.agenda.excludeLevelFilter is not set."
+          },
+          "org2.agenda.matchFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.matchFilter. Filter agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row matches when any term is present.",
+            "deprecationMessage": "Renamed to celorga.agenda.matchFilter. org2.agenda.matchFilter still works when celorga.agenda.matchFilter is not set."
+          },
+          "org2.agenda.excludeMatchFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeMatchFilter. Exclude agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row is hidden when any term is present.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeMatchFilter. org2.agenda.excludeMatchFilter still works when celorga.agenda.excludeMatchFilter is not set."
+          },
+          "org2.agenda.tagFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.tagFilter. Filter agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row matches when any tag is present.",
+            "deprecationMessage": "Renamed to celorga.agenda.tagFilter. org2.agenda.tagFilter still works when celorga.agenda.tagFilter is not set."
+          },
+          "org2.agenda.idFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.idFilter. Filter agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row matches when any ID/CUSTOM_ID term is present.",
+            "deprecationMessage": "Renamed to celorga.agenda.idFilter. org2.agenda.idFilter still works when celorga.agenda.idFilter is not set."
+          },
+          "org2.agenda.todoKeywordFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.todoKeywordFilter. Filter agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row matches when any keyword is present.",
+            "deprecationMessage": "Renamed to celorga.agenda.todoKeywordFilter. org2.agenda.todoKeywordFilter still works when celorga.agenda.todoKeywordFilter is not set."
+          },
+          "org2.agenda.todoOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.todoOrder. Optional custom ordering for TODO keywords used by `agenda --sort todo` / `--group todo` (comma-separated, for example `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering).",
+            "deprecationMessage": "Renamed to celorga.agenda.todoOrder. org2.agenda.todoOrder still works when celorga.agenda.todoOrder is not set."
+          },
+          "org2.agenda.statusOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.statusOrder. Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma- or semicolon-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `wait`, `hold`, `paused`, `completed`, and `closed` are accepted and normalized before CLI args are built).",
+            "deprecationMessage": "Renamed to celorga.agenda.statusOrder. org2.agenda.statusOrder still works when celorga.agenda.statusOrder is not set."
+          },
+          "org2.agenda.kindOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.kindOrder. Optional custom ordering for planning kinds used by `agenda --sort kind` / `--group kind` (comma-separated values from `scheduled`, `deadline`; blank keeps default lexical ordering).",
+            "deprecationMessage": "Renamed to celorga.agenda.kindOrder. org2.agenda.kindOrder still works when celorga.agenda.kindOrder is not set."
+          },
+          "org2.agenda.priorityOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.priorityOrder. Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering).",
+            "deprecationMessage": "Renamed to celorga.agenda.priorityOrder. org2.agenda.priorityOrder still works when celorga.agenda.priorityOrder is not set."
+          },
+          "org2.agenda.tagOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.tagOrder. Optional custom ordering for tags used by `agenda --sort tags` / `--group tags` (comma-separated tag names, case-insensitive; rows with listed tags are ranked first in the provided order, and unlisted tags keep lexical fallback ordering).",
+            "deprecationMessage": "Renamed to celorga.agenda.tagOrder. org2.agenda.tagOrder still works when celorga.agenda.tagOrder is not set."
+          },
+          "org2.agenda.effortOrder": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.effortOrder. Optional custom ordering for effort values used by `agenda --sort effort` / `--group effort` (comma-separated effort tokens like `0:30,45m,2h`; aliases `none`, `empty`, `unset`, and `no-effort` target rows without `:EFFORT:`).",
+            "deprecationMessage": "Renamed to celorga.agenda.effortOrder. org2.agenda.effortOrder still works when celorga.agenda.effortOrder is not set."
+          },
+          "org2.agenda.priorityFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.priorityFilter. Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive).",
+            "deprecationMessage": "Renamed to celorga.agenda.priorityFilter. org2.agenda.priorityFilter still works when celorga.agenda.priorityFilter is not set."
+          },
+          "org2.agenda.timeFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.timeFilter. Filter agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`.",
+            "deprecationMessage": "Renamed to celorga.agenda.timeFilter. org2.agenda.timeFilter still works when celorga.agenda.timeFilter is not set."
+          },
+          "org2.agenda.effortFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.effortFilter. Filter agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`).",
+            "deprecationMessage": "Renamed to celorga.agenda.effortFilter. org2.agenda.effortFilter still works when celorga.agenda.effortFilter is not set."
+          },
+          "org2.agenda.propertyFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.propertyFilter. Filter agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms).",
+            "deprecationMessage": "Renamed to celorga.agenda.propertyFilter. org2.agenda.propertyFilter still works when celorga.agenda.propertyFilter is not set."
+          },
+          "org2.agenda.excludeTagFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeTagFilter. Exclude agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row is hidden when any tag matches.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeTagFilter. org2.agenda.excludeTagFilter still works when celorga.agenda.excludeTagFilter is not set."
+          },
+          "org2.agenda.excludeIdFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeIdFilter. Exclude agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row is hidden when any ID/CUSTOM_ID term matches.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeIdFilter. org2.agenda.excludeIdFilter still works when celorga.agenda.excludeIdFilter is not set."
+          },
+          "org2.agenda.excludeTodoKeywordFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeTodoKeywordFilter. Exclude agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row is hidden when any keyword matches.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeTodoKeywordFilter. org2.agenda.excludeTodoKeywordFilter still works when celorga.agenda.excludeTodoKeywordFilter is not set."
+          },
+          "org2.agenda.excludePriorityFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludePriorityFilter. Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludePriorityFilter. org2.agenda.excludePriorityFilter still works when celorga.agenda.excludePriorityFilter is not set."
+          },
+          "org2.agenda.excludeTimeFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeTimeFilter. Exclude agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, inclusive ranges like `09:00-12:30` (including overnight windows), and aliases like `timed`/`untimed`.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeTimeFilter. org2.agenda.excludeTimeFilter still works when celorga.agenda.excludeTimeFilter is not set."
+          },
+          "org2.agenda.excludeEffortFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeEffortFilter. Exclude agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeEffortFilter. org2.agenda.excludeEffortFilter still works when celorga.agenda.excludeEffortFilter is not set."
+          },
+          "org2.agenda.excludePropertyFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludePropertyFilter. Exclude agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms).",
+            "deprecationMessage": "Renamed to celorga.agenda.excludePropertyFilter. org2.agenda.excludePropertyFilter still works when celorga.agenda.excludePropertyFilter is not set."
+          },
+          "org2.agenda.fileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.fileFilter. Filter agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row matches when its file path contains any term.",
+            "deprecationMessage": "Renamed to celorga.agenda.fileFilter. org2.agenda.fileFilter still works when celorga.agenda.fileFilter is not set."
+          },
+          "org2.agenda.excludeFileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.agenda.excludeFileFilter. Exclude agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row is hidden when its file path contains any term.",
+            "deprecationMessage": "Renamed to celorga.agenda.excludeFileFilter. org2.agenda.excludeFileFilter still works when celorga.agenda.excludeFileFilter is not set."
+          },
+          "org2.agenda.sortBy": {
+            "type": "string",
+            "default": "default",
+            "description": "Deprecated: use celorga.agenda.sortBy. Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering.",
+            "deprecationMessage": "Renamed to celorga.agenda.sortBy. org2.agenda.sortBy still works when celorga.agenda.sortBy is not set."
+          },
+          "org2.agenda.groupBy": {
+            "type": "string",
+            "default": "default",
+            "description": "Deprecated: use celorga.agenda.groupBy. Group agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `status`, `priority`, `effort`, `id`, `level`, `time`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for reverse group ordering. Use `default` to disable grouping.",
+            "deprecationMessage": "Renamed to celorga.agenda.groupBy. org2.agenda.groupBy still works when celorga.agenda.groupBy is not set."
+          },
+          "org2.agenda.groupLimit": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Deprecated: use celorga.agenda.groupLimit. Optional per-date per-group row cap when `org2.agenda.groupBy` is set (0 = no per-group cap).",
+            "deprecationMessage": "Renamed to celorga.agenda.groupLimit. org2.agenda.groupLimit still works when celorga.agenda.groupLimit is not set."
+          },
+          "org2.agenda.dateOrder": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "asc",
+            "description": "Deprecated: use celorga.agenda.dateOrder. Overall date ordering for agenda groups. Use `asc` for oldest-first or `desc` for newest-first.",
+            "deprecationMessage": "Renamed to celorga.agenda.dateOrder. org2.agenda.dateOrder still works when celorga.agenda.dateOrder is not set."
+          },
+          "org2.formatter.fileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.formatter.fileFilter. Limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match).",
+            "deprecationMessage": "Renamed to celorga.formatter.fileFilter. org2.formatter.fileFilter still works when celorga.formatter.fileFilter is not set."
+          },
+          "org2.formatter.excludeFileFilter": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.formatter.excludeFileFilter. Exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match).",
+            "deprecationMessage": "Renamed to celorga.formatter.excludeFileFilter. org2.formatter.excludeFileFilter still works when celorga.formatter.excludeFileFilter is not set."
+          },
+          "org2.formatter.configFile": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.formatter.configFile. Optional org2.json path for workspace formatter commands. When set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `org2.agenda.dir` recursively.",
+            "deprecationMessage": "Renamed to celorga.formatter.configFile. org2.formatter.configFile still works when celorga.formatter.configFile is not set."
+          },
+          "org2.capture.defaultFile": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.capture.defaultFile. Optional default target file for `Celorga: Capture Quick Entry`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root).",
+            "deprecationMessage": "Renamed to celorga.capture.defaultFile. org2.capture.defaultFile still works when celorga.capture.defaultFile is not set."
+          },
+          "org2.capture.defaultTemplate": {
+            "type": "string",
+            "enum": [
+              "note",
+              "task"
+            ],
+            "default": "note",
+            "description": "Deprecated: use celorga.capture.defaultTemplate. Default template ordering for `Celorga: Capture Quick Entry` (`note` or `task`).",
+            "deprecationMessage": "Renamed to celorga.capture.defaultTemplate. org2.capture.defaultTemplate still works when celorga.capture.defaultTemplate is not set."
+          },
+          "org2.capture.defaultTodoKeyword": {
+            "type": "string",
+            "default": "TODO",
+            "description": "Deprecated: use celorga.capture.defaultTodoKeyword. Default TODO keyword ordering for task captures in `Celorga: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`).",
+            "deprecationMessage": "Renamed to celorga.capture.defaultTodoKeyword. org2.capture.defaultTodoKeyword still works when celorga.capture.defaultTodoKeyword is not set."
+          },
+          "org2.capture.useSelectionAsBody": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.capture.useSelectionAsBody. When enabled, `Celorga: Capture Quick Entry` passes the current editor selection as capture body text (`--body`).",
+            "deprecationMessage": "Renamed to celorga.capture.useSelectionAsBody. org2.capture.useSelectionAsBody still works when celorga.capture.useSelectionAsBody is not set."
+          },
+          "org2.export.outputDir": {
+            "type": "string",
+            "default": "_site",
+            "description": "Deprecated: use celorga.export.outputDir. Output directory for `Celorga: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root).",
+            "deprecationMessage": "Renamed to celorga.export.outputDir. org2.export.outputDir still works when celorga.export.outputDir is not set."
+          },
+          "org2.export.indexFile": {
+            "type": "string",
+            "default": "index.html",
+            "description": "Deprecated: use celorga.export.indexFile. Optional index file path for workspace HTML export (`--index`). Empty disables index generation. Relative paths are resolved inside org2.export.outputDir.",
+            "deprecationMessage": "Renamed to celorga.export.indexFile. org2.export.indexFile still works when celorga.export.indexFile is not set."
+          },
+          "org2.export.indexTitle": {
+            "type": "string",
+            "default": "Celorga Export Index",
+            "description": "Deprecated: use celorga.export.indexTitle. Title used for the generated workspace export index page (`--index-title`). Ignored when org2.export.indexFile is empty.",
+            "deprecationMessage": "Renamed to celorga.export.indexTitle. org2.export.indexTitle still works when celorga.export.indexTitle is not set."
+          },
+          "org2.export.stylesheets": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.export.stylesheets. Optional comma/newline-separated stylesheet URLs or paths passed as repeated `--css` flags to HTML export commands.",
+            "deprecationMessage": "Renamed to celorga.export.stylesheets. org2.export.stylesheets still works when celorga.export.stylesheets is not set."
+          },
+          "org2.export.includeDefaultStyle": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.export.includeDefaultStyle. When enabled, HTML export includes Celorga's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`).",
+            "deprecationMessage": "Renamed to celorga.export.includeDefaultStyle. org2.export.includeDefaultStyle still works when celorga.export.includeDefaultStyle is not set."
+          },
+          "org2.export.includeToc": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.export.includeToc. When enabled, HTML export includes a generated table of contents with heading anchors (`--toc`).",
+            "deprecationMessage": "Renamed to celorga.export.includeToc. org2.export.includeToc still works when celorga.export.includeToc is not set."
+          },
+          "org2.export.tocDepth": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Deprecated: use celorga.export.tocDepth. Optional TOC heading depth limit for HTML export. Values >0 pass `--toc-depth N` (and implicitly enable TOC); 0 keeps full-depth TOC behavior.",
+            "deprecationMessage": "Renamed to celorga.export.tocDepth. org2.export.tocDepth still works when celorga.export.tocDepth is not set."
+          },
+          "org2.export.numberHeadings": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.export.numberHeadings. When enabled, HTML export prefixes headings (and TOC entries when present) with generated section numbers (`--number-headings`).",
+            "deprecationMessage": "Renamed to celorga.export.numberHeadings. org2.export.numberHeadings still works when celorga.export.numberHeadings is not set."
+          },
+          "org2.export.numberHeadingsDepth": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Deprecated: use celorga.export.numberHeadingsDepth. Optional heading-number depth limit for HTML export. Values >0 pass `--number-headings-depth N` (and implicitly enable heading numbers); 0 keeps full-depth numbering behavior.",
+            "deprecationMessage": "Renamed to celorga.export.numberHeadingsDepth. org2.export.numberHeadingsDepth still works when celorga.export.numberHeadingsDepth is not set."
+          },
+          "org2.export.rewriteFileLinks": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.export.rewriteFileLinks. When enabled, HTML export rewrites Org file links to `.html` targets for published output and emits heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`).",
+            "deprecationMessage": "Renamed to celorga.export.rewriteFileLinks. org2.export.rewriteFileLinks still works when celorga.export.rewriteFileLinks is not set."
+          },
+          "org2.formatOnSave": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.formatOnSave. Auto-format Org tables on save. Canonical syntax conversion for `.org` files still runs when accepted fenced/backtick shorthand is present; `.org2` files retain lossless spelling.",
+            "deprecationMessage": "Renamed to celorga.formatOnSave. org2.formatOnSave still works when celorga.formatOnSave is not set."
+          },
+          "org2.todo.writeTransitionLogbook": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.todo.writeTransitionLogbook. When enabled, TODO status updates from VS Code pass `--logbook` to the Celorga CLI so state transitions are recorded in a LOGBOOK drawer.",
+            "deprecationMessage": "Renamed to celorga.todo.writeTransitionLogbook. org2.todo.writeTransitionLogbook still works when celorga.todo.writeTransitionLogbook is not set."
+          },
+          "org2.editor.restoreSelectionAfterCliApply": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.editor.restoreSelectionAfterCliApply. Restore the previous selection after TODO/planning/archive commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor.",
+            "deprecationMessage": "Renamed to celorga.editor.restoreSelectionAfterCliApply. org2.editor.restoreSelectionAfterCliApply still works when celorga.editor.restoreSelectionAfterCliApply is not set."
+          },
+          "org2.editor.refreshAfterCliApply": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.editor.refreshAfterCliApply. Force a post-apply disk refresh (`revertResource`) after TODO/planning/archive commands. TODO/planning only refresh when CLI output reports an actual change. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely.",
+            "deprecationMessage": "Renamed to celorga.editor.refreshAfterCliApply. org2.editor.refreshAfterCliApply still works when celorga.editor.refreshAfterCliApply is not set."
+          },
+          "org2.editor.skipRefreshWhenInSync": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.editor.skipRefreshWhenInSync. When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn).",
+            "deprecationMessage": "Renamed to celorga.editor.skipRefreshWhenInSync. org2.editor.skipRefreshWhenInSync still works when celorga.editor.skipRefreshWhenInSync is not set."
+          },
+          "org2.editor.allowGlobalRefreshFallback": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.editor.allowGlobalRefreshFallback. Allow fallback to global `workbench.action.files.revert` when target-file `revertResource` is unavailable. Keep disabled to avoid global refresh side-effects (including fold churn in other editors).",
+            "deprecationMessage": "Renamed to celorga.editor.allowGlobalRefreshFallback. org2.editor.allowGlobalRefreshFallback still works when celorga.editor.allowGlobalRefreshFallback is not set."
+          },
+          "org2.editor.navigationReveal": {
+            "type": "string",
+            "enum": [
+              "default",
+              "center",
+              "outside",
+              "none"
+            ],
+            "default": "outside",
+            "description": "Deprecated: use celorga.editor.navigationReveal. Reveal behavior after Celorga non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion.",
+            "deprecationMessage": "Renamed to celorga.editor.navigationReveal. org2.editor.navigationReveal still works when celorga.editor.navigationReveal is not set."
+          },
+          "org2.editor.navigationRevealFromAgenda": {
+            "type": "string",
+            "enum": [
+              "default",
+              "center",
+              "outside",
+              "none"
+            ],
+            "default": "none",
+            "description": "Deprecated: use celorga.editor.navigationRevealFromAgenda. Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); default inherits org2.editor.navigationReveal, while outside/center force agenda-specific recentering.",
+            "deprecationMessage": "Renamed to celorga.editor.navigationRevealFromAgenda. org2.editor.navigationRevealFromAgenda still works when celorga.editor.navigationRevealFromAgenda is not set."
+          },
+          "org2.folding.autoFoldMaxHeadingLevel": {
+            "type": "number",
+            "default": 1,
+            "minimum": 0,
+            "description": "Deprecated: use celorga.folding.autoFoldMaxHeadingLevel. Auto-fold headings at this exact level (1 = fold top-level sections, 2 = fold level-2 sections, 0 = disable auto-folding headings).",
+            "deprecationMessage": "Renamed to celorga.folding.autoFoldMaxHeadingLevel. org2.folding.autoFoldMaxHeadingLevel still works when celorga.folding.autoFoldMaxHeadingLevel is not set."
+          },
+          "org2.folding.autoFoldPropertyDrawers": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.folding.autoFoldPropertyDrawers. Auto-fold :PROPERTIES: drawers when a document is opened (once per file).",
+            "deprecationMessage": "Renamed to celorga.folding.autoFoldPropertyDrawers. org2.folding.autoFoldPropertyDrawers still works when celorga.folding.autoFoldPropertyDrawers is not set."
+          },
+          "org2.links.renderDescriptions": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.links.renderDescriptions. Style described links ([[url][desc]]) for readability without changing layout/whitespace.",
+            "deprecationMessage": "Renamed to celorga.links.renderDescriptions. org2.links.renderDescriptions still works when celorga.links.renderDescriptions is not set."
+          },
+          "org2.links.renderDescriptionsMode": {
+            "type": "string",
+            "enum": [
+              "safe",
+              "full"
+            ],
+            "default": "safe",
+            "description": "Deprecated: use celorga.links.renderDescriptionsMode. Reserved for future link-rendering modes. Currently both modes use layout-safe styling only.",
+            "deprecationMessage": "Renamed to celorga.links.renderDescriptionsMode. org2.links.renderDescriptionsMode still works when celorga.links.renderDescriptionsMode is not set."
+          },
+          "org2.keymap.power": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.keymap.power. Enable Celorga power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org editors.",
+            "deprecationMessage": "Renamed to celorga.keymap.power. org2.keymap.power still works when celorga.keymap.power is not set."
+          },
+          "org2.vim.visibleLineNavigation": {
+            "type": "boolean",
+            "default": false,
+            "description": "Deprecated: use celorga.vim.visibleLineNavigation. When VSCodeVim is active in Normal mode, remap j/k in Org editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines.",
+            "deprecationMessage": "Renamed to celorga.vim.visibleLineNavigation. org2.vim.visibleLineNavigation still works when celorga.vim.visibleLineNavigation is not set."
+          },
+          "org2.crypt.recipients": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Deprecated: use celorga.crypt.recipients. Default GPG recipients for Celorga crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys.",
+            "deprecationMessage": "Renamed to celorga.crypt.recipients. org2.crypt.recipients still works when celorga.crypt.recipients is not set."
+          },
+          "org2.crypt.recipientFiles": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Deprecated: use celorga.crypt.recipientFiles. Default GPG recipient files passed to `celorga crypt` encrypt/reencrypt.",
+            "deprecationMessage": "Renamed to celorga.crypt.recipientFiles. org2.crypt.recipientFiles still works when celorga.crypt.recipientFiles is not set."
+          },
+          "org2.crypt.encryptOnSave": {
+            "type": "boolean",
+            "default": true,
+            "description": "Deprecated: use celorga.crypt.encryptOnSave. Automatically encrypt plaintext :crypt: subtrees before saving Org files. Save is canceled if encryption fails.",
+            "deprecationMessage": "Renamed to celorga.crypt.encryptOnSave. org2.crypt.encryptOnSave still works when celorga.crypt.encryptOnSave is not set."
+          },
+          "org2.crypt.passphrase": {
+            "type": "string",
+            "default": "",
+            "description": "Deprecated: use celorga.crypt.passphrase. Optional symmetric passphrase for automatic :crypt: encryption on save. Prefer org2.crypt.recipients or org2.crypt.recipientFiles for public-key encryption.",
+            "deprecationMessage": "Renamed to celorga.crypt.passphrase. org2.crypt.passphrase still works when celorga.crypt.passphrase is not set."
+          },
+          "org2.crypt.gpgProgram": {
+            "type": "string",
+            "default": "gpg",
+            "description": "Deprecated: use celorga.crypt.gpgProgram. GPG executable used for automatic :crypt: encryption on save.",
+            "deprecationMessage": "Renamed to celorga.crypt.gpgProgram. org2.crypt.gpgProgram still works when celorga.crypt.gpgProgram is not set."
+          }
         }
       }
-    },
+    ],
     "keybindings": [
       {
         "key": "ctrl+alt+o",
-        "command": "org2.toggleFoldHere",
+        "command": "celorga.toggleFoldHere",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+alt+t",
-        "command": "org2.toggleTodo",
+        "command": "celorga.toggleTodo",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "command": "org2.insertListItemBelow",
+        "command": "celorga.insertListItemBelow",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+alt+d",
-        "command": "org2.debugFoldingRanges",
+        "command": "celorga.debugFoldingRanges",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "j",
         "command": "cursorDown",
-        "when": "editorTextFocus && config.org2.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "k",
         "command": "cursorUp",
-        "when": "editorTextFocus && config.org2.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; a o",
         "mac": "cmd+; a o",
-        "command": "org2.openAgenda",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.openAgenda",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; a r",
         "mac": "cmd+; a r",
-        "command": "org2.refreshAgenda",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.refreshAgenda",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; a f",
         "mac": "cmd+; a f",
-        "command": "org2.pickAgendaFilter",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.pickAgendaFilter",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; a s",
         "mac": "cmd+; a s",
-        "command": "org2.pickAgendaStatusFilter",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.pickAgendaStatusFilter",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r b",
         "mac": "cmd+; r b",
-        "command": "org2.openBacklinks",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.openBacklinks",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r h",
         "mac": "cmd+; r h",
-        "command": "org2.roamShowBacklinksById",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamShowBacklinksById",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r l",
         "mac": "cmd+; r l",
-        "command": "org2.roamCopyIdLink",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamCopyIdLink",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r c",
         "mac": "cmd+; r c",
-        "command": "org2.roamCopyIdLinkById",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamCopyIdLinkById",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r i",
         "mac": "cmd+; r i",
-        "command": "org2.roamInsertBacklink",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamInsertBacklink",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r o",
         "mac": "cmd+; r o",
-        "command": "org2.roamOpenId",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamOpenId",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r p",
         "mac": "cmd+; r p",
-        "command": "org2.roamOpenBacklink",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamOpenBacklink",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r g",
         "mac": "cmd+; r g",
-        "command": "org2.roamOpenBacklinkById",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamOpenBacklinkById",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r t",
         "mac": "cmd+; r t",
-        "command": "org2.roamDailiesGotoToday",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamDailiesGotoToday",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r y",
         "mac": "cmd+; r y",
-        "command": "org2.roamDailiesGotoYesterday",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamDailiesGotoYesterday",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r m",
         "mac": "cmd+; r m",
-        "command": "org2.roamDailiesGotoTomorrow",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamDailiesGotoTomorrow",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r d",
         "mac": "cmd+; r d",
-        "command": "org2.roamDailiesGotoDate",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamDailiesGotoDate",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r n",
         "mac": "cmd+; r n",
-        "command": "org2.roamNodeNew",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamNodeNew",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; r s",
         "mac": "cmd+; r s",
-        "command": "org2.roamDbSync",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.roamDbSync",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t t",
         "mac": "cmd+; t t",
-        "command": "org2.setTodoStatus",
+        "command": "celorga.setTodoStatus",
         "args": {
           "status": "todo"
         },
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t i",
         "mac": "cmd+; t i",
-        "command": "org2.setTodoStatus",
+        "command": "celorga.setTodoStatus",
         "args": {
           "status": "in_progress"
         },
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t d",
         "mac": "cmd+; t d",
-        "command": "org2.setTodoStatus",
+        "command": "celorga.setTodoStatus",
         "args": {
           "status": "done"
         },
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t c",
         "mac": "cmd+; t c",
-        "command": "org2.setTodoStatus",
+        "command": "celorga.setTodoStatus",
         "args": {
           "status": "canceled"
         },
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t a",
         "mac": "cmd+; t a",
-        "command": "org2.assignTodoToAgent",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.assignTodoToAgent",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; t p",
         "mac": "cmd+; t p",
-        "command": "org2.setPriority",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.setPriority",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; 1",
         "mac": "cmd+; 1",
         "command": "editor.foldLevel1",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; 2",
         "mac": "cmd+; 2",
         "command": "editor.foldLevel2",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; 3",
         "mac": "cmd+; 3",
         "command": "editor.foldLevel3",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; 4",
         "mac": "cmd+; 4",
         "command": "editor.foldLevel4",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; s",
         "mac": "cmd+; s",
-        "command": "org2.setScheduled",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.setScheduled",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; s t",
         "mac": "cmd+; s t",
-        "command": "org2.setScheduledToday",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.setScheduledToday",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; d",
         "mac": "cmd+; d",
-        "command": "org2.setDeadline",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.setDeadline",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; d t",
         "mac": "cmd+; d t",
-        "command": "org2.setDeadlineToday",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.setDeadlineToday",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; c e",
         "mac": "cmd+; c e",
-        "command": "org2.cryptEncryptSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.cryptEncryptSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; c d",
         "mac": "cmd+; c d",
-        "command": "org2.cryptDecryptSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.cryptDecryptSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; c r",
         "mac": "cmd+; c r",
-        "command": "org2.cryptReencryptSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.cryptReencryptSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; x",
         "mac": "cmd+; x",
-        "command": "org2.archiveSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.archiveSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; x r",
         "mac": "cmd+; x r",
-        "command": "org2.refileSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.refileSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; c q",
         "mac": "cmd+; c q",
-        "command": "org2.captureQuickEntry",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.captureQuickEntry",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; f c",
         "mac": "cmd+; f c",
-        "command": "org2.formatCurrentFileCheck",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.formatCurrentFileCheck",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; f p",
         "mac": "cmd+; f p",
-        "command": "org2.formatCurrentFilePreviewDiff",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.formatCurrentFilePreviewDiff",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; f a",
         "mac": "cmd+; f a",
-        "command": "org2.formatCurrentFileApply",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.formatCurrentFileApply",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; p h",
         "mac": "cmd+; p h",
-        "command": "org2.exportCurrentFileHtml",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.exportCurrentFileHtml",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; p w",
         "mac": "cmd+; p w",
-        "command": "org2.exportWorkspaceHtml",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.exportWorkspaceHtml",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; g a",
         "mac": "cmd+; g a",
-        "command": "org2.graphAuditWorkspace",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.graphAuditWorkspace",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; i v",
         "mac": "cmd+; i v",
-        "command": "org2.aiReviewWorkspace",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.aiReviewWorkspace",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; i r",
         "mac": "cmd+; i r",
-        "command": "org2.aiMarkReviewed",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.aiMarkReviewed",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; i x",
         "mac": "cmd+; i x",
-        "command": "org2.aiMarkRejected",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.aiMarkRejected",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; i d",
         "mac": "cmd+; i d",
-        "command": "org2.aiMarkDeferred",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.aiMarkDeferred",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; h left",
         "mac": "cmd+; h left",
-        "command": "org2.promoteSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.promoteSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; h right",
         "mac": "cmd+; h right",
-        "command": "org2.demoteSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.demoteSubtree",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; h up",
         "mac": "cmd+; h up",
-        "command": "org2.moveSubtreeUp",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.moveSubtreeUp",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; h down",
         "mac": "cmd+; h down",
-        "command": "org2.moveSubtreeDown",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+        "command": "celorga.moveSubtreeDown",
+        "when": "editorTextFocus && celorga.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
   },
@@ -1675,6 +3087,7 @@
   "files": [
     "extension.js",
     "cliExecutable.js",
+    "brandConfig.js",
     "agendaArgs.js",
     "agendaTreeModel.js",
     "agendaSelection.js",

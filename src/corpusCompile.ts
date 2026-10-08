@@ -13,6 +13,7 @@ import {
   type CheckboxProgress,
   type CheckboxProgressIssue,
 } from "./checkboxProgress.js";
+import { brandProperty, isBrandName } from "./brandNames.js";
 
 export { extractCheckboxProgress, extractOwnedCheckboxIssues } from "./checkboxProgress.js";
 export type { CheckboxProgress, CheckboxProgressIssue } from "./checkboxProgress.js";
@@ -463,7 +464,7 @@ function normalizePredicate(raw: string): string {
 }
 
 function nodeEntityType(node: CompiledCorpusNode): string | undefined {
-  const propertyType = normalizeEntityType(node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE);
+  const propertyType = normalizeEntityType(brandProperty(node.properties, "ORG2_ENTITY_TYPE") || node.properties.ENTITY_TYPE);
   if (propertyType) return propertyType;
   const typedTag = node.tags.find((tag) => /^type[-_:]/i.test(tag));
   return typedTag ? normalizeEntityType(typedTag.replace(/^type[-_:]/i, "")) : undefined;
@@ -639,8 +640,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const id = keywordId || drawerId;
     const aliases = Array.from(new Set([...parseKeywordAliases(lines, 80), ...parseAliasTokens(fileDrawer?.properties.ROAM_ALIASES || "")]));
     const properties = fileDrawer?.properties || {};
-    if (!properties.ORG2_ENTITY_TYPE && !properties.ENTITY_TYPE
-        && /^#\+ORG2_KIND:\s*project\s*$/im.test(raw.slice(0, 8192))) {
+    if (!brandProperty(properties, "ORG2_ENTITY_TYPE") && !properties.ENTITY_TYPE
+        && /^#\+(?:CELORGA|ORG2)_KIND:\s*project\s*$/im.test(raw.slice(0, 8192))) {
       try {
         // Reuse project semantics so examples inside source blocks are not entities.
         parseProjectNote(rootDir, filePath, raw);
@@ -801,7 +802,7 @@ function buildEntityIndex(nodes: CompiledCorpusNode[]): CompiledCorpusEntity[] {
       entityType: node.entityType!,
       file: node.file,
       line: node.sourceRange.startLine,
-      source: ((node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
+      source: ((brandProperty(node.properties, "ORG2_ENTITY_TYPE") || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.title.localeCompare(b.title));
 }
@@ -921,9 +922,9 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
   };
   for (const node of nodes) {
     inferLinkedTextAdvisorRelationsForNode(relations, node, byId, labels);
-    const explicitValues = Object.entries(node.effectiveProperties || node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
+    const explicitValues = Object.entries(node.effectiveProperties || node.properties).filter(([key]) => isBrandName(key, "ORG2_RELATION") || /^(?:CELORGA|ORG2)_RELATION_/.test(key));
     for (const [key, value] of explicitValues) {
-      const suffix = key === "ORG2_RELATION" ? "" : key.slice("ORG2_RELATION_".length);
+      const suffix = isBrandName(key, "ORG2_RELATION") ? "" : key.replace(/^(?:CELORGA|ORG2)_RELATION_/, "");
       const parts = String(value || "").trim().split(/\s+/);
       const predicate = normalizePredicate(suffix || parts.shift() || "");
       if (!predicate || parts.length === 0) continue;
@@ -1037,7 +1038,7 @@ function buildEntityProfiles(nodes: CompiledCorpusNode[], entities: CompiledCorp
     const factBuckets = new Map<string, Map<string, Array<{ sourceKey: string; file: string; line: number }>>>();
     for (const node of groupNodes) {
       for (const [key, rawValue] of Object.entries(node.effectiveProperties || node.properties)) {
-        if (["ID", "ROAM_ALIASES", "ORG2_ENTITY_TYPE", "ENTITY_TYPE"].includes(key)) continue;
+        if (["ID", "ROAM_ALIASES", "ORG2_ENTITY_TYPE", "CELORGA_ENTITY_TYPE", "ENTITY_TYPE"].includes(key)) continue;
         const value = String(rawValue || "").trim();
         if (!value) continue;
         const values = factBuckets.get(key) || new Map();

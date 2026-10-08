@@ -8,6 +8,7 @@ import { guardedContentRevision, guardedWriteFile } from "./guardedFile.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { isPlanningLine } from "./sourceLines.js";
 import type { Node } from "./ast.js";
+import { schemaMatches } from "./brandNames.js";
 
 export interface BrowserClip {
   schema: "org2:browser-clip:v1";
@@ -23,7 +24,7 @@ export interface BrowserClip {
 export function parseBrowserClip(value: unknown): BrowserClip {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a browser clip object");
   const clip = value as Record<string, unknown>;
-  if (clip.schema !== "org2:browser-clip:v1") throw new Error("Unsupported browser clip schema");
+  if (!schemaMatches(clip.schema, "org2:browser-clip:v1")) throw new Error("Unsupported browser clip schema");
   for (const key of ["url", "title", "capturedAt", "content"] as const) {
     if (typeof clip[key] !== "string" || !(clip[key] as string).trim()) throw new Error(`Browser clip ${key} is required`);
   }

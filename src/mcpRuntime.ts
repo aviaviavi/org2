@@ -17,6 +17,7 @@ import {
 import { defaultCorpusCachePath } from "./indexPaths.js";
 import { safeIdentifier } from "./safeIdentifier.js";
 import { queueAIChatInboxMessage } from "./aiChatInbox.js";
+import { celorgaToolName, legacyToolName, stateDir } from "./brandNames.js";
 
 type JsonObject = Record<string, unknown>;
 type JsonRpcId = string | number | null;
@@ -185,7 +186,7 @@ function discoveryEnvironment(client: McpClientDefinition): NodeJS.ProcessEnv {
   return environment;
 }
 
-export function mcpClientConfigPath(root: string): string { return path.join(path.resolve(root), ".org2", "mcp-clients.json"); }
+export function mcpClientConfigPath(root: string): string { return stateDir(path.resolve(root), "mcp-clients.json"); }
 export function loadMcpClients(root: string): McpClientDefinition[] {
   const file = mcpClientConfigPath(root);
   if (!fs.existsSync(file)) return [];
@@ -370,7 +371,12 @@ function retrievalProperties() {
   };
 }
 
+// Tools are advertised as celorga_X; calls with the legacy org2_X name still work.
 function mcpTools(readOnly: boolean) {
+  return legacyMcpTools(readOnly).map((tool) => ({ ...tool, name: celorgaToolName(tool.name) }));
+}
+
+function legacyMcpTools(readOnly: boolean) {
   const readTools = [
     {
       name: "org2_search",
@@ -411,8 +417,8 @@ async function handle(root: string, request: JsonRpcRequest, options: McpServerO
     capabilities: { resources: { listChanged: false }, tools: { listChanged: false }, prompts: { listChanged: false } },
     serverInfo: { name: "org2", version: "0.3.0" },
     instructions: readOnly
-      ? "Read-only Org2 corpus. Search with org2_search, fetch stable IDs with org2_fetch, and assemble cited context with org2_context. Results are bounded and cite canonical source files and line ranges. Do not claim corpus facts without returned evidence."
-      : "Search with org2_search before broad resource reads, fetch stable IDs with org2_fetch, and use org2_context for bounded cited context. Corpus source is canonical. Run and thread tools write immediately; use them only when the user requested the action.",
+      ? "Read-only Org2 corpus. Search with celorga_search, fetch stable IDs with celorga_fetch, and assemble cited context with celorga_context. Results are bounded and cite canonical source files and line ranges. Do not claim corpus facts without returned evidence."
+      : "Search with celorga_search before broad resource reads, fetch stable IDs with celorga_fetch, and use celorga_context for bounded cited context. Corpus source is canonical. Run and thread tools write immediately; use them only when the user requested the action.",
   });
   if (request.method === "notifications/initialized") return null;
   if (request.method === "resources/list") {
@@ -440,7 +446,7 @@ async function handle(root: string, request: JsonRpcRequest, options: McpServerO
   }
   if (request.method === "tools/list") return result({ tools: mcpTools(readOnly) });
   if (request.method === "tools/call") {
-    const name = request.params.name;
+    const name = legacyToolName(String(request.params.name ?? ""));
     const args = jsonObject(request.params.arguments) || {};
     if (name === "org2_search") return result(toolResult(retrievalPayload(root, "search", args)));
     if (name === "org2_fetch") return result(toolResult(retrievalPayload(root, "fetch", args)));
@@ -488,7 +494,7 @@ async function handle(root: string, request: JsonRpcRequest, options: McpServerO
       saveAgentRun(root, run, { expectedRevision: snapshot.revision, rejectSourceDrift: true });
       return result({ content: [{ type: "text", text: JSON.stringify(run, null, 2) }] });
     }
-    throw new Error(`unknown tool: ${name}`);
+    throw new Error(`unknown tool: ${String(request.params.name ?? "")}`);
   }
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `method not found: ${request.method}` } };
 }

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const AI_CHAT_OPERATION_SCHEMA = "org2:ai-chat-operation:v1";
 export const AI_CHAT_ENVELOPE_MAX_BYTES = 512_000;
@@ -66,7 +67,7 @@ export interface QueueAIChatOperationResult {
 let lastOperationCreatedAtMilliseconds = 0;
 
 export function aiChatInboxDirectory(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "ai-chat-inbox");
+  return stateDir(path.resolve(corpusRoot), "ai-chat-inbox");
 }
 
 export function aiChatOperationDirectory(corpusRoot: string): string {
@@ -107,7 +108,7 @@ function validUUID(value: unknown): value is string {
 
 function parseAIChatOperation(value: unknown, file: string): AIChatOperation {
   if (!isRecord(value)
-      || value.schema !== AI_CHAT_OPERATION_SCHEMA
+      || !schemaMatches(value.schema, AI_CHAT_OPERATION_SCHEMA)
       || !validUUID(value.id)
       || !validDate(value.createdAt)) {
     throw new Error(`invalid AI chat operation envelope: ${file}`);

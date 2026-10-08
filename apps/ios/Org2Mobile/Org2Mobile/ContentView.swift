@@ -83,7 +83,7 @@ private struct WorkspaceTabs: View {
 
   @State private var selection: WorkspaceTab = .initialSelection
   @State private var route: MobileWorkspaceRoute = .workspace
-  @State private var isSidebarPresented = ProcessInfo.processInfo.environment["ORG2_DEBUG_SHOW_SIDEBAR"] == "1"
+  @State private var isSidebarPresented = CelorgaNames.environment("ORG2_DEBUG_SHOW_SIDEBAR") == "1"
 
   var body: some View {
     ZStack(alignment: .leading) {
@@ -299,7 +299,7 @@ private enum WorkspaceTab: Hashable {
 
   static var initialSelection: WorkspaceTab {
     #if DEBUG
-    switch ProcessInfo.processInfo.environment["ORG2_DEBUG_INITIAL_TAB"]?.lowercased() {
+    switch CelorgaNames.environment("ORG2_DEBUG_INITIAL_TAB")?.lowercased() {
     case "agenda":
       return .agenda
     case "approvals":

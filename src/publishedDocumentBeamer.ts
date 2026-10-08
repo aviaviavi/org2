@@ -171,7 +171,7 @@ function normalizeNode(node: Node, imageDirectory?: string): Node[] {
       return [normalizeListItem(node, imageDirectory)];
     case "KeywordLine": {
       const key = node.keyRaw.trim().toUpperCase();
-      const value = ["BEAMER_FRAME_LEVEL", "ORG2_SLIDE_LEVEL", "SLIDE_LEVEL"].includes(key)
+      const value = ["BEAMER_FRAME_LEVEL", "CELORGA_SLIDE_LEVEL", "ORG2_SLIDE_LEVEL", "SLIDE_LEVEL"].includes(key)
         ? node.valueRaw
         : safeMetadataText(node.valueRaw);
       return [{ ...node, raw: `#+${key}: ${value}`, keyRaw: key, valueRaw: value }];

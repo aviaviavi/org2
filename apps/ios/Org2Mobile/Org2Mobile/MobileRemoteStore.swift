@@ -573,7 +573,7 @@ final class MobileRemoteStore: ObservableObject {
 
   private func prepareThreadNotifications() async {
     #if DEBUG
-    if ProcessInfo.processInfo.environment["ORG2_DEBUG_SUPPRESS_NOTIFICATIONS"] == "1" {
+    if CelorgaNames.environment("ORG2_DEBUG_SUPPRESS_NOTIFICATIONS") == "1" {
       return
     }
     #endif

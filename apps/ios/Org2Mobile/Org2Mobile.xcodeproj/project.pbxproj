@@ -14,6 +14,7 @@
 		0A1001012C20000000000001 /* Org2MobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002012C20000000000001 /* Org2MobileApp.swift */; };
 		0A1001022C20000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002022C20000000000001 /* ContentView.swift */; };
 		0A1001032C20000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002032C20000000000001 /* Models.swift */; };
+		CE10A0012C20000000000001 /* CelorgaNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE10A0022C20000000000001 /* CelorgaNames.swift */; };
 		0A1001042C20000000000001 /* OrgParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002042C20000000000001 /* OrgParser.swift */; };
 		0A1001052C20000000000001 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002052C20000000000001 /* CorpusStore.swift */; };
 		0A1001062C20000000000001 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002062C20000000000001 /* DocumentPicker.swift */; };
@@ -66,6 +67,7 @@
 		0A1002012C20000000000001 /* Org2MobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Org2MobileApp.swift; sourceTree = "<group>"; };
 		0A1002022C20000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		0A1002032C20000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		CE10A0022C20000000000001 /* CelorgaNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelorgaNames.swift; sourceTree = "<group>"; };
 		0A1002042C20000000000001 /* OrgParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgParser.swift; sourceTree = "<group>"; };
 		0A1002052C20000000000001 /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		0A1002062C20000000000001 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 				0A1002012C20000000000001 /* Org2MobileApp.swift */,
 				0A1002022C20000000000001 /* ContentView.swift */,
 				0A1002032C20000000000001 /* Models.swift */,
+				CE10A0022C20000000000001 /* CelorgaNames.swift */,
 				0A1002092C20000000000001 /* MobileCaptureSupport.swift */,
 				0A10020F2C20000000000001 /* MobileRemoteModels.swift */,
 				FA10020F2C20000000000001 /* MobileNotificationRouting.swift */,
@@ -270,6 +273,7 @@
 				0A1001012C20000000000001 /* Org2MobileApp.swift in Sources */,
 				0A1001022C20000000000001 /* ContentView.swift in Sources */,
 				0A1001032C20000000000001 /* Models.swift in Sources */,
+				CE10A0012C20000000000001 /* CelorgaNames.swift in Sources */,
 				0A1001092C20000000000001 /* MobileCaptureSupport.swift in Sources */,
 				0A10010D2C20000000000001 /* MobileRemoteModels.swift in Sources */,
 				FA10010D2C20000000000001 /* MobileNotificationRouting.swift in Sources */,

@@ -1,7 +1,7 @@
 {
   "id": "org2-lifecycle",
-  "name": "Org2 Lifecycle",
-  "description": "Synchronizes substantial OpenClaw executions into Org2 Run Center.",
+  "name": "Celorga Lifecycle",
+  "description": "Synchronizes substantial OpenClaw executions into Celorga Run Center.",
   "activation": { "onStartup": true },
   "configSchema": {
     "type": "object",

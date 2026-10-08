@@ -91,12 +91,12 @@ export function updateArtifactReviewStatusInText(raw: string, status: string): s
   if (!cleanStatus) throw new Error("artifact review status is required");
   let updated = raw;
   let found = false;
-  if (/^#\+ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
-    updated = updated.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+$/gim, `#+ORG2_REVIEW_STATUS: ${cleanStatus}`);
+  if (/^#\+(?:CELORGA|ORG2)_REVIEW_STATUS:\s*.+$/im.test(raw)) {
+    updated = updated.replace(/^#\+((?:CELORGA|ORG2)_REVIEW_STATUS):\s*.+$/gim, (_match, key: string) => `#+${key}: ${cleanStatus}`);
     found = true;
   }
-  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
-    updated = updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${cleanStatus}`);
+  if (/^:(?:CELORGA|ORG2)_REVIEW_STATUS:\s*.+$/im.test(raw)) {
+    updated = updated.replace(/^:((?:CELORGA|ORG2)_REVIEW_STATUS):\s*.+$/gim, (_match, key: string) => `:${key}: ${cleanStatus}`);
     found = true;
   }
   if (found) return updated;

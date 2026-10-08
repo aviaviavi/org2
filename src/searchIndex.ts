@@ -5,6 +5,7 @@ import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
 import { computeSubtreeRange } from "./sourceLines.js";
 import { documentTodoSequences, todoSequencesForFile, todoConfigurationKey, todoKeywordInWorkflow, type TodoSequence, isActiveTodoKeyword, isTerminalTodoKeyword } from "./todo.js";
+import { schemaMatches } from "./brandNames.js";
 
 export { defaultSearchIndexPath };
 
@@ -266,7 +267,7 @@ export function updateSearchIndex(options: {
     return null;
   }
   if (
-    existing.$schema !== "org2:search-index:v1" ||
+    !schemaMatches(existing.$schema, "org2:search-index:v1") ||
     existing.version !== 1 ||
     existing.todoWorkflowVersion !== 1 ||
     path.resolve(existing.rootDir) !== rootDir ||
@@ -338,7 +339,7 @@ export function loadFreshSearchIndex(options: {
     return null;
   }
 
-  if (parsed.$schema !== "org2:search-index:v1" || parsed.version !== 1) return null;
+  if (!schemaMatches(parsed.$schema, "org2:search-index:v1") || parsed.version !== 1) return null;
   if (path.resolve(parsed.rootDir) !== rootDir) return null;
   if (parsed.recursive !== options.recursive) return null;
   if (parsed.includeArchives !== options.includeArchives) return null;
@@ -374,7 +375,7 @@ export function loadCompatibleSearchIndex(options: {
   } catch {
     return null;
   }
-  if (index.$schema !== "org2:search-index:v1" || index.version !== 1) return null;
+  if (!schemaMatches(index.$schema, "org2:search-index:v1") || index.version !== 1) return null;
   if (path.resolve(index.rootDir) !== rootDir) return null;
   if (index.recursive !== options.recursive || index.includeArchives !== options.includeArchives) return null;
   return { index, path: indexPath };

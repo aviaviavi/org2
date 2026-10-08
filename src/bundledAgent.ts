@@ -1,5 +1,6 @@
 // A foreground executor. OpenOrg owns tools, permissions, edits and history;
 // this process only calls the configured model and requests tools over stdio.
+import { legacyToolName } from "./brandNames.js";
 export type ObjectValue = Record<string, unknown>;
 export interface AgentTool {
   name: string;
@@ -89,7 +90,7 @@ export async function runBundledAgent(
   if (adapter !== "ollama" && !request.apiKey?.trim()) throw new Error("This provider requires an API key.");
   const maxSteps = request.maxSteps ?? 12;
   if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 24) throw new Error("Invalid step limit.");
-  if (!Array.isArray(request.tools) || request.tools.some(tool => !ALLOWED_TOOLS.has(tool.name))) {
+  if (!Array.isArray(request.tools) || request.tools.some(tool => !ALLOWED_TOOLS.has(legacyToolName(tool.name)))) {
     throw new Error("Unsupported bundled agent tool.");
   }
   const allowed = new Set(request.tools.map(tool => tool.name));

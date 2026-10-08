@@ -1,0 +1,69 @@
+#+TITLE: Upgrading from OpenOrg and Org2
+#+DESCRIPTION: How names from OpenOrg and Org2 releases map to Celorga, and how long the old names keep working.
+
+Celorga was previously released as *OpenOrg* (the Mac app) and *Org2* (the runtime, CLI, and file profile). Both are now Celorga. This page is for people upgrading from those releases. The rest of this site uses only the Celorga names.
+
+* Nothing breaks when you upgrade
+
+- The old names keep working for several releases. There is no hard cutover, and you don't need to rename anything to upgrade.
+- When both spellings are present, Celorga prefers the new one: =celorga.json= wins over =org2.json= in the same folder, a =:CELORGA_X:= property wins over =:ORG2_X:=, and a =CELORGA_X= environment variable wins over =ORG2_X=.
+- Until a workspace is migrated, Celorga keeps writing the old names in it, so devices still running an earlier release keep working on the same files.
+- A later =celorga migrate-names= command will preview and then rewrite an existing workspace to the new names: property keys, =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, and record types. It is not available yet. New workspaces will start with the new names.
+
+* Old and new names
+
+| What | Before | Celorga |
+|------+--------+---------|
+| Mac app | OpenOrg | Celorga. The installed app file is still =OpenOrg.app=, so updates install in place. |
+| Runtime, CLI, and file profile | Org2 | Celorga |
+| Commands | =org2=, =org2-lsp= | =celorga=, =celorga-lsp=. The old commands remain permanent aliases. |
+| npm package | =@aviaviavi/org2= | =celorga= |
+| Website | =openorg.so=, =org2.avi.press= | =celorga.io=. The old hosts redirect. |
+| GitHub repository | =aviaviavi/org2= | =aviaviavi/celorga=. GitHub redirects the old URLs. |
+| Mac disk images | =OpenOrg.dmg=, =OpenOrg-Intel.dmg= | =Celorga.dmg=, =Celorga-Intel.dmg= from the first release after the rename |
+| Documents | =.org2= files | ordinary =.org= files. Existing =.org2= files stay fully supported. |
+| Workspace configuration | =org2.json= | =celorga.json= |
+| Workspace state directory | =.org2/= (for example =.org2/runs/=, =.org2/ai-chat-inbox/=) | =.celorga/= (=.celorga/runs/=, =.celorga/ai-chat-inbox/=) |
+| Properties and keywords | =:ORG2_X:=, =#+ORG2_X:= | =:CELORGA_X:=, =#+CELORGA_X:= |
+| Environment variables | =ORG2_X= | =CELORGA_X= |
+| Record types | =org2:KIND:vN=, such as =org2:agent-run:v1= | =celorga:KIND:vN=, such as =celorga:agent-run:v1= |
+| MCP tools | =org2_search=, =org2_fetch=, =org2_context=, =org2_thread_post=, ... | =celorga_search=, =celorga_fetch=, =celorga_context=, =celorga_thread_post=, ... |
+| MCP server name in client examples | =org2=, =[mcp_servers.openorg]= | =celorga=, =[mcp_servers.celorga]= |
+| VS Code commands and settings | =org2.X= | =celorga.X=. The Marketplace listing keeps its original ID, =AviPress.org2-vscode=. |
+| Vim help | =:help org2= | =:help celorga= |
+| AI job manifest version | ="schemaVersion": "org2-ai-job/v1"= | ="schemaVersion": "celorga-ai-job/v1"= |
+| Plugin package manifest and engine key | =org2-plugin.json=, ="engines": { "org2": ... }= | =celorga-plugin.json=, ="engines": { "celorga": ... }= |
+| Chart style variables and class | =--org2-chart-*=, =.org2-chart= | =--celorga-chart-*=, =.celorga-chart= |
+
+Listings such as MCP =tools/list= show the Celorga names, but clients that call the old tool names keep working.
+
+* Names that keep their old spelling for now
+
+These identifiers have no Celorga spelling yet. Use them as written.
+
+| What | Current name |
+|------+--------------|
+| Installed Mac app and bundle identifier | =OpenOrg.app=, =org.org2.workspace= |
+| Artifact metadata and ingestion format versions | =org2-artifact-metadata/v1=, =org2-ingestion/v1= |
+| Corpus plugin lock file | =org2.plugins.lock.json= |
+| Machine-wide plugin store and source index bindings | =~/.org2/plugins/store/= (override with =CELORGA_PLUGIN_HOME=), =~/.org2/index= (override with =CELORGA_INDEX_HOME=) |
+| Saved view definition files | =views/ID.org2-view.json= |
+| Browser clip files | =.org2clip= |
+| JSON Canvas stable reference field | =org2Ref= |
+| MCP resource URIs | =org2://corpus/PATH= |
+| General agent skill | =skills/org2/SKILL.md= in the npm package; installed at =.agents/skills/org2/SKILL.md= |
+| OpenClaw lifecycle plugin ID and node commands | =org2-lifecycle=; =org2.workspace.read=, =org2.workspace.patch.preview=, =org2.workspace.patch.apply= |
+| Files Celorga generates for runs, ledger accounts, and workflows | the =.org2= extension |
+| Headless server configuration | =~/.local/state/openorg/server.json= |
+| Syncthing rescan hints | =defaults write org.org2.workspace OpenOrgSyncthingScanHints -bool false= turns them off |
+| Repository paths | =editors/vscode-org2/=, =editors/vim-org2/=, =apps/ios/Org2Mobile/= |
+
+* For contributors
+
+| What | Current name |
+|------+--------------|
+| Developer preview app | =OpenOrg Preview.app= in =~/Applications= |
+| Release build cache | =~/Library/Caches/OpenOrg/release-build/=, overridden by =OPENORG_RELEASE_BUILD_CACHE= |
+| Native server worker product | =OpenOrgServer= |
+| Bundled Google OAuth client properties | =OpenOrgGoogleOAuthClientID=, =OpenOrgGoogleOAuthClientSecret= |
+| npm script that runs the checkout's CLI | =npm run org2 -- ...= (or =node dist/cli.js ...=) |

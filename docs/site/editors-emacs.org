@@ -16,7 +16,7 @@ Run Celorga commands from a shell, =compile=, =async-shell-command=, or your own
 celorga agenda --dir ~/notes --recursive
 celorga fmt --dir ~/notes --recursive --check
 celorga lint --dir ~/notes --recursive
-celorga publish docs-site --config org2.json
+celorga publish docs-site --config celorga.json
 #+end_src
 
 Mutating commands preview by default and require =--apply= to write files, which makes them reasonable to wire into custom Emacs commands once you are comfortable with the output.

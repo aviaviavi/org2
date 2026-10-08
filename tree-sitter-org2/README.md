@@ -1,6 +1,6 @@
 # tree-sitter-org2
 
-A minimal Tree-sitter grammar scaffold for **Org2**.
+A minimal Tree-sitter grammar scaffold for **Celorga** (formerly Org2). The grammar, parser, and Neovim language keep the name `org2` for compatibility with existing editor configurations.
 
 ## Status
 

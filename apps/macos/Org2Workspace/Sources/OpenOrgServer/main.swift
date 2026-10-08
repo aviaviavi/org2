@@ -25,6 +25,7 @@ private struct ServerConfiguration: Decodable {
 struct OpenOrgServer {
   @MainActor
   static func main() async {
+    CelorgaNames.mirrorCelorgaEnvironment()
     do {
       if CommandLine.arguments.dropFirst().first == "--repair-transcript" {
         try await repairTranscript()
@@ -45,17 +46,18 @@ struct OpenOrgServer {
       }
       let data = try Data(contentsOf: configURL)
       let config = try JSONDecoder().decode(ServerConfiguration.self, from: data)
-      guard config.schema == "org2:server-config:v1",
+      guard CelorgaNames.schemaMatches(config.schema, "org2:server-config:v1"),
             !config.hostRef.isEmpty,
             MobileRemoteCoordinator.isTailscaleIPv4(config.bindHost),
             config.port > 0,
-            FileManager.default.fileExists(atPath: config.corpusRoot + "/org2.json") else {
+            CelorgaNames.hasConfigFile(in: URL(fileURLWithPath: config.corpusRoot)) else {
         throw CocoaError(.fileReadCorruptFile)
       }
       // The inode is kept across crashes; the OS releases this advisory lock.
       // This also protects against two configurations selecting the same corpus.
-      let lockPath = config.corpusRoot + "/.org2/openorg-server.lock"
-      try FileManager.default.createDirectory(atPath: config.corpusRoot + "/.org2", withIntermediateDirectories: true)
+      let corpusStateDirectory = CelorgaNames.stateDirectory(corpusRoot: URL(fileURLWithPath: config.corpusRoot))
+      let lockPath = corpusStateDirectory.appendingPathComponent("openorg-server.lock").path
+      try FileManager.default.createDirectory(at: corpusStateDirectory, withIntermediateDirectories: true)
       let lock = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
       guard lock >= 0, flock(lock, LOCK_EX | LOCK_NB) == 0 else {
         throw NSError(domain: "OpenOrgServer", code: 2, userInfo: [NSLocalizedDescriptionKey: "A server already owns this corpus"])

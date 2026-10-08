@@ -8,6 +8,7 @@ import { parseOrgToCanonicalAst } from "./parser.js";
 import type { Node } from "./ast.js";
 import { isPlanningLine } from "./sourceLines.js";
 import { isTerminalTodoKeyword } from "./todo.js";
+import { brandProperty, configFilePath, isBrandName, schemaMatches } from "./brandNames.js";
 
 export const PROPERTY_VIEW_SCHEMA = "org2:property-view:v1" as const;
 export type PropertyViewFilter = { field: string; operator: "is" | "isNot" | "contains" | "matches" | "exists" | "missing" | "gt" | "lt" | "on" | "before" | "after" | "active" | "terminal"; value?: string };
@@ -122,7 +123,7 @@ function viewID(value: unknown): string {
   return value;
 }
 export function parsePropertyView(value: unknown): PropertyViewDefinition {
-  if (!record(value) || value.schema !== PROPERTY_VIEW_SCHEMA) throw new Error(`Expected ${PROPERTY_VIEW_SCHEMA}`);
+  if (!record(value) || !schemaMatches(value.schema, PROPERTY_VIEW_SCHEMA)) throw new Error(`Expected ${PROPERTY_VIEW_SCHEMA}`);
   const id = viewID(value.id);
   const title = oneLine(value.title, "Title").trim();
   if (!title) throw new Error("View title is required");
@@ -340,7 +341,7 @@ function compare(a: string, b: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 export function editablePropertyViewField(field: string): boolean {
-  return !builtins.includes(field) && !["ID", "CUSTOM_ID", "PROPERTIES", "END"].includes(field) && !field.startsWith("ORG2_");
+  return !builtins.includes(field) && !["ID", "CUSTOM_ID", "PROPERTIES", "END"].includes(field) && !field.startsWith("ORG2_") && !field.startsWith("CELORGA_");
 }
 /** The corpus index is optimized for broad scans. Use canonical source ranges to
  * exclude examples/fences from editable views and retain only semantic drawers. */
@@ -354,9 +355,9 @@ function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): P
   const drawerProperties = (node: Node | undefined): Record<string, string> => node?.type === "PropertyDrawer"
     ? Object.fromEntries(node.properties.map(p => [p.key.toUpperCase(), p.value.trim()])) : {};
   const properties = drawerProperties(preamble.find(n => n.type === "PropertyDrawer"));
-  const keyword = (key: string) => preamble.find(n => n.type === "KeywordLine" && n.keyRaw.toUpperCase() === key);
+  const keyword = (key: string) => preamble.find(n => n.type === "KeywordLine" && isBrandName(n.keyRaw.toUpperCase(), key));
   const keywordValue = (key: string) => { const node = keyword(key); return node?.type === "KeywordLine" ? node.valueRaw.trim() : ""; };
-  if (keywordValue("ORG2_KIND") === "project" && !properties.ORG2_ENTITY_TYPE && !properties.ENTITY_TYPE && fileNode.properties.ORG2_ENTITY_TYPE === "project") properties.ORG2_ENTITY_TYPE = "project";
+  if (keywordValue("ORG2_KIND") === "project" && !brandProperty(properties, "ORG2_ENTITY_TYPE") && !properties.ENTITY_TYPE && brandProperty(fileNode.properties, "ORG2_ENTITY_TYPE") === "project") properties.ORG2_ENTITY_TYPE = "project";
   const fileEnd = firstHeading < 0 ? lines.length : ((document.children[firstHeading] as RangedNode).sourceRange?.startLine ?? 1) - 1;
   const documentTitle = keywordValue("TITLE") || path.basename(fileNode.file).replace(/\.(org2|org)$/i, "");
   const result: PropertyViewNode[] = [{ ...fileNode,
@@ -387,7 +388,7 @@ function canonicalPropertyViewNodes(nodes: CompiledCorpusNode[], raw: string): P
 export function queryPropertyView(root: string, value: unknown, options: PropertyViewQueryOptions = {}) {
   const definition = parsePropertyView(value);
   const base = fs.realpathSync(root);
-  const configFile = path.join(base, "org2.json");
+  const configFile = configFilePath(base);
   const config = fs.existsSync(configFile) ? loadConfig(configFile) : {};
   const discoveredFiles = resolveFilesFromDir(base, ["**/*.org", "**/*.org2"], ["node_modules", "node_modules/**", ...(config.ignorePatterns ?? [])], true);
   // Scope before compiling. A narrow saved view should not pay the cost of

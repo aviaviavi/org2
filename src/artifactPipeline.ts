@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentWorkflowTemplate } from "./agentWorkflow.js";
+import { stateDir } from "./brandNames.js";
 
 export const ORG2_ARTIFACT_GRAPH_SCHEMA = "org2:artifact-graph:v1" as const;
 
@@ -108,7 +109,7 @@ export function loadArtifactDeclarations(file: string): Array<Omit<ArtifactNode,
 }
 
 export function saveArtifactGraph(root: string, graph: ArtifactGraph): string {
-  const target = path.join(path.resolve(root), ".org2", "artifact-graph.json");
+  const target = stateDir(path.resolve(root), "artifact-graph.json");
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
   return target;

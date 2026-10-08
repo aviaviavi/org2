@@ -988,8 +988,8 @@ try {
   await serving;
   const messages = response.trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(messages[0].result.serverInfo.name, "org2");
-  assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_run_create"), true);
-  assert.equal(messages[1].result.tools.some((tool) => tool.name === "org2_agent_profile_resolve"), true);
+  assert.equal(messages[1].result.tools.some((tool) => tool.name === "celorga_run_create"), true);
+  assert.equal(messages[1].result.tools.some((tool) => tool.name === "celorga_agent_profile_resolve"), true);
   assert.equal(messages[2].result.resources.some((resource) => resource.name === "notes/outside-corpus.org2"), false);
   const resourceNames = messages[2].result.resources.map((resource) => resource.name);
   assert.deepEqual(resourceNames, [...resourceNames].sort(), "MCP resources should use a stable lexical order");
@@ -1036,7 +1036,7 @@ try {
     args: [path.resolve("dist/cli.js"), "mcp", "serve", "--dir", root],
   }]);
   const discovery = discoverMcpClient(root, "org2-self", { snapshotId: "org2-self-capabilities", now: "2026-07-14T00:00:00Z" });
-  assert.equal(discovery.capabilities.tools.some((tool) => tool.name === "org2_run_list"), true);
+  assert.equal(discovery.capabilities.tools.some((tool) => tool.name === "celorga_run_list"), true);
   assert.equal(fs.existsSync(discovery.snapshot), true);
 
   const allowedEnvironmentVariable = "ORG2_MCP_DISCOVERY_ALLOWED_TEST";

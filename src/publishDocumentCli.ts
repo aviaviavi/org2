@@ -20,6 +20,7 @@ import {
   compilePublishedBeamerPdf,
   preparePublishedBeamer,
 } from "./publishedDocumentBeamer.js";
+import { brandEnv } from "./brandNames.js";
 
 type PublishDestination = "web" | "beamer-pdf" | GoogleWorkspaceDestination;
 type OutputFormat = "text" | "json";
@@ -294,7 +295,7 @@ export async function runPublishDocumentCommand(args: string[]): Promise<boolean
     }
   } else {
     if (arguments_.apply) {
-      const accessToken = String(process.env[arguments_.accessTokenEnv] || "").trim();
+      const accessToken = String(brandEnv(arguments_.accessTokenEnv) || "").trim();
       if (!accessToken) throw new Error(`${googleDestinationLabel(arguments_.destination)} publishing requires ${arguments_.accessTokenEnv} in the environment`);
       destination = await publishToGoogleWorkspace(prepared.publication, arguments_.destination, {
         accessToken,

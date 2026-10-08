@@ -67,7 +67,7 @@ try {
   const tools = (await listed.json()).result.tools;
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ["org2_search", "org2_fetch", "org2_context", "org2_agent_profile_resolve", "org2_run_list"],
+    ["celorga_search", "celorga_fetch", "celorga_context", "celorga_agent_profile_resolve", "celorga_run_list"],
   );
   assert.equal(tools.every((tool) => tool.annotations.readOnlyHint === true), true);
 
@@ -92,7 +92,7 @@ try {
     jsonrpc: "2.0",
     id: 5,
     method: "tools/call",
-    params: { name: "org2_search", arguments: { query: "staged rollout", limit: 5, maxChars: 4_000 } },
+    params: { name: "celorga_search", arguments: { query: "staged rollout", limit: 5, maxChars: 4_000 } },
   });
   const searchResult = (await searched.json()).result.structuredContent;
   assert.equal(searchResult.action, "search");
@@ -103,6 +103,7 @@ try {
     jsonrpc: "2.0",
     id: 6,
     method: "tools/call",
+    // Legacy org2_X tool names keep working alongside the advertised celorga_X names.
     params: { name: "org2_fetch", arguments: { id: "billing-migration", include: ["sources"] } },
   });
   const fetchResult = (await fetched.json()).result.structuredContent;

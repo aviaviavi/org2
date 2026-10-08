@@ -28,7 +28,7 @@ Run the repair-style passes intentionally, review their diffs, then commit the r
 #+begin_src sh
 celorga fmt --dir ~/notes --recursive --apply
 celorga roam db-sync --dir ~/notes --recursive --apply
-celorga publish docs-site --config org2.json --preview
+celorga publish docs-site --config celorga.json --preview
 #+end_src
 
 Use =celorga roam graph --format report= for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under =maintenance=.

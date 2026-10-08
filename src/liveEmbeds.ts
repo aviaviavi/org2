@@ -4,6 +4,7 @@ import type { DocumentNode, HeadlineNode, Node } from "./ast.js";
 import { findConfigFile, loadConfig, resolveFilesFromDir } from "./config.js";
 import { compileCorpus, type CompiledCorpus, type CompiledCorpusNode } from "./corpusCompile.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { configFilePath } from "./brandNames.js";
 
 export type LiveEmbedResolution = {
   ok: true; key: string; file: string; line: number; title: string;
@@ -49,7 +50,7 @@ function canonicalEmbedRange(document: DocumentNode, candidate: CompiledCorpusNo
 
 /** Resolution is scoped to one explicitly selected corpus, with no mounts or network reads. */
 export function createLiveEmbedResolver(options: { sourcePath: string; rootDir?: string }): LiveEmbedResolver {
-  const configFile = options.rootDir ? path.join(options.rootDir, "org2.json") : findConfigFile(path.dirname(path.resolve(options.sourcePath)));
+  const configFile = options.rootDir ? configFilePath(options.rootDir) : findConfigFile(path.dirname(path.resolve(options.sourcePath)));
   const root = fs.realpathSync(options.rootDir ?? (configFile ? path.dirname(configFile) : path.dirname(path.resolve(options.sourcePath))));
   let corpus: CompiledCorpus | undefined;
   const inside = (file: string): string => {

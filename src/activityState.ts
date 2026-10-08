@@ -33,6 +33,7 @@ import {
   type OpenClawChatThreadRecord,
   type OpenClawThreadState,
 } from "./openClawThreadState.js";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const ACTIVITY_EXPLANATION_SCHEMA = "org2:activity-explanation:v1" as const;
 export const ACTIVITY_HOSTS_SCHEMA = "org2:activity-hosts:v1" as const;
@@ -276,7 +277,7 @@ export function loadActivityHosts(corpusRoot: string, now = new Date()): Activit
       const stat = fs.lstatSync(file);
       if (!stat.isFile() || stat.size > 4 * 1024 * 1024) continue;
       const raw = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-      if (!isRecord(raw) || raw.schema !== AI_CHAT_LIVE_HOST_SCHEMA) continue;
+      if (!isRecord(raw) || !schemaMatches(raw.schema, AI_CHAT_LIVE_HOST_SCHEMA)) continue;
       const hostRef = str(raw.hostRef);
       const writerID = str(raw.writerID);
       const updatedAtMs = Date.parse(String(raw.updatedAt ?? ""));
@@ -911,7 +912,7 @@ interface DispatchLock {
 }
 
 function readDispatchLock(corpusRoot: string, workflowID: string, now: Date): DispatchLock | undefined {
-  const file = path.join(corpusRoot, ".org2", "workflow-dispatch-locks", `${workflowID}.lock`);
+  const file = stateDir(corpusRoot, "workflow-dispatch-locks", `${workflowID}.lock`);
   try {
     const stat = fs.statSync(file);
     let raw: JSONRecord = {};

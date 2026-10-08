@@ -17,7 +17,7 @@ public enum AIChatTranscriptRepair {
     corpusRoot: URL, apply: Bool = false, expectedRevision: String? = nil, onlyIfChanged: Bool = false
   ) throws -> AIChatTranscriptRepairReport {
     try AIChatTranscriptStore.shared.repair(
-      legacyURL: corpusRoot.appendingPathComponent(".org2/openclaw-chat.json"),
+      legacyURL: CelorgaNames.stateDirectory(corpusRoot: corpusRoot).appendingPathComponent("openclaw-chat.json"),
       apply: apply, expectedRevision: expectedRevision, onlyIfChanged: onlyIfChanged
     )
   }

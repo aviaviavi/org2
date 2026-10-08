@@ -8,16 +8,10 @@ Install the CLI first:
 
 #+begin_src sh
 npm install -g celorga
-org2 --help
+celorga --help
 #+end_src
 
-Then install the VS Code extension from the Marketplace:
-
-#+begin_src sh
-code --install-extension AviPress.org2-vscode
-#+end_src
-
-Marketplace page: [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Celorga for VS Code]]
+Then install [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Celorga for VS Code]] from the Visual Studio Marketplace.
 
 Open your notes folder and run =Celorga: Open Agenda= from the command palette.
 
@@ -25,13 +19,13 @@ In =.org= files, formatting and save-time shorthand handling rewrite fenced bloc
 
 ** Source install
 
-For extension development or unreleased builds, use the repository copy at =editors/vscode-org2/=.
+For extension development or unreleased builds, use the repository copy in the =editors/= directory.
 
 1. Build Celorga CLI and repository artifacts:
 
 #+begin_src sh
 git clone https://github.com/aviaviavi/celorga.git
-cd org2
+cd celorga
 npm ci
 npm run build
 #+end_src
@@ -39,7 +33,7 @@ npm run build
 2. Install extension dependencies:
 
 #+begin_src sh
-cd editors/vscode-org2
+cd editors/vscode-*
 npm ci
 #+end_src
 
@@ -48,30 +42,30 @@ npm ci
 - Use VS Code Extension Development Host from this folder, or
 - Package to VSIX and install via =Install from VSIX...=.
 
-4. Ensure the =celorga= CLI (or its =org2= compatibility alias) is available:
+4. Ensure the =celorga= CLI is available:
 
 - Repo-built fallback is supported, or
 - Provide =celorga= on your =PATH=.
 
-For settings and command behavior details, see =editors/vscode-org2/README.md= and [[file:tooling-reference.org][Tooling reference]].
+For settings and command behavior details, see the extension's =README.md= and [[file:tooling-reference.org][Tooling reference]].
 
 * Keyboard shortcuts
 
-This list is comprehensive for current default bindings declared in =editors/vscode-org2/package.json=.
+This list is comprehensive for current default bindings declared in the extension's =package.json=.
 
 ** Direct bindings
 
 | Linux/Windows | macOS      | Command ID                 | Action |
 |---------------+------------+----------------------------+--------|
-| ctrl+alt+t    | ctrl+alt+t | =org2.toggleTodo=          | Toggle TODO status |
-| ctrl+alt+o    | ctrl+alt+o | =org2.toggleFoldHere=      | Toggle fold at cursor |
-| ctrl+alt+d    | ctrl+alt+d | =org2.debugFoldingRanges=  | Debug folding ranges |
-| j             | j          | =cursorDown=               | Visible-line down (with VSCodeVim + =org2.vim.visibleLineNavigation=true=) |
-| k             | k          | =cursorUp=                 | Visible-line up (with VSCodeVim + =org2.vim.visibleLineNavigation=true=) |
+| ctrl+alt+t    | ctrl+alt+t | =celorga.toggleTodo=          | Toggle TODO status |
+| ctrl+alt+o    | ctrl+alt+o | =celorga.toggleFoldHere=      | Toggle fold at cursor |
+| ctrl+alt+d    | ctrl+alt+d | =celorga.debugFoldingRanges=  | Debug folding ranges |
+| j             | j          | =cursorDown=               | Visible-line down (with VSCodeVim + =celorga.vim.visibleLineNavigation=true=) |
+| k             | k          | =cursorUp=                 | Visible-line up (with VSCodeVim + =celorga.vim.visibleLineNavigation=true=) |
 
 ** Power keymap
 
-When =org2.keymap.power=true= (default), prefix is:
+When =celorga.keymap.power=true= (default), prefix is:
 
 - Linux/Windows: =ctrl+;=
 - macOS: =cmd+;=
@@ -82,65 +76,65 @@ Then use the second key (or namespace chord).
 
 | Linux/Windows | macOS      | Command ID              | Action |
 |---------------+------------+-------------------------+--------|
-| ctrl+; a o    | cmd+; a o  | =org2.openAgenda=       | Open agenda |
-| ctrl+; a r    | cmd+; a r  | =org2.refreshAgenda=    | Refresh agenda |
-| ctrl+; a f    | cmd+; a f  | =org2.pickAgendaFilter= | Agenda filter picker |
+| ctrl+; a o    | cmd+; a o  | =celorga.openAgenda=       | Open agenda |
+| ctrl+; a r    | cmd+; a r  | =celorga.refreshAgenda=    | Refresh agenda |
+| ctrl+; a f    | cmd+; a f  | =celorga.pickAgendaFilter= | Agenda filter picker |
 
 *** Roam
 
 | Linux/Windows | macOS      | Command ID                      | Action |
 |---------------+------------+---------------------------------+--------|
-| ctrl+; r b    | cmd+; r b  | =org2.openBacklinks=            | Open backlinks pane |
-| ctrl+; r h    | cmd+; r h  | =org2.roamShowBacklinksById=    | Show backlinks for prompted link/ID |
-| ctrl+; r l    | cmd+; r l  | =org2.roamCopyIdLink=           | Copy ID link for current heading/file |
-| ctrl+; r c    | cmd+; r c  | =org2.roamCopyIdLinkById=       | Copy ID link for prompted target |
-| ctrl+; r i    | cmd+; r i  | =org2.roamInsertBacklink=       | Insert backlink |
-| ctrl+; r o    | cmd+; r o  | =org2.roamOpenId=               | Open ID link target |
-| ctrl+; r p    | cmd+; r p  | =org2.roamOpenBacklink=         | Open backlink source (current heading/file) |
-| ctrl+; r g    | cmd+; r g  | =org2.roamOpenBacklinkById=     | Open backlink source by prompt |
-| ctrl+; r t    | cmd+; r t  | =org2.roamDailiesGotoToday=     | Dailies: today |
-| ctrl+; r y    | cmd+; r y  | =org2.roamDailiesGotoYesterday= | Dailies: yesterday |
-| ctrl+; r m    | cmd+; r m  | =org2.roamDailiesGotoTomorrow=  | Dailies: tomorrow |
-| ctrl+; r d    | cmd+; r d  | =org2.roamDailiesGotoDate=      | Dailies: pick date |
-| ctrl+; r n    | cmd+; r n  | =org2.roamNodeNew=              | New roam node (selected text becomes the default title) |
-| ctrl+; r s    | cmd+; r s  | =org2.roamDbSync=               | Roam DB sync |
+| ctrl+; r b    | cmd+; r b  | =celorga.openBacklinks=            | Open backlinks pane |
+| ctrl+; r h    | cmd+; r h  | =celorga.roamShowBacklinksById=    | Show backlinks for prompted link/ID |
+| ctrl+; r l    | cmd+; r l  | =celorga.roamCopyIdLink=           | Copy ID link for current heading/file |
+| ctrl+; r c    | cmd+; r c  | =celorga.roamCopyIdLinkById=       | Copy ID link for prompted target |
+| ctrl+; r i    | cmd+; r i  | =celorga.roamInsertBacklink=       | Insert backlink |
+| ctrl+; r o    | cmd+; r o  | =celorga.roamOpenId=               | Open ID link target |
+| ctrl+; r p    | cmd+; r p  | =celorga.roamOpenBacklink=         | Open backlink source (current heading/file) |
+| ctrl+; r g    | cmd+; r g  | =celorga.roamOpenBacklinkById=     | Open backlink source by prompt |
+| ctrl+; r t    | cmd+; r t  | =celorga.roamDailiesGotoToday=     | Dailies: today |
+| ctrl+; r y    | cmd+; r y  | =celorga.roamDailiesGotoYesterday= | Dailies: yesterday |
+| ctrl+; r m    | cmd+; r m  | =celorga.roamDailiesGotoTomorrow=  | Dailies: tomorrow |
+| ctrl+; r d    | cmd+; r d  | =celorga.roamDailiesGotoDate=      | Dailies: pick date |
+| ctrl+; r n    | cmd+; r n  | =celorga.roamNodeNew=              | New roam node (selected text becomes the default title) |
+| ctrl+; r s    | cmd+; r s  | =celorga.roamDbSync=               | Roam DB sync |
 
 *** AI lifecycle
 
 | Linux/Windows | macOS      | Command ID              | Action |
 |---------------+------------+-------------------------+--------|
-| ctrl+; i v    | cmd+; i v  | =org2.aiReviewWorkspace= | Review workspace / active file |
-| ctrl+; i r    | cmd+; i r  | =org2.aiMarkReviewed=    | Mark draft reviewed |
-| ctrl+; i x    | cmd+; i x  | =org2.aiMarkRejected=    | Mark draft rejected |
-| ctrl+; i d    | cmd+; i d  | =org2.aiMarkDeferred=    | Mark draft deferred |
+| ctrl+; i v    | cmd+; i v  | =celorga.aiReviewWorkspace= | Review workspace / active file |
+| ctrl+; i r    | cmd+; i r  | =celorga.aiMarkReviewed=    | Mark draft reviewed |
+| ctrl+; i x    | cmd+; i x  | =celorga.aiMarkRejected=    | Mark draft rejected |
+| ctrl+; i d    | cmd+; i d  | =celorga.aiMarkDeferred=    | Mark draft deferred |
 
 *** TODO status
 
 | Linux/Windows | macOS      | Command ID            | Action |
 |---------------+------------+-----------------------+--------|
-| ctrl+; t t    | cmd+; t t  | =org2.setTodoStatus= | Set TODO (args: =todo=) |
-| ctrl+; t i    | cmd+; t i  | =org2.setTodoStatus= | Set IN_PROGRESS (args: =in_progress=) |
-| ctrl+; t d    | cmd+; t d  | =org2.setTodoStatus= | Set DONE (args: =done=) |
-| ctrl+; t c    | cmd+; t c  | =org2.setTodoStatus= | Set CANCELED (args: =canceled=) |
+| ctrl+; t t    | cmd+; t t  | =celorga.setTodoStatus= | Set TODO (args: =todo=) |
+| ctrl+; t i    | cmd+; t i  | =celorga.setTodoStatus= | Set IN_PROGRESS (args: =in_progress=) |
+| ctrl+; t d    | cmd+; t d  | =celorga.setTodoStatus= | Set DONE (args: =done=) |
+| ctrl+; t c    | cmd+; t c  | =celorga.setTodoStatus= | Set CANCELED (args: =canceled=) |
 
 *** Planning, archive, capture, export, folding
 
 | Linux/Windows | macOS      | Command ID                   | Action |
 |---------------+------------+------------------------------+--------|
-| ctrl+; s      | cmd+; s    | =org2.setScheduled=          | Set SCHEDULED (prompt date) |
-| ctrl+; s t    | cmd+; s t  | =org2.setScheduledToday=     | Set SCHEDULED to today |
-| ctrl+; d      | cmd+; d    | =org2.setDeadline=           | Set DEADLINE (prompt date) |
-| ctrl+; d t    | cmd+; d t  | =org2.setDeadlineToday=      | Set DEADLINE to today |
-| ctrl+; x      | cmd+; x    | =org2.archiveSubtree=        | Archive subtree |
-| ctrl+; x r    | cmd+; x r  | =org2.refileSubtree=         | Refile subtree |
-| ctrl+; h left | cmd+; h left | =org2.promoteSubtree=       | Promote subtree |
-| ctrl+; h right | cmd+; h right | =org2.demoteSubtree=      | Demote subtree |
-| ctrl+; h up   | cmd+; h up | =org2.moveSubtreeUp=         | Move subtree up |
-| ctrl+; h down | cmd+; h down | =org2.moveSubtreeDown=     | Move subtree down |
-| ctrl+; g a    | cmd+; g a  | =org2.graphAuditWorkspace=   | Graph audit workspace |
-| ctrl+; c q    | cmd+; c q  | =org2.captureQuickEntry=     | Quick capture |
-| ctrl+; p h    | cmd+; p h  | =org2.exportCurrentFileHtml= | Export current file HTML |
-| ctrl+; p w    | cmd+; p w  | =org2.exportWorkspaceHtml=   | Export workspace HTML |
+| ctrl+; s      | cmd+; s    | =celorga.setScheduled=          | Set SCHEDULED (prompt date) |
+| ctrl+; s t    | cmd+; s t  | =celorga.setScheduledToday=     | Set SCHEDULED to today |
+| ctrl+; d      | cmd+; d    | =celorga.setDeadline=           | Set DEADLINE (prompt date) |
+| ctrl+; d t    | cmd+; d t  | =celorga.setDeadlineToday=      | Set DEADLINE to today |
+| ctrl+; x      | cmd+; x    | =celorga.archiveSubtree=        | Archive subtree |
+| ctrl+; x r    | cmd+; x r  | =celorga.refileSubtree=         | Refile subtree |
+| ctrl+; h left | cmd+; h left | =celorga.promoteSubtree=       | Promote subtree |
+| ctrl+; h right | cmd+; h right | =celorga.demoteSubtree=      | Demote subtree |
+| ctrl+; h up   | cmd+; h up | =celorga.moveSubtreeUp=         | Move subtree up |
+| ctrl+; h down | cmd+; h down | =celorga.moveSubtreeDown=     | Move subtree down |
+| ctrl+; g a    | cmd+; g a  | =celorga.graphAuditWorkspace=   | Graph audit workspace |
+| ctrl+; c q    | cmd+; c q  | =celorga.captureQuickEntry=     | Quick capture |
+| ctrl+; p h    | cmd+; p h  | =celorga.exportCurrentFileHtml= | Export current file HTML |
+| ctrl+; p w    | cmd+; p w  | =celorga.exportWorkspaceHtml=   | Export workspace HTML |
 | ctrl+; 1      | cmd+; 1    | =editor.foldLevel1=          | Fold level 1 |
 | ctrl+; 2      | cmd+; 2    | =editor.foldLevel2=          | Fold level 2 |
 | ctrl+; 3      | cmd+; 3    | =editor.foldLevel3=          | Fold level 3 |
@@ -150,33 +144,33 @@ Then use the second key (or namespace chord).
 
 Available from command palette (=Cmd/Ctrl+Shift+P=):
 
-- =org2.refreshBacklinks=
-- =org2.searchWorkspace=
-- =org2.queryWorkspace=
-- =org2.compileWorkspaceCorpus=
-- =org2.roamLinkifyPreview= (shows exact replacements plus review-only semantic/alias represented-node suggestions)
-- =org2.roamLinkifyApply= (applies exact safe replacements only)
-- =org2.roamGraph= (includes linkify maintenance suggestions with source ranges)
-- =org2.aiSuggestLinks= (writes a review-only AI-assisted link/entity suggestion report; canonical notes are not edited)
-- =org2.formatWorkspaceCheck=
-- =org2.formatWorkspaceApply=
-- =org2.formatCurrentFileCheck=
-- =org2.formatCurrentFilePreviewDiff=
-- =org2.formatCurrentFileApply=
-- =org2.pickAgendaStatusFilter=
-- =org2.openAgendaItem=
-- =org2.setTodoTODO=
-- =org2.setTodoInProgress=
-- =org2.setTodoDone=
-- =org2.setTodoCanceled=
-- =org2.setScheduledTomorrow=
-- =org2.setScheduledNextWeek=
-- =org2.setScheduledNextMonth=
-- =org2.cryptDecryptSubtree=
-- =org2.cryptEncryptSubtree=
-- =org2.cryptReencryptSubtree=
+- =celorga.refreshBacklinks=
+- =celorga.searchWorkspace=
+- =celorga.queryWorkspace=
+- =celorga.compileWorkspaceCorpus=
+- =celorga.roamLinkifyPreview= (shows exact replacements plus review-only semantic/alias represented-node suggestions)
+- =celorga.roamLinkifyApply= (applies exact safe replacements only)
+- =celorga.roamGraph= (includes linkify maintenance suggestions with source ranges)
+- =celorga.aiSuggestLinks= (writes a review-only AI-assisted link/entity suggestion report; canonical notes are not edited)
+- =celorga.formatWorkspaceCheck=
+- =celorga.formatWorkspaceApply=
+- =celorga.formatCurrentFileCheck=
+- =celorga.formatCurrentFilePreviewDiff=
+- =celorga.formatCurrentFileApply=
+- =celorga.pickAgendaStatusFilter=
+- =celorga.openAgendaItem=
+- =celorga.setTodoTODO=
+- =celorga.setTodoInProgress=
+- =celorga.setTodoDone=
+- =celorga.setTodoCanceled=
+- =celorga.setScheduledTomorrow=
+- =celorga.setScheduledNextWeek=
+- =celorga.setScheduledNextMonth=
+- =celorga.cryptDecryptSubtree=
+- =celorga.cryptEncryptSubtree=
+- =celorga.cryptReencryptSubtree=
 
-Set =org2.crypt.recipients= to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. =org2.crypt.recipientFiles= can point at armored public-key files. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.
+Set =celorga.crypt.recipients= to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. =celorga.crypt.recipientFiles= can point at armored public-key files. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.
 
 For selective sharing, put recipients on the subtree itself instead of in global VS Code settings:
 
@@ -189,17 +183,17 @@ This body is encrypted to the listed recipient file when you run Celorga: Crypt 
 #+end_src
 
 =:CRYPT_RECIPIENT:= / =:CRYPT_RECIPIENTS:= accept GPG recipient identifiers. =:CRYPT_RECIPIENT_FILE:= / =:CRYPT_RECIPIENT_FILES:= accept armored public-key files. Relative file paths are resolved from the Org file containing the subtree, which keeps shared corpora portable across devices.
-- =org2.refileSubtree=
-- =org2.roamOpenTitle=
-- =org2.roamShowBacklinks=
-- =org2.rerunAutoFold=
-- =org2.debugListLinks=
-- =org2.graphAuditWorkspace=
-- =org2.aiReviewWorkspace=
-- =org2.aiMarkReviewed=
-- =org2.aiMarkRejected=
-- =org2.aiMarkDeferred=
-- =org2.promoteSubtree=
-- =org2.demoteSubtree=
-- =org2.moveSubtreeUp=
-- =org2.moveSubtreeDown=
+- =celorga.refileSubtree=
+- =celorga.roamOpenTitle=
+- =celorga.roamShowBacklinks=
+- =celorga.rerunAutoFold=
+- =celorga.debugListLinks=
+- =celorga.graphAuditWorkspace=
+- =celorga.aiReviewWorkspace=
+- =celorga.aiMarkReviewed=
+- =celorga.aiMarkRejected=
+- =celorga.aiMarkDeferred=
+- =celorga.promoteSubtree=
+- =celorga.demoteSubtree=
+- =celorga.moveSubtreeUp=
+- =celorga.moveSubtreeDown=

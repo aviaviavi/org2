@@ -6,15 +6,15 @@ AI commands write into generated zones first. The goal is to make model output u
 =celorga ai run= currently provides a provider-free draft writer for manifest-selected source files. It reads local Org source files, records source hashes, stamps artifact metadata, and writes a review-required draft under =views/= or =compiled/=.
 
 #+begin_src sh
-celorga ai run --job jobs/team-sync.org2-ai.json --apply
-celorga ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org --apply
+celorga ai run --job jobs/team-sync.ai.json --apply
+celorga ai run --job jobs/team-sync.ai.json --out views/team-sync-summary.org --apply
 #+end_src
 
 Without =--apply=, the command prints a safe preview and writes nothing.
 
 * Meeting/transcript summarization
 
-=summarize-meeting= is the first concrete AI workflow. A manifest such as =examples/jobs/meeting-summary.org2-ai.json= turns raw meeting or transcript material into a reviewable Celorga artifact:
+=summarize-meeting= is the first concrete AI workflow. A manifest such as =jobs/meeting-summary.ai.json= (the repository's =examples/jobs/= directory has a sample) turns raw meeting or transcript material into a reviewable Celorga artifact:
 
 #+begin_src sh
 celorga ai run \
@@ -23,11 +23,11 @@ celorga ai run \
   --out views/meeting-summary.org
 
 celorga ai run \
-  --job examples/jobs/meeting-summary.org2-ai.json \
+  --job jobs/meeting-summary.ai.json \
   --out views/meeting-summary.org
 #+end_src
 
-The generated draft is safe-by-default: preview-only unless =--apply= is passed, stored as a generated =view= artifact, and marked =ORG2_REVIEW_STATUS: review-required=. The body includes:
+The generated draft is safe-by-default: preview-only unless =--apply= is passed, stored as a generated =view= artifact, and marked =CELORGA_REVIEW_STATUS: review-required=. The body includes:
 
 - a concise meeting summary
 - key decisions with =file:path::line= citations
@@ -45,18 +45,17 @@ A generated draft starts with an Org property drawer:
 #+begin_src org
 :PROPERTIES:
 :ID: team-sync-summary-team-sync-summary.org
-:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
-:ORG2_ARTIFACT_ROLE: view
-:ORG2_PROVENANCE: file:raw/team-sync.org
-:ORG2_GENERATOR: celorga ai run team-sync-summary adapter=local-default model=fixture-model
-:ORG2_GENERATED_AT: 2026-05-20T01:00:00.000Z
-:ORG2_AI_JOB_ID: team-sync-summary
-:ORG2_AI_TASK: summarize-meeting
-:ORG2_PROMPT_TEMPLATE: meeting-summary@v1
-:ORG2_AI_ADAPTER: local-default
-:ORG2_AI_MODEL: fixture-model
-:ORG2_SOURCE_HASHES: file:raw/team-sync.org=sha256:...
-:ORG2_REVIEW_STATUS: review-required
+:CELORGA_ARTIFACT_ROLE: view
+:CELORGA_PROVENANCE: file:raw/team-sync.org
+:CELORGA_GENERATOR: celorga ai run team-sync-summary adapter=local-default model=fixture-model
+:CELORGA_GENERATED_AT: 2026-05-20T01:00:00.000Z
+:CELORGA_AI_JOB_ID: team-sync-summary
+:CELORGA_AI_TASK: summarize-meeting
+:CELORGA_PROMPT_TEMPLATE: meeting-summary@v1
+:CELORGA_AI_ADAPTER: local-default
+:CELORGA_AI_MODEL: fixture-model
+:CELORGA_SOURCE_HASHES: file:raw/team-sync.org=sha256:...
+:CELORGA_REVIEW_STATUS: review-required
 :END:
 #+end_src
 
@@ -68,7 +67,7 @@ Promotion is explicit:
 
 1. Inspect the draft and verify generated claims against cited source lines.
 2. Edit the draft until the accepted content is safe for canonical notes.
-3. Change =ORG2_REVIEW_STATUS= from =review-required= to =reviewed=.
+3. Change =CELORGA_REVIEW_STATUS= from =review-required= to =reviewed=.
 4. Run =celorga ai promote= with =--apply= to append the reviewed body to a canonical note file.
 
 #+begin_src sh
@@ -90,7 +89,7 @@ This makes AI output behave like a build artifact: useful, traceable, lintable, 
 
 The VS Code extension exposes the same safe path through command-palette actions:
 
-- =org2.aiRunDraft= picks a job manifest, previews =celorga ai run=, confirms, writes the draft, and opens it for review.
-- =org2.aiPromoteDraft= previews =celorga ai promote= for the active/selected draft, requires confirmation, and opens the canonical target after promotion.
+- =celorga.aiRunDraft= picks a job manifest, previews =celorga ai run=, confirms, writes the draft, and opens it for review.
+- =celorga.aiPromoteDraft= previews =celorga ai promote= for the active/selected draft, requires confirmation, and opens the canonical target after promotion.
 
 Both commands use the CLI; the editor does not bypass review status checks or write canonical notes without the explicit promote confirmation.

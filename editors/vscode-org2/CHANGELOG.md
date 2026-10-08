@@ -5,9 +5,12 @@ All notable changes to the Celorga VS Code extension (formerly Org2) are documen
 ## Unreleased
 
 - Renamed the extension to Celorga. The display name, command palette titles (`Celorga: …`), Explorer views, settings section, messages, and documentation now use the Celorga name; the language mode is labeled "Celorga Org".
-- The extension now runs the `celorga` CLI when it is on `PATH` and `org2.agenda.command` is not set explicitly, and falls back to `org2`, which remains a permanent compatibility alias.
+- The extension now runs the `celorga` CLI when it is on `PATH` and `celorga.agenda.command` (or the legacy `org2.agenda.command`) is not set explicitly, and falls back to `org2`, which remains a permanent compatibility alias.
 - The default workspace export index title is now "Celorga Export Index".
-- Compatibility: the marketplace ID (`AviPress.org2-vscode`), command IDs (`org2.*`), the `org2` language ID, `org2.*` settings, view IDs, and `.org`/`.org2` file associations are unchanged, so existing installs, keybindings, and settings keep working.
+- Commands are now `celorga.*` (for example `celorga.openAgenda`). Every `org2.*` command ID is still registered as a hidden alias, so existing keybindings and scripts keep working.
+- Settings are now `celorga.*` (for example `celorga.agenda.dir`). Existing `org2.*` settings are still read when the matching `celorga.*` setting is not set, and are marked deprecated in the Settings editor. The agenda status-filter picker updates whichever spelling you already use.
+- Power-keymap and VSCodeVim keybindings now use the `celorga.keymap.power` and `celorga.vim.visibleLineNavigation` context keys, which follow the same `celorga.*`-then-`org2.*` rule.
+- Compatibility: the marketplace ID (`AviPress.org2-vscode`), the `org2` language ID, view IDs, and `.org`/`.org2` file associations are unchanged.
 
 ## 0.8.8 - 2026-10-07
 

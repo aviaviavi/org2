@@ -7,6 +7,7 @@ import {
   type AgentIngestRecord,
   type AgentIngestConnectorMetadata,
 } from "./agentIngestConnectors.js";
+import { schemaMatches } from "./brandNames.js";
 
 export const ORG2_SOURCE_IMPORT_SCHEMA = "org2:source-import:v1" as const;
 
@@ -231,7 +232,7 @@ function writeIfChanged(file: string, contents: string, apply: boolean): boolean
 function managedRawFile(file: string, profileId: string, sourceType: "slack" | "notion" | "email"): boolean {
   try {
     const value = object(JSON.parse(fs.readFileSync(file, "utf8")));
-    return value.schema === ORG2_SOURCE_IMPORT_SCHEMA && value.profile === profileId && value.sourceType === sourceType;
+    return schemaMatches(value.schema, ORG2_SOURCE_IMPORT_SCHEMA) && value.profile === profileId && value.sourceType === sourceType;
   } catch {
     return false;
   }
@@ -258,7 +259,7 @@ function reconcileGeneratedFiles(options: {
     const reviewFile = path.join(options.reviewRoot, `${path.basename(name, ".json")}.org2`);
     if (options.expectedReview.has(reviewFile) || !fs.existsSync(reviewFile)) continue;
     const review = fs.readFileSync(reviewFile, "utf8");
-    if (!review.includes(":ORG2_GENERATOR: org2-source-import")) continue;
+    if (!/:(?:CELORGA|ORG2)_GENERATOR: org2-source-import/.test(review)) continue;
     removed.push(reviewFile);
     if (options.apply) fs.unlinkSync(reviewFile);
   }

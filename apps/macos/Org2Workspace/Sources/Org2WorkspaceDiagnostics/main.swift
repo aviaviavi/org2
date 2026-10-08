@@ -4,6 +4,7 @@ import Org2WorkspaceDiagnosticsCore
 @main
 struct Org2WorkspaceDiagnosticsMain {
   static func main() {
+    WorkspaceDiagnosticsNames.mirrorCelorgaEnvironment()
     do {
       let options = try WorkspaceDiagnosticsOptions.parse(Array(CommandLine.arguments.dropFirst()))
       let corpusPath = try resolveCorpusPath(options: options)
@@ -23,7 +24,7 @@ struct Org2WorkspaceDiagnosticsMain {
        !explicit.isEmpty {
       return NSString(string: explicit).expandingTildeInPath
     }
-    if let environmentPath = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_DIAGNOSTICS_CORPUS"]?
+    if let environmentPath = WorkspaceDiagnosticsNames.environment("ORG2_WORKSPACE_DIAGNOSTICS_CORPUS")?
       .trimmingCharacters(in: .whitespacesAndNewlines),
        !environmentPath.isEmpty {
       return NSString(string: environmentPath).expandingTildeInPath

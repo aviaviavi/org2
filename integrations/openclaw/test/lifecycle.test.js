@@ -921,5 +921,5 @@ test("fails closed when the canonical approval does not match the live draft", a
   });
 
   assert.equal(decision.allowed, false);
-  assert.match(decision.reason, /No matching Org2 approval/);
+  assert.match(decision.reason, /No matching Celorga approval/);
 });

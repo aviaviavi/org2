@@ -1,8 +1,11 @@
+import { methodNames } from "./brand.js";
+
+// Celorga names first; the org2.* names stay accepted for paired 0.8.x apps.
 export const org2WorkspaceNodeCommands = [
-  "org2.workspace.read",
-  "org2.workspace.patch.preview",
-  "org2.workspace.patch.apply",
-];
+  "workspace.read",
+  "workspace.patch.preview",
+  "workspace.patch.apply",
+].flatMap(methodNames);
 
 export function registerOrg2WorkspaceNodePolicy(api) {
   api.registerNodeInvokePolicy?.({
@@ -19,7 +22,7 @@ export function registerOrg2WorkspaceNodePolicy(api) {
         return {
           ok: false,
           code: "ORG2_LOCAL_EDIT_NODE_REQUIRED",
-          message: "Org2 workspace commands are available only from the paired macOS app node.",
+          message: "Celorga workspace commands are available only from the paired macOS app node.",
           unavailable: true,
         };
       }

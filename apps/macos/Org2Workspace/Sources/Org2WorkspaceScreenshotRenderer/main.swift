@@ -6,18 +6,19 @@ import WebKit
 @main
 struct Org2WorkspaceScreenshotRenderer {
   static func main() async {
+    CelorgaNames.mirrorCelorgaEnvironment()
     do {
       let outputPath = try outputPathArgument()
-      let width = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_WIDTH"] ?? "") ?? 1400
-      let height = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_HEIGHT"] ?? "") ?? 900
-      let scale = Double(ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SCALE"] ?? "") ?? 1
+      let width = Double(CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_WIDTH") ?? "") ?? 1400
+      let height = Double(CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_HEIGHT") ?? "") ?? 900
+      let scale = Double(CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_SCALE") ?? "") ?? 1
       let verifiesTabs = CommandLine.arguments.contains("--verify-tabs")
       let verifiesChatSelection = CommandLine.arguments.contains("--verify-chat-selection")
       let verifiesCodeCopy = CommandLine.arguments.contains("--verify-code-copy") || verifiesChatSelection
 
       // ORG2_WORKSPACE_SCREENSHOT_THEME selects a catalog theme ID; the
       // window renders in that theme's own appearance.
-      let themeID = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_THEME"]?
+      let themeID = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_THEME")?
         .trimmingCharacters(in: .whitespacesAndNewlines)
       let theme = themeID.flatMap { $0.isEmpty ? nil : WorkspaceThemeCatalog.theme(id: $0) }
       if let themeID, !themeID.isEmpty, theme == nil {
@@ -48,11 +49,11 @@ struct Org2WorkspaceScreenshotRenderer {
       }
       await store.bootstrap()
       await MainActor.run {
-        if let rawAgendaMode = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_AGENDA_MODE"],
+        if let rawAgendaMode = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_AGENDA_MODE"),
            let agendaMode = AgendaMode(rawValue: rawAgendaMode) {
           store.agendaMode = agendaMode
         }
-        let rawContextTab = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB"]?
+        let rawContextTab = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_CONTEXT_TAB")?
           .trimmingCharacters(in: .whitespacesAndNewlines)
           .lowercased()
         if let rawContextTab,
@@ -145,10 +146,10 @@ struct Org2WorkspaceScreenshotRenderer {
         try? await Task.sleep(nanoseconds: 100_000_000)
       }
       try? await Task.sleep(nanoseconds: 1_000_000_000)
-      if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] != nil {
+      if CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE") != nil {
         await MainActor.run {
           store.beginEditingCurrentScope()
-          if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SPLIT_PREVIEW"] != nil {
+          if CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_SPLIT_PREVIEW") != nil {
             store.sourceEditorPresentation = .split
             store.scheduleSourceEditorPreview(immediate: true)
           }
@@ -226,12 +227,12 @@ struct Org2WorkspaceScreenshotRenderer {
     // HTML-backed document panes are created only after the SwiftUI hierarchy is
     // attached to a window. Give WKWebView enough time to finish its first paint
     // so deterministic docs captures include the selected document body.
-    let defaultSettleNanoseconds: UInt64 = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] == nil
+    let defaultSettleNanoseconds: UInt64 = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE") == nil
       ? 2_000_000_000
       : 2_500_000_000
     // Scenes with extra panes (such as Context) can need longer for the
     // document web view to repaint after layout.
-    let renderSettleNanoseconds = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SETTLE_MS"]
+    let renderSettleNanoseconds = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_SETTLE_MS")
       .flatMap(UInt64.init)
       .map { $0 * 1_000_000 } ?? defaultSettleNanoseconds
     try? await Task.sleep(nanoseconds: renderSettleNanoseconds)

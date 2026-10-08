@@ -42,6 +42,7 @@ import {
   type Org2PluginLockEntry,
 } from "./pluginRuntime.js";
 import { buildUnifiedDiff } from "./unifiedDiff.js";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const ORG2_PLUGIN_ACTION_INVOCATION_SCHEMA = "org2:plugin-action-invocation:v1" as const;
 export const ORG2_PLUGIN_ACTION_RESULT_SCHEMA = "org2:plugin-action-result:v1" as const;
@@ -331,7 +332,7 @@ export function invokePluginSandboxed(
   const command = sandboxed ? SANDBOX_EXEC : process.execPath;
   const args = sandboxed ? ["-p", pluginSandboxProfile(corpusRoot, capabilities), process.execPath, executable] : [executable];
   const environment = pluginEnvironment(entry.manifest, entry);
-  if (capabilities.includes("read-corpus")) environment.ORG2_CORPUS_ROOT = path.resolve(corpusRoot);
+  if (capabilities.includes("read-corpus")) environment.ORG2_CORPUS_ROOT = environment.CELORGA_CORPUS_ROOT = path.resolve(corpusRoot);
   const child = spawnSync(command, args, {
     cwd: stored.root,
     env: environment,
@@ -407,7 +408,7 @@ export function normalizePluginProposals(corpusRoot: string, raw: unknown): Plug
 }
 
 export function pluginProposalDirectory(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "plugin-proposals");
+  return stateDir(path.resolve(corpusRoot), "plugin-proposals");
 }
 
 function proposalFile(corpusRoot: string, id: string): string {
@@ -424,7 +425,7 @@ function writeProposal(corpusRoot: string, record: PluginProposalRecord, expecte
 export function loadPluginProposal(corpusRoot: string, id: string): { record: PluginProposalRecord; revision: string } {
   const snapshot = readGuardedFile(proposalFile(corpusRoot, id));
   const record = JSON.parse(snapshot.content) as PluginProposalRecord;
-  if (record.schema !== ORG2_PLUGIN_PROPOSAL_SCHEMA) throw new Error(`not a plugin proposal: ${id}`);
+  if (!schemaMatches(record.schema, ORG2_PLUGIN_PROPOSAL_SCHEMA)) throw new Error(`not a plugin proposal: ${id}`);
   return { record, revision: snapshot.revision };
 }
 
@@ -435,7 +436,7 @@ export function listPluginProposals(corpusRoot: string, status?: PluginProposalR
   return names.flatMap((name) => {
     try {
       const record = JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")) as PluginProposalRecord;
-      return record.schema === ORG2_PLUGIN_PROPOSAL_SCHEMA && (!status || record.status === status) ? [record] : [];
+      return schemaMatches(record.schema, ORG2_PLUGIN_PROPOSAL_SCHEMA) && (!status || record.status === status) ? [record] : [];
     } catch {
       return [];
     }
@@ -443,7 +444,7 @@ export function listPluginProposals(corpusRoot: string, status?: PluginProposalR
 }
 
 function resultFromPlugin(corpusRoot: string, entry: Org2PluginLockEntry, raw: JSONRecord): { text?: string; proposals: PluginProposalChange[] } {
-  if (raw.$schema !== ORG2_PLUGIN_ACTION_RESULT_SCHEMA) throw new Error(`plugin ${entry.id} must return ${ORG2_PLUGIN_ACTION_RESULT_SCHEMA}`);
+  if (!schemaMatches(raw.$schema, ORG2_PLUGIN_ACTION_RESULT_SCHEMA)) throw new Error(`plugin ${entry.id} must return ${ORG2_PLUGIN_ACTION_RESULT_SCHEMA}`);
   if (raw.ok !== true) throw new Error(typeof raw.error === "string" ? `plugin ${entry.id}: ${raw.error}` : `plugin ${entry.id} reported failure`);
   return {
     ...(typeof raw.text === "string" && raw.text.trim() ? { text: raw.text.slice(0, 20_000) } : {}),
@@ -622,14 +623,14 @@ interface HookState {
 }
 
 function hookStatePath(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "plugin-hooks", "state.json");
+  return stateDir(path.resolve(corpusRoot), "plugin-hooks", "state.json");
 }
 
 function readHookState(corpusRoot: string): { state: HookState; revision: string | null } {
   try {
     const snapshot = readGuardedFile(hookStatePath(corpusRoot));
     const state = JSON.parse(snapshot.content) as HookState;
-    if (state.schema === "org2:plugin-hook-state:v1" && Array.isArray(state.dispatchedEventIds)) return { state, revision: snapshot.revision };
+    if (schemaMatches(state.schema, "org2:plugin-hook-state:v1") && Array.isArray(state.dispatchedEventIds)) return { state, revision: snapshot.revision };
   } catch { /* first run */ }
   return { state: { schema: "org2:plugin-hook-state:v1", cursor: null, dispatchedEventIds: [] }, revision: null };
 }

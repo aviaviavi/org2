@@ -109,7 +109,8 @@ enum HeadingWorkStatus {
           if let (key, value) = property(trimmed) {
             switch key {
             case "ID": idValue = value
-            case "ORG2_RUN_ID": runID = value
+            case "CELORGA_RUN_ID": runID = value
+            case "ORG2_RUN_ID": runID = runID ?? value
             case "AGENT_REF": agentRef = value
             case "GOAL_REF": goalRef = value
             default: break

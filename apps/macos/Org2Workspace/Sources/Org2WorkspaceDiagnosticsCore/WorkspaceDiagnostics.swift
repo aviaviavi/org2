@@ -288,7 +288,7 @@ public struct WorkspaceDiagnosticsCorpus: Equatable, Sendable {
       throw WorkspaceDiagnosticsError.invalidCorpus("Diagnostics corpus is not an existing directory: \(standardized.path)")
     }
 
-    let configURL = standardized.appendingPathComponent("org2.json")
+    let configURL = WorkspaceDiagnosticsNames.configFile(in: standardized)
     let data: Data
     do {
       data = try Data(contentsOf: configURL)
@@ -301,7 +301,7 @@ public struct WorkspaceDiagnosticsCorpus: Equatable, Sendable {
     } catch {
       throw WorkspaceDiagnosticsError.invalidCorpus("Could not read corpus identity from \(configURL.path): \(error.localizedDescription)")
     }
-    guard config.corpus.schema == "org2:corpus:v1",
+    guard WorkspaceDiagnosticsNames.schemaMatches(config.corpus.schema, "org2:corpus:v1"),
           config.corpus.id.range(of: #"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"#, options: .regularExpression) != nil,
           !config.corpus.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           ["personal", "shared", "project"].contains(config.corpus.kind)

@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 import type { Org2ExternalSourceConfig } from "./config.js";
 import type { AgentIngestRecord } from "./agentIngestConnectors.js";
 import { org2CorpusIndexDir } from "./indexPaths.js";
+import { brandEnv, nameAliases, schemaMatches } from "./brandNames.js";
 
 export const EMAIL_SOURCE_STATE_SCHEMA = "org2:email-source-state:v1" as const;
 export const DEFAULT_EMAIL_PASSWORD_ENV = "ORG2_EMAIL_PASSWORD";
@@ -73,7 +74,8 @@ export function emailSourceSettings(id: string, profile: Org2ExternalSourceConfi
 /** Resolves the account password without persisting it. */
 export function resolveEmailPassword(binding: EmailCredentialBinding, env: NodeJS.ProcessEnv = process.env): { password?: string; source: string } {
   const envName = binding.passwordEnv || DEFAULT_EMAIL_PASSWORD_ENV;
-  if (env[envName]) return { password: env[envName], source: `env:${envName}` };
+  const envPassword = brandEnv(envName, env);
+  if (envPassword) return { password: envPassword, source: `env:${nameAliases(envName).find((name) => env[name] === envPassword) ?? envName}` };
   if (binding.passwordCommand) {
     const child = spawnSync("/bin/sh", ["-c", binding.passwordCommand], { encoding: "utf8", timeout: 30_000, env });
     const password = child.status === 0 ? String(child.stdout || "").replace(/\r?\n$/u, "") : "";
@@ -84,7 +86,7 @@ export function resolveEmailPassword(binding: EmailCredentialBinding, env: NodeJ
 }
 
 export function emailCredentialAvailable(binding: EmailCredentialBinding, env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env[binding.passwordEnv || DEFAULT_EMAIL_PASSWORD_ENV]) || Boolean(binding.passwordCommand);
+  return Boolean(brandEnv(binding.passwordEnv || DEFAULT_EMAIL_PASSWORD_ENV, env)) || Boolean(binding.passwordCommand);
 }
 
 // MARK: - IMAP client
@@ -448,7 +450,7 @@ export function emailSourceStatePath(root: string, profileId: string): string {
 export function readEmailSourceState(root: string, profileId: string, account: string): EmailSourceState {
   try {
     const value = JSON.parse(fs.readFileSync(emailSourceStatePath(root, profileId), "utf8")) as EmailSourceState;
-    if (value.schema === EMAIL_SOURCE_STATE_SCHEMA && value.account === account && value.mailboxes) return value;
+    if (schemaMatches(value.schema, EMAIL_SOURCE_STATE_SCHEMA) && value.account === account && value.mailboxes) return value;
   } catch { /* first sync */ }
   return { schema: EMAIL_SOURCE_STATE_SCHEMA, profile: profileId, account, mailboxes: {} };
 }

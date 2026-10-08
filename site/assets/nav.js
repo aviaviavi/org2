@@ -4,7 +4,7 @@
   }
 
   function setup() {
-    document.querySelectorAll('.org2-nav-menu').forEach(function (el) {
+    document.querySelectorAll('.celorga-nav-menu').forEach(function (el) {
       var summary = el.querySelector(':scope > summary');
       if (summary) summary.textContent = '☰ Menu';
 
@@ -15,7 +15,7 @@
       }
     });
 
-    document.querySelectorAll('.org2-nav-dropdown').forEach(function (el) {
+    document.querySelectorAll('.celorga-nav-dropdown').forEach(function (el) {
       var summary = el.querySelector(':scope > summary');
       if (!summary) return;
 
@@ -36,13 +36,13 @@
   }
 
   function closeOtherDropdowns(active) {
-    document.querySelectorAll('.org2-nav-dropdown[open]').forEach(function (el) {
+    document.querySelectorAll('.celorga-nav-dropdown[open]').forEach(function (el) {
       if (el !== active) closeDropdown(el);
     });
   }
 
   function setupHoverDropdowns() {
-    document.querySelectorAll('.org2-nav-dropdown').forEach(function (el) {
+    document.querySelectorAll('.celorga-nav-dropdown').forEach(function (el) {
       var summary = el.querySelector(':scope > summary');
       if (!summary || el.dataset.hoverReady === '1') return;
       el.dataset.hoverReady = '1';
@@ -83,7 +83,7 @@
   }
 
   function setupSearch() {
-    var forms = document.querySelectorAll('.org2-site-search');
+    var forms = document.querySelectorAll('.celorga-site-search');
     if (!forms.length) return;
 
     var indexPromise = fetch('assets/search-index.json')
@@ -104,8 +104,8 @@
       if (form.dataset.searchReady === '1') return;
       form.dataset.searchReady = '1';
       var input = form.querySelector('input[type="search"]');
-      var toggle = form.querySelector('.org2-site-search-toggle');
-      var results = form.querySelector('.org2-site-search-results');
+      var toggle = form.querySelector('.celorga-site-search-toggle');
+      var results = form.querySelector('.celorga-site-search-results');
       if (!input || !toggle || !results) return;
 
       function openSearch() {
@@ -132,7 +132,7 @@
         results.innerHTML = '';
         if (!matches.length) {
           var empty = document.createElement('div');
-          empty.className = 'org2-site-search-empty';
+          empty.className = 'celorga-site-search-empty';
           empty.textContent = 'No matches';
           results.appendChild(empty);
         } else {
@@ -203,7 +203,7 @@
     }
 
     var current = normalize(window.location.pathname);
-    document.querySelectorAll('.org2-nav a[href]').forEach(function (link) {
+    document.querySelectorAll('.celorga-nav a[href]').forEach(function (link) {
       var target = new URL(link.getAttribute('href'), window.location.href);
       if (target.origin === window.location.origin && normalize(target.pathname) === current) {
         link.setAttribute('aria-current', 'page');
@@ -279,11 +279,11 @@
       if (!heading.id) heading.id = uniqueId(slugify(headingText));
 
       var button = document.createElement('button');
-      button.className = 'org2-heading-anchor';
+      button.className = 'celorga-heading-anchor';
       button.type = 'button';
       button.setAttribute('aria-label', 'Copy link to ' + headingText);
       button.setAttribute('title', 'Copy link to this heading');
-      button.innerHTML = '<span class="org2-heading-anchor-icon" aria-hidden="true"></span><span class="org2-heading-anchor-feedback" aria-hidden="true">Copied</span>';
+      button.innerHTML = '<span class="celorga-heading-anchor-icon" aria-hidden="true"></span><span class="celorga-heading-anchor-feedback" aria-hidden="true">Copied</span>';
 
       button.addEventListener('click', function () {
         var url = new URL(window.location.href);
@@ -335,7 +335,7 @@
           if (labels[index]) cell.setAttribute('data-label', labels[index]);
         });
       });
-      table.classList.add('org2-table-stacked');
+      table.classList.add('celorga-table-stacked');
     });
   }
 

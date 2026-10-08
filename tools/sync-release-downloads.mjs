@@ -153,14 +153,14 @@ function currentReleaseCard(asset, version) {
     other: "Additional release artifact.",
   };
   return [
-    `    <article class="org2-download-card org2-download-card-${escapeHtml(kind)}">`,
-    `      <p class="org2-download-kicker">${escapeHtml(kind.startsWith("macos-") ? "macOS" : kind === "vscode" ? "VS Code" : kind === "npm" ? "npm / CLI" : "Artifact")}</p>`,
+    `    <article class="celorga-download-card celorga-download-card-${escapeHtml(kind)}">`,
+    `      <p class="celorga-download-kicker">${escapeHtml(kind.startsWith("macos-") ? "macOS" : kind === "vscode" ? "VS Code" : kind === "npm" ? "npm / CLI" : "Artifact")}</p>`,
     `      <h3>${escapeHtml(registry?.title ?? artifactLabel(asset))}</h3>`,
     `      <p>${escapeHtml(descriptions[kind])}</p>`,
-    `      <p class="org2-download-meta">${escapeHtml(registry?.meta ?? `${version} · ${formatBytes(asset.size)}`)}</p>`,
+    `      <p class="celorga-download-meta">${escapeHtml(registry?.meta ?? `${version} · ${formatBytes(asset.size)}`)}</p>`,
     registry
-      ? `      <a class="org2-download-button" href="${escapeHtml(registry.url)}">${escapeHtml(registry.action)} <span aria-hidden="true">↗</span></a>`
-      : `      <a class="org2-download-button" href="${escapeHtml(scarfDownloadUrl(version, asset.name))}">Download <span aria-hidden="true">↓</span></a>`,
+      ? `      <a class="celorga-download-button" href="${escapeHtml(registry.url)}">${escapeHtml(registry.action)} <span aria-hidden="true">↗</span></a>`
+      : `      <a class="celorga-download-button" href="${escapeHtml(scarfDownloadUrl(version, asset.name))}">Download <span aria-hidden="true">↓</span></a>`,
     "    </article>",
   ].join("\n");
 }
@@ -218,7 +218,7 @@ Scarf redirects those requests to the matching =github.com/aviaviavi/celorga/rel
 #+SUBTITLE: Install Celorga and its developer tools
 
 #+BEGIN_EXPORT html
-<section class="org2-page-intro org2-downloads-intro">
+<section class="celorga-page-intro celorga-downloads-intro">
   <p>Celorga is a local-first workspace app with an open runtime, CLI, and developer toolkit. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT${alphaPreamble}
@@ -226,7 +226,7 @@ Scarf redirects those requests to the matching =github.com/aviaviavi/celorga/rel
 * ${currentReleaseHeading} ${current.tag_name}
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="${escapeHtml(currentReleaseLabel)}">
+<section class="celorga-download-grid" aria-label="${escapeHtml(currentReleaseLabel)}">
 ${cards}
 </section>
 #+END_EXPORT
@@ -238,20 +238,20 @@ ${installStatus ? `${installStatus}\n\n` : ""}For registry-managed installation,
 Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid org2-download-grid-mobile" aria-label="Celorga for iOS installation options">
-  <article class="org2-download-card org2-download-card-ios">
-    <p class="org2-download-kicker">TestFlight</p>
+<section class="celorga-download-grid celorga-download-grid-mobile" aria-label="Celorga for iOS installation options">
+  <article class="celorga-download-card celorga-download-card-ios">
+    <p class="celorga-download-kicker">TestFlight</p>
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
-    <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <p class="celorga-download-meta">Private beta · iPhone</p>
+    <a class="celorga-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
-  <article class="org2-download-card org2-download-card-source">
-    <p class="org2-download-kicker">Open source</p>
+  <article class="celorga-download-card celorga-download-card-source">
+    <p class="celorga-download-kicker">Open source</p>
     <h3>Build it with Xcode</h3>
     <p>Open the included Xcode project, select your Apple development team, configure the shared App Group, and install directly on your own iPhone.</p>
-    <p class="org2-download-meta">Source · Xcode</p>
-    <a class="org2-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
+    <p class="celorga-download-meta">Source · Xcode</p>
+    <a class="celorga-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
   </article>
 </section>
 #+END_EXPORT

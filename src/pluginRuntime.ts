@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { DocumentNode, ListItemNode, Node, SrcBlockNode } from "./ast.js";
 import { findConfigFile, loadConfig, type Org2PluginConfig } from "./config.js";
+import { brandEnv, configFilePath, nameAliases, schemaMatches } from "./brandNames.js";
 
 export const ORG2_PLUGIN_MANIFEST_SCHEMA = "org2:plugin-manifest:v1" as const;
 export const ORG2_PLUGIN_LOCK_SCHEMA = "org2:plugin-lock:v1" as const;
@@ -154,7 +155,7 @@ function expandHome(input: string): string {
 }
 
 export function org2PluginHome(): string {
-  const configured = String(process.env.ORG2_PLUGIN_HOME || "").trim();
+  const configured = String(brandEnv("ORG2_PLUGIN_HOME") || "").trim();
   if (configured) return path.resolve(expandHome(configured));
   return path.join(os.homedir(), ".org2", "plugins");
 }
@@ -180,7 +181,7 @@ export function readPluginLock(corpusRoot: string): Org2PluginLock {
   const file = org2PluginLockPath(corpusRoot);
   if (!fs.existsSync(file)) return emptyPluginLock();
   const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<Org2PluginLock>;
-  if (value.$schema !== ORG2_PLUGIN_LOCK_SCHEMA || !Array.isArray(value.plugins)) {
+  if (!schemaMatches(value.$schema, ORG2_PLUGIN_LOCK_SCHEMA) || !Array.isArray(value.plugins)) {
     throw new Error(`${file} must use ${ORG2_PLUGIN_LOCK_SCHEMA}`);
   }
   const plugins = value.plugins.map((entry, index) => validateLockEntry(entry, `plugins[${index}]`));
@@ -196,7 +197,7 @@ export function readPluginTrust(): Org2PluginTrust {
   const file = org2PluginTrustPath();
   if (!fs.existsSync(file)) return { $schema: ORG2_PLUGIN_TRUST_SCHEMA, trustedContentHashes: [] };
   const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<Org2PluginTrust>;
-  if (value.$schema !== ORG2_PLUGIN_TRUST_SCHEMA || !Array.isArray(value.trustedContentHashes)) {
+  if (!schemaMatches(value.$schema, ORG2_PLUGIN_TRUST_SCHEMA) || !Array.isArray(value.trustedContentHashes)) {
     throw new Error(`${file} must use ${ORG2_PLUGIN_TRUST_SCHEMA}`);
   }
   const trustedContentHashes = [...new Set(value.trustedContentHashes.map(String))].sort();
@@ -294,7 +295,7 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const raw = value as Record<string, unknown>;
   assertOnlyKeys(raw, ["$schema", "id", "name", "version", "description", "engines", "permissions", "contributes"], label);
-  if (raw.$schema !== ORG2_PLUGIN_MANIFEST_SCHEMA) throw new Error(`${label} must use ${ORG2_PLUGIN_MANIFEST_SCHEMA}`);
+  if (!schemaMatches(raw.$schema, ORG2_PLUGIN_MANIFEST_SCHEMA)) throw new Error(`${label} must use ${ORG2_PLUGIN_MANIFEST_SCHEMA}`);
   const id = requiredString(raw.id, `${label}.id`).toLowerCase();
   if (!ID_PATTERN.test(id)) throw new Error(`${label}.id must match ${ID_PATTERN}`);
   const name = requiredString(raw.name, `${label}.name`);
@@ -418,9 +419,9 @@ export function validatePluginManifest(value: unknown, label: string = "org2-plu
   if (enginesRaw !== undefined && (!enginesRaw || typeof enginesRaw !== "object" || Array.isArray(enginesRaw))) {
     throw new Error(`${label}.engines must be an object`);
   }
-  if (enginesRaw) assertOnlyKeys(enginesRaw as Record<string, unknown>, ["org2"], `${label}.engines`);
+  if (enginesRaw) assertOnlyKeys(enginesRaw as Record<string, unknown>, ["celorga", "org2"], `${label}.engines`);
   const org2Engine = enginesRaw && typeof enginesRaw === "object" && !Array.isArray(enginesRaw)
-    ? optionalString((enginesRaw as Record<string, unknown>).org2)
+    ? optionalString((enginesRaw as Record<string, unknown>).celorga) || optionalString((enginesRaw as Record<string, unknown>).org2)
     : undefined;
   return {
     $schema: ORG2_PLUGIN_MANIFEST_SCHEMA,
@@ -500,7 +501,7 @@ export function installedOrg2Version(): string {
 export function assertPluginEngineCompatible(manifest: Org2PluginManifest, currentVersion: string = installedOrg2Version()): void {
   const range = manifest.engines?.org2;
   if (range && !pluginEngineSatisfied(range, currentVersion)) {
-    throw new Error(`plugin ${manifest.id} requires Org2 ${range}, but this installation is ${currentVersion}`);
+    throw new Error(`plugin ${manifest.id} requires Celorga ${range}, but this installation is ${currentVersion}`);
   }
 }
 
@@ -530,8 +531,10 @@ function validateLockEntry(value: unknown, label: string): Org2PluginLockEntry {
 }
 
 export function loadPluginManifest(pluginRoot: string): Org2PluginManifest {
-  const file = path.join(pluginRoot, "org2-plugin.json");
-  if (!fs.existsSync(file)) throw new Error(`plugin package is missing ${file}`);
+  // celorga-plugin.json is the current manifest name; org2-plugin.json is still accepted.
+  const modern = path.join(pluginRoot, "celorga-plugin.json");
+  const file = fs.existsSync(modern) ? modern : path.join(pluginRoot, "org2-plugin.json");
+  if (!fs.existsSync(file)) throw new Error(`plugin package is missing ${modern}`);
   return validatePluginManifest(JSON.parse(fs.readFileSync(file, "utf8")), file);
 }
 
@@ -602,11 +605,15 @@ export function pluginEntryPath(pluginRoot: string, relative: string): string {
 
 export function pluginEnvironment(manifest: Org2PluginManifest, entry: Org2PluginLockEntry): NodeJS.ProcessEnv {
   const allowed = new Set(["HOME", "PATH", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TZ"]);
-  for (const variable of manifest.permissions?.environment || []) allowed.add(variable);
+  for (const variable of manifest.permissions?.environment || []) for (const alias of nameAliases(variable)) allowed.add(alias);
+  // Plugins see both spellings (CELORGA_X and ORG2_X) of the variables set for them.
   const environment: NodeJS.ProcessEnv = {
     ORG2_PLUGIN_ID: entry.id,
     ORG2_PLUGIN_VERSION: entry.version,
     ORG2_PLUGIN_CONTENT_HASH: entry.contentHash,
+    CELORGA_PLUGIN_ID: entry.id,
+    CELORGA_PLUGIN_VERSION: entry.version,
+    CELORGA_PLUGIN_CONTENT_HASH: entry.contentHash,
   };
   for (const variable of allowed) {
     if (process.env[variable] !== undefined) environment[variable] = process.env[variable];
@@ -741,7 +748,7 @@ export function renderPluginSourceBlocks(
           endLine: block.endLine,
         },
       }, opts.timeoutMs ?? 5_000);
-      if (result.$schema !== ORG2_PLUGIN_RENDER_RESULT_SCHEMA) throw new Error(`renderer must return ${ORG2_PLUGIN_RENDER_RESULT_SCHEMA}`);
+      if (!schemaMatches(result.$schema, ORG2_PLUGIN_RENDER_RESULT_SCHEMA)) throw new Error(`renderer must return ${ORG2_PLUGIN_RENDER_RESULT_SCHEMA}`);
       const html = boundedString(result.html, 500_000, "renderer html");
       const css = boundedString(result.css, 100_000, "renderer css");
       const script = boundedString(result.script, 200_000, "renderer script");
@@ -768,7 +775,7 @@ export function renderPluginSourceBlocks(
 }
 
 export function desiredPlugins(corpusRoot: string): Org2PluginConfig[] {
-  const configPath = path.join(path.resolve(corpusRoot), "org2.json");
+  const configPath = configFilePath(path.resolve(corpusRoot));
   if (!fs.existsSync(configPath)) throw new Error(`plugin commands require ${configPath}`);
   const config = loadConfig(configPath);
   if (config.plugins === undefined) return [];

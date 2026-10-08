@@ -5,8 +5,8 @@ This page keeps migration simple: keep existing notes working while you adopt Ce
 * Commands and compatibility
 
 - Install with =npm install -g celorga=.
-- The commands are =celorga= and =celorga-lsp=. =org2= and =org2-lsp= remain installed as compatibility aliases, so existing scripts, MCP configurations, and editor settings keep working.
-- Existing =.org2= files, =org2.json=, and =ORG2_*= environment variables and properties keep working; no rename is required.
+- The commands are =celorga= and =celorga-lsp=.
+- Upgrading from a release made before the rename? Older command, file, configuration, and property names keep working; see [[file:name-compatibility.org][Upgrading from earlier releases]].
 
 * Existing Org notes
 

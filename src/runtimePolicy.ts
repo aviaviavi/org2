@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { stateDir } from "./brandNames.js";
 
 export const ORG2_RUNTIME_POLICY_SCHEMA = "org2:runtime-policy:v1" as const;
 
@@ -80,7 +81,7 @@ export function validateRuntimePaths(config: RuntimePolicy, requiredCapabilities
   return { valid: issues.length === 0, ...(local ? { local } : {}), ...(hosted ? { hosted } : {}), issues };
 }
 
-export function runtimePolicyPath(root: string): string { return path.join(path.resolve(root), ".org2", "runtime-policy.json"); }
+export function runtimePolicyPath(root: string): string { return stateDir(path.resolve(root), "runtime-policy.json"); }
 export function loadRuntimePolicy(root: string): RuntimePolicy {
   const file = runtimePolicyPath(root);
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) as RuntimePolicy : defaultRuntimePolicy();

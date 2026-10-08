@@ -2,7 +2,7 @@
 #+SUBTITLE: Install Celorga and its developer tools
 
 #+BEGIN_EXPORT html
-<section class="org2-page-intro org2-downloads-intro">
+<section class="celorga-page-intro celorga-downloads-intro">
   <p>Celorga is a local-first workspace app with an open runtime, CLI, and developer toolkit. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT
@@ -10,34 +10,34 @@
 * Celorga 0.8.8
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid" aria-label="Celorga 0.8.8 downloads">
-    <article class="org2-download-card org2-download-card-macos-apple-silicon">
-      <p class="org2-download-kicker">macOS</p>
+<section class="celorga-download-grid" aria-label="Celorga 0.8.8 downloads">
+    <article class="celorga-download-card celorga-download-card-macos-apple-silicon">
+      <p class="celorga-download-kicker">macOS</p>
       <h3>Celorga for macOS (Apple Silicon DMG)</h3>
       <p>Native Apple Silicon workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.8.8 · 230.3 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="celorga-download-meta">0.8.8 · 230.3 MB</p>
+      <a class="celorga-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
-    <article class="org2-download-card org2-download-card-macos-intel">
-      <p class="org2-download-kicker">macOS</p>
+    <article class="celorga-download-card celorga-download-card-macos-intel">
+      <p class="celorga-download-kicker">macOS</p>
       <h3>Celorga for macOS (Intel DMG)</h3>
       <p>Native Intel workspace app. Developer ID signed, notarized, and stapled.</p>
-      <p class="org2-download-meta">0.8.8 · 232.5 MB</p>
-      <a class="org2-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
+      <p class="celorga-download-meta">0.8.8 · 232.5 MB</p>
+      <a class="celorga-download-button" href="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg-Intel.dmg">Download <span aria-hidden="true">↓</span></a>
     </article>
-    <article class="org2-download-card org2-download-card-vscode">
-      <p class="org2-download-kicker">VS Code</p>
+    <article class="celorga-download-card celorga-download-card-vscode">
+      <p class="celorga-download-kicker">VS Code</p>
       <h3>Celorga for VS Code</h3>
       <p>Editor integration with syntax, agenda, navigation, formatting, and Celorga commands.</p>
-      <p class="org2-download-meta">VS Code Marketplace</p>
-      <a class="org2-download-button" href="https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode">View in Marketplace <span aria-hidden="true">↗</span></a>
+      <p class="celorga-download-meta">VS Code Marketplace</p>
+      <a class="celorga-download-button" href="https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode">View in Marketplace <span aria-hidden="true">↗</span></a>
     </article>
-    <article class="org2-download-card org2-download-card-npm">
-      <p class="org2-download-kicker">npm / CLI</p>
+    <article class="celorga-download-card celorga-download-card-npm">
+      <p class="celorga-download-kicker">npm / CLI</p>
       <h3>Celorga npm package</h3>
       <p>CLI, compiler, language server, publishing runtime, and agent-facing tools.</p>
-      <p class="org2-download-meta">npm registry</p>
-      <a class="org2-download-button" href="https://www.npmjs.com/package/celorga">View on npm <span aria-hidden="true">↗</span></a>
+      <p class="celorga-download-meta">npm registry</p>
+      <a class="celorga-download-button" href="https://www.npmjs.com/package/celorga">View on npm <span aria-hidden="true">↗</span></a>
     </article>
 </section>
 #+END_EXPORT
@@ -51,20 +51,20 @@ For registry-managed installation, use [[https://www.npmjs.com/package/celorga][
 Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The beta is currently invitation-only, or you can build the open-source app directly with Xcode.
 
 #+BEGIN_EXPORT html
-<section class="org2-download-grid org2-download-grid-mobile" aria-label="Celorga for iOS installation options">
-  <article class="org2-download-card org2-download-card-ios">
-    <p class="org2-download-kicker">TestFlight</p>
+<section class="celorga-download-grid celorga-download-grid-mobile" aria-label="Celorga for iOS installation options">
+  <article class="celorga-download-card celorga-download-card-ios">
+    <p class="celorga-download-kicker">TestFlight</p>
     <h3>Join the private beta</h3>
     <p>Get the current iPhone build and future beta updates through TestFlight. Email Avi to request an invitation; include the email address you use with TestFlight.</p>
-    <p class="org2-download-meta">Private beta · iPhone</p>
-    <a class="org2-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
+    <p class="celorga-download-meta">Private beta · iPhone</p>
+    <a class="celorga-download-button" href="mailto:mail@avi.press?subject=Celorga%20for%20iOS%20TestFlight">Request TestFlight access <span aria-hidden="true">→</span></a>
   </article>
-  <article class="org2-download-card org2-download-card-source">
-    <p class="org2-download-kicker">Open source</p>
+  <article class="celorga-download-card celorga-download-card-source">
+    <p class="celorga-download-kicker">Open source</p>
     <h3>Build it with Xcode</h3>
     <p>Open the included Xcode project, select your Apple development team, configure the shared App Group, and install directly on your own iPhone.</p>
-    <p class="org2-download-meta">Source · Xcode</p>
-    <a class="org2-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
+    <p class="celorga-download-meta">Source · Xcode</p>
+    <a class="celorga-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
   </article>
 </section>
 #+END_EXPORT

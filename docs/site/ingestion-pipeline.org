@@ -4,7 +4,7 @@ Celorga ingestion keeps external context as reviewable source material before an
 
 * Data model
 
-Raw connector output uses =org2-ingestion/v1= and is stored in a raw/source zone such as =raw/slack/=, =raw/gmail/=, or a configured equivalent.
+Raw connector output uses the versioned ingestion record format and is stored in a raw/source zone such as =raw/slack/=, =raw/gmail/=, or a configured equivalent.
 
 Required raw capture fields:
 
@@ -26,7 +26,7 @@ Derived review artifacts are generated beside, not over, durable notes. They inc
 - entity candidates
 - claims
 - source citations back to =rawRef=
-- =ORG2_REVIEW_STATUS= / artifact metadata so promotion is explicit
+- =CELORGA_REVIEW_STATUS= / artifact metadata so promotion is explicit
 
 * Pipeline
 
@@ -46,4 +46,4 @@ The provider-free demo implementation lives in =src/ingestionPipeline.ts=. It ac
 - =raw/<source>-<external-id>-<hash>.json=
 - =review/<source>-<external-id>-<hash>.org=
 
-The review artifact contains =ORG2_ARTIFACT_SCHEMA=, =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS: review-required=.
+The review artifact contains =CELORGA_ARTIFACT_SCHEMA=, =CELORGA_PROVENANCE=, =CELORGA_SOURCE_HASHES=, and =CELORGA_REVIEW_STATUS: review-required=.

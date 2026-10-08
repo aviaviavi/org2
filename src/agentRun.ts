@@ -9,6 +9,7 @@ import {
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultRunApprovalIndexPath } from "./indexPaths.js";
 import { safeIdentifier } from "./safeIdentifier.js";
+import { brandProperty, schemaMatches, stateDir } from "./brandNames.js";
 
 export const ORG2_AGENT_RUN_SCHEMA = "org2:agent-run:v1" as const;
 export const AGENT_RUN_TITLE_MAX_LENGTH = 120;
@@ -510,7 +511,7 @@ export function validateAgentRun(value: unknown): AgentRunValidationResult {
     return { valid: false, issues: [{ path: "$", message: "run must be an object" }] };
   }
   const run = value as Partial<AgentRun>;
-  if (run.schema !== ORG2_AGENT_RUN_SCHEMA) issues.push({ path: "$.schema", message: `must be ${ORG2_AGENT_RUN_SCHEMA}` });
+  if (!schemaMatches(run.schema, ORG2_AGENT_RUN_SCHEMA)) issues.push({ path: "$.schema", message: `must be ${ORG2_AGENT_RUN_SCHEMA}` });
   if (!run.id || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(run.id)) issues.push({ path: "$.id", message: "must be a safe non-empty id" });
   if (run.title !== undefined && !String(run.title).trim()) issues.push({ path: "$.title", message: "must not be empty when present" });
   if (!String(run.goal || "").trim()) issues.push({ path: "$.goal", message: "must not be empty" });
@@ -1167,7 +1168,7 @@ export function agentRunSourceConsistency(
 }
 
 export function agentRunDirectory(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "runs");
+  return stateDir(path.resolve(corpusRoot), "runs");
 }
 
 export function agentRunPath(corpusRoot: string, id: string): string {
@@ -1238,7 +1239,7 @@ function readAgentRunApprovalIndex(corpusRoot: string): AgentRunApprovalIndex | 
   try {
     const parsed = JSON.parse(fs.readFileSync(defaultRunApprovalIndexPath(rootDir), "utf8")) as AgentRunApprovalIndex;
     if (
-      parsed.$schema !== "org2:run-approval-index:v1"
+      !schemaMatches(parsed.$schema, "org2:run-approval-index:v1")
       || parsed.version !== 1
       || path.resolve(parsed.rootDir) !== rootDir
       || !Array.isArray(parsed.entries)
@@ -1469,13 +1470,13 @@ export function normalizeLegacyAgentRuns(corpusRoot: string, nowRaw?: string): L
         parentRunId: props.get("PARENT_RUN_ID"),
         now: nowRaw,
       });
-      const artifactRole = String(props.get("ORG2_ARTIFACT_ROLE") || props.get("ARTIFACT_ROLE") || "").toLowerCase();
+      const artifactRole = String(brandProperty(props, "ORG2_ARTIFACT_ROLE") || props.get("ARTIFACT_ROLE") || "").toLowerCase();
       if (["draft", "diff", "compiled", "view", "report", "export", "receipt"].includes(artifactRole)) {
         run = addAgentRunArtifact(run, {
           path: path.relative(root, file).split(path.sep).join("/"),
           role: artifactRole as AgentRunArtifact["role"],
           title: heading,
-          reviewStatus: (["generated", "review-required", "reviewed", "promoted", "rejected"].includes(String(props.get("ORG2_REVIEW_STATUS") || "").toLowerCase()) ? String(props.get("ORG2_REVIEW_STATUS")).toLowerCase() : "review-required") as AgentRunArtifact["reviewStatus"],
+          reviewStatus: (["generated", "review-required", "reviewed", "promoted", "rejected"].includes(String(brandProperty(props, "ORG2_REVIEW_STATUS") || "").toLowerCase()) ? String(brandProperty(props, "ORG2_REVIEW_STATUS")).toLowerCase() : "review-required") as AgentRunArtifact["reviewStatus"],
         }, "org2");
       }
       const approvalStatus = String(props.get("APPROVAL_STATUS") || props.get("REVIEW_STATUS") || "").toLowerCase();

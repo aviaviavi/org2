@@ -11,7 +11,8 @@ export type AiJobManifestValidationResult = {
   issues: AiJobManifestValidationIssue[];
 };
 
-const SCHEMA_VERSION = "org2-ai-job/v1";
+const SCHEMA_VERSION = "celorga-ai-job/v1";
+const LEGACY_SCHEMA_VERSION = "org2-ai-job/v1";
 
 const TASK_TYPES = new Set([
   "summarize",
@@ -133,7 +134,7 @@ export function validateAiJobManifest(value: unknown): AiJobManifestValidationRe
 
   scanForSecrets(value, "$", issues);
 
-  if (value.schemaVersion !== SCHEMA_VERSION) {
+  if (value.schemaVersion !== SCHEMA_VERSION && value.schemaVersion !== LEGACY_SCHEMA_VERSION) {
     addIssue(issues, "$.schemaVersion", `must be ${JSON.stringify(SCHEMA_VERSION)}`);
   }
 

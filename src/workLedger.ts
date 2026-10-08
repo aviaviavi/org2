@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
+import { schemaMatches } from "./brandNames.js";
 
 export const ORG2_WORK_LEDGER_ACCOUNT_SCHEMA = "org2:work-ledger-account:v1" as const;
 export const WORK_LEDGER_ACCOUNT_STATES = ["active", "paused", "suppressed", "closed"] as const;
@@ -151,7 +152,7 @@ export function validateWorkLedgerAccount(value: unknown): WorkLedgerValidationR
   const issues: WorkLedgerValidationIssue[] = [];
   if (!value || typeof value !== "object" || Array.isArray(value)) return { valid: false, issues: [{ path: "$", message: "must be an object" }] };
   const account = value as Partial<WorkLedgerAccount>;
-  if (account.schema !== ORG2_WORK_LEDGER_ACCOUNT_SCHEMA) issues.push({ path: "$.schema", message: `must be ${ORG2_WORK_LEDGER_ACCOUNT_SCHEMA}` });
+  if (!schemaMatches(account.schema, ORG2_WORK_LEDGER_ACCOUNT_SCHEMA)) issues.push({ path: "$.schema", message: `must be ${ORG2_WORK_LEDGER_ACCOUNT_SCHEMA}` });
   for (const [key, label] of [[account.ledger, "ledger"], [account.id, "account"]] as const) {
     if (typeof key !== "string" || !/^[a-z0-9][a-z0-9._-]*$/.test(key)) issues.push({ path: `$.${label}`, message: "has an invalid stable id" });
   }
@@ -372,7 +373,7 @@ export function workLedgerAccountFiles(root: string): string[] {
       if (!accountEntry.isFile() || !/\.org2$/i.test(accountEntry.name)) continue;
       const file = path.join(accounts, accountEntry.name);
       const raw = fs.readFileSync(file, "utf8");
-      if (/^#\+ORG2_KIND:\s*work-ledger-account\s*$/im.test(raw) || /#\+begin_src\s+json\s+:org2-work-ledger-account\b/i.test(raw)) files.push(file);
+      if (/^#\+(?:CELORGA|ORG2)_KIND:\s*work-ledger-account\s*$/im.test(raw) || /#\+begin_src\s+json\s+:org2-work-ledger-account\b/i.test(raw)) files.push(file);
     }
   }
   return files.sort();

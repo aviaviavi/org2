@@ -5,7 +5,7 @@ import {
   registerOrg2WorkspaceNodePolicy,
 } from "../lib/local-edit-node.js";
 
-test("registers the typed Org2 workspace commands for macOS nodes", async () => {
+test("registers the typed Celorga workspace commands (and org2 aliases) for macOS nodes", async () => {
   let registered;
   registerOrg2WorkspaceNodePolicy({
     registerNodeInvokePolicy(policy) {
@@ -14,8 +14,11 @@ test("registers the typed Org2 workspace commands for macOS nodes", async () => 
   });
 
   assert.deepEqual(registered.commands, [
+    "celorga.workspace.read",
     "org2.workspace.read",
+    "celorga.workspace.patch.preview",
     "org2.workspace.patch.preview",
+    "celorga.workspace.patch.apply",
     "org2.workspace.patch.apply",
   ]);
   assert.deepEqual(registered.commands, org2WorkspaceNodeCommands);
@@ -62,7 +65,7 @@ test("rejects the compatibility allowlist on a non-Mac node", async () => {
   assert.deepEqual(result, {
     ok: false,
     code: "ORG2_LOCAL_EDIT_NODE_REQUIRED",
-    message: "Org2 workspace commands are available only from the paired macOS app node.",
+    message: "Celorga workspace commands are available only from the paired macOS app node.",
     unavailable: true,
   });
 });

@@ -66,7 +66,7 @@ final class CorpusStore: ObservableObject {
 
   func restoreCorpus() async {
     #if DEBUG
-    if let debugCorpusPath = ProcessInfo.processInfo.environment["ORG2_DEBUG_CORPUS_PATH"],
+    if let debugCorpusPath = CelorgaNames.environment("ORG2_DEBUG_CORPUS_PATH"),
        !debugCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let url = URL(fileURLWithPath: debugCorpusPath, isDirectory: true)
       setRootURL(url)
@@ -522,7 +522,10 @@ final class CorpusStore: ObservableObject {
   }
 
   nonisolated private static func runApprovalEntries(rootURL: URL) -> [ApprovalEntry] {
-    let directory = rootURL.appendingPathComponent(".org2/runs", isDirectory: true)
+    let stateDirectoryName = CelorgaNames.stateDirectoryName(corpusRoot: rootURL)
+    let directory = rootURL
+      .appendingPathComponent(stateDirectoryName, isDirectory: true)
+      .appendingPathComponent("runs", isDirectory: true)
     guard let urls = try? FileManager.default.contentsOfDirectory(
       at: directory,
       includingPropertiesForKeys: [.isRegularFileKey],
@@ -540,7 +543,7 @@ final class CorpusStore: ObservableObject {
             let run = try? JSONDecoder().decode(MobileAgentRun.self, from: data) else {
         return []
       }
-      let file = ".org2/runs/\(url.lastPathComponent)"
+      let file = "\(stateDirectoryName)/runs/\(url.lastPathComponent)"
       return run.approvals.filter { $0.status == "pending" }.map { approval in
         ApprovalEntry(
           id: "run:\(run.id):\(approval.id)",
@@ -688,8 +691,8 @@ final class CorpusStore: ObservableObject {
   }
 
   nonisolated private static func mobileOrg2Config(in baseURL: URL) -> MobileOrg2Config? {
-    let configURL = baseURL.appendingPathComponent("org2.json")
-    guard let data = try? Data(contentsOf: configURL) else { return nil }
+    guard let configURL = CelorgaNames.configFile(in: baseURL),
+          let data = try? Data(contentsOf: configURL) else { return nil }
     return try? JSONDecoder().decode(MobileOrg2Config.self, from: data)
   }
 
@@ -1174,7 +1177,7 @@ final class CorpusStore: ObservableObject {
       "APPROVED_AT": timestamp,
     ]
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "ORG2_REVIEW_STATUS",
       "REVIEW_STATUS",
       "REVIEW",
@@ -1182,11 +1185,11 @@ final class CorpusStore: ObservableObject {
       "REPLY_STATUS",
       "ACCESS_POLICY",
       "REVIEW_POLICY",
-    ] where approvalProperties[key] != nil {
+    ]) where approvalProperties[key] != nil {
       properties[key] = "approved"
     }
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "WAITING_ON",
       "BLOCKED_BY",
       "ORG2_WAITING_ON",
@@ -1195,7 +1198,7 @@ final class CorpusStore: ObservableObject {
       "ORG2_NEXT_ACTION",
       "HANDOFF_SUMMARY",
       "ORG2_HANDOFF_SUMMARY",
-    ] {
+    ]) {
       guard let value = approvalProperties[key]?.lowercased() else { continue }
       if value.contains("approval") || value.contains("approve") || value.contains("review") || value.contains("avi") {
         properties[key] = "approved"
@@ -1245,7 +1248,7 @@ final class CorpusStore: ObservableObject {
       "REJECTION_REASON": sanitizeProperty(reason),
     ]
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "ORG2_REVIEW_STATUS",
       "REVIEW_STATUS",
       "REVIEW",
@@ -1253,7 +1256,7 @@ final class CorpusStore: ObservableObject {
       "REPLY_STATUS",
       "ACCESS_POLICY",
       "REVIEW_POLICY",
-    ] where approval.properties[key] != nil {
+    ]) where approval.properties[key] != nil {
       properties[key] = "rejected"
     }
 
@@ -1284,7 +1287,7 @@ final class CorpusStore: ObservableObject {
 
   private func scheduleDueTodayNotification(from agenda: [AgendaEntry]) {
     #if DEBUG
-    if ProcessInfo.processInfo.environment["ORG2_DEBUG_SUPPRESS_NOTIFICATIONS"] == "1" {
+    if CelorgaNames.environment("ORG2_DEBUG_SUPPRESS_NOTIFICATIONS") == "1" {
       return
     }
     #endif

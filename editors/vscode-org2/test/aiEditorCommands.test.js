@@ -16,7 +16,7 @@ function hasPowerBinding(keybindings, key, command) {
     binding.key === key &&
     binding.command === command &&
     typeof binding.when === 'string' &&
-    binding.when.includes('config.org2.keymap.power') &&
+    binding.when.includes('celorga.keymap.power') &&
     binding.when.includes("(editorLangId == 'org2' || editorLangId == 'org')")
   );
 }
@@ -35,28 +35,28 @@ test('AI review and graph audit editor commands are contributed, activated, and 
   const commands = pkg.contributes?.commands?.map((command) => command.command) ?? [];
 
   for (const command of [
-    'org2.graphAuditWorkspace',
-    'org2.aiReviewWorkspace',
-    'org2.aiMarkReviewed',
-    'org2.aiMarkRejected',
-    'org2.aiMarkDeferred',
+    'celorga.graphAuditWorkspace',
+    'celorga.aiReviewWorkspace',
+    'celorga.aiMarkReviewed',
+    'celorga.aiMarkRejected',
+    'celorga.aiMarkDeferred',
   ]) {
     assert.equal(commands.includes(command), true, `${command} command contribution`);
     assert.equal(pkg.activationEvents.includes(`onCommand:${command}`), true, `${command} activation event`);
-    assert.equal(extensionSource.includes(`registerCommand('${command}'`), true, `${command} runtime registration`);
+    assert.equal(extensionSource.includes(`registerBrandCommand('${command}'`), true, `${command} runtime registration`);
   }
 });
 
 test('power keymap includes AI lifecycle, graph audit, and subtree motion shortcuts', () => {
   const keybindings = loadPackage().contributes?.keybindings ?? [];
 
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; g a', 'org2.graphAuditWorkspace'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i v', 'org2.aiReviewWorkspace'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i r', 'org2.aiMarkReviewed'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i x', 'org2.aiMarkRejected'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i d', 'org2.aiMarkDeferred'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h left', 'org2.promoteSubtree'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h right', 'org2.demoteSubtree'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h up', 'org2.moveSubtreeUp'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h down', 'org2.moveSubtreeDown'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; g a', 'celorga.graphAuditWorkspace'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i v', 'celorga.aiReviewWorkspace'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i r', 'celorga.aiMarkReviewed'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i x', 'celorga.aiMarkRejected'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; i d', 'celorga.aiMarkDeferred'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h left', 'celorga.promoteSubtree'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h right', 'celorga.demoteSubtree'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h up', 'celorga.moveSubtreeUp'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; h down', 'celorga.moveSubtreeDown'), true);
 });

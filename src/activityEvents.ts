@@ -42,6 +42,7 @@ import {
   type OpenClawChatThreadRecord,
   type OpenClawThreadState,
 } from "./openClawThreadState.js";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const ACTIVITY_EVENT_SCHEMA = "org2:activity-event:v1" as const;
 export const ACTIVITY_WAIT_SCHEMA = "org2:activity-wait:v1" as const;
@@ -419,7 +420,7 @@ function watchPaths(corpusRoot: string): string[] {
     liveHostDirectory(corpusRoot),
     aiChatInboxDirectory(corpusRoot),
     workflowDirectory(corpusRoot),
-    path.join(corpusRoot, ".org2", "workflows"),
+    stateDir(corpusRoot, "workflows"),
   ];
 }
 
@@ -492,7 +493,7 @@ export async function followActivityEvents(
   let liveTurns = new Map<string, ActivityHost>();
   for (const host of loadActivityHosts(corpusRoot, now())) if (isHostLive(host)) for (const turn of host.turns) liveTurns.set(normalizedID(turn.threadID), host);
   let inboxFingerprint = directoryFingerprint(aiChatInboxDirectory(corpusRoot));
-  let workflowFingerprint = `${directoryFingerprint(workflowDirectory(corpusRoot))}|${directoryFingerprint(path.join(corpusRoot, ".org2", "workflows"))}`;
+  let workflowFingerprint = `${directoryFingerprint(workflowDirectory(corpusRoot))}|${directoryFingerprint(stateDir(corpusRoot, "workflows"))}`;
   const workflowAttempts = new Map<string, number>();
   const trigger = changeTrigger(watchPaths(corpusRoot), options.intervalMs ?? 1000, options.signal);
   try {
@@ -567,7 +568,7 @@ export async function followActivityEvents(
       hostStates = nextStates;
       liveTurns = nextTurns;
       // Workflow dispatches.
-      const workflows = `${directoryFingerprint(workflowDirectory(corpusRoot))}|${directoryFingerprint(path.join(corpusRoot, ".org2", "workflows"))}`;
+      const workflows = `${directoryFingerprint(workflowDirectory(corpusRoot))}|${directoryFingerprint(stateDir(corpusRoot, "workflows"))}`;
       if (workflows !== workflowFingerprint) {
         workflowFingerprint = workflows;
         try {
@@ -816,5 +817,5 @@ export function waitExitCode(result: ActivityWaitResult): number {
 }
 
 export function isActivityEventRecord(value: unknown): value is ActivityEvent {
-  return isRecord(value) && value.schema === ACTIVITY_EVENT_SCHEMA && typeof value.type === "string";
+  return isRecord(value) && schemaMatches(value.schema, ACTIVITY_EVENT_SCHEMA) && typeof value.type === "string";
 }

@@ -12,8 +12,8 @@ The *Celorga runtime* is the independently specified compiler, CLI, and semantic
 * Portability
 
 - Ordinary =.org= files are the source of truth for documents.
-- The command-line tools are =celorga= and =celorga-lsp=; =org2= and =org2-lsp= remain compatibility aliases.
-- The npm package is =celorga= (releases before the rename were published as =@aviaviavi/org2=).
+- The command-line tools are =celorga= and =celorga-lsp=.
+- The npm package is =celorga=. Releases made before the rename used other names; see [[file:name-compatibility.org][Upgrading from earlier releases]].
 - VS Code, Vim, Neovim, Emacs, CLI JSON, and MCP clients can work with the same corpus.
 - Agent runs, workflows, approvals, citations, and provenance are inspectable corpus records.
 - Any configured local, remote, hosted, or self-hosted agent can participate above the deterministic Celorga runtime.

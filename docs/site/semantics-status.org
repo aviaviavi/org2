@@ -13,7 +13,7 @@ This page is the compact contract for what is stable in Celorga today, what is i
 
 * Stable implementation behavior (documented, but not yet fully spec-locked)
 
-- CLI workflows and flags in =org2 --help= families (=agenda=, =roam=, =crypt=, =publish=, etc.).
+- CLI workflows and flags in =celorga --help= families (=agenda=, =roam=, =crypt=, =publish=, etc.).
 - Agenda query semantics used by current CLI/editor integrations.
 - Backlinks presentation behavior in current VS Code extension.
 

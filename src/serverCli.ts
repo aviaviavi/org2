@@ -12,6 +12,7 @@ import { corpusIdentityStatus } from "./corpusIdentity.js";
 import { guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { mcpAccessTokenHash, startMcpHttpServer, type McpHttpServerHandle } from "./mcpHttp.js";
 import { safeIdentifier } from "./safeIdentifier.js";
+import { schemaMatches } from "./brandNames.js";
 
 interface ServerDestination {
   id: string; name: string; mention: string; adapter: string; endpoint: string;
@@ -202,7 +203,7 @@ function contained(root: string, file: string): boolean {
 export function validateServerConfiguration(value: unknown, configFile: string): ServerConfiguration {
   if (!value || typeof value !== "object") throw new Error("Invalid server configuration");
   const config = value as ServerConfiguration;
-  if (config.schema !== "org2:server-config:v1") throw new Error("Unsupported server configuration schema");
+  if (!schemaMatches(config.schema, "org2:server-config:v1")) throw new Error("Unsupported server configuration schema");
   safeIdentifier(config.hostRef);
   if (!config.name?.trim() || config.name.length > 120) throw new Error("Server name must contain 1-120 characters");
   const octets = String(config.bindHost).split(".");

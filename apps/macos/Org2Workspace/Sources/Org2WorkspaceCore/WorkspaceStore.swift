@@ -3765,7 +3765,7 @@ public final class WorkspaceStore {
   private var editorSaveConflictPersistenceKey: String?
   private var failedEditorPersistenceDraftsByKey: [String: FailedEditorPersistenceDraft] = [:]
   public var automationHostRef: String = "desktop"
-  /// The corpus's scheduler owner from `org2.json` (`automationHostRef`),
+  /// The corpus's scheduler owner from `celorga.json` or `org2.json` (`automationHostRef`),
   /// read when Activity refreshes. Nil until read.
   public internal(set) var corpusAutomationHostRef: String?
   /// Context-aware actions and lifecycle hooks contributed by locked plugins.
@@ -4093,7 +4093,7 @@ extension WorkspaceStore {
   }
 
   private func screenshotCorpusRootFromEnvironment() -> URL? {
-    guard let raw = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CORPUS"]?
+    guard let raw = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_CORPUS")?
       .trimmingCharacters(in: .whitespacesAndNewlines),
       !raw.isEmpty
     else {
@@ -4104,7 +4104,7 @@ extension WorkspaceStore {
   }
 
   private func screenshotModeFromEnvironment() -> String? {
-    let raw = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_MODE"]?
+    let raw = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_MODE")?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
     return raw?.isEmpty == false ? raw : nil
@@ -4112,7 +4112,7 @@ extension WorkspaceStore {
 
   private func applyScreenshotModeFromEnvironment() async {
     guard let mode = screenshotModeFromEnvironment() else { return }
-    let target = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_TARGET"]?
+    let target = CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_TARGET")?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
 
@@ -4378,7 +4378,7 @@ extension WorkspaceStore {
     fileManager: FileManager = .default
   ) -> URL {
     let legacy = documents.appendingPathComponent("OpenOrg", isDirectory: true)
-    if fileManager.fileExists(atPath: legacy.appendingPathComponent("org2.json").path) {
+    if CelorgaNames.hasConfigFile(in: legacy, fileManager: fileManager) {
       return legacy.standardizedFileURL
     }
     return documents.appendingPathComponent("Celorga", isDirectory: true).standardizedFileURL
@@ -4402,7 +4402,7 @@ extension WorkspaceStore {
         return candidate
       }
       guard isDirectory.boolValue else { continue }
-      if fileManager.fileExists(atPath: candidate.appendingPathComponent("org2.json").path) {
+      if CelorgaNames.hasConfigFile(in: candidate, fileManager: fileManager) {
         return candidate
       }
       let visibleEntries = try fileManager.contentsOfDirectory(
@@ -8615,7 +8615,7 @@ extension WorkspaceStore {
 
   public func openAgentRunRecord(_ run: AgentRunItem) {
     guard let corpusRoot else { return }
-    let relativePath = ".org2/runs/\(run.id).org2"
+    let relativePath = CelorgaNames.stateRelativePath("runs/\(run.id).org2", corpusRoot: corpusRoot)
     let recordURL = corpusRoot.appendingPathComponent(relativePath)
     guard FileManager.default.fileExists(atPath: recordURL.path) else {
       errorText = "The run record could not be found at \(relativePath)."
@@ -9084,7 +9084,7 @@ extension WorkspaceStore {
     let indexURL = searchIndexURL(corpusRoot: root)
     guard let data = try? Data(contentsOf: indexURL),
           let index = try? JSONDecoder().decode(WorkspaceSearchIndex.self, from: data),
-          index.schema == "org2:search-index:v1",
+          CelorgaNames.schemaMatches(index.schema, "org2:search-index:v1"),
           index.version == 1,
           URL(fileURLWithPath: index.rootDir).standardizedFileURL.path == root.path,
           index.recursive,
@@ -9110,7 +9110,7 @@ extension WorkspaceStore {
     let indexURL = searchIndexURL(corpusRoot: root)
     guard let data = try? Data(contentsOf: indexURL),
           let index = try? JSONDecoder().decode(WorkspaceSearchIndex.self, from: data),
-          index.schema == "org2:search-index:v1",
+          CelorgaNames.schemaMatches(index.schema, "org2:search-index:v1"),
           index.version == 1,
           URL(fileURLWithPath: index.rootDir).standardizedFileURL.path == root.path,
           index.recursive,
@@ -9148,7 +9148,7 @@ extension WorkspaceStore {
   }
 
   nonisolated private static func searchIndexURL(corpusRoot: URL) -> URL {
-    let configuredIndexHome = ProcessInfo.processInfo.environment["ORG2_INDEX_HOME"]?
+    let configuredIndexHome = CelorgaNames.environment("ORG2_INDEX_HOME")?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let indexHome: URL
     if let configuredIndexHome, !configuredIndexHome.isEmpty {
@@ -10342,7 +10342,7 @@ extension WorkspaceStore {
   }
 
   nonisolated private static func firstPropertyText(in properties: [String: String], keys: [String]) -> String? {
-    for key in keys {
+    for key in CelorgaNames.withAliases(keys) {
       let value = properties[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
       if value?.isEmpty == false {
         return value
@@ -11653,7 +11653,7 @@ extension WorkspaceStore {
 
   /// The work state for an agenda row, from its ORG2_RUN_ID and ID properties.
   public func headingWorkState(properties: [String: String]) -> HeadingWorkBadge? {
-    let runID = properties["ORG2_RUN_ID"]?.trimmingCharacters(in: .whitespaces).nilIfBlank
+    let runID = CelorgaNames.property("ORG2_RUN_ID", in: properties)?.trimmingCharacters(in: .whitespaces).nilIfBlank
     let idValue = properties["ID"]?.trimmingCharacters(in: .whitespaces).nilIfBlank
     guard runID != nil || idValue != nil else { return nil }
     return HeadingWorkStatus.badges(
@@ -23437,7 +23437,7 @@ extension WorkspaceStore {
       aiChatDefaultReasoningEffort = nil
       return
     }
-    if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CORPUS"] != nil {
+    if CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_CORPUS") != nil {
       // The synthetic docs corpus already carries the model labels we want to
       // show. Avoid querying any configured local or remote agent destination
       // while an offscreen documentation capture is rendering.
@@ -24654,7 +24654,7 @@ extension WorkspaceStore {
             AIChatInboxMessage.self,
             from: Data(contentsOf: file, options: .mappedIfSafe)
           )
-          guard envelope.schema == "org2:ai-chat-inbox-message:v1" else {
+          guard CelorgaNames.schemaMatches(envelope.schema, "org2:ai-chat-inbox-message:v1") else {
             throw CocoaError(
               .fileReadCorruptFile,
               userInfo: [NSLocalizedDescriptionKey: "Unsupported AI chat inbox schema in \(file.lastPathComponent)."]
@@ -25659,9 +25659,8 @@ extension WorkspaceStore {
       return "Opened Publish Document. Preview the disclosure boundary, then choose a local or Google Drive format."
     }
     guard let corpusRoot else { return "Open a corpus first, then run /publish." }
-    let config = corpusRoot.appendingPathComponent("org2.json")
-    guard FileManager.default.fileExists(atPath: config.path) else {
-      return "Publishing requires org2.json in the corpus root."
+    guard let config = CelorgaNames.configFile(in: corpusRoot) else {
+      return "Publishing requires celorga.json or org2.json in the corpus root."
     }
     var parts = arguments.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     let preview = parts.first?.lowercased() == "preview"
@@ -27759,7 +27758,7 @@ extension WorkspaceStore {
       aiChatLiveState.appendStreamingDelta(text + "\n\n", for: threadID)
     }
     if selectedAIChatThreadID == threadID, canPublishAIChatRuntimeState(for: threadID) {
-      switch event["name"]?.stringValue {
+      switch event["name"]?.stringValue.map(CelorgaNames.legacyToolName) {
       case "org2_workspace_search": aiChatStatusText = "Searching the workspace"
       case "org2_workspace_read": aiChatStatusText = "Reading a workspace file"
       case "org2_workspace_patch_preview": aiChatStatusText = "Preparing edits for review"
@@ -28823,17 +28822,19 @@ extension WorkspaceStore {
   private func handleCodexDynamicToolCall(
     _ call: CodexDynamicToolCall
   ) async -> CodexDynamicToolResult {
-    if call.tool == "org2_thread_post" {
+    // Accept celorga_* aliases of the advertised org2_* tool names.
+    let tool = CelorgaNames.legacyToolName(call.tool)
+    if tool == "org2_thread_post" {
       return await handleCodexThreadPostTool(call.arguments)
     }
-    if call.tool == "org2_workspace_search" {
+    if tool == "org2_workspace_search" {
       return await handleCodexWorkspaceSearchTool(call.arguments)
     }
-    if call.tool == "org2_workspace_chat_read" {
+    if tool == "org2_workspace_chat_read" {
       return await handleCodexWorkspaceChatReadTool(call.arguments)
     }
     let command: String
-    switch call.tool {
+    switch tool {
     case "org2_workspace_read":
       command = AIChatLocalEditBroker.readCommand
     case "org2_workspace_patch_preview":
@@ -31505,8 +31506,9 @@ extension WorkspaceStore {
     for rawPath in paths {
       let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
       guard path.hasPrefix(rootPrefix) else { continue }
-      let relativePath = String(path.dropFirst(rootPrefix.count))
-      if relativePath == "org2.json"
+      // State under .celorga/ is classified like the legacy .org2/ layout.
+      let relativePath = CelorgaNames.legacyStateRelativePath(String(path.dropFirst(rootPrefix.count)))
+      if CelorgaNames.isConfigFileName(relativePath)
           || relativePath == ".org2/app.css"
           || relativePath == "org2-app.css" {
         hasConfigurationChanges = true
@@ -35502,7 +35504,7 @@ extension WorkspaceStore {
     // deterministic. In particular, do not let SwiftUI's chat-view task prompt
     // for the developer's real Keychain token or contact a live Gateway while
     // the offscreen renderer is taking a snapshot.
-    if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CORPUS"] != nil {
+    if CelorgaNames.environment("ORG2_WORKSPACE_SCREENSHOT_CORPUS") != nil {
       openClawGatewayCommands = []
       isRefreshingAIChatCommands = false
       return
@@ -38458,7 +38460,7 @@ extension WorkspaceStore {
       "PAIRED_SEND_TODO": pairedTitle
     ]
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "ORG2_REVIEW_STATUS",
       "REVIEW_STATUS",
       "REVIEW",
@@ -38466,11 +38468,11 @@ extension WorkspaceStore {
       "REPLY_STATUS",
       "ACCESS_POLICY",
       "REVIEW_POLICY"
-    ] where existingProperties[key] != nil {
+    ]) where existingProperties[key] != nil {
       properties[key] = "approved"
     }
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "WAITING_ON",
       "BLOCKED_BY",
       "ORG2_WAITING_ON",
@@ -38479,7 +38481,7 @@ extension WorkspaceStore {
       "ORG2_NEXT_ACTION",
       "HANDOFF_SUMMARY",
       "ORG2_HANDOFF_SUMMARY"
-    ] {
+    ]) {
       guard let value = existingProperties[key]?.lowercased() else { continue }
       if value.contains("approval") || value.contains("approve") || value.contains("review") || value.contains("avi") {
         properties[key] = "approved"
@@ -38543,7 +38545,7 @@ extension WorkspaceStore {
       "EXTERNAL_COMPLETION_NOTE": sanitizeOrgPropertyValue(summary),
     ]
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "ORG2_REVIEW_STATUS",
       "REVIEW_STATUS",
       "REVIEW",
@@ -38551,11 +38553,11 @@ extension WorkspaceStore {
       "REPLY_STATUS",
       "ACCESS_POLICY",
       "REVIEW_POLICY"
-    ] where existingProperties[key] != nil {
+    ]) where existingProperties[key] != nil {
       properties[key] = "completed-externally"
     }
 
-    for key in [
+    for key in CelorgaNames.withAliases([
       "WAITING_ON",
       "BLOCKED_BY",
       "ORG2_WAITING_ON",
@@ -38564,7 +38566,7 @@ extension WorkspaceStore {
       "ORG2_NEXT_ACTION",
       "HANDOFF_SUMMARY",
       "ORG2_HANDOFF_SUMMARY"
-    ] {
+    ]) {
       guard let value = existingProperties[key] else { continue }
       if containsApprovalSignal(value) {
         properties[key] = "completed-externally"
@@ -40536,7 +40538,7 @@ extension WorkspaceStore {
     let metadata = entityMetadataText(for: source)
     if let legacyKind = firstRegularExpressionCapture(
       in: metadata,
-      pattern: #"(?im)^\s*(?:#\+(?:ORG2_KIND|KIND)|:KIND):\s*(person)\s*$"#
+      pattern: #"(?im)^\s*(?:#\+(?:CELORGA_KIND|ORG2_KIND|KIND)|:KIND):\s*(person)\s*$"#
     ).flatMap(Org2EntityType.init) {
       return legacyKind
     }
@@ -40762,7 +40764,7 @@ extension WorkspaceStore {
     let metadata = entityMetadataText(for: source)
     if let propertyType = firstRegularExpressionCapture(
       in: metadata,
-      pattern: #"(?im)^\s*(?:#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)):\s*(.+?)\s*$"#
+      pattern: #"(?im)^\s*(?:#\+(?:CELORGA_ENTITY_TYPE|ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:CELORGA_ENTITY_TYPE|ORG2_ENTITY_TYPE|ENTITY_TYPE)):\s*(.+?)\s*$"#
     ).flatMap(Org2EntityType.init) {
       return propertyType
     }
@@ -40871,7 +40873,7 @@ extension WorkspaceStore {
     for index in (0..<preambleEnd).reversed() {
       let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
       if trimmed.range(
-        of: #"^(?:#\+(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE)):"#,
+        of: #"^(?:#\+(?:CELORGA_ENTITY_TYPE|ORG2_ENTITY_TYPE|ENTITY_TYPE)|:(?:CELORGA_ENTITY_TYPE|ORG2_ENTITY_TYPE|ENTITY_TYPE)):"#,
         options: [.regularExpression, .caseInsensitive]
       ) != nil {
         lines.remove(at: index)
@@ -40971,7 +40973,7 @@ extension WorkspaceStore {
     guard let drawer = directPropertyDrawerRange(in: lines) else { return }
     for index in drawer.reversed() where index > drawer.lowerBound && index < drawer.upperBound {
       if lines[index].trimmingCharacters(in: .whitespaces).range(
-        of: #"^:(?:ORG2_ENTITY_TYPE|ENTITY_TYPE):"#,
+        of: #"^:(?:CELORGA_ENTITY_TYPE|ORG2_ENTITY_TYPE|ENTITY_TYPE):"#,
         options: [.regularExpression, .caseInsensitive]
       ) != nil {
         lines.remove(at: index)
@@ -41065,7 +41067,8 @@ extension WorkspaceStore {
     }
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty,
-          !trimmed.contains("ORG2_NODE_BRIEF_STATUS: pending")
+          !trimmed.contains("ORG2_NODE_BRIEF_STATUS: pending"),
+          !trimmed.contains("CELORGA_NODE_BRIEF_STATUS: pending")
     else {
       return nil
     }
@@ -41310,7 +41313,7 @@ extension WorkspaceStore {
       statusText = "No corpus selected"
       return nil
     }
-    let relativePath = ".org2/runs/\(run.id).org2"
+    let relativePath = CelorgaNames.stateRelativePath("runs/\(run.id).org2", corpusRoot: corpusRoot)
     let recordURL = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
     if requiresExistingRecord, !FileManager.default.fileExists(atPath: recordURL.path) {
       errorText = "The run record could not be found at \(relativePath)."
@@ -43832,6 +43835,7 @@ extension WorkspaceStore {
     guard let corpusRoot else { return .empty }
     let root = corpusRoot.standardizedFileURL
     let candidates = [
+      root.appendingPathComponent(".celorga/app.css"),
       root.appendingPathComponent(".org2/app.css"),
       root.appendingPathComponent("org2-app.css")
     ]
@@ -43904,7 +43908,8 @@ extension WorkspaceStore {
       statusText = "Open a corpus before customizing document styles"
       return
     }
-    let stylesheetURL = corpusRoot.appendingPathComponent(".org2/app.css")
+    let stylesheetURL = CelorgaNames.stateDirectory(corpusRoot: corpusRoot)
+      .appendingPathComponent("app.css")
     do {
       try FileManager.default.createDirectory(
         at: stylesheetURL.deletingLastPathComponent(),
@@ -43923,7 +43928,7 @@ extension WorkspaceStore {
       }
       scheduleAppHTMLStylesheetSnapshotRefresh()
       NSWorkspace.shared.open(stylesheetURL)
-      statusText = "Opened .org2/app.css"
+      statusText = "Opened \(stylesheetURL.deletingLastPathComponent().lastPathComponent)/app.css"
     } catch {
       errorText = error.localizedDescription
       statusText = "Could not open document stylesheet"
@@ -44147,8 +44152,7 @@ extension WorkspaceStore {
       guard let sourceDigest = Self.fileContentDigest(for: url) else { return Optional<String>.none }
       var directory = url.deletingLastPathComponent()
       while true {
-        let config = directory.appendingPathComponent("org2.json")
-        if FileManager.default.fileExists(atPath: config.path) {
+        if let config = CelorgaNames.configFile(in: directory) {
           return sourceDigest + ":" + (Self.fileContentDigest(for: config) ?? "unreadable")
         }
         let parent = directory.deletingLastPathComponent()
@@ -44962,14 +44966,12 @@ extension WorkspaceStore {
   }
 
   nonisolated private static func aiChatTranscriptURL(corpusRoot: URL) -> URL {
-    corpusRoot.standardizedFileURL
-      .appendingPathComponent(".org2", isDirectory: true)
+    CelorgaNames.stateDirectory(corpusRoot: corpusRoot.standardizedFileURL)
       .appendingPathComponent("openclaw-chat.json")
   }
 
   nonisolated private static func aiChatInboxDirectory(corpusRoot: URL) -> URL {
-    corpusRoot.standardizedFileURL
-      .appendingPathComponent(".org2", isDirectory: true)
+    CelorgaNames.stateDirectory(corpusRoot: corpusRoot.standardizedFileURL)
       .appendingPathComponent("ai-chat-inbox", isDirectory: true)
   }
 
@@ -48113,6 +48115,7 @@ extension WorkspaceStore {
       let prefix = (try? readPrefix(fileURL, maxBytes: 96 * 1024)) ?? ""
       guard meetingProperty("kind", in: prefix)?.lowercased() == "meeting"
         || prefix.contains("#+ORG2_KIND: meeting")
+        || prefix.contains("#+CELORGA_KIND: meeting")
       else {
         continue
       }
@@ -48836,6 +48839,7 @@ extension WorkspaceStore {
     ".svn",
     ".stversions",
     ".trash",
+    ".celorga",
     ".org2",
     "node_modules",
     "dist",
@@ -49031,8 +49035,8 @@ extension WorkspaceStore {
   }
 
   nonisolated private static func workspaceConfig(corpusRoot: URL) -> WorkspaceOrg2Config? {
-    let configURL = corpusRoot.appendingPathComponent("org2.json")
-    guard let data = try? Data(contentsOf: configURL) else { return nil }
+    guard let configURL = CelorgaNames.configFile(in: corpusRoot),
+          let data = try? Data(contentsOf: configURL) else { return nil }
     return try? JSONDecoder().decode(WorkspaceOrg2Config.self, from: data)
   }
 
@@ -49200,19 +49204,23 @@ extension WorkspaceStore {
     if let drawerStart, let drawerEnd {
       var end = drawerEnd
       for (key, value) in properties.sorted(by: { $0.key < $1.key }) {
-        let prefix = ":\(key):"
         var replaced = false
+        // A branded key is updated under whichever spelling (CELORGA_ or
+        // ORG2_) the drawer already uses; new properties keep the given key.
         if drawerStart + 1 < end {
-          for index in (drawerStart + 1)..<end {
-            if lines[index].uppercased().hasPrefix(prefix.uppercased()) {
-              lines[index] = "\(prefix) \(value)"
-              replaced = true
-              break
+          aliases: for alias in CelorgaNames.aliases(key) {
+            let aliasPrefix = ":\(alias):"
+            for index in (drawerStart + 1)..<end {
+              if lines[index].uppercased().hasPrefix(aliasPrefix.uppercased()) {
+                lines[index] = "\(aliasPrefix) \(value)"
+                replaced = true
+                break aliases
+              }
             }
           }
         }
         if !replaced {
-          lines.insert("\(prefix) \(value)", at: end)
+          lines.insert(":\(key): \(value)", at: end)
           end += 1
         }
       }
@@ -49356,7 +49364,7 @@ extension WorkspaceStore {
 
   nonisolated private static func dailyNoteLocationOffMain(corpusRoot: URL) -> DailyNoteLocation {
     let root = corpusRoot.standardizedFileURL
-    let configURL = root.appendingPathComponent("org2.json", isDirectory: false)
+    let configURL = CelorgaNames.configFileOrLegacy(in: root)
     let config = (try? Data(contentsOf: configURL))
       .flatMap { try? JSONDecoder().decode(WorkspaceDailyNoteConfig.self, from: $0) }
     return DailyNoteLocation(
@@ -50262,7 +50270,7 @@ extension WorkspaceStore {
     ]
 
     if let corpusRoot {
-      let config = corpusRoot.appendingPathComponent("org2.json")
+      let config = CelorgaNames.configFileOrLegacy(in: corpusRoot, fileManager: fileManager)
       let corpusWritable = fileManager.isWritableFile(atPath: corpusRoot.path)
       checks.append(WorkspaceHealthCheck(
         id: "corpus-root",
@@ -50284,8 +50292,8 @@ extension WorkspaceStore {
         title: "Corpus config",
         status: fileManager.fileExists(atPath: config.path) ? .ready : .warning,
         detail: fileManager.fileExists(atPath: config.path)
-          ? "org2.json found"
-          : "No org2.json in selected corpus; defaults will be used",
+          ? "\(config.lastPathComponent) found"
+          : "No celorga.json or org2.json in selected corpus; defaults will be used",
         remediationTitle: fileManager.fileExists(atPath: config.path) ? nil : "Add config"
       ))
     } else {

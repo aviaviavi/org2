@@ -10,6 +10,7 @@ import {
   nextAIChatOperationIdentity,
   queueAIChatOperation,
 } from "./aiChatOperationJournal.js";
+import { schemaMatches, stateDir } from "./brandNames.js";
 
 export const OPENCLAW_THREAD_STATE_SCHEMA = "org2:openclaw-thread-state:v1";
 export const OPENCLAW_TRANSCRIPT_VERSION = 6;
@@ -144,7 +145,7 @@ interface ParsedManifest {
 }
 
 export function openClawTranscriptPath(corpusRoot: string): string {
-  return path.join(path.resolve(corpusRoot), ".org2", "openclaw-chat.json");
+  return stateDir(path.resolve(corpusRoot), "openclaw-chat.json");
 }
 
 export function openClawTranscriptStorePath(corpusRoot: string): string {
@@ -201,7 +202,7 @@ function parseMarker(file: string): StoreMarker | null {
   try {
     const value = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
     if (!isRecord(value)
-        || value.schema !== STORE_MARKER_SCHEMA
+        || !schemaMatches(value.schema, STORE_MARKER_SCHEMA)
         || typeof value.version !== "number"
         || !safeManifestName(value.currentManifest)
         || !isDigest(value.currentDigest)
@@ -243,7 +244,7 @@ function parseHeads(storeRoot: string): Array<StoreMarker & { generation: number
     try {
       const value = JSON.parse(fs.readFileSync(path.join(headsRoot, name), "utf8")) as unknown;
       if (!isRecord(value)
-          || value.schema !== STORE_HEAD_SCHEMA
+          || !schemaMatches(value.schema, STORE_HEAD_SCHEMA)
           || !safeManifestName(value.currentManifest)
           || !isDigest(value.currentDigest)
           || !Number.isSafeInteger(value.currentGeneration)) {
@@ -276,7 +277,7 @@ function parseManifestV2Data(
     if (expectedDigest && digest(data) !== expectedDigest) return null;
     const payload = JSON.parse(data.toString("utf8")) as unknown;
     if (!isRecord(payload)
-        || payload.schema !== MANIFEST_V2_SCHEMA
+        || !schemaMatches(payload.schema, MANIFEST_V2_SCHEMA)
         || payload.version !== 2
         || !Number.isSafeInteger(payload.generation)
         || (payload.generation as number) < 0
@@ -331,7 +332,7 @@ function loadManifestV2(file: string, expectedDigest?: string | null): ParsedMan
 function loadManifestV1(file: string): ParsedManifest | null {
   try {
     const payload = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-    if (!isRecord(payload) || payload.schema !== MANIFEST_V1_SCHEMA || !Array.isArray(payload.threads)) {
+    if (!isRecord(payload) || !schemaMatches(payload.schema, MANIFEST_V1_SCHEMA) || !Array.isArray(payload.threads)) {
       return null;
     }
     const threads: OpenClawChatThreadRecord[] = [];
@@ -396,7 +397,7 @@ function validManifestEntry(storeRoot: string, entry: ManifestThreadEntry): bool
     if (digest(data) !== entry.shardDigest) return false;
     const shard = JSON.parse(data.toString("utf8")) as unknown;
     if (!isRecord(shard)
-        || shard.schema !== THREAD_SHARD_SCHEMA
+        || !schemaMatches(shard.schema, THREAD_SHARD_SCHEMA)
         || shard.version !== 1
         || !Array.isArray(shard.messages)) {
       return false;
@@ -667,7 +668,7 @@ function emptyOrLegacyState(corpusRoot: string): ResolvedTranscript {
   const data = fs.readFileSync(file);
   const parsed = JSON.parse(data.toString("utf8")) as unknown;
   if (!isRecord(parsed)) throw new Error(`invalid OpenClaw transcript payload: ${file}`);
-  if (parsed.schema === MANIFEST_V2_SCHEMA) {
+  if (schemaMatches(parsed.schema, MANIFEST_V2_SCHEMA)) {
     const pointer = parseManifestV2Data(data, file);
     if (!pointer) throw new Error(`invalid OpenClaw transcript compatibility pointer: ${file}`);
     return stateFromManifest(corpusRoot, pointer, "healthy", "sharded-v2-pointer");
@@ -732,7 +733,7 @@ function hydrateThread(
     throw new Error(`AI chat thread shard digest mismatch: ${shardFile}`);
   }
   const shard = JSON.parse(data.toString("utf8")) as unknown;
-  if (!isRecord(shard) || shard.schema !== THREAD_SHARD_SCHEMA || !Array.isArray(shard.messages)) {
+  if (!isRecord(shard) || !schemaMatches(shard.schema, THREAD_SHARD_SCHEMA) || !Array.isArray(shard.messages)) {
     throw new Error(`invalid AI chat thread shard: ${shardFile}`);
   }
   const messages = shard.messages.map((stored, index): OpenClawChatMessageRecord => {

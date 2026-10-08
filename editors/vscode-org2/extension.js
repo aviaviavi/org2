@@ -62,6 +62,23 @@ const {
 } = require('./foldingRanges');
 const { findCryptSubtreesNeedingEncryption, hasUnclosedPgpBlock, replaceLineRanges } = require('./cryptOnSave');
 const { isExplicitlyConfigured, resolveDefaultCliExecutable } = require('./cliExecutable');
+const { commandAliases, createBrandConfiguration, affectsBrandConfiguration } = require('./brandConfig');
+
+function getBrandConfiguration(scope) {
+  return createBrandConfiguration((section, s) => vscode.workspace.getConfiguration(section, s), scope);
+}
+
+// Registers `celorga.X` and its legacy `org2.X` alias with the same handler.
+function registerBrandCommand(id, handler) {
+  return vscode.Disposable.from(...commandAliases(id).map((alias) => vscode.commands.registerCommand(alias, handler)));
+}
+
+// Keybinding when-clauses use these context keys so they honor the org2.* fallback.
+function updateBrandContextKeys() {
+  const cfg = getBrandConfiguration();
+  vscode.commands.executeCommand('setContext', 'celorga.keymap.power', cfg.get('keymap.power', true) === true);
+  vscode.commands.executeCommand('setContext', 'celorga.vim.visibleLineNavigation', cfg.get('vim.visibleLineNavigation', false) === true);
+}
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -99,7 +116,7 @@ function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
   const id = parseRoamIdScheme(url);
   if (id) {
     const payload = encodeURIComponent(JSON.stringify([id]));
-    return vscode.Uri.parse(`command:org2.roamOpenId?${payload}`);
+    return vscode.Uri.parse(`command:celorga.roamOpenId?${payload}`);
   }
 
   // Heuristic: only treat known schemes as directly openable URLs.
@@ -133,7 +150,7 @@ function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
       return vscode.Uri.file(fsPath);
     } catch (_) {
       const payload = encodeURIComponent(JSON.stringify([url]));
-      return vscode.Uri.parse(`command:org2.roamOpenTitle?${payload}`);
+      return vscode.Uri.parse(`command:celorga.roamOpenTitle?${payload}`);
     }
   }
 
@@ -272,7 +289,7 @@ class Org2ReviewProvider {
       ].join('\n'));
       item.iconPath = new vscode.ThemeIcon('eye');
       item.contextValue = 'org2ReviewItem';
-      item.command = { command: 'org2.openReviewItem', title: 'Open Review Item', arguments: [element] };
+      item.command = { command: 'celorga.openReviewItem', title: 'Open Review Item', arguments: [element] };
       return item;
     }
     const errItem = new vscode.TreeItem('Celorga review: failed to load', vscode.TreeItemCollapsibleState.None);
@@ -447,7 +464,7 @@ class Org2BacklinksProvider {
       item.description = descParts.join(' • ');
       item.contextValue = 'org2BacklinkItem';
       item.command = {
-        command: 'org2.openFileAt',
+        command: 'celorga.openFileAt',
         title: 'Open Backlink',
         arguments: [element.file, element.line],
       };
@@ -680,7 +697,7 @@ class Org2AgendaProvider {
       item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor(getAgendaUrgencyThemeColor(element.urgency)));
       item.contextValue = 'org2AgendaItem';
       item.command = {
-        command: 'org2.openAgendaItem',
+        command: 'celorga.openAgendaItem',
         title: 'Open',
         arguments: [element],
       };
@@ -774,7 +791,7 @@ function resolveDefaultCliCommand(cfg, cmd) {
 }
 
 function resolveOrg2Command(context, args) {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const cmd = cfg.get('agenda.command', 'org2');
   const extraArgs = cfg.get('agenda.args', []);
 
@@ -803,14 +820,14 @@ function resolveOrg2Command(context, args) {
 }
 
 function getAgendaRootDir() {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const configured = String(cfg.get('agenda.dir', '') || '').trim();
   if (configured) return configured;
   return getWorkspaceRoot() || process.cwd();
 }
 
 function getRoamIndexRootDir() {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const configured = String(cfg.get('roam.indexDir', '') || '').trim();
   if (!configured) return getAgendaRootDir();
   if (path.isAbsolute(configured)) return configured;
@@ -818,14 +835,14 @@ function getRoamIndexRootDir() {
 }
 
 function getRoamDailiesRootDir() {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const configured = String(cfg.get('roam.dailiesDir', '') || '').trim();
   if (configured) return configured;
   return getRoamIndexRootDir();
 }
 
 function getRoamNodesRootDir() {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const configured = String(cfg.get('roam.nodesDir', '') || '').trim();
   if (!configured) return getRoamIndexRootDir();
   if (path.isAbsolute(configured)) return configured;
@@ -1344,7 +1361,7 @@ function getAgendaSourcePriorityToken(item, agendaRoot, fileCache) {
 }
 
 async function fetchAgendaGroups(context, filter) {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const agendaRoot = getAgendaRootDir();
 
   const agendaOptions = readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles);
@@ -1353,7 +1370,7 @@ async function fetchAgendaGroups(context, filter) {
   const { args, warnEmptyFiles } = buildAgendaCliArgs(agendaOptions);
 
   if (warnEmptyFiles) {
-    vscode.window.showWarningMessage("Celorga agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
+    vscode.window.showWarningMessage("Celorga agenda: celorga.agenda.files is empty (set scope to 'workspace' or configure files).");
   }
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
@@ -1391,7 +1408,7 @@ async function fetchAgendaGroups(context, filter) {
 
 function revealNavigationPosition(editor, pos, source) {
   if (!editor || !pos) return;
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const isAgendaSource = String(source || '').toLowerCase() === 'agenda';
   const modeSetting = isAgendaSource ? 'editor.navigationRevealFromAgenda' : 'editor.navigationReveal';
   const modeDefault = isAgendaSource ? 'none' : 'outside';
@@ -1437,7 +1454,7 @@ async function openAgendaItem(item) {
 }
 
 async function pickAgendaFilter(provider) {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const defaultDays = cfg.get('agenda.days', 7);
 
   const pick = await vscode.window.showQuickPick(
@@ -1454,7 +1471,7 @@ async function pickAgendaFilter(provider) {
 }
 
 async function pickAgendaStatusFilter(provider) {
-  const cfg = vscode.workspace.getConfiguration('org2');
+  const cfg = getBrandConfiguration();
   const currentRaw = cfg.get('agenda.statusFilter', 'all');
   const current = normalizeAgendaStatusFilterValue(currentRaw, 'all');
   const options = buildAgendaStatusFilterQuickPickOptions(current);
@@ -1473,6 +1490,7 @@ async function pickAgendaStatusFilter(provider) {
 
 function activate(context) {
   const selector = [{ language: 'org2' }, { language: 'org' }];
+  updateBrandContextKeys();
   const previewDocumentContent = new Map();
 
   context.subscriptions.push(
@@ -1717,7 +1735,7 @@ function activate(context) {
   }
 
   function getWorkspaceFormatterPathFilters(root) {
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     return resolveWorkspaceFormatterPathFilters({
       root,
       fileFilter: cfg.get('formatter.fileFilter', ''),
@@ -2375,7 +2393,7 @@ function activate(context) {
 
     if (confirm !== 'Format File') return;
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -2422,7 +2440,7 @@ function activate(context) {
   }
 
   function getHtmlExportStyleArgs() {
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const stylesheetsRaw = String(cfg.get('export.stylesheets', '') || '');
     const includeDefaultStyle = cfg.get('export.includeDefaultStyle', true) ? true : false;
     const includeToc = cfg.get('export.includeToc', false) ? true : false;
@@ -2555,11 +2573,11 @@ function activate(context) {
   async function exportWorkspaceHtml() {
     const workspaceRoot = getAgendaRootDir();
     if (!workspaceRoot) {
-      vscode.window.showWarningMessage('Celorga: set org2.agenda.dir or open a workspace folder before workspace export.');
+      vscode.window.showWarningMessage('Celorga: set celorga.agenda.dir or open a workspace folder before workspace export.');
       return;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const outputDirConfigRaw = String(cfg.get('export.outputDir', '_site') || '_site').trim();
     const outputDirConfig = outputDirConfigRaw || '_site';
     const outputDir = path.isAbsolute(outputDirConfig)
@@ -2684,7 +2702,7 @@ function activate(context) {
       if (!doc) return;
       if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
-      const cfg = vscode.workspace.getConfiguration('org2');
+      const cfg = getBrandConfiguration();
       const formatEnabled = cfg.get('formatOnSave', true);
       const autoEncryptCrypt = cfg.get('crypt.encryptOnSave', true);
       const canonicalOrgSyntax = doc.uri && doc.uri.scheme === 'file'
@@ -2758,7 +2776,7 @@ function activate(context) {
   context.subscriptions.push(reviewView);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openAgenda', async () => {
+    registerBrandCommand('celorga.openAgenda', async () => {
       await vscode.commands.executeCommand('workbench.view.explorer');
       await agendaProvider.load();
       if (agendaProvider.groups[0]) {
@@ -2768,13 +2786,13 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.refreshAgenda', async () => {
+    registerBrandCommand('celorga.refreshAgenda', async () => {
       await agendaProvider.load();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openBacklinks', async () => {
+    registerBrandCommand('celorga.openBacklinks', async () => {
       await focusBacklinksView();
       await backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false });
       if (backlinksProvider.groups[0]) {
@@ -2784,13 +2802,13 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.refreshBacklinks', async () => {
+    registerBrandCommand('celorga.refreshBacklinks', async () => {
       await backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false });
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openReview', async () => {
+    registerBrandCommand('celorga.openReview', async () => {
       await vscode.commands.executeCommand('workbench.view.explorer');
       await reviewProvider.load();
       if (reviewProvider.items[0]) {
@@ -2800,152 +2818,152 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.refreshReview', async () => {
+    registerBrandCommand('celorga.refreshReview', async () => {
       await reviewProvider.load();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openReviewItem', async (item) => {
+    registerBrandCommand('celorga.openReviewItem', async (item) => {
       await openReviewItem(item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.formatWorkspaceCheck', async () => {
+    registerBrandCommand('celorga.formatWorkspaceCheck', async () => {
       await checkWorkspaceFormattingDrift();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.formatWorkspaceApply', async () => {
+    registerBrandCommand('celorga.formatWorkspaceApply', async () => {
       await applyWorkspaceFormatting();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.lintWorkspaceCorpus', async () => {
+    registerBrandCommand('celorga.lintWorkspaceCorpus', async () => {
       await runWorkspaceCorpusLint();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.graphAuditWorkspace', async () => {
+    registerBrandCommand('celorga.graphAuditWorkspace', async () => {
       await runWorkspaceGraphAudit();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.aiReviewWorkspace', async () => {
+    registerBrandCommand('celorga.aiReviewWorkspace', async () => {
       await runAiReviewReport();
       await reviewProvider.load();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.aiMarkReviewed', async () => {
+    registerBrandCommand('celorga.aiMarkReviewed', async () => {
       await markAiReviewStatus('reviewed');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.aiMarkRejected', async () => {
+    registerBrandCommand('celorga.aiMarkRejected', async () => {
       await markAiReviewStatus('rejected');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.aiMarkDeferred', async () => {
+    registerBrandCommand('celorga.aiMarkDeferred', async () => {
       await markAiReviewStatus('deferred');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.compileWorkspaceCorpus', async () => {
+    registerBrandCommand('celorga.compileWorkspaceCorpus', async () => {
       await compileWorkspaceCorpus();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.searchWorkspace', async () => {
+    registerBrandCommand('celorga.searchWorkspace', async () => {
       await promptWorkspaceQuery('search');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.queryWorkspace', async () => {
+    registerBrandCommand('celorga.queryWorkspace', async () => {
       await promptWorkspaceQuery('query');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.aiSuggestLinks', async () => {
+    registerBrandCommand('celorga.aiSuggestLinks', async () => {
       await runAiLinkSuggestionReport();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamLinkifyPreview', async () => {
+    registerBrandCommand('celorga.roamLinkifyPreview', async () => {
       await runRoamLinkifyPreview();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamLinkifyApply', async () => {
+    registerBrandCommand('celorga.roamLinkifyApply', async () => {
       await runRoamLinkifyApply();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamGraph', async () => {
+    registerBrandCommand('celorga.roamGraph', async () => {
       await runRoamGraphReport();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.formatCurrentFileCheck', async () => {
+    registerBrandCommand('celorga.formatCurrentFileCheck', async () => {
       await checkCurrentFileFormattingDrift();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.formatCurrentFilePreviewDiff', async () => {
+    registerBrandCommand('celorga.formatCurrentFilePreviewDiff', async () => {
       await previewCurrentFileFormattingDiff();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.formatCurrentFileApply', async () => {
+    registerBrandCommand('celorga.formatCurrentFileApply', async () => {
       await applyCurrentFileFormatting();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.exportCurrentFileHtml', async () => {
+    registerBrandCommand('celorga.exportCurrentFileHtml', async () => {
       await exportCurrentFileHtml();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.exportWorkspaceHtml', async () => {
+    registerBrandCommand('celorga.exportWorkspaceHtml', async () => {
       await exportWorkspaceHtml();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.pickAgendaFilter', async () => {
+    registerBrandCommand('celorga.pickAgendaFilter', async () => {
       await pickAgendaFilter(agendaProvider);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.pickAgendaStatusFilter', async () => {
+    registerBrandCommand('celorga.pickAgendaStatusFilter', async () => {
       await pickAgendaStatusFilter(agendaProvider);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openAgendaItem', async (item) => {
+    registerBrandCommand('celorga.openAgendaItem', async (item) => {
       await openAgendaItem(item);
     })
   );
@@ -3201,7 +3219,7 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
@@ -3297,7 +3315,7 @@ function activate(context) {
 
     fs.writeFileSync(filePath, updated.text, 'utf8');
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -3395,7 +3413,7 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -3494,7 +3512,7 @@ function activate(context) {
     const targets = findCryptSubtreesNeedingEncryption(text);
     if (!targets.length) return undefined;
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const configuredRecipients = Array.isArray(cfg.get('crypt.recipients'))
       ? cfg.get('crypt.recipients').map((v) => String(v || '').trim()).filter(Boolean)
       : [];
@@ -3505,7 +3523,7 @@ function activate(context) {
     const gpgProgram = String(cfg.get('crypt.gpgProgram', 'gpg') || 'gpg');
 
     if (!passphrase && configuredRecipients.length === 0 && configuredRecipientFiles.length === 0) {
-      throw new Error('no org2.crypt.recipients, org2.crypt.recipientFiles, or org2.crypt.passphrase configured');
+      throw new Error('no celorga.crypt.recipients, celorga.crypt.recipientFiles, or celorga.crypt.passphrase configured');
     }
 
     const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
@@ -3568,7 +3586,7 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const configuredRecipients = Array.isArray(cfg.get('crypt.recipients'))
       ? cfg.get('crypt.recipients').map((v) => String(v || '').trim()).filter(Boolean)
       : [];
@@ -3677,7 +3695,7 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -3758,7 +3776,7 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.archiveSubtree', async (item) => {
+    registerBrandCommand('celorga.archiveSubtree', async (item) => {
       await applyArchiveSubtreeCommand(item);
     })
   );
@@ -3798,7 +3816,7 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -3962,7 +3980,7 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
+    registerBrandCommand('celorga.refileSubtree', async (item) => {
       await applyRefileSubtreeCommand(item);
     })
   );
@@ -4021,13 +4039,13 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.promoteSubtree', async () => {
+    registerBrandCommand('celorga.promoteSubtree', async () => {
       await runShiftSubtreeLevels(-1);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.demoteSubtree', async () => {
+    registerBrandCommand('celorga.demoteSubtree', async () => {
       await runShiftSubtreeLevels(1);
     })
   );
@@ -4101,19 +4119,19 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.moveSubtreeUp', async () => {
+    registerBrandCommand('celorga.moveSubtreeUp', async () => {
       await runMoveSubtree(-1);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.moveSubtreeDown', async () => {
+    registerBrandCommand('celorga.moveSubtreeDown', async () => {
       await runMoveSubtree(1);
     })
   );
 
   async function runCaptureCli() {
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const defaultFileRaw = String(cfg.get('capture.defaultFile', '') || '').trim();
     const defaultTemplateRaw = String(cfg.get('capture.defaultTemplate', 'note') || 'note').trim().toLowerCase();
     const defaultTemplate = defaultTemplateRaw === 'task' ? 'task' : 'note';
@@ -4352,20 +4370,20 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.captureQuickEntry', async () => {
+    registerBrandCommand('celorga.captureQuickEntry', async () => {
       await runCaptureCli();
     })
   );
 
   // Roam dailies navigation (open or create YYYY-MM-DD.org)
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamDailiesGotoToday', async () => {
+    registerBrandCommand('celorga.roamDailiesGotoToday', async () => {
       await openRoamDailyForDateString(formatDateYYYYMMDD(new Date()));
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamDailiesGotoYesterday', async () => {
+    registerBrandCommand('celorga.roamDailiesGotoYesterday', async () => {
       const d = new Date();
       d.setDate(d.getDate() - 1);
       await openRoamDailyForDateString(formatDateYYYYMMDD(d));
@@ -4373,7 +4391,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamDailiesGotoTomorrow', async () => {
+    registerBrandCommand('celorga.roamDailiesGotoTomorrow', async () => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
       await openRoamDailyForDateString(formatDateYYYYMMDD(d));
@@ -4381,7 +4399,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamDailiesGotoDate', async () => {
+    registerBrandCommand('celorga.roamDailiesGotoDate', async () => {
       const date = await vscode.window.showInputBox({
         prompt: 'Celorga: Roam dailies — go to date (YYYY-MM-DD)',
         placeHolder: 'YYYY-MM-DD',
@@ -4404,7 +4422,7 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamNodeNew', async () => {
+    registerBrandCommand('celorga.roamNodeNew', async () => {
       const selectedTitle = getActiveSelectionTextForTitle();
       const titleRaw = await vscode.window.showInputBox({
         prompt: selectedTitle ? 'Celorga: Roam — new node title (from selection)' : 'Celorga: Roam — new node title',
@@ -4460,7 +4478,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamCopyIdLink', async () => {
+    registerBrandCommand('celorga.roamCopyIdLink', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
@@ -4547,7 +4565,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamCopyIdLinkById', async (id) => {
+    registerBrandCommand('celorga.roamCopyIdLinkById', async (id) => {
       const initial = typeof id === 'string' ? String(id).trim() : '';
       let rawInput = initial;
       let uuid = extractRoamUuid(rawInput);
@@ -4595,7 +4613,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamInsertBacklink', async () => {
+    registerBrandCommand('celorga.roamInsertBacklink', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
@@ -4722,7 +4740,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.openFileAt', async (file, line0) => {
+    registerBrandCommand('celorga.openFileAt', async (file, line0) => {
       try {
         const abs = path.isAbsolute(String(file || '')) ? String(file || '') : path.resolve(getWorkspaceRoot() || process.cwd(), String(file || ''));
         const uri = vscode.Uri.file(abs);
@@ -4902,7 +4920,7 @@ function activate(context) {
     });
     if (!pick) return;
 
-    await vscode.commands.executeCommand('org2.openFileAt', pick.file, pick.line0);
+    await vscode.commands.executeCommand('celorga.openFileAt', pick.file, pick.line0);
   }
 
   async function resolveRoamUuidInput(initial, prompt) {
@@ -4957,7 +4975,7 @@ function activate(context) {
       const { meta } = formatBacklinkMeta(file, line0, srcId, rootDir);
 
       const payload = encodeURIComponent(JSON.stringify([file, line0]));
-      const cmdUrl = `command:org2.openFileAt?${payload}`;
+      const cmdUrl = `command:celorga.openFileAt?${payload}`;
 
       lines.push(`- [[${cmdUrl}][${srcTitle}]] :: ${meta}`);
 
@@ -4981,7 +4999,7 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamOpenBacklink', async () => {
+    registerBrandCommand('celorga.roamOpenBacklink', async () => {
       const loaded = await loadBacklinksForActiveEditor();
       if (!loaded) return;
 
@@ -4992,7 +5010,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamOpenBacklinkById', async (id) => {
+    registerBrandCommand('celorga.roamOpenBacklinkById', async (id) => {
       const uuid = await resolveRoamUuidInput(id, 'Celorga: Roam — open backlink source for ID');
       if (uuid === null) return;
       if (!uuid) {
@@ -5008,7 +5026,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
+    registerBrandCommand('celorga.roamShowBacklinks', async () => {
       const loaded = await loadBacklinksForActiveEditor();
       if (!loaded) return;
 
@@ -5019,7 +5037,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamShowBacklinksById', async (id) => {
+    registerBrandCommand('celorga.roamShowBacklinksById', async (id) => {
       const uuid = await resolveRoamUuidInput(id, 'Celorga: Roam — show backlinks for ID');
       if (uuid === null) return;
       if (!uuid) {
@@ -5037,14 +5055,14 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamDbSync', async () => {
+    registerBrandCommand('celorga.roamDbSync', async () => {
       const root = getRoamIndexRootDir();
       if (!root) {
-        vscode.window.showWarningMessage('Celorga: no Roam index dir configured (set org2.roam.indexDir or org2.agenda.dir, or open a workspace).');
+        vscode.window.showWarningMessage('Celorga: no Roam index dir configured (set celorga.roam.indexDir or celorga.agenda.dir, or open a workspace).');
         return;
       }
 
-      const cfg = vscode.workspace.getConfiguration('org2');
+      const cfg = getBrandConfiguration();
       const recursive = cfg.get('agenda.recursive', true) ? true : false;
 
       const previewArgs = buildRoamDbSyncPreviewArgs(root, recursive);
@@ -5119,7 +5137,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamOpenId', async (id) => {
+    registerBrandCommand('celorga.roamOpenId', async (id) => {
       const initial = typeof id === 'string' ? String(id) : '';
       let uuid = extractRoamUuid(initial);
 
@@ -5203,7 +5221,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamOpenTitle', async (title) => {
+    registerBrandCommand('celorga.roamOpenTitle', async (title) => {
       const initial = typeof title === 'string' ? String(title).trim() : '';
       let query = initial;
 
@@ -5424,19 +5442,19 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
+    registerBrandCommand('celorga.toggleTodo', async (item) => {
       await applyToggleTodoCommand(item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.insertListItemBelow', async () => {
+    registerBrandCommand('celorga.insertListItemBelow', async () => {
       await insertListItemBelow();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setTodoStatus', async (argOrItem, maybeItem) => {
+    registerBrandCommand('celorga.setTodoStatus', async (argOrItem, maybeItem) => {
       const requested = argOrItem && typeof argOrItem === 'object' && Object.prototype.hasOwnProperty.call(argOrItem, 'status')
         ? argOrItem.status
         : '';
@@ -5446,7 +5464,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setPriority', async (argOrItem, maybeItem) => {
+    registerBrandCommand('celorga.setPriority', async (argOrItem, maybeItem) => {
       const requested = argOrItem && typeof argOrItem === 'object' && Object.prototype.hasOwnProperty.call(argOrItem, 'priority')
         ? argOrItem.priority
         : '';
@@ -5480,33 +5498,33 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoTODO', async (item) => applySetTodoStatus('todo', item)));
-  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoInProgress', async (item) => applySetTodoStatus('in_progress', item)));
-  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoDone', async (item) => applySetTodoStatus('done', item)));
-  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
-  context.subscriptions.push(vscode.commands.registerCommand('org2.markDoneAndHandoff', async (item) => applyAgentHandoffCommand(item)));
-  context.subscriptions.push(vscode.commands.registerCommand('org2.assignTodoToAgent', async (item) => applyAgentHandoffCommand(item)));
+  context.subscriptions.push(registerBrandCommand('celorga.setTodoTODO', async (item) => applySetTodoStatus('todo', item)));
+  context.subscriptions.push(registerBrandCommand('celorga.setTodoInProgress', async (item) => applySetTodoStatus('in_progress', item)));
+  context.subscriptions.push(registerBrandCommand('celorga.setTodoDone', async (item) => applySetTodoStatus('done', item)));
+  context.subscriptions.push(registerBrandCommand('celorga.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
+  context.subscriptions.push(registerBrandCommand('celorga.markDoneAndHandoff', async (item) => applyAgentHandoffCommand(item)));
+  context.subscriptions.push(registerBrandCommand('celorga.assignTodoToAgent', async (item) => applyAgentHandoffCommand(item)));
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduled', async (item) => {
+    registerBrandCommand('celorga.setScheduled', async (item) => {
       await applyPlanCommand('scheduled', item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setDeadline', async (item) => {
+    registerBrandCommand('celorga.setDeadline', async (item) => {
       await applyPlanCommand('deadline', item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
+    registerBrandCommand('celorga.setScheduledToday', async (item) => {
       await applyPlanCommand('scheduled', item, { useToday: true });
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduledTomorrow', async (item) => {
+    registerBrandCommand('celorga.setScheduledTomorrow', async (item) => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
       await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
@@ -5514,7 +5532,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduledNextWeek', async (item) => {
+    registerBrandCommand('celorga.setScheduledNextWeek', async (item) => {
       const d = new Date();
       // "Next week" means the upcoming Monday, not "in 7 days".
       const weekday = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
@@ -5525,7 +5543,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduledNextMonth', async (item) => {
+    registerBrandCommand('celorga.setScheduledNextMonth', async (item) => {
       const d = new Date();
       d.setMonth(d.getMonth() + 1);
       await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
@@ -5533,25 +5551,25 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
+    registerBrandCommand('celorga.setDeadlineToday', async (item) => {
       await applyPlanCommand('deadline', item, { useToday: true });
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.cryptDecryptSubtree', async (item) => {
+    registerBrandCommand('celorga.cryptDecryptSubtree', async (item) => {
       await runCryptCli('decrypt', item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.cryptEncryptSubtree', async (item) => {
+    registerBrandCommand('celorga.cryptEncryptSubtree', async (item) => {
       await runCryptCli('encrypt', item);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.cryptReencryptSubtree', async (item) => {
+    registerBrandCommand('celorga.cryptReencryptSubtree', async (item) => {
       await runCryptCli('reencrypt', item);
     })
   );
@@ -5574,7 +5592,7 @@ function activate(context) {
     if (!doc) return;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const renderDescribedLinks = cfg.get('links.renderDescriptions', false);
     const renderMode = String(cfg.get('links.renderDescriptionsMode', 'safe') || 'safe').toLowerCase();
     if (!renderDescribedLinks) {
@@ -5647,7 +5665,7 @@ function activate(context) {
     const key = doc.uri.toString();
     if (autoFoldedForDoc.has(key)) return;
 
-    const cfg = vscode.workspace.getConfiguration('org2');
+    const cfg = getBrandConfiguration();
     const maxLevel = cfg.get('folding.autoFoldMaxHeadingLevel', 1);
     const foldPropertyDrawers = cfg.get('folding.autoFoldPropertyDrawers', true);
 
@@ -5678,31 +5696,34 @@ function activate(context) {
   // If folding-related configuration changes, allow auto-folding to run again.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
+      if (affectsBrandConfiguration(e, 'keymap.power') || affectsBrandConfiguration(e, 'vim.visibleLineNavigation')) {
+        updateBrandContextKeys();
+      }
       if (
-        e.affectsConfiguration('org2.folding.autoFoldMaxHeadingLevel') ||
-        e.affectsConfiguration('org2.folding.autoFoldPropertyDrawers')
+        affectsBrandConfiguration(e, 'folding.autoFoldMaxHeadingLevel') ||
+        affectsBrandConfiguration(e, 'folding.autoFoldPropertyDrawers')
       ) {
         autoFoldedForDoc.clear();
         vscode.window.visibleTextEditors.forEach((ed) => maybeAutoFold(ed));
       }
       if (
-        e.affectsConfiguration('org2.roam.indexDir') ||
-        e.affectsConfiguration('org2.roam.dailiesDir') ||
-        e.affectsConfiguration('org2.roam.nodesDir') ||
-        e.affectsConfiguration('org2.agenda.dir')
+        affectsBrandConfiguration(e, 'roam.indexDir') ||
+        affectsBrandConfiguration(e, 'roam.dailiesDir') ||
+        affectsBrandConfiguration(e, 'roam.nodesDir') ||
+        affectsBrandConfiguration(e, 'agenda.dir')
       ) {
         backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false }).catch(() => {});
       }
       if (
-        e.affectsConfiguration('org2.agenda') ||
-        e.affectsConfiguration('org2.roam.dailiesDir') ||
-        e.affectsConfiguration('org2.roam.indexDir')
+        affectsBrandConfiguration(e, 'agenda') ||
+        affectsBrandConfiguration(e, 'roam.dailiesDir') ||
+        affectsBrandConfiguration(e, 'roam.indexDir')
       ) {
         agendaProvider.load().catch(() => {});
       }
       if (
-        e.affectsConfiguration('org2.links.renderDescriptions') ||
-        e.affectsConfiguration('org2.links.renderDescriptionsMode')
+        affectsBrandConfiguration(e, 'links.renderDescriptions') ||
+        affectsBrandConfiguration(e, 'links.renderDescriptionsMode')
       ) {
         vscode.window.visibleTextEditors.forEach((ed) => updateLinkDecorations(ed));
       }
@@ -5751,7 +5772,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.rerunAutoFold', () => {
+    registerBrandCommand('celorga.rerunAutoFold', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showInformationMessage('Celorga: no active editor');
@@ -5766,7 +5787,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.debugFoldingRanges', () => {
+    registerBrandCommand('celorga.debugFoldingRanges', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showInformationMessage('Celorga: no active editor');
@@ -5786,7 +5807,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.debugListLinks', () => {
+    registerBrandCommand('celorga.debugListLinks', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showInformationMessage('Celorga: no active editor');
@@ -5809,7 +5830,7 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.toggleFoldHere', () => {
+    registerBrandCommand('celorga.toggleFoldHere', () => {
       // Use the built-in fold toggle at the cursor.
       vscode.commands.executeCommand('editor.toggleFold');
     })

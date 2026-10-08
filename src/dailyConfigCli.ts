@@ -12,6 +12,7 @@ import {
   resolveDailyNotePath,
   type DailyNoteDate,
 } from "./dailyNoteTemplate.js";
+import { configFilePath } from "./brandNames.js";
 
 const HELP = `org2 daily-config <show|infer|set> --dir CORPUS [options]
 
@@ -93,7 +94,7 @@ export async function runDailyConfigCommand(args: string[]): Promise<void> {
   if (!["show", "infer", "set"].includes(action)) throw new Error("daily-config action must be show, infer, or set.");
   const { flags, apply, clear } = parseFlags(rest);
   const root = path.resolve(flags.get("--dir") ?? process.cwd());
-  const file = path.join(root, "org2.json");
+  const file = configFilePath(root);
   const date = flags.has("--date") ? dailyNoteDateFromIso(flags.get("--date")!) : undefined;
   const { raw, revision, config } = readConfig(file);
   const expected = flags.get("--if-revision");

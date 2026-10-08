@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AgentRun } from "./agentRun.js";
 import { instantiateWorkflow, type AgentWorkflow } from "./agentWorkflow.js";
+import { stateDir } from "./brandNames.js";
 
 export interface WorkflowEvalExpectation {
   status?: AgentRun["status"];
@@ -74,7 +75,7 @@ export function evaluateRun(run: AgentRun, expected: WorkflowEvalExpectation): W
 export function loadEvalExpectation(file: string): WorkflowEvalExpectation { return JSON.parse(fs.readFileSync(file, "utf8")) as WorkflowEvalExpectation; }
 export function loadWorkflowReplayFixture(file: string): WorkflowReplayFixture { return JSON.parse(fs.readFileSync(file, "utf8")) as WorkflowReplayFixture; }
 export function saveEvalResult(root: string, result: WorkflowEvalResult): string {
-  const file = path.join(path.resolve(root), ".org2", "evals", `${result.runId}.json`);
+  const file = stateDir(path.resolve(root), "evals", `${result.runId}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   return file;

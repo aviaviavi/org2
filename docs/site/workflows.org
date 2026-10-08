@@ -1,7 +1,7 @@
 #+TITLE: Automations and workflows
 #+SUBTITLE: Plain-text prompts and processes sent to replaceable AI destinations
 
-A Celorga workflow is a maintained, reusable process. Each workflow is an ordinary =.org2= file under the visible top-level =workflows/= directory. The file is the source of truth: it can be opened in Celorga, another editor, a terminal, or Git without depending on private application state.
+A Celorga workflow is a maintained, reusable process. Each workflow is an ordinary Org file under the visible top-level =workflows/= directory. The file is the source of truth: it can be opened in Celorga, another editor, a terminal, or Git without depending on private application state.
 
 The Mac app and runtime adapters provide tooling around the file. They can create prompt automations, list and validate workflows, collect inputs, start runs, activate or pause schedules, delete definitions, and show execution history. Those controls must update or act from the canonical workflow file rather than creating a second GUI-owned definition.
 
@@ -22,11 +22,11 @@ The default corpus layout separates authored process from execution state:
 
 #+begin_src text
 workflows/                 authored workflow files
-.org2/runs/                generated durable run records
-.org2/                     runtime bindings, correlation state, and derived control data
+.celorga/runs/                generated durable run records
+.celorga/                     runtime bindings, correlation state, and derived control data
 #+end_src
 
-Older early-alpha installations may contain =.org2/workflows/=. Celorga continues to read that location, prefers a visible =workflows/= file when both contain the same workflow ID, and provides =celorga workflow migrate= to move non-conflicting legacy files. New and newly saved workflows use =workflows/=.
+Older early-alpha installations may keep workflows in a =workflows/= folder inside the hidden state directory. Celorga continues to read that location, prefers a visible =workflows/= file when both contain the same workflow ID, and provides =celorga workflow migrate= to move non-conflicting legacy files. New and newly saved workflows use =workflows/=.
 
 One workflow per file is the default. A note or project heading may link to or invoke a workflow, while independent files keep workflow identity, version history, review, and distribution straightforward.
 
@@ -102,7 +102,7 @@ This first version requires Celorga to be running. A small background helper or 
 
 * OpenClaw lifecycle integration
 
-The optional =org2-lifecycle= plugin adds deeper OpenClaw lifecycle integration:
+The optional OpenClaw lifecycle plugin adds deeper OpenClaw lifecycle integration:
 
 1. For a manual execution, the plugin instantiates the workflow into a durable Celorga run before the agent begins.
 2. The plugin sends OpenClaw a workflow marker and a request to read the canonical workflow and run records.

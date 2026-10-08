@@ -27,7 +27,7 @@ assert.equal(figures(html), 1);
 assert.doesNotMatch(html, /language-chart/);
 assert.match(html, /<script id="org2-chart-interaction">/);
 assert.match(html, /class="org2-chart-legend-item" data-series="Cost"/);
-assert.match(html, /fill="var\(--org2-chart-series-2, /, "series colors come from theme variables");
+assert.match(html, /fill="var\(--celorga-chart-series-2, var\(--org2-chart-series-2, /, "series colors come from theme variables");
 
 // A self-contained chart: the data table lives inside the chart block.
 for (const opener of ["```chart bar", "#+begin_src chart bar"]) {

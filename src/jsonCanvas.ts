@@ -4,6 +4,7 @@ import path from "node:path";
 import { canonicalNoteTargets, type CanonicalNoteTarget } from "./canonicalNoteTargets.js";
 import { loadConfig, resolveFilesFromDir } from "./config.js";
 import { guardedContentRevision, guardedWriteFile, readGuardedFile } from "./guardedFile.js";
+import { configFilePath } from "./brandNames.js";
 
 export type CanvasObject = Record<string, unknown>;
 export interface JSONCanvasNode extends CanvasObject {
@@ -153,7 +154,7 @@ function resourcePath(root: string, file: string): string {
 }
 
 function corpusNotes(root: string): string[] {
-  const configFile = path.join(root, "org2.json");
+  const configFile = configFilePath(root);
   const ignores = fs.existsSync(configFile) ? loadConfig(configFile).ignorePatterns || [] : [];
   return resolveFilesFromDir(root, ["**/*.org", "**/*.org2"], ["**/raw", "**/archive", "**/archives", "**/sync-conflicts", "**/node_modules", "**/dist", "**/build", "**/DerivedData", ...ignores])
     .filter(file => {

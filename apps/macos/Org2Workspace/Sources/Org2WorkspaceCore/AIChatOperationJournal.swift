@@ -65,10 +65,10 @@ public enum AIChatOperationJournal {
   public static let schema = "org2:ai-chat-operation:v1"
   public static let maximumEnvelopeBytes = 512_000
 
-  /// Returns the operation journal directory for a corpus without touching disk.
+  /// Returns the operation journal directory for a corpus without creating it.
+  /// A migrated corpus keeps it under `.celorga/`, otherwise `.org2/`.
   public static func operationsDirectory(corpusRoot: URL) -> URL {
-    corpusRoot.standardizedFileURL
-      .appendingPathComponent(".org2", isDirectory: true)
+    CelorgaNames.stateDirectory(corpusRoot: corpusRoot.standardizedFileURL)
       .appendingPathComponent("ai-chat-inbox", isDirectory: true)
       .appendingPathComponent("operations", isDirectory: true)
   }
@@ -302,7 +302,7 @@ public enum AIChatOperationJournal {
       throw JournalFileError.invalid("Invalid JSON in \(file.lastPathComponent).")
     }
     guard let fields = object as? [String: Any],
-          fields["schema"] as? String == schema,
+          CelorgaNames.schemaMatches(fields["schema"] as? String, schema),
           let id = fields["id"] as? String,
           isValidUUID(id),
           let createdAtText = fields["createdAt"] as? String,

@@ -5,17 +5,18 @@ import { parseOrgToCanonicalAst } from "./parser.js";
 import { loadConfig, resolveFilesFromDir } from "./config.js";
 import { guardedContentRevision, guardedWriteFile } from "./guardedFile.js";
 import type { Node } from "./ast.js";
+import { configFilePath, isBrandName } from "./brandNames.js";
 
 export const PROJECT_COLORS = ["blue", "teal", "green", "orange", "red", "purple", "gray"] as const;
 export interface ProjectNote {
   id: string; title: string; color: string; file: string; relativePath: string;
   revision: string; threadIDs: string[]; brief: string; briefTruncated: boolean;
 }
-const marker = /^#\+ORG2_KIND:\s*project\s*$/im;
+const marker = /^#\+(?:CELORGA|ORG2)_KIND:\s*project\s*$/im;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const maxBytes = 1024 * 1024;
 function config(root: string) {
-  const file = path.join(root, "org2.json");
+  const file = configFilePath(root);
   return fs.existsSync(file) ? loadConfig(file) : {};
 }
 function inside(root: string, file: string): string {
@@ -39,7 +40,7 @@ export function parseProjectNote(root: string, file: string, raw: string): Proje
   const doc = document(raw);
   const keys = doc.children.filter(n => n.type === "KeywordLine");
   const value = (key: string) => {
-    const matches = keys.filter(n => n.keyRaw.toUpperCase() === key);
+    const matches = keys.filter(n => isBrandName(n.keyRaw.toUpperCase(), key));
     if (matches.length > 1) throw new Error(`Duplicate project metadata: ${key}`);
     return matches[0]?.valueRaw.trim() ?? "";
   };
@@ -128,7 +129,7 @@ export function createProjectNote(root: string, input: { title: string; descript
   if (!input.adopt && fs.existsSync(file)) throw new Error("Project file already exists; use adopt to keep its contents");
   const previous = input.adopt ? fs.readFileSync(file, "utf8") : "";
   if (Buffer.byteLength(previous) > maxBytes) throw new Error("Project note exceeds the 1 MiB limit");
-  const kind = keywords(previous).find(n => n.keyRaw.toUpperCase() === "ORG2_KIND")?.valueRaw.trim();
+  const kind = keywords(previous).find(n => isBrandName(n.keyRaw.toUpperCase(), "ORG2_KIND"))?.valueRaw.trim();
   if (kind) throw new Error("This note already declares an ORG2_KIND");
   const description = (input.description ?? "").trim();
   if (Buffer.byteLength(description) > maxBytes / 2) throw new Error("Project description is too long");

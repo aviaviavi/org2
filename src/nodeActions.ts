@@ -1,5 +1,6 @@
 import type { CompiledCorpus, CompiledCorpusLink, CompiledCorpusNode } from "./corpusCompile.js";
 import { isActiveTodoKeyword, normalizeTodoKeyword } from "./todo.js";
+import { brandProperty } from "./brandNames.js";
 
 export type NodeActionRelationship = "direct" | "meeting";
 
@@ -133,7 +134,7 @@ function isMeetingNode(node: CompiledCorpusNode): boolean {
   const kind = String(
     node.entityType
       || node.properties.KIND
-      || node.properties.ORG2_KIND
+      || brandProperty(node.properties, "ORG2_KIND")
       || "",
   ).trim().toLowerCase().replace(/_/g, "-");
   const pathLooksLikeMeeting = node.kind === "file" && /(^|\/)meetings?\//i.test(node.file);

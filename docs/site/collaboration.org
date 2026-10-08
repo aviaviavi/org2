@@ -7,12 +7,12 @@ A corpus remains an ordinary folder or repository. Transport and membership can 
 
 * Portable corpus identity
 
-An identified corpus carries a small portable record inside =org2.json=:
+An identified corpus carries a small portable record inside =celorga.json=:
 
 #+begin_src json
 {
   "corpus": {
-    "schema": "org2:corpus:v1",
+    "schema": "celorga:corpus:v1",
     "id": "team-operations",
     "name": "Team Operations",
     "kind": "shared"
@@ -45,7 +45,7 @@ celorga corpus init --dir ~/team-operations \
   --apply
 #+end_src
 
-Applying creates the standard visible zones when missing and merges the identity into =org2.json=. It refuses to replace a different existing ID unless =--force= is explicit.
+Applying creates the standard visible zones when missing and merges the identity into =celorga.json=. It refuses to replace a different existing ID unless =--force= is explicit.
 
 * Mac workspace mounts and federated reads
 

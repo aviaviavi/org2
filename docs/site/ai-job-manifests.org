@@ -6,8 +6,8 @@ AI job manifests describe what an optional AI workflow should do without embeddi
 The v1 manifest format is documented by =spec/v0/ai-job-manifest.schema.json=. The manifest's =adapter.name= maps to the provider boundary documented in [[file:ai-adapters.org][AI adapter interface]]. Celorga currently ships provider-free validation:
 
 #+begin_src sh
-celorga ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-celorga ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
+celorga ai validate-job --job jobs/weekly-summary.ai.json
+celorga ai validate-job --job jobs/weekly-summary.ai.json --format json
 #+end_src
 
 Validation checks the manifest shape, corpus selection, task type, symbolic adapter name, output target, provenance requirements, review policy, and common accidental secret leaks. It does not call a model.
@@ -16,8 +16,7 @@ Validation checks the manifest shape, corpus selection, task type, symbolic adap
 
 #+begin_src json
 {
-  "$schema": "https://avi.press/org2/spec/v0/ai-job-manifest.schema.json",
-  "schemaVersion": "org2-ai-job/v1",
+  "schemaVersion": "celorga-ai-job/v1",
   "id": "weekly-summary",
   "description": "Summarize this week's meeting notes into a reviewable generated view.",
   "input": {
@@ -53,13 +52,13 @@ Validation checks the manifest shape, corpus selection, task type, symbolic adap
 }
 #+end_src
 
-The same file lives at =examples/jobs/weekly-summary.org2-ai.json=.
+A copy of this manifest is in the repository's =examples/jobs/= directory.
 
 * Top-level fields
 
 | Field | Required | Purpose |
 |---+---+---|
-| =schemaVersion= | yes | Must be =org2-ai-job/v1= so future changes can be versioned. |
+| =schemaVersion= | yes | Must be =celorga-ai-job/v1= so future changes can be versioned. |
 | =id= | yes | Stable job identifier for logs and generated artifact metadata. |
 | =description= | no | Human-readable review context. |
 | =input= | yes | Corpus selection: files, headings, tags, date ranges, raw zones, or query text. |
@@ -104,16 +103,16 @@ AI output should be reviewable before it becomes canonical. Prefer =views/= or =
 Text output is short and script-friendly:
 
 #+begin_src sh
-$ celorga ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-AI job manifest OK: examples/jobs/weekly-summary.org2-ai.json
+$ celorga ai validate-job --job jobs/weekly-summary.ai.json
+AI job manifest OK: jobs/weekly-summary.ai.json
 #+end_src
 
 JSON output can feed CI or editor integrations:
 
 #+begin_src json
 {
-  "$schema": "org2:ai-job-validation:v1",
-  "job": "examples/jobs/weekly-summary.org2-ai.json",
+  "$schema": "celorga:ai-job-validation:v1",
+  "job": "jobs/weekly-summary.ai.json",
   "valid": true,
   "issues": []
 }

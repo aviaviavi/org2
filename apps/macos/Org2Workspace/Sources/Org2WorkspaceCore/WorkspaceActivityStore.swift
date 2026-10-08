@@ -73,9 +73,9 @@ extension WorkspaceStore {
           < ($1.requestedAt.flatMap(Self.activityDate) ?? .distantPast)
       } ?? group[0]
       let run = newest.runId.flatMap { runsByID[$0] }
-      // Run-backed approvals live in .org2/runs; place them at the run's cited source.
+      // Run-backed approvals live in .org2/runs (or .celorga/runs); place them at the run's cited source.
       var approvalPath = relative(newest.file)
-      if approvalPath?.hasPrefix(".org2/") == true,
+      if approvalPath.map(CelorgaNames.isStateRelativePath) == true,
          let cited = run?.context.lazy.compactMap({ relative($0.fileReference) }).first {
         approvalPath = cited
       }

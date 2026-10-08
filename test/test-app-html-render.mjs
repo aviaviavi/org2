@@ -440,7 +440,7 @@ const charts = renderOrgCharts(chartSource, { sourceLineOffset: 30 })
   .filter((chart) => chart.ok && chart.svg && chart.source)
   .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
 const chartRendered = renderOrgDocumentToAppHtml(chartDocument, { charts });
-assert.match(chartRendered.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true" data-org2-start-line="40"/);
+assert.match(chartRendered.html, /<figure class="org2-chart org2-chart-compact celorga-chart" data-org2-chart-interactive="true" data-org2-start-line="40"/);
 assert.match(chartRendered.html, /<svg [^>]*role="img"/);
 assert.match(chartRendered.html, /<path class="org2-chart-line" /);
 assert.match(chartRendered.html, /tooltip\.className = "org2-chart-tooltip"/);
@@ -469,7 +469,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(chartRendered.html, /<code class="language-chart">/);
 assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%; height: auto;/);
 const chartPublished = renderOrgDocumentToHtml(chartDocument, { charts });
-assert.match(chartPublished.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true">/);
+assert.match(chartPublished.html, /<figure class="org2-chart org2-chart-compact celorga-chart" data-org2-chart-interactive="true">/);
 assert.match(chartPublished.html, /<path class="org2-chart-line" /);
 assert.doesNotMatch(chartPublished.html, /language-chart/);
 

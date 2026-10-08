@@ -15,6 +15,7 @@ import type {
 } from "./ast.js";
 import { parseInlinesFromText, parseOrgToCanonicalAst } from "./parser.js";
 import { parseOrgColorBindingTarget } from "./colorBinding.js";
+import { withNameAliases } from "./brandNames.js";
 
 export type PresentationDiagnostic = {
   severity: "warning" | "error";
@@ -130,15 +131,15 @@ function presentationKeyword(keyRaw: string, valueRaw: string): boolean {
   const value = valueRaw.trim().toLowerCase();
   if (key === "LATEX_CLASS" && value.split(/\s+/)[0] === "beamer") return true;
   if (key === "LATEX_CLASS_OPTIONS" && /(^|[^a-z0-9_-])presentation([^a-z0-9_-]|$)/.test(value)) return true;
-  if (["ORG2_DOCUMENT_KIND", "ORG2_PREVIEW", "ORG2_VIEW"].includes(key)) {
+  if (withNameAliases(["ORG2_DOCUMENT_KIND", "ORG2_PREVIEW", "ORG2_VIEW"]).includes(key)) {
     return ["slides", "presentation", "beamer"].includes(value);
   }
-  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_") || key.startsWith("CELORGA_SLIDE_");
 }
 
 function presentationProperty(keyRaw: string): boolean {
   const key = keyRaw.trim().toUpperCase();
-  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+  return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_") || key.startsWith("CELORGA_SLIDE_");
 }
 
 function nodeDeclaresPresentation(node: Node): boolean {
@@ -223,6 +224,7 @@ function parseTheme(raw: string | undefined): string | undefined {
 function presentationMetadata(doc: DocumentNode): PresentationMetadata {
   const options = parseOptions(firstKeywordValue(doc, "OPTIONS"));
   const frameLevelRaw =
+    firstKeywordValue(doc, "CELORGA_SLIDE_LEVEL") ||
     firstKeywordValue(doc, "ORG2_SLIDE_LEVEL") ||
     firstKeywordValue(doc, "SLIDE_LEVEL") ||
     firstKeywordValue(doc, "BEAMER_FRAME_LEVEL") ||

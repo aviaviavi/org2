@@ -14,7 +14,7 @@ function hasPowerBinding(keybindings, key, command) {
     binding.key === key &&
     binding.command === command &&
     typeof binding.when === 'string' &&
-    binding.when.includes('config.org2.keymap.power') &&
+    binding.when.includes('celorga.keymap.power') &&
     binding.when.includes("(editorLangId == 'org2' || editorLangId == 'org')")
   );
 }
@@ -22,18 +22,18 @@ function hasPowerBinding(keybindings, key, command) {
 test('power keymap includes agenda status-filter, refile, and priority shortcuts', () => {
   const keybindings = loadPackageKeybindings();
 
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; a s', 'org2.pickAgendaStatusFilter'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; x r', 'org2.refileSubtree'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t p', 'org2.setPriority'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t a', 'org2.assignTodoToAgent'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; a s', 'celorga.pickAgendaStatusFilter'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; x r', 'celorga.refileSubtree'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t p', 'celorga.setPriority'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t a', 'celorga.assignTodoToAgent'), true);
 });
 
 test('power keymap includes formatter check/preview/apply current-file shortcuts', () => {
   const keybindings = loadPackageKeybindings();
 
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f c', 'org2.formatCurrentFileCheck'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f p', 'org2.formatCurrentFilePreviewDiff'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f a', 'org2.formatCurrentFileApply'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f c', 'celorga.formatCurrentFileCheck'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f p', 'celorga.formatCurrentFilePreviewDiff'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; f a', 'celorga.formatCurrentFileApply'), true);
 });
 
 test('insert list item command is contributed and registered in extension runtime', () => {
@@ -44,15 +44,15 @@ test('insert list item command is contributed and registered in extension runtim
   const extensionSource = fs.readFileSync(extensionPath, 'utf8');
 
   assert.equal(
-    pkg.contributes?.commands?.some((command) => command.command === 'org2.insertListItemBelow') ?? false,
+    pkg.contributes?.commands?.some((command) => command.command === 'celorga.insertListItemBelow') ?? false,
     true
   );
   assert.equal(
-    keybindings.some((binding) => binding.command === 'org2.insertListItemBelow'),
+    keybindings.some((binding) => binding.command === 'celorga.insertListItemBelow'),
     true
   );
   assert.equal(
-    extensionSource.includes("registerCommand('org2.insertListItemBelow'"),
+    extensionSource.includes("registerBrandCommand('celorga.insertListItemBelow'"),
     true
   );
 });
@@ -69,15 +69,15 @@ test('agent handoff command assigns normal tasks and closes nested approvals', (
     true
   );
   assert.equal(
-    pkg.contributes?.commands?.some((command) => command.command === 'org2.assignTodoToAgent') ?? false,
+    pkg.contributes?.commands?.some((command) => command.command === 'celorga.assignTodoToAgent') ?? false,
     true
   );
   assert.equal(
-    keybindings.some((binding) => binding.command === 'org2.assignTodoToAgent'),
+    keybindings.some((binding) => binding.command === 'celorga.assignTodoToAgent'),
     true
   );
   assert.equal(
-    extensionSource.includes("registerCommand('org2.assignTodoToAgent'"),
+    extensionSource.includes("registerBrandCommand('celorga.assignTodoToAgent'"),
     true
   );
   assert.equal(extensionSource.includes("runTodoCli('assign', 'OpenClaw'"), true);

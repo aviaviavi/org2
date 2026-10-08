@@ -92,18 +92,22 @@ for (const [label, text] of [["agent quickstart", quickstart], ["llms.txt", llms
 for (const command of ["mcp serve", "skill install"]) {
   if (!mentionsCommand(mcpAndSkills, command)) fail(`MCP and skills guide is missing 'celorga ${command}'`);
 }
-for (const required of [
-  "org2_agent_profile_resolve",
-  "org2_search",
-  "org2_fetch",
-  "org2_context",
-  "org2_run_create",
-  "org2_run_transition",
-  "org2_run_list",
-  "org2_thread_post",
-  "codex mcp add",
-  "claude mcp add",
+for (const tool of [
+  "agent_profile_resolve",
+  "search",
+  "fetch",
+  "context",
+  "run_create",
+  "run_transition",
+  "run_list",
+  "thread_post",
 ]) {
+  // Docs may use the celorga_ tool names or their org2_ compatibility aliases.
+  if (!mcpAndSkills.includes(`celorga_${tool}`) && !mcpAndSkills.includes(`org2_${tool}`)) {
+    fail(`MCP and skills guide is missing 'celorga_${tool}'`);
+  }
+}
+for (const required of ["codex mcp add", "claude mcp add"]) {
   if (!mcpAndSkills.includes(required)) fail(`MCP and skills guide is missing '${required}'`);
 }
 if (!readme.includes("mcp-and-skills.html") || !mentionsCommand(readme, "skill install")) {
@@ -143,10 +147,10 @@ if (!siteNavigation.includes("setupHeadingAnchors") || !siteNavigation.includes(
 if (!siteNavigation.includes('[data-heading-anchors="off"]') || !features.includes('data-heading-anchors="off"')) {
   fail("site card headings are missing their copy-anchor opt-out");
 }
-if (!siteStyles.includes(".org2-heading-anchor") || !siteStyles.includes("scroll-margin-top")) {
+if (!siteStyles.includes(".celorga-heading-anchor") || !siteStyles.includes("scroll-margin-top")) {
   fail("site styles are missing heading-anchor layout and sticky-navigation offset");
 }
-if (!siteStyles.includes(".org2-features-page h2::before") || !siteStyles.includes('content: "**"')) {
+if (!siteStyles.includes(".celorga-features-page h2::before") || !siteStyles.includes('content: "**"')) {
   fail("features page level-two headings are missing Org2 '**' styling");
 }
 function mediaBlocks(styles, query) {
@@ -167,9 +171,9 @@ const mobileStyles = mediaBlocks(siteStyles, "@media (max-width: 759px)").join("
 if (
   !mobileStyles.includes("overflow-x: auto") ||
   !mobileStyles.includes("#content table td:first-child") ||
-  !mobileStyles.includes("#content table.org2-table-stacked") ||
+  !mobileStyles.includes("#content table.celorga-table-stacked") ||
   !mobileStyles.includes("content: attr(data-label)") ||
-  !siteNavigation.includes("org2-table-stacked") ||
+  !siteNavigation.includes("celorga-table-stacked") ||
   !siteNavigation.includes("data-label")
 ) {
   fail("mobile documentation tables must stack labeled rows, with an aligned horizontal-scroll fallback");
@@ -184,9 +188,9 @@ for (const page of fs.readdirSync(path.join(repoRoot, "docs/site")).filter((name
   }
 }
 if (
-  !mobileStyles.includes("#content .org2-compiler-flow article::after") ||
+  !mobileStyles.includes("#content .celorga-compiler-flow article::after") ||
   !mobileStyles.includes("grid-template-columns: 2rem minmax(0, 1fr)") ||
-  !mobileStyles.includes("#content .org2-compiler-flow p")
+  !mobileStyles.includes("#content .celorga-compiler-flow p")
 ) {
   fail("mobile follow-through steps must hide desktop connectors and use the compact numbered layout");
 }
@@ -244,7 +248,7 @@ for (const page of retiredPublicPages) {
     fail(`internal launch material must stay out of the public site: ${page}`);
   }
 }
-if ((macosWorkspace.match(/class="org2-section-shot"/g) || []).length < 6) {
+if ((macosWorkspace.match(/class="celorga-section-shot"/g) || []).length < 6) {
   fail("Celorga for macOS must place screenshots beside the sections they illustrate");
 }
 if (
@@ -281,7 +285,7 @@ if (!downloads.includes("* Celorga for iOS") || !downloads.includes("Request Tes
 if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8"))).includes("downloads.html")) {
   fail("site navigation is missing the downloads page");
 }
-if (!siteStyles.includes(".org2-download-grid") || !siteStyles.includes(".org2-download-button")) {
+if (!siteStyles.includes(".celorga-download-grid") || !siteStyles.includes(".celorga-download-button")) {
   fail("site styles are missing the download card surface");
 }
 
@@ -297,7 +301,7 @@ if (
   !siteProject?.postambleHtml?.includes("Incubated at")
   || !siteProject?.postambleHtml?.includes('href="https://scarf.sh"')
   || !siteProject?.postambleHtml?.includes('src="assets/scarf-logo.svg"')
-  || !siteStyles.includes(".org2-footer-incubator")
+  || !siteStyles.includes(".celorga-footer-incubator")
   || !fs.existsSync(path.join(repoRoot, "docs", "site", "assets", "scarf-logo.svg"))
 ) {
   fail("Celorga site footer must retain the styled Scarf incubation credit");

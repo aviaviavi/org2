@@ -49,6 +49,7 @@ import {
   type Org2PluginLock,
   type Org2PluginLockEntry,
 } from "./pluginRuntime.js";
+import { configFilePath, schemaMatches } from "./brandNames.js";
 
 type ParsedPluginArgs = {
   positional: string[];
@@ -142,7 +143,7 @@ function corpusRoot(parsed: ParsedPluginArgs): string {
 }
 
 function configPath(corpus: string): string {
-  const file = path.join(corpus, "org2.json");
+  const file = configFilePath(corpus);
   if (!fs.existsSync(file)) throw new Error(`plugin commands require ${file}`);
   return file;
 }
@@ -606,7 +607,7 @@ export async function runPluginCommand(args: string[]): Promise<boolean> {
       cwd: process.cwd(),
       arguments: parsed.passthrough,
     });
-    if (result.$schema !== ORG2_PLUGIN_RESULT_SCHEMA) throw new Error(`plugin command must return ${ORG2_PLUGIN_RESULT_SCHEMA}`);
+    if (!schemaMatches(result.$schema, ORG2_PLUGIN_RESULT_SCHEMA)) throw new Error(`plugin command must return ${ORG2_PLUGIN_RESULT_SCHEMA}`);
     if (result.ok !== true) throw new Error(typeof result.error === "string" ? result.error : `plugin command ${id}:${commandId} failed`);
     output(parsed, result, typeof result.text === "string" ? result.text : JSON.stringify(result.data ?? result, null, 2));
     return true;

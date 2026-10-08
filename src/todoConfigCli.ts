@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseTodoSequenceDefinitions, TODO_KEYWORDS } from "./todo.js";
 import { guardedContentRevision, guardedWriteFile } from "./guardedFile.js";
+import { configFilePath } from "./brandNames.js";
 
 export async function runTodoConfigCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
@@ -26,7 +27,7 @@ Writes require --apply; use --if-revision from show/preview to reject stale edit
     flags.set(key, value);
   }
   if (action === "show" && (apply || flags.has("--sequences-json"))) throw new Error("Use todo-config set to change defaults.");
-  const file = path.join(path.resolve(flags.get("--dir") ?? process.cwd()), "org2.json");
+  const file = configFilePath(path.resolve(flags.get("--dir") ?? process.cwd()));
   const raw = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
   const revision = raw === undefined ? "absent" : guardedContentRevision(raw);
   const expected = flags.get("--if-revision");

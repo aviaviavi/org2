@@ -208,7 +208,7 @@ enum AIChatLiveHostDirectory {
             let data = try? Data(contentsOf: url, options: .mappedIfSafe),
             data.count < 4 * 1_024 * 1_024,
             let record = try? decoder.decode(AIChatLiveHostRecord.self, from: data),
-            record.schema == AIChatLiveHostRecord.schemaValue,
+            CelorgaNames.schemaMatches(record.schema, AIChatLiveHostRecord.schemaValue),
             record.writerID != excludingWriterID
       else { return nil }
       return record

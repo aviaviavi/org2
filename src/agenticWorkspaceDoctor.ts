@@ -26,6 +26,7 @@ import {
   workLedgerMutationLockFiles,
   type WorkLedgerAccountSnapshot,
 } from "./workLedger.js";
+import { brandProperty } from "./brandNames.js";
 
 export const ORG2_AGENTIC_DOCTOR_SCHEMA = "org2:agentic-doctor:v1" as const;
 
@@ -323,7 +324,7 @@ function collectHeadlines(
 
 function walkCorpusFiles(root: string, output: string[] = []): string[] {
   if (!fs.existsSync(root)) return output;
-  const ignoredDirectories = new Set([".git", ".org2", ".stversions", "node_modules", "dist", "site"]);
+  const ignoredDirectories = new Set([".git", ".org2", ".celorga", ".stversions", "node_modules", "dist", "site"]);
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue;
     const absolute = path.join(root, entry.name);
@@ -356,7 +357,7 @@ function loadCorpusHeadlines(root: string, findings: AgenticDoctorFinding[]): { 
 
 function headlineStatus(headline: HeadlineRecord): string {
   return String(
-    headline.properties.ORG2_REVIEW_STATUS
+    brandProperty(headline.properties, "ORG2_REVIEW_STATUS")
       || headline.properties.REVIEW_STATUS
       || headline.properties.STATUS
       || headline.properties.FOLLOWUP_STATUS
@@ -378,7 +379,7 @@ function isApprovedHeadline(headline: HeadlineRecord): boolean {
 }
 
 function linkedApprovalId(headline: HeadlineRecord): string | undefined {
-  return headline.properties.ORG2_APPROVAL_ID || headline.properties.APPROVAL_ID || undefined;
+  return brandProperty(headline.properties, "ORG2_APPROVAL_ID") || headline.properties.APPROVAL_ID || undefined;
 }
 
 function isLikelyProviderApproval(approval: AgentRunApproval): boolean {
@@ -673,7 +674,7 @@ function auditHeadlineProjections(
   findings: AgenticDoctorFinding[],
 ): number {
   const runsById = new Map(runs.map((run) => [run.id, run]));
-  const linked = headlines.filter((headline) => headline.properties.ORG2_RUN_ID);
+  const linked = headlines.filter((headline) => brandProperty(headline.properties, "ORG2_RUN_ID"));
   const openTitles = new Map<string, HeadlineRecord[]>();
   const openGmailDrafts = new Map<string, HeadlineRecord[]>();
 
@@ -685,7 +686,7 @@ function auditHeadlineProjections(
     const draftId = headline.properties.GMAIL_DRAFT_ID;
     if (draftId && !(headline.todoTerminal ?? isTerminalTodoKeyword(headline.todo))) openGmailDrafts.set(draftId, [...(openGmailDrafts.get(draftId) || []), headline]);
 
-    const runId = headline.properties.ORG2_RUN_ID;
+    const runId = brandProperty(headline.properties, "ORG2_RUN_ID");
     if (!runId) continue;
     const run = runsById.get(runId);
     if (!run) {

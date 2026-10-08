@@ -2,6 +2,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { cronKey, cronPayloadText, cronSessionKey, durableRunMarker, executionSummary, Org2Lifecycle, shouldEnsureCronRun, shouldTrackMainTurn, workflowMarker } from "./lib/lifecycle.js";
 import { approvalAction, approvalContext, approvalTitle, draftCreatedEffect, draftSendEffect, hydrateGogDraftEffect } from "./lib/draft-approvals.js";
 import { registerOrg2WorkspaceNodePolicy } from "./lib/local-edit-node.js";
+import { markerValue, methodNames } from "./lib/brand.js";
 
 function runtimeAgentId(event = {}, ctx = {}) {
   const direct = ctx.agentId || ctx.agentID || event.agentId || event.agentID || event.runtimeAgentId || event.job?.agentId || event.job?.agentID;
@@ -13,16 +14,16 @@ function runtimeAgentId(event = {}, ctx = {}) {
 function selectedCoordination(prompt) {
   const text = String(prompt || "");
   return {
-    selectedAgentRef: text.match(/^ORG2_SELECTED_AGENT_REF:[ \t]*(\S+)[ \t]*$/mi)?.[1],
-    selectedGoalRef: text.match(/^ORG2_SELECTED_GOAL_REF:[ \t]*(\S+)[ \t]*$/mi)?.[1],
+    selectedAgentRef: markerValue(text, "SELECTED_AGENT_REF"),
+    selectedGoalRef: markerValue(text, "SELECTED_GOAL_REF"),
   };
 }
 import { unsafeGmailDraftMutation } from "./lib/gmail-draft-safety.js";
 
 export default definePluginEntry({
   id: "org2-lifecycle",
-  name: "Org2 Lifecycle",
-  description: "Synchronizes substantial OpenClaw executions into Org2 Run Center.",
+  name: "Celorga Lifecycle",
+  description: "Synchronizes substantial OpenClaw executions into Celorga Run Center.",
   register(api) {
     const config = api.pluginConfig || {};
     const lifecycle = new Org2Lifecycle({ ...config, log: api.logger });
@@ -36,13 +37,18 @@ export default definePluginEntry({
 
     registerOrg2WorkspaceNodePolicy(api);
 
+    // Each gateway method is registered as celorga.X and its legacy org2.X name.
+    const registerGatewayMethod = (name, handler, options) => {
+      for (const alias of methodNames(name)) api.registerGatewayMethod(alias, handler, options);
+    };
+
     api.on("gateway_start", async (_event, ctx) => {
       lifecycle.setCron(ctx.getCron?.());
       await lifecycle.init();
       await lifecycle.reconcile();
     });
 
-    api.registerGatewayMethod("org2.workflow.prepareRun", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.workflow.prepareRun", async ({ params, respond }) => {
       try {
         const workflowId = String(params?.workflowId || "").trim();
         if (!workflowId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "workflowId is required" });
@@ -54,17 +60,17 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.workflow.sync", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.workflow.sync", async ({ params, respond }) => {
       try { respond(true, await lifecycle.serialize(() => lifecycle.reconcile(String(params?.corpusId || "").trim() || undefined))); }
       catch (error) { respond(false, undefined, { code: "ORG2_WORKFLOW_ERROR", message: error.message }); }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.workflow.status", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.workflow.status", async ({ params, respond }) => {
       try { respond(true, await lifecycle.workflowStatus(String(params?.corpusId || "").trim() || undefined)); }
       catch (error) { respond(false, undefined, { code: "ORG2_WORKFLOW_ERROR", message: error.message }); }
     }, { scope: "operator.read" });
 
-    api.registerGatewayMethod("org2.workflow.resume", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.workflow.resume", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
         if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
@@ -75,7 +81,7 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.draft.resume", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.draft.resume", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
         if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
@@ -86,7 +92,7 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.run.resumeApproved", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.run.resumeApproved", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
         if (!runId) return respond(false, undefined, { code: "INVALID_REQUEST", message: "runId is required" });
@@ -97,7 +103,7 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.run.replyAndResume", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.run.replyAndResume", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
         const response = String(params?.response || "").trim();
@@ -110,7 +116,7 @@ export default definePluginEntry({
       }
     }, { scope: "operator.write" });
 
-    api.registerGatewayMethod("org2.workflow.resumeRevision", async ({ params, respond }) => {
+    registerGatewayMethod("celorga.workflow.resumeRevision", async ({ params, respond }) => {
       try {
         const runId = String(params?.runId || "").trim();
         const approvalId = String(params?.approvalId || "").trim();
@@ -187,7 +193,7 @@ export default definePluginEntry({
         action: approvalAction(readable),
       }));
       if (decision.allowed) return;
-      return { block: true, blockReason: `${decision.reason} Approve the matching item in Org2, then retry the send.` };
+      return { block: true, blockReason: `${decision.reason} Approve the matching item in Celorga, then retry the send.` };
     });
 
     api.on("after_tool_call", async (event, ctx) => {

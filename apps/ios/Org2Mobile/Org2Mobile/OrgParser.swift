@@ -352,7 +352,7 @@ enum OrgParser {
   }
 
   private static func propertyText(in properties: [String: String], keys: [String]) -> String {
-    for key in keys {
+    for key in CelorgaNames.withAliases(keys) {
       if let value = properties[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return value
       }

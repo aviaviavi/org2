@@ -2045,7 +2045,7 @@ function renderEmbeddedChart(chart: OrgEmbeddedChart, sourceAttributes = ""): st
   const presentation = chart.presentation;
   const size = presentation?.size || "medium";
   const interactive = presentation?.interactive !== false;
-  return `<figure class="org2-chart org2-chart-${size}" data-org2-chart-interactive="${interactive}"${sourceAttributes}>\n${chart.svg.trim()}\n</figure>`;
+  return `<figure class="org2-chart org2-chart-${size} celorga-chart" data-org2-chart-interactive="${interactive}"${sourceAttributes}>\n${chart.svg.trim()}\n</figure>`;
 }
 
 function renderBlock(node: BlockNode, context: RenderContext): string {

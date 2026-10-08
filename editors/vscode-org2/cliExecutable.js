@@ -39,7 +39,7 @@ function findExecutableOnPath(name, options = {}) {
   return null;
 }
 
-// The `org2.agenda.command` default is the `org2` compatibility alias. When the
+// The `celorga.agenda.command` (legacy `org2.agenda.command`) default is the `org2` compatibility alias. When the
 // user has not configured a command explicitly, prefer the `celorga` executable
 // if it is installed and fall back to `org2` otherwise.
 function resolveDefaultCliExecutable(configuredCommand, options = {}) {

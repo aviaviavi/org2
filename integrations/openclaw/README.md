@@ -1,13 +1,13 @@
-# Org2 for OpenClaw
+# Celorga for OpenClaw
 
-This directory contains the native OpenClaw runtime integration for Org2 Run Center.
-It is deliberately maintained in the Org2 repository so lifecycle schema and CLI
+This directory contains the native OpenClaw runtime integration for Celorga Run Center.
+It is deliberately maintained in the Celorga repository so lifecycle schema and CLI
 changes can be tested with the bridge that consumes them.
 
 The plugin tracks substantial main-agent turns, subagent executions, and cron
-executions. OpenOrg's destination-neutral scheduler is the portable default for
+executions. Celorga's destination-neutral scheduler is the portable default for
 plain prompt automations. As an optional runtime-native adapter, this plugin can
-also prepare manual Org2 workflow runs before agent execution, reconcile active
+also prepare manual Celorga workflow runs before agent execution, reconcile active
 schedule triggers from visible `workflows/*.org2` files into OpenClaw cron, and
 continue any correlated existing run in its chat session
 after its complete current approval boundary returns the run to `running`.
@@ -24,14 +24,15 @@ KEY --json`; the CLI owns idempotent request and decision reconciliation, so the
 adapter must not create a parallel review run for the same provider action.
 Scheduled executions retain one
 logical workflow identity while each cron firing has a distinct attempt. When a
-schedule declares an Org2 event/fresh-work gate, the adapter asks the CLI to
+schedule declares a Celorga event/fresh-work gate, the adapter asks the CLI to
 create the attempt and stops workflow work when the gate returns a skip instead
 of inventing an empty durable run. Successful turns record a reviewer-facing
 outcome summary; approval and clarification boundaries remain open instead of
 being mistaken for completion. Available provider, model, token, and
 elapsed-time metadata is copied into the durable run.
 
-An Org2 AI chat prompt can carry =ORG2_AI_CHAT_THREAD_ID=. When a parent
+A Celorga AI chat prompt can carry =ORG2_AI_CHAT_THREAD_ID= (or
+=CELORGA_AI_CHAT_THREAD_ID=). When a parent
 explicitly delegates asynchronous reporting, it should copy that exact marker,
 the active corpus root, readable author identity, source/run reference, and a
 stable idempotency key into the subagent or cron prompt. Lifecycle-generated
@@ -39,8 +40,8 @@ workflow and continuation prompts teach workers to use =org2 thread post ...
 --apply= only after the reported run state or artifact is durable. The plugin
 does not automatically mirror every completion into chat: foreground turns
 already have a normal reply path, and automatic mirroring would create
-duplicates. Agents using the Org2 MCP surface discover the equivalent
-=org2_thread_post= tool through =tools/list=.
+duplicates. Agents using the Celorga MCP surface discover the equivalent
+=celorga_thread_post= tool (legacy alias =org2_thread_post=) through =tools/list=.
 
 After requesting a run approval, leave the run in `waiting-approval`; do not
 also create a writable approval heading or block the run with another phrasing
@@ -50,7 +51,7 @@ independent clarification or operational condition requires
 invalid even with the override.
 
 The Mac app's **Reply & Resume** action uses the plugin's
-`org2.run.replyAndResume` gateway method. The method records the exact response,
+`celorga.run.replyAndResume` gateway method (or its `org2.run.replyAndResume` alias). The method records the exact response,
 resumes the blocked run, and returns a continuation prompt for the correlated
 OpenClaw session. Cron mappings retain their agent-scoped session key for this
 purpose. A legacy or otherwise uncorrelated run still returns the same durable
@@ -78,10 +79,10 @@ approval, clarification, or artifact review remain open.
 
 The plugin also enforces approval continuity for external-message drafts. After
 a supported connector or CLI creates or updates an unsent draft, the plugin
-creates one dedicated Org2 run per provider draft, requests a readable approval
+creates one dedicated Celorga run per provider draft, requests a readable approval
 containing its recipients, subject, and body, and records the provider draft
 identity in its private lifecycle state. A later send of that draft is blocked
-by =before_tool_call= until the exact Org2 approval is approved. Successful
+by =before_tool_call= until the exact Celorga approval is approved. Successful
 sends reconcile and complete the draft run. Material draft updates supersede a
 pending approval and request a fresh decision.
 
@@ -117,9 +118,10 @@ OpenClaw keys are persisted for correlation and deduplication. Ordinary
 conversation and personal TODOs are not promoted into runs.
 
 The plugin also registers the safe-by-default macOS node policy for
-`org2.workspace.read`, `org2.workspace.patch.preview`, and
-`org2.workspace.patch.apply`. Those commands are implemented by the paired Org2
-Workspace app, not by the Gateway plugin. They provide an optional local edit
+`celorga.workspace.read`, `celorga.workspace.patch.preview`, and
+`celorga.workspace.patch.apply`, plus their `org2.workspace.*` names. Those
+commands are implemented by the paired Celorga Mac app, not by the Gateway
+plugin. They provide an optional local edit
 transport with active-turn IDs, SHA-256 preconditions, preview tokens, and
 active-corpus path confinement; they do not expose `system.run`. Enabling the
 Mac setting requires a separate node-role pairing, and the selected agent must
@@ -135,4 +137,24 @@ openclaw plugins inspect org2-lifecycle --runtime --json
 ```
 
 OpenClaw configuration must explicitly enable `org2-lifecycle`, allow its typed
-conversation hooks, and set `corpusDir` to the target Org2 corpus.
+conversation hooks, and set `corpusDir` to the target Celorga corpus.
+
+## Names
+
+The plugin was written for Org2, the previous name of Celorga. Celorga names are
+primary; the pre-rename names keep working for several releases:
+
+- Gateway methods are registered as `celorga.workflow.*`, `celorga.draft.resume`,
+  and `celorga.run.*`, and also under their `org2.*` names.
+- Prompt markers are read as `CELORGA_X:` first and `ORG2_X:` otherwise (for
+  example `CELORGA_RUN_ID`, `CELORGA_WORKFLOW_ID`, `CELORGA_SELECTED_AGENT_REF`).
+  Prompts and cron descriptions the plugin writes keep the `ORG2_X:` spelling so
+  agents and apps still on 0.8.x understand them.
+- Record types are accepted as `celorga:KIND:vN` or `org2:KIND:vN`.
+- The plugin ID (`org2-lifecycle`), package name, error codes (`ORG2_*_ERROR`),
+  its private state file (`~/.openclaw/org2-lifecycle/state.json`), and the
+  `org2` executable it runs (a permanent alias of `celorga`) are unchanged, so
+  existing OpenClaw configuration keeps working.
+- The plugin does not read environment variables, `celorga.json`/`org2.json`,
+  or the corpus state directory itself; it goes through the CLI, which applies
+  the Celorga-first rules.

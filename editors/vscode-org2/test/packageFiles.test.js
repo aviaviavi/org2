@@ -65,7 +65,7 @@ test('extension uses the Celorga brand while keeping compatibility identifiers',
   assert.equal(pkg.displayName, 'Celorga');
   assert.equal(pkg.name, 'org2-vscode');
   assert.equal(pkg.publisher, 'AviPress');
-  assert.equal(pkg.contributes.configuration.title, 'Celorga');
+  assert.equal(pkg.contributes.configuration[0].title, 'Celorga');
   assert.ok(pkg.keywords.includes('celorga'));
 
   const language = pkg.contributes.languages.find((entry) => entry.id === 'org2');
@@ -75,7 +75,7 @@ test('extension uses the Celorga brand while keeping compatibility identifiers',
   assert.deepEqual(language.extensions, ['.org', '.org2']);
 
   for (const command of pkg.contributes.commands) {
-    assert.match(command.command, /^org2\./);
+    assert.match(command.command, /^(celorga|org2)\./);
     assert.match(command.title, /^Celorga: /);
   }
   for (const view of pkg.contributes.views.explorer) {

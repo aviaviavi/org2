@@ -168,7 +168,7 @@ interactive: true
 | Feb   | 14    |
 `;
   const chartPublication = preparePublishedDocument({ sourceText: chartSource });
-  assert.match(chartPublication.html, /<figure class="org2-chart org2-chart-medium"/);
+  assert.match(chartPublication.html, /<figure class="org2-chart org2-chart-medium celorga-chart"/);
   assert.match(chartPublication.html, /class="org2-chart-svg"/);
   assert.match(chartPublication.html, /Monthly growth/);
   assert.match(chartPublication.html, /--org2-chart-title: #24262a/);

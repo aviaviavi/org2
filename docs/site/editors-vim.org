@@ -4,31 +4,31 @@ Celorga has a small Vim runtime plugin today. It is intentionally modest: filety
 
 * Install
 
-The plugin lives in this repository at =editors/vim-org2/=.
+The plugin lives in this repository's =editors/= directory.
 
 For Vim 8+ native packages:
 
 #+begin_src sh
-git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/org2
+git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/celorga
 #+end_src
 
 Add the plugin runtime directory to your Vim config:
 
 #+begin_src vim
-set runtimepath^=~/.vim/pack/plugins/start/org2/editors/vim-org2
+set runtimepath^=~/.vim/pack/plugins/start/celorga/editors/vim-org2
 filetype plugin indent on
 syntax enable
 #+end_src
 
-For Neovim, use the equivalent package path, for example =~/.local/share/nvim/site/pack/plugins/start/org2=, and point =runtimepath= at its =editors/vim-org2= directory.
+For Neovim, use the equivalent package path, for example =~/.local/share/nvim/site/pack/plugins/start/celorga=, and point =runtimepath= at the same plugin directory inside that clone.
 
 Generate help tags after installing:
 
 #+begin_src vim
-:helptags ~/.vim/pack/plugins/start/org2/editors/vim-org2/doc
+:helptags ~/.vim/pack/plugins/start/celorga/editors/vim-org2/doc
 #+end_src
 
-Then read =:help org2=.
+Then read =:help celorga=.
 
 * Current features
 

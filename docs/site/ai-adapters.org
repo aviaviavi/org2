@@ -16,7 +16,7 @@ An adapter request packages context already selected and prepared by Celorga:
 
 #+begin_src js
 {
-  schema: "org2:ai-adapter-request:v1",
+  schema: "celorga:ai-adapter-request:v1",
   jobId: "weekly-summary",
   task: {
     type: "summarize-meeting",
@@ -49,7 +49,7 @@ Adapters return text and/or structured JSON plus metadata:
 
 #+begin_src js
 {
-  schema: "org2:ai-adapter-response:v1",
+  schema: "celorga:ai-adapter-response:v1",
   text: "Decisions: ...",
   json: { decisions: [] },
   citations: [{ source: { file: "notes/team.org", line: 12, endLine: 16 } }],

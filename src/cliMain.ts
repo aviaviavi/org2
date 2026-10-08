@@ -107,6 +107,7 @@ import type {
   PlanningNode,
   PropertyDrawerNode,
 } from "./ast.js";
+import { brandEnv, brandProperty, nameAliases, withNameAliases } from "./brandNames.js";
 
 function org2PackageVersion(): string {
   const packageUrl = new URL("../package.json", import.meta.url);
@@ -785,6 +786,7 @@ function approvalCandidateTextMayContainItem(raw: string): boolean {
   const hasHumanApprovalTitle = approvalTextHasHumanApprovalTitle(normalized);
   const hasPendingStatus = APPROVAL_STATUS_NEEDLES.some((needle) => normalized.includes(needle));
   const hasSpecificReviewStatusKey = [
+    ":celorga_review_status:",
     ":org2_review_status:",
     ":review_status:",
     ":review:",
@@ -798,11 +800,14 @@ function approvalCandidateTextMayContainItem(raw: string): boolean {
   const hasGateKey = [
     ":waiting_on:",
     ":blocked_by:",
+    ":celorga_waiting_on:",
     ":org2_waiting_on:",
     ":next_action:",
     ":action_required:",
+    ":celorga_next_action:",
     ":org2_next_action:",
     ":handoff_summary:",
+    ":celorga_handoff_summary:",
     ":org2_handoff_summary:",
   ].some((needle) => normalized.includes(needle));
   if (hasGateKey && containsApprovalSignal(normalized)) return true;
@@ -912,7 +917,7 @@ function titleNeedsHumanApproval(title: string): boolean {
 }
 
 function firstApprovalPropertyText(properties: Record<string, string>, keys: string[]): string | null {
-  for (const key of keys) {
+  for (const key of withNameAliases(keys)) {
     const value = String(properties[key] || "").trim();
     if (value) return value;
   }
@@ -1206,10 +1211,10 @@ function unifiedPendingApprovalItems(candidates: ApprovalQueueCandidate[]): Appr
 
   const items = candidates.flatMap((candidate): ApprovalQueueItem[] => {
     if (candidate.item.kind === "headline") {
-      const linkedRunId = String(candidate.item.properties.ORG2_RUN_ID || "").trim();
+      const linkedRunId = String(brandProperty(candidate.item.properties, "ORG2_RUN_ID") || "").trim();
       const linkedCandidates = linkedRunId ? runCandidatesByRunId.get(linkedRunId) || [] : [];
       const linkedApprovalId = String(
-        candidate.item.properties.ORG2_APPROVAL_ID
+        brandProperty(candidate.item.properties, "ORG2_APPROVAL_ID")
           || candidate.item.properties.APPROVAL_ID
           || "",
       ).trim();
@@ -1360,16 +1365,16 @@ function splitLintList(raw: string): string[] {
 
 function appendArtifactFreshnessLintIssues(content: string, filePath: string, issues: ArtifactLintIssue[]): void {
   for (const drawer of collectArtifactPropertyDrawersInText(content)) {
-    const role = String(drawer.properties.get("ORG2_ARTIFACT_ROLE") || "").trim().toLowerCase();
+    const role = String(brandProperty(drawer.properties, "ORG2_ARTIFACT_ROLE") || "").trim().toLowerCase();
     if (!["compiled", "view", "report"].includes(role)) continue;
 
-    const generatedAtRaw = String(drawer.properties.get("ORG2_GENERATED_AT") || "").trim();
+    const generatedAtRaw = String(brandProperty(drawer.properties, "ORG2_GENERATED_AT") || "").trim();
     const generatedAt = generatedAtRaw ? new Date(generatedAtRaw) : null;
-    const reviewStatus = String(drawer.properties.get("ORG2_REVIEW_STATUS") || "").trim().toLowerCase();
+    const reviewStatus = String(brandProperty(drawer.properties, "ORG2_REVIEW_STATUS") || "").trim().toLowerCase();
     const sourceMtimeRequiresReview = !["reviewed", "promoted"].includes(reviewStatus);
 
     if (sourceMtimeRequiresReview && generatedAt && !Number.isNaN(generatedAt.getTime())) {
-      for (const entry of splitLintList(drawer.properties.get("ORG2_PROVENANCE") || "")) {
+      for (const entry of splitLintList(brandProperty(drawer.properties, "ORG2_PROVENANCE") || "")) {
         const match = /^file:(\S.*)$/.exec(entry);
         if (!match) continue;
         const sourcePath = path.resolve(path.dirname(filePath), String(match[1] || "").trim());
@@ -1390,7 +1395,7 @@ function appendArtifactFreshnessLintIssues(content: string, filePath: string, is
       }
     }
 
-    for (const entry of splitLintList(drawer.properties.get("ORG2_SOURCE_HASHES") || "")) {
+    for (const entry of splitLintList(brandProperty(drawer.properties, "ORG2_SOURCE_HASHES") || "")) {
       const parsed = parseArtifactSourceHashEntry(entry);
       if (!parsed || parsed.kind !== "file") continue;
       const sourcePath = path.resolve(path.dirname(filePath), parsed.value);
@@ -4209,7 +4214,7 @@ function parseHeadlineLine(line: string, sequences: readonly TodoSequence[] = []
 }
 
 function isAgendaHabitProperties(properties: Record<string, string>): { isHabit: boolean; marker: string } {
-  const raw = String(properties.HABIT || properties.STYLE || properties.ORG2_HABIT || "").trim();
+  const raw = String(properties.HABIT || properties.STYLE || brandProperty(properties, "ORG2_HABIT") || "").trim();
   const normalized = raw.toLowerCase();
   return { isHabit: normalized === "habit" || normalized === "true" || normalized === "yes", marker: raw || "habit" };
 }
@@ -7182,10 +7187,15 @@ type AiReviewQueueItem = {
 };
 
 function artifactProperty(raw: string, key: string): string {
-  const drawerMatch = raw.match(new RegExp(`^:${key}:\\s*(.+?)\\s*$`, "im"));
-  if (drawerMatch) return String(drawerMatch[1] || "").trim();
-  const keywordMatch = raw.match(new RegExp(`^#\\+${key}:\\s*(.+?)\\s*$`, "im"));
-  return keywordMatch ? String(keywordMatch[1] || "").trim() : "";
+  for (const alias of nameAliases(key)) {
+    const drawerMatch = raw.match(new RegExp(`^:${alias}:\\s*(.+?)\\s*$`, "im"));
+    if (drawerMatch) return String(drawerMatch[1] || "").trim();
+  }
+  for (const alias of nameAliases(key)) {
+    const keywordMatch = raw.match(new RegExp(`^#\\+${alias}:\\s*(.+?)\\s*$`, "im"));
+    if (keywordMatch) return String(keywordMatch[1] || "").trim();
+  }
+  return "";
 }
 function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
   const items: AiReviewQueueItem[] = [];
@@ -7211,12 +7221,12 @@ function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
 }
 
 function hasReviewedArtifactStatus(raw: string): boolean {
-  return /^:ORG2_REVIEW_STATUS:\s*(reviewed|promoted)\s*$/im.test(raw);
+  return /^:(?:CELORGA|ORG2)_REVIEW_STATUS:\s*(reviewed|promoted)\s*$/im.test(raw);
 }
 
 function markArtifactPromoted(raw: string): string {
-  if (/^:ORG2_REVIEW_STATUS:\s*(reviewed|generated|review-required)\s*$/im.test(raw)) {
-    return raw.replace(/^:ORG2_REVIEW_STATUS:\s*(reviewed|generated|review-required)\s*$/im, ":ORG2_REVIEW_STATUS: promoted");
+  if (/^:(?:CELORGA|ORG2)_REVIEW_STATUS:\s*(reviewed|generated|review-required)\s*$/im.test(raw)) {
+    return raw.replace(/^:((?:CELORGA|ORG2)_REVIEW_STATUS):\s*(reviewed|generated|review-required)\s*$/im, ":$1: promoted");
   }
   return raw;
 }
@@ -10149,7 +10159,7 @@ Flags:
     if (files.length === 0) { console.error("Error: no Org files found for org2 brief"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set((agentIncludeRaw || "sources,backlinks").split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
-    const today = process.env.ORG2_TODAY || new Date().toISOString().slice(0, 10);
+    const today = brandEnv("ORG2_TODAY") || new Date().toISOString().slice(0, 10);
     const query = agentQuery || (briefAction === "today" ? today : briefName);
     const scope = agentScope || (briefAction === "project" ? `project:${briefName}` : "");
     const corpus = compileCorpusIncremental(files, {
@@ -12607,7 +12617,7 @@ Flags:
     try {
       payload = queryNodeActions(corpus, {
         object: queryRelationObject,
-        today: process.env.ORG2_TODAY,
+        today: brandEnv("ORG2_TODAY"),
         recentDays,
         openLimit,
         completedLimit,
@@ -14413,7 +14423,7 @@ Flags:
     const rawSubtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
     const remainingLines = [...lines.slice(0, headlineLineIndex), ...lines.slice(endIndexExclusive)];
     const provenance = {
-      archivedAt: process.env.ORG2_ARCHIVED_AT || new Date().toISOString(),
+      archivedAt: brandEnv("ORG2_ARCHIVED_AT") || new Date().toISOString(),
       sourcePath,
       sourceLine: String(headlineLineIndex + 1),
       originalId: findArchiveOriginalId(rawSubtreeLines),

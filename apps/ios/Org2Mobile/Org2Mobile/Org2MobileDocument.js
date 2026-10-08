@@ -65,12 +65,43 @@ var Org2MobileDocument = (() => {
   };
   var node_path_default = new Proxy({ basename: (value) => value.replace(/\/+$/, "").split("/").pop() || "" }, { get: (target, key) => target[key] ?? unavailable2 });
 
+  // src/brandNames.ts
+  var PROPERTY_PREFIX = "CELORGA_";
+  var LEGACY_PROPERTY_PREFIX = "ORG2_";
+  var CONFIG_FILE = "celorga.json";
+  var LEGACY_CONFIG_FILE = "org2.json";
+  function celorgaName(name) {
+    return name.startsWith(LEGACY_PROPERTY_PREFIX) ? PROPERTY_PREFIX + name.slice(LEGACY_PROPERTY_PREFIX.length) : name;
+  }
+  function legacyName(name) {
+    return name.startsWith(PROPERTY_PREFIX) ? LEGACY_PROPERTY_PREFIX + name.slice(PROPERTY_PREFIX.length) : name;
+  }
+  function nameAliases(name) {
+    const modern = celorgaName(name);
+    const legacy = legacyName(name);
+    return modern === legacy ? [name] : [modern, legacy];
+  }
+  function withNameAliases(names) {
+    const result = [];
+    for (const name of names) {
+      for (const alias of nameAliases(name)) if (!result.includes(alias)) result.push(alias);
+    }
+    return result;
+  }
+  function configFileIn(dir) {
+    for (const name of [CONFIG_FILE, LEGACY_CONFIG_FILE]) {
+      const candidate = node_path_default.join(dir, name);
+      if (node_fs_default.existsSync(candidate)) return candidate;
+    }
+    return null;
+  }
+
   // src/config.ts
   function findConfigFile(startDir) {
     let currentDir = node_path_default.resolve(startDir);
     while (true) {
-      const configPath = node_path_default.join(currentDir, "org2.json");
-      if (node_fs_default.existsSync(configPath)) {
+      const configPath = configFileIn(currentDir);
+      if (configPath) {
         return configPath;
       }
       const parentDir = node_path_default.dirname(currentDir);
@@ -2187,14 +2218,14 @@ var Org2MobileDocument = (() => {
     const value = valueRaw.trim().toLowerCase();
     if (key === "LATEX_CLASS" && value.split(/\s+/)[0] === "beamer") return true;
     if (key === "LATEX_CLASS_OPTIONS" && /(^|[^a-z0-9_-])presentation([^a-z0-9_-]|$)/.test(value)) return true;
-    if (["ORG2_DOCUMENT_KIND", "ORG2_PREVIEW", "ORG2_VIEW"].includes(key)) {
+    if (withNameAliases(["ORG2_DOCUMENT_KIND", "ORG2_PREVIEW", "ORG2_VIEW"]).includes(key)) {
       return ["slides", "presentation", "beamer"].includes(value);
     }
-    return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+    return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_") || key.startsWith("CELORGA_SLIDE_");
   }
   function presentationProperty(keyRaw) {
     const key = keyRaw.trim().toUpperCase();
-    return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_");
+    return key.startsWith("BEAMER_") || key.startsWith("SLIDE_") || key.startsWith("ORG2_SLIDE_") || key.startsWith("CELORGA_SLIDE_");
   }
   function nodeDeclaresPresentation(node) {
     switch (node.type) {
@@ -5515,7 +5546,7 @@ ${rows}
     const presentation = chart.presentation;
     const size = presentation?.size || "medium";
     const interactive = presentation?.interactive !== false;
-    return `<figure class="org2-chart org2-chart-${size}" data-org2-chart-interactive="${interactive}"${sourceAttributes}>
+    return `<figure class="org2-chart org2-chart-${size} celorga-chart" data-org2-chart-interactive="${interactive}"${sourceAttributes}>
 ${chart.svg.trim()}
 </figure>`;
   }

@@ -4,10 +4,11 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { includesMarker, markerValue, schemaMatches } from "./brand.js";
 
 const execFileAsync = promisify(execFile);
 
-const backgroundThreadDeliveryInstruction = "If this prompt includes ORG2_AI_CHAT_THREAD_ID and this execution is expected to report after its parent turn ends, post the durable outcome once with `org2 thread post THREAD_ID --message TEXT --author NAME --source run:RUN_ID --idempotency-key KEY --apply`. Do not duplicate a normal foreground reply, and do not post before the reported run state or artifact is durable.";
+const backgroundThreadDeliveryInstruction = "If this prompt includes CELORGA_AI_CHAT_THREAD_ID or ORG2_AI_CHAT_THREAD_ID and this execution is expected to report after its parent turn ends, post the durable outcome once with `org2 thread post THREAD_ID --message TEXT --author NAME --source run:RUN_ID --idempotency-key KEY --apply`. Do not duplicate a normal foreground reply, and do not post before the reported run state or artifact is durable.";
 
 export function conciseGoal(prompt, fallback = "OpenClaw agent execution") {
   const clean = String(prompt || "").replace(/\s+/g, " ").trim();
@@ -26,11 +27,11 @@ export function shouldTrackMainTurn(prompt, ctx = {}) {
 
 export function workflowMarker(prompt) {
   const text = String(prompt || "");
-  const workflowId = text.match(/^ORG2_WORKFLOW_ID:\s*([^\s]+)\s*$/mi)?.[1];
-  const workflowRunId = text.match(/^ORG2_WORKFLOW_RUN_ID:\s*([^\s]+)\s*$/mi)?.[1];
-  const workflowRunStarted = /^ORG2_WORKFLOW_RUN_STARTED:\s*true\s*$/mi.test(text);
-  const triggerId = text.match(/^ORG2_WORKFLOW_TRIGGER_ID:\s*([^\s]+)\s*$/mi)?.[1];
-  const inputsRaw = text.match(/^ORG2_WORKFLOW_INPUTS:\s*(\{.*\})\s*$/mi)?.[1];
+  const workflowId = markerValue(text, "WORKFLOW_ID", "([^\\s]+)", "\\s*");
+  const workflowRunId = markerValue(text, "WORKFLOW_RUN_ID", "([^\\s]+)", "\\s*");
+  const workflowRunStarted = /^true$/i.test(markerValue(text, "WORKFLOW_RUN_STARTED", "(true)", "\\s*") || "");
+  const triggerId = markerValue(text, "WORKFLOW_TRIGGER_ID", "([^\\s]+)", "\\s*");
+  const inputsRaw = markerValue(text, "WORKFLOW_INPUTS", "(\\{.*\\})", "\\s*");
   let inputs = {};
   if (inputsRaw) {
     try { inputs = JSON.parse(inputsRaw); } catch {}
@@ -46,7 +47,7 @@ export function workflowMarker(prompt) {
 
 export function durableRunMarker(prompt) {
   const text = String(prompt || "");
-  return text.match(/^ORG2_RUN_ID:\s*([^\s]+)\s*$/mi)?.[1];
+  return markerValue(text, "RUN_ID", "([^\\s]+)", "\\s*");
 }
 
 export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId) {
@@ -59,10 +60,10 @@ export function workflowExecutionPrompt(workflow, inputs = {}, runId, triggerId)
     ...(workflow.reasoningEffort ? [`ORG2_REASONING_EFFORT: ${workflow.reasoningEffort}`] : []),
     `ORG2_WORKFLOW_INPUTS: ${JSON.stringify(inputs)}`,
     "",
-    `Execute the Org2 workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
-    ...(triggerId ? ["This is a scheduled attempt. The Org2 lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
-    "Read the workflow and durable run with the Org2 CLI. Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
-    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Org2 will explicitly continue the same run after every item in that boundary is decided.",
+    `Execute the Celorga workflow \"${workflow.title}\" from its canonical plain-text workflow file.`,
+    ...(triggerId ? ["This is a scheduled attempt. The Celorga lifecycle adapter checks its declared event/fresh-work gate before creating the durable attempt; if no run was created, stop without executing workflow steps."] : []),
+    "Read the workflow and durable run with the Celorga CLI (`org2`). Update run steps as they progress, record produced artifacts and validation results, and keep generated work in the declared reviewable locations.",
+    "At an approval boundary, request the approval on this run and end the turn without performing the protected action. Celorga will explicitly continue the same run after every item in that boundary is decided.",
     "For a provider draft, keep the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line in the approval action. Reuse this run for revisions; never create a second review run for the same provider draft.",
     "Before requesting an external-action or high-impact approval, record the exact recipient, content, command, and attachments in an inspectable run artifact or approval note. An opaque ID or content fingerprint is not review material.",
     backgroundThreadDeliveryInstruction,
@@ -77,8 +78,8 @@ export function workflowContinuationPrompt(workflow, runId) {
     `ORG2_WORKFLOW_RUN_ID: ${runId}`,
     "ORG2_WORKFLOW_RESUME: approval-decided",
     "",
-    `Continue the Org2 workflow \"${workflow.title}\" using its existing durable run.`,
-    "Re-read the workflow and run with the Org2 CLI. Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
+    `Continue the Celorga workflow \"${workflow.title}\" using its existing durable run.`,
+    "Re-read the workflow and run with the Celorga CLI (`org2`). Continue from the first incomplete step, perform only actions covered by recorded approvals, and preserve the run's artifacts, validation, and event history.",
     "Use this run for every replacement approval. Resolve provider authority, including decided approvals, through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`; do not create a separate review run for a draft already represented here.",
     "Treat an approval as valid only for the exact review material recorded with it; do not substitute a new recipient, payload, command, or attachment after approval.",
     "When an approval resolves an artifact review boundary, record the artifact decision with `org2 run artifact-review RUN_ID ARTIFACT_ID --status reviewed|rejected` before completing the run.",
@@ -92,7 +93,7 @@ export function draftContinuationPrompt(runId) {
     "ORG2_DRAFT_RESUME: approval-decided",
     "",
     "Continue the decided external-draft action using its existing durable run.",
-    "Re-read the run with the Org2 CLI and resolve the exact provider-draft authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
+    "Re-read the run with the Celorga CLI (`org2`) and resolve the exact provider-draft authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json`.",
     "If the draft approval was rejected or canceled, do not send it; record that exclusion and close the existing run without performing the protected action.",
     "If it was approved, send only the exact provider draft covered by the approved review material. Do not substitute a new recipient, subject, body, command, or attachment.",
     "Record either the provider send evidence or the declined-action outcome on the existing draft run.",
@@ -105,8 +106,8 @@ export function approvedRunContinuationPrompt(run) {
     `ORG2_RUN_ID: ${run.id}`,
     "ORG2_RUN_RESUME: approval-decided",
     "",
-    `Continue the existing Org2 run \"${run.goal}\" after every item in its approval boundary was decided.`,
-    "Re-read the durable run with the Org2 CLI and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
+    `Continue the existing Celorga run \"${run.goal}\" after every item in its approval boundary was decided.`,
+    "Re-read the durable run with the Celorga CLI (`org2`) and continue from the first incomplete step. Do not create a replacement run or request the same approval again.",
     "Perform only exact actions whose review material is approved. Skip every rejected or canceled action, and do not substitute a new recipient, payload, command, or attachment.",
     "For provider drafts, resolve the exact authority through `org2 run approval-resolve --decision-key artifact:PROVIDER:TOOL:DRAFT_ID --json` and verify provider state before any retry.",
     "Record external receipts and the final outcome on this durable run, or record the next specific blocker if the work cannot continue.",
@@ -122,8 +123,8 @@ export function workflowRevisionPrompt(workflow, runId, approval) {
     `ORG2_WORKFLOW_REVISION_APPROVAL_ID: ${approval.id}`,
     "ORG2_WORKFLOW_RESUME: revision-requested",
     "",
-    `Revise the review material for the Org2 workflow "${workflow.title}" using its existing durable run.`,
-    "Re-read the workflow and run with the Org2 CLI. The reviewer requested changes in the approval decision note.",
+    `Revise the review material for the Celorga workflow "${workflow.title}" using its existing durable run.`,
+    "Re-read the workflow and run with the Celorga CLI (`org2`). The reviewer requested changes in the approval decision note.",
     `Requested changes: ${approval.decisionNote}`,
     "Apply that feedback to new review material, preserve the prior artifact and decision as history, and request a replacement approval for the revised action.",
     "Request the replacement on ORG2_WORKFLOW_RUN_ID. Preserve the exact `Provider draft: PROVIDER:TOOL:DRAFT_ID` line so the CLI can supersede the prior version and reconcile both Review and Runs.",
@@ -223,7 +224,7 @@ export function clarificationContinuationPrompt(run, response) {
     `ORG2_RUN_ID: ${run.id}`,
     "ORG2_RUN_RESUME: clarification-answered",
     "",
-    `Continue the existing Org2 run \"${run.goal}\" after the user's clarification.`,
+    `Continue the existing Celorga run \"${run.goal}\" after the user's clarification.`,
     `Clarification: ${String(run.blockedReason || "Clarification requested").trim()}`,
     "User response:",
     String(response || "").trim(),
@@ -353,7 +354,7 @@ export class Org2Lifecycle {
   async assertCorpus(expectedCorpusId) {
     const status = await this.corpus();
     if (expectedCorpusId && status.identity?.id !== expectedCorpusId) {
-      throw new Error(`Org2 corpus mismatch: Mac app selected ${expectedCorpusId}, but OpenClaw is configured for ${status.identity?.id || "an unidentified corpus"}`);
+      throw new Error(`Celorga corpus mismatch: Mac app selected ${expectedCorpusId}, but OpenClaw is configured for ${status.identity?.id || "an unidentified corpus"}`);
     }
     return status;
   }
@@ -504,7 +505,7 @@ export class Org2Lifecycle {
     const created = JSON.parse(await this.exec(args));
     return {
       run: created.run,
-      skipped: created.schema === "org2:workflow-run-skipped:v1",
+      skipped: schemaMatches(created.schema, "org2:workflow-run-skipped:v1"),
       eligibility: created.eligibility || (created.reason ? { eligible: false, reason: created.reason } : undefined),
       workflow,
       prompt: created.run ? workflowExecutionPrompt(workflow, inputs, created.run.id, details.triggerId) : undefined,
@@ -591,7 +592,7 @@ export class Org2Lifecycle {
       "--json",
     ]));
     const approval = [...(updated.approvals || [])].reverse().find((item) => item.status === "pending");
-    if (!approval?.id) throw new Error(`Org2 did not return an approval id for draft ${effect.draftId}`);
+    if (!approval?.id) throw new Error(`Celorga did not return an approval id for draft ${effect.draftId}`);
     const record = {
       ...effect,
       org2RunId: runId,
@@ -621,8 +622,8 @@ export class Org2Lifecycle {
       return {
         allowed: false,
         reason: record?.approvalId
-          ? `External draft ${effect.draftId} is ${status} or does not match the approved Org2 content and cannot be sent.`
-          : `No matching Org2 approval exists for external draft ${effect.draftId}.`,
+          ? `External draft ${effect.draftId} is ${status} or does not match the approved Celorga content and cannot be sent.`
+          : `No matching Celorga approval exists for external draft ${effect.draftId}.`,
       };
     }
 
@@ -951,7 +952,7 @@ export class Org2Lifecycle {
       let binding = this.state.workflowJobs[workflow.id];
       let job = binding?.jobId ? jobsById.get(binding.jobId) : undefined;
       if (!job) {
-        job = jobs.find((item) => String(item.description || "").includes(`ORG2_WORKFLOW_ID: ${workflow.id}`));
+        job = jobs.find((item) => includesMarker(item.description, "WORKFLOW_ID", workflow.id));
         if (job) binding = this.state.workflowJobs[workflow.id] = { jobId: job.id };
       }
       if (!desiredEnabled) {
@@ -959,8 +960,8 @@ export class Org2Lifecycle {
         continue;
       }
       const desired = {
-        name: `Org2: ${workflow.title}`,
-        description: `Managed by Org2.\nORG2_WORKFLOW_ID: ${workflow.id}\nORG2_WORKFLOW_VERSION: ${workflow.version}`,
+        name: `Celorga: ${workflow.title}`,
+        description: `Managed by Celorga.\nORG2_WORKFLOW_ID: ${workflow.id}\nORG2_WORKFLOW_VERSION: ${workflow.version}`,
         enabled: true,
         schedule: { kind: "cron", expr: trigger.schedule, ...(trigger.timezone ? { tz: trigger.timezone } : {}) },
         sessionTarget: "isolated",

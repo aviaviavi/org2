@@ -46,6 +46,7 @@ final class BundledAgentWorkspaceTools {
   func execute(_ name: String, arguments: JSONValue) async throws -> CodexDynamicToolResult {
     try Task.checkCancellation()
     guard var args = arguments.objectValue else { return failure("Arguments must be an object.") }
+    let name = CelorgaNames.legacyToolName(name)
     if name == "org2_workspace_search" {
       guard let query = args["query"]?.stringValue, !query.isEmpty, query.utf8.count <= 2000 else {
         return failure("Provide a search query of 1–2000 bytes.")

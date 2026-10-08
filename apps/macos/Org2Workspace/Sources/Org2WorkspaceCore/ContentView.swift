@@ -8789,7 +8789,7 @@ private struct AgendaItemListView: View {
               isEditable: store.isResultInActiveCorpus(item.corpus),
               isAgentAssigned: store.isAgentAssignee(item.properties["ASSIGNEE"]),
               isPersonalAssigned: store.isPersonalAssignee(item.properties["ASSIGNEE"]),
-              workState: item.properties["ORG2_RUN_ID"] == nil
+              workState: CelorgaNames.property("ORG2_RUN_ID", in: item.properties) == nil
                 ? nil
                 : store.headingWorkState(properties: item.properties)?.state,
               toggleBulkSelection: { store.toggleAgendaItemBulkSelection(item) },

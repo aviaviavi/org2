@@ -1,4 +1,5 @@
 import type { Org2DataSourceConfig } from "./config.js";
+import { brandEnv } from "./brandNames.js";
 
 export type RemoteDatasetRequest =
   | {
@@ -53,7 +54,7 @@ function profileUrl(profile: Org2DataSourceConfig, profileName: string): URL {
 function requiredEnvironmentValue(name: string | undefined, profileName: string, purpose: string, env: NodeJS.ProcessEnv): string {
   const variable = String(name || "").trim();
   if (!variable) throw new Error(`Data source profile "${profileName}" requires ${purpose} environment variable metadata`);
-  const value = String(env[variable] || "");
+  const value = String(brandEnv(variable, env) || "");
   if (!value) throw new Error(`Environment variable ${variable} required by data source profile "${profileName}" is not set`);
   return value;
 }

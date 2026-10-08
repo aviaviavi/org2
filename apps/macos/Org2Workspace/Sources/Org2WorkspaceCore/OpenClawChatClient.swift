@@ -60,7 +60,7 @@ public struct OpenClawGatewaySettings: Sendable {
       return chatCompletionsEndpoint(from: url)
     }
 
-    if let raw = environment["ORG2_WORKSPACE_OPENCLAW_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+    if let raw = CelorgaNames.environment("ORG2_WORKSPACE_OPENCLAW_URL", in: environment)?.trimmingCharacters(in: .whitespacesAndNewlines),
        !raw.isEmpty,
        let url = URL(string: raw) {
       return chatCompletionsEndpoint(from: url)
@@ -82,7 +82,7 @@ public struct OpenClawGatewaySettings: Sendable {
   }
 
   private static func explicitBearerToken(environment: [String: String]) -> String? {
-    for key in ["ORG2_WORKSPACE_OPENCLAW_TOKEN", "CLAWDBOT_GATEWAY_PASSWORD", "CLAWDBOT_GATEWAY_TOKEN"] {
+    for key in CelorgaNames.withAliases(["ORG2_WORKSPACE_OPENCLAW_TOKEN", "CLAWDBOT_GATEWAY_PASSWORD", "CLAWDBOT_GATEWAY_TOKEN"]) {
       if let value = normalizedBearerToken(environment[key]) {
         return value
       }

@@ -16,6 +16,7 @@ import {
   readEmailSourceState,
   resolveEmailPassword,
 } from "./emailSource.js";
+import { schemaMatches } from "./brandNames.js";
 
 export type SourceBinding = {
   binary?: string;
@@ -93,7 +94,7 @@ function sourceSyncLockOwnerPath(lockDir: string): string {
 function readSourceSyncLockOwner(lockDir: string): SourceSyncLockOwner | null {
   try {
     const value = JSON.parse(fs.readFileSync(sourceSyncLockOwnerPath(lockDir), "utf8")) as Partial<SourceSyncLockOwner>;
-    if (value.schema !== SOURCE_SYNC_LOCK_SCHEMA
+    if (!schemaMatches(value.schema, SOURCE_SYNC_LOCK_SCHEMA)
         || typeof value.token !== "string"
         || !Number.isInteger(value.pid)
         || typeof value.sourceId !== "string"

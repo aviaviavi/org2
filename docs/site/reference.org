@@ -41,6 +41,8 @@ Celorga reference is split into two detailed sections:
 - [[file:migration.org][Practical migration]]
   - using existing =.org= files
   - mixing ID links and title links
+- [[file:name-compatibility.org][Upgrading from earlier releases]]
+  - names from releases made before the rename and their Celorga equivalents
 - [[file:features.org][Features]]
 - [[file:agentic-workspace-roadmap.org][Agentic workspace roadmap]]
 - [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]]
@@ -50,6 +52,6 @@ For the independently implementable language standard, see [[https://github.com/
 
 * Live embed resolution
 
-=celorga embed resolve --target TARGET --file SOURCE [--dir CORPUS] [--json]= is read-only. It returns =org2:embed-resolution:v1= JSON containing a portable directive, title, resolved file, and source line, without copying source content. Targets are explicit =id:STABLE-ID= note/heading references or =file:relative/path.org= whole-note references; =.org2= remains supported. Relative paths resolve from =SOURCE=. When =--dir= is omitted, the nearest =org2.json= defines the corpus, falling back to the source directory.
+=celorga embed resolve --target TARGET --file SOURCE [--dir CORPUS] [--json]= is read-only. It returns =celorga:embed-resolution:v1= JSON containing a portable directive, title, resolved file, and source line, without copying source content. Targets are explicit =id:STABLE-ID= note/heading references or =file:relative/path.org= whole-note references. Relative paths resolve from =SOURCE=. When =--dir= is omitted, the nearest =celorga.json= defines the corpus, falling back to the source directory.
 
 The shared app renderer interprets =#+EMBED: TARGET= keyword lines using compiled corpus IDs and source ranges. It rejects ambiguous IDs and out-of-corpus files, bounds cycles/depth/content, and renders source navigation beside read-only inline content. Ordinary HTML exports preserve references without resolving them; disclosure-safe =publish document= strips targets and emits an omission marker. See [[file:editors-macos.org][Live note and heading embeds]] for insertion, refresh, and limits.

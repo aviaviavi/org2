@@ -707,7 +707,7 @@ function updateDataNotebookRefreshMetadata(input: string, refreshedAt: string): 
     },
   );
   text = text.replace(
-    /^(\s*#\+property:\s+ORG2_OBSERVED_AT(?:\s+|=))(.*)$/im,
+    /^(\s*#\+property:\s+(?:CELORGA|ORG2)_OBSERVED_AT(?:\s+|=))(.*)$/im,
     (_match, prefix: string, currentValue: string) => {
       const current = String(currentValue || "").trim();
       const nextValue = current.startsWith("[")

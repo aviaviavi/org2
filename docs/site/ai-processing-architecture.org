@@ -57,7 +57,7 @@ export interface AiProviderAdapter {
 export interface AiGenerateRequest {
   task: string;
   instructions: string;
-  context: Org2CitedContext[];
+  context: CitedContext[];
   outputSchema?: unknown;
   metadata?: Record<string, string>;
 }
@@ -80,9 +80,9 @@ The command family is:
 
 #+begin_src sh
 celorga ai run --task summarize-meeting --file raw/team-sync.org --out views/team-sync-summary.org
-celorga ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org
+celorga ai run --job jobs/weekly-summary.ai.json --out views/weekly-summary.org
 celorga ai suggest-links --dir notes --recursive --out views/link-suggestions.org
-celorga ai validate-job --job jobs/weekly-summary.org2-ai.json
+celorga ai validate-job --job jobs/weekly-summary.ai.json
 #+end_src
 
 Implemented pieces so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
@@ -106,7 +106,7 @@ A job runner should record each transformation with enough data to review and re
 2. Compile or query that material into a cited context packet with file paths, line ranges, heading ancestry, snippets, and source hashes when available.
 3. Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.
 4. Validate the returned output against the workflow contract.
-5. Write a generated artifact under =views/= or =compiled/= with =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, =ORG2_GENERATED_AT=, optional =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= (=generated=, =review-required=, =reviewed=, or =promoted=).
+5. Write a generated artifact under =views/= or =compiled/= with =CELORGA_ARTIFACT_ROLE=, =CELORGA_PROVENANCE=, =CELORGA_GENERATOR=, =CELORGA_GENERATED_AT=, optional =CELORGA_SOURCE_HASHES=, and =CELORGA_REVIEW_STATUS= (=generated=, =review-required=, =reviewed=, or =promoted=).
 6. Run =celorga lint= so missing provenance or unsafe generated/canonical boundaries become visible.
 7. Promote only the human-approved parts into =notes/= through an explicit patch, editor command, or future promote workflow.
 

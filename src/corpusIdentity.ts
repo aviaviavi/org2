@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Org2Config } from "./config.js";
+import { configFilePath, schemaMatches } from "./brandNames.js";
 
 export const ORG2_CORPUS_SCHEMA = "org2:corpus:v1" as const;
 export const ORG2_CORPUS_KINDS = ["personal", "shared", "project"] as const;
@@ -40,7 +41,7 @@ export function validateCorpusIdentity(value: unknown): { valid: boolean; issues
   const id = String(raw.id || "").trim();
   const name = String(raw.name || "").trim();
   const kind = String(raw.kind || "").trim();
-  if (schema !== ORG2_CORPUS_SCHEMA) issues.push({ path: "corpus.schema", message: `must equal ${ORG2_CORPUS_SCHEMA}` });
+  if (!schemaMatches(schema, ORG2_CORPUS_SCHEMA)) issues.push({ path: "corpus.schema", message: `must equal ${ORG2_CORPUS_SCHEMA}` });
   if (!ID_PATTERN.test(id)) issues.push({ path: "corpus.id", message: "must be a lowercase slug of 1-64 letters, numbers, or hyphens" });
   if (!name || name.length > 120) issues.push({ path: "corpus.name", message: "must contain 1-120 characters" });
   if (!(ORG2_CORPUS_KINDS as readonly string[]).includes(kind)) issues.push({ path: "corpus.kind", message: `must be one of: ${ORG2_CORPUS_KINDS.join(", ")}` });
@@ -53,7 +54,7 @@ export function validateCorpusIdentity(value: unknown): { valid: boolean; issues
 
 export function corpusIdentityStatus(root: string): CorpusIdentityStatus {
   const resolvedRoot = path.resolve(root);
-  const configFile = path.join(resolvedRoot, "org2.json");
+  const configFile = configFilePath(resolvedRoot);
   const issues: CorpusIdentityIssue[] = [];
   if (!fs.existsSync(resolvedRoot) || !fs.statSync(resolvedRoot).isDirectory()) {
     return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: "root", message: "must be an existing directory" }] };
@@ -88,7 +89,7 @@ export function initializeCorpusIdentity(
   options: { apply?: boolean; force?: boolean } = {},
 ): { status: CorpusIdentityStatus; changed: boolean; applied: boolean } {
   const resolvedRoot = path.resolve(root);
-  const configFile = path.join(resolvedRoot, "org2.json");
+  const configFile = configFilePath(resolvedRoot);
   const normalized: Org2CorpusIdentity = { schema: ORG2_CORPUS_SCHEMA, id: identity.id.trim(), name: identity.name.trim(), kind: identity.kind };
   const validation = validateCorpusIdentity(normalized);
   if (!validation.valid) throw new Error(validation.issues.map((issue) => `${issue.path} ${issue.message}`).join("; "));

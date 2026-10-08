@@ -295,7 +295,9 @@ struct AIChatThreadOutputs: Equatable, Sendable {
          broadCorpusFolders.contains((folder as NSString).lastPathComponent.lowercased()) {
         return false
       }
-      if path(folder, isInside: corpusRoot + "/.org2") { return false }
+      if CelorgaNames.stateDirectoryNames.contains(where: { path(folder, isInside: corpusRoot + "/" + $0) }) {
+        return false
+      }
     }
     return true
   }
@@ -357,7 +359,8 @@ struct AIChatThreadOutputs: Equatable, Sendable {
     let name = (path as NSString).lastPathComponent
     guard !name.isEmpty, !name.hasPrefix("."), !name.hasSuffix("~"), !path.contains("…"),
           !(name as NSString).pathExtension.isEmpty,
-          !path.contains("/.org2/")
+          !path.contains("/.org2/"),
+          !path.contains("/.celorga/")
     else { return false }
     return true
   }

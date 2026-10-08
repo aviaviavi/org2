@@ -8,6 +8,7 @@ const DEFAULT_IGNORED_CORPUS_DIRECTORIES = new Set([
   ".stversions",
   ".trash",
   ".org2",
+  ".celorga",
   "node_modules",
   "dist",
   "build",

@@ -40,7 +40,7 @@ Headline TODO states parsed into the canonical AST:
 
 Workflow tools may accept aliases such as =PROG= or =WAITING= and normalize them to one of the canonical TODO keywords above.
 
-Corpus defaults live in =org2.json= under =todo.sequences=, for example ={"todo":{"sequences":["TODO WAITING | DONE SKIPPED"]}}=. Celorga exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.
+Corpus defaults live in =celorga.json= under =todo.sequences=, for example ={"todo":{"sequences":["TODO WAITING | DONE SKIPPED"]}}=. Celorga exposes these under Settings → General → TODO States. Each corpus sequence needs an active state and a terminal state; state names must be unique across the corpus sequences. An empty array restores built-in defaults.
 
 Files may also declare their own Org-compatible vocabulary with =#+TODO:=, =#+SEQ_TODO:=, or =#+TYP_TODO:=. Fast-selection suffixes such as =WAITING(w)= are recognized and omitted from the stored headline state:
 
@@ -161,7 +161,7 @@ Built-in abbreviations:
 - =yt:= → =https://www.youtube.com/watch?v=%s=
 - =wiki:= → =https://en.wikipedia.org/wiki/%s=
 
-You can add/override abbreviations in =org2.json=:
+You can add/override abbreviations in =celorga.json=:
 
 #+begin_src json
 {
@@ -181,19 +181,19 @@ And define file-local abbreviations with Org-compatible syntax:
 
 Precedence (highest to lowest):
 1) file-local =#+LINK=
-2) =org2.json= links.abbreviations
+2) =celorga.json= links.abbreviations
 3) built-ins
 
 Celorga expands abbreviation targets when rendering/exporting and for LSP document-link targets.
 
 * Corpus identity
 
-The root =org2.json= may identify the corpus independently of its local path:
+The root =celorga.json= may identify the corpus independently of its local path:
 
 #+begin_src json
 {
   "corpus": {
-    "schema": "org2:corpus:v1",
+    "schema": "celorga:corpus:v1",
     "id": "team-operations",
     "name": "Team Operations",
     "kind": "shared"
@@ -393,13 +393,13 @@ source: quarterly_metrics
 #+end_src
 #+end_example
 
-Each line receives a stable color from the =--org2-chart-mark= and =--org2-chart-series-2= … =--org2-chart-series-8= style variables, which Celorga sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
+Each line receives a stable color from the chart series style variables listed below, which Celorga sets from the selected light or dark theme, and grouped bar charts place each series beside the others within its x-axis category. Multi-series charts include a legend, series-aware accessibility labels, and series names in interactive tooltips. A =y-asc= or =y-desc= sort uses the first listed series. Histograms remain single-series because each row already represents one bucket.
 
 Charts are drawn in a clean, modern style. Lines are smooth (monotone, so they never overshoot the data); a one- or two-series line chart gets a soft gradient fill; and each line ends in a dot labeled with its latest value, with the series name when there are several. Line charts fit the value axis to the data rather than always starting at zero, while bar charts always include zero and label each bar when there is room. Axis labels stay horizontal: long category names are shortened (the full name stays available as a tooltip) or thinned out. Values use compact units such as =95.9k= or =24M=; a currency prefix appears when every cell starts with =$= or the column name contains =usd=, and a percent suffix appears when every cell ends in =%= or the name contains =pct= or =percent=. Cells such as =$1,200= and =12%= are read as numbers. Tooltips show the full value, for example =$95,880=.
 
 The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use =size= and =height= when the desired dimensions should remain deterministic in source.
 
-Chart SVG uses CSS custom properties with opinionated defaults: =--org2-chart-mark=, =--org2-chart-series-2= through =--org2-chart-series-8=, =--org2-chart-surface=, =--org2-chart-axis=, =--org2-chart-grid=, =--org2-chart-label=, and =--org2-chart-title=. The first series retains =--org2-chart-mark= for compatibility. Set them on =.org2-chart= in a published stylesheet or the Mac app's =.org2/app.css= to customize the visual theme without changing the data declaration.
+Chart SVG uses CSS custom properties with opinionated defaults: =--celorga-chart-mark=, =--celorga-chart-series-2= through =--celorga-chart-series-8=, =--celorga-chart-surface=, =--celorga-chart-axis=, =--celorga-chart-grid=, =--celorga-chart-label=, and =--celorga-chart-title=. Set them on =.celorga-chart= in a published stylesheet or the Mac app's =.celorga/app.css= to customize the visual theme without changing the data declaration.
 
 The CLI can render chart-affiliated tables directly:
 
@@ -480,7 +480,7 @@ GROUP BY state
 
 ** Remote analytics datasets
 
-Remote datasets use the same named-dataset and DuckDB result pipeline as local CSV files. A note names a profile, but never contains a warehouse URL, API key, username, or password. Profiles live in the nearest =org2.json= and refer to secrets through environment-variable names:
+Remote datasets use the same named-dataset and DuckDB result pipeline as local CSV files. A note names a profile, but never contains a warehouse URL, API key, username, or password. Profiles live in the nearest =celorga.json= and refer to secrets through environment-variable names:
 
 #+begin_src json
 {
@@ -597,7 +597,7 @@ Export previews by default. =--pdf= invokes =pdflatex= twice; use =--latex-engin
 
 For pdfLaTeX compatibility, common Unicode arrows, comparison operators, checkmarks, bullets, dashes, and related symbols are translated to equivalent LaTeX commands in prose, headings, metadata, and literal/source blocks. This includes symbols such as =→=, =↘=, =≥=, and =✓= that pdfLaTeX's default UTF-8 layer does not define directly.
 
-The frame level defaults to 2 and follows the familiar Org convention in =#+OPTIONS: H:2=: level-one headlines become sections and level-two headlines become slides. =#+ORG2_SLIDE_LEVEL:=, =#+SLIDE_LEVEL:=, and legacy =#+BEAMER_FRAME_LEVEL:= can set the level explicitly. =toc:t= adds an outline frame.
+The frame level defaults to 2 and follows the familiar Org convention in =#+OPTIONS: H:2=: level-one headlines become sections and level-two headlines become slides. =#+CELORGA_SLIDE_LEVEL:=, =#+SLIDE_LEVEL:=, and legacy =#+BEAMER_FRAME_LEVEL:= can set the level explicitly. =toc:t= adds an outline frame.
 
 A minimal talk is ordinary Org-shaped text:
 

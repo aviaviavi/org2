@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { guardedWriteFile, readGuardedFile, type GuardedFileWriteOptions } from "./guardedFile.js";
 import { safeIdentifier } from "./safeIdentifier.js";
+import { schemaMatches } from "./brandNames.js";
 
 export const ORG2_GOAL_SCHEMA = "org2:goal:v1" as const;
 export const ORG2_AGENT_PROFILE_SCHEMA = "org2:agent-profile:v1" as const;
@@ -92,7 +93,7 @@ function machineState<T>(raw: string, language: string): T {
 }
 
 function assertGoal(goal: GoalRecord): GoalRecord {
-  if (goal.schema !== ORG2_GOAL_SCHEMA) throw new Error(`goal schema must be ${ORG2_GOAL_SCHEMA}`);
+  if (!schemaMatches(goal.schema, ORG2_GOAL_SCHEMA)) throw new Error(`goal schema must be ${ORG2_GOAL_SCHEMA}`);
   safeIdentifier(goal.id, { label: "goal id" });
   if (!clean(goal.title)) throw new Error("goal title is required");
   if (!GOAL_STATUSES.includes(goal.status)) throw new Error(`invalid goal status: ${goal.status}`);
@@ -103,7 +104,7 @@ function assertGoal(goal: GoalRecord): GoalRecord {
 }
 
 function assertAgentProfile(profile: AgentProfile): AgentProfile {
-  if (profile.schema !== ORG2_AGENT_PROFILE_SCHEMA) throw new Error(`agent profile schema must be ${ORG2_AGENT_PROFILE_SCHEMA}`);
+  if (!schemaMatches(profile.schema, ORG2_AGENT_PROFILE_SCHEMA)) throw new Error(`agent profile schema must be ${ORG2_AGENT_PROFILE_SCHEMA}`);
   safeIdentifier(profile.id, { label: "agent profile id" });
   if (!clean(profile.name)) throw new Error("agent profile name is required");
   if (!AGENT_PROFILE_STATUSES.includes(profile.status)) throw new Error(`invalid agent profile status: ${profile.status}`);

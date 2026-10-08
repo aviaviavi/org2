@@ -8,9 +8,10 @@ Minimal Vim plugin for Celorga.
 - Syntax highlighting (different groups per heading level)
 - Folding by heading level
 - `<Tab>` toggles the fold for the current item
-- `:Org2TodoToggle`, `:Org2TodoSet {status}`, and `:Org2Format` run the `celorga` CLI when it is on your `PATH` and fall back to `org2`, which remains a compatibility alias
+- `:CelorgaTodoToggle`, `:CelorgaTodoSet {status}`, and `:CelorgaFormat` run the `celorga` CLI when it is on your `PATH` and fall back to `org2`, which remains a compatibility alias
+- Buffers are formatted on save unless you set `let g:celorga_format_on_save = 0`
 
-The plugin directory, the `org2` filetype, `g:org2_*` options, and `:Org2*` commands keep their names for compatibility.
+The pre-rename names still work: `:Org2TodoToggle`, `:Org2TodoSet`, and `:Org2Format` are aliases, and `g:org2_format_on_save` is read when `g:celorga_format_on_save` is not set. The plugin directory and the `org2` filetype keep their names for compatibility.
 
 ## Install
 

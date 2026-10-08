@@ -192,6 +192,27 @@ final class WorkspaceDiagnosticsTests: XCTestCase {
     )
   }
 
+  func testLoadsCorpusIdentityFromCelorgaJSONWithCelorgaSchema() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-diagnostics-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let legacy = #"{"corpus":{"schema":"org2:corpus:v1","id":"legacy","name":"Legacy","kind":"project"}}"#
+    let modern = #"{"corpus":{"schema":"celorga:corpus:v1","id":"modern","name":"Modern","kind":"project"}}"#
+    try Data(legacy.utf8).write(to: root.appendingPathComponent("org2.json"))
+    XCTAssertEqual(try WorkspaceDiagnosticsCorpus.load(at: root).id, "legacy")
+
+    try Data(modern.utf8).write(to: root.appendingPathComponent("celorga.json"))
+    XCTAssertEqual(try WorkspaceDiagnosticsCorpus.load(at: root).id, "modern")
+    XCTAssertEqual(
+      WorkspaceDiagnosticsNames.environment(
+        "ORG2_WORKSPACE_DIAGNOSTICS_CORPUS",
+        in: ["CELORGA_WORKSPACE_DIAGNOSTICS_CORPUS": "/modern", "ORG2_WORKSPACE_DIAGNOSTICS_CORPUS": "/legacy"]
+      ),
+      "/modern"
+    )
+  }
+
   func testWritesRawIncidentWithoutCorpusContentFileExtensions() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-diagnostics-\(UUID().uuidString)", isDirectory: true)

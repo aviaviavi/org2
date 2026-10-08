@@ -131,6 +131,15 @@ export function configFileIn(dir: string): string | null {
   return null;
 }
 
+/**
+ * The config file to read or edit in a directory: the existing `celorga.json`
+ * or `org2.json`, otherwise the legacy `org2.json` path new corpora still get
+ * in phase 1.
+ */
+export function configFilePath(dir: string): string {
+  return configFileIn(dir) ?? path.join(dir, LEGACY_CONFIG_FILE);
+}
+
 /** Whether a file name is a workspace config file (either spelling). */
 export function isConfigFileName(name: string): boolean {
   return name === CONFIG_FILE || name === LEGACY_CONFIG_FILE;

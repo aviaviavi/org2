@@ -1,3 +1,4 @@
+import { nameAliases } from "./brandNames.js";
 export type SubtreeRange = {
   start: number;
   endExclusive: number;
@@ -106,10 +107,14 @@ export function upsertHeadlinePropertyInLines(lines: string[], headingIndex: num
   }
 
   const keyPrefix = `:${propertyKey}:`;
-  for (let i = drawer.start + 1; i < drawer.end; i += 1) {
-    if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix)) {
-      lines[i] = `${keyPrefix} ${value}`;
-      return;
+  // A branded key updates whichever spelling (CELORGA_X or ORG2_X) is present.
+  for (const alias of nameAliases(propertyKey)) {
+    const aliasPrefix = `:${alias}:`;
+    for (let i = drawer.start + 1; i < drawer.end; i += 1) {
+      if ((lines[i] ?? "").toUpperCase().startsWith(aliasPrefix)) {
+        lines[i] = `${aliasPrefix} ${value}`;
+        return;
+      }
     }
   }
   lines.splice(drawer.end, 0, `${keyPrefix} ${value}`);

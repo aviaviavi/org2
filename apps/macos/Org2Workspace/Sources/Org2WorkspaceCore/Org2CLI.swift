@@ -127,7 +127,7 @@ public struct Org2CLI: Sendable {
     filePath: String = #filePath,
     bundleResourceURL: URL? = Bundle.main.resourceURL
   ) throws -> URL {
-    if let override = ProcessInfo.processInfo.environment["ORG2_REPO_ROOT"], !override.isEmpty {
+    if let override = CelorgaNames.environment("ORG2_REPO_ROOT"), !override.isEmpty {
       return URL(fileURLWithPath: override).standardizedFileURL
     }
 

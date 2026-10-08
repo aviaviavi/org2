@@ -25,7 +25,7 @@ public enum LocalAgentExecutableLocator {
     loginShellPATH: String? = LocalAgentExecutableLocator.cachedLoginShellPATH()
   ) -> URL? {
     var candidates: [String] = []
-    if let configured = environment[configuredKey]?
+    if let configured = CelorgaNames.environment(configuredKey, in: environment)?
       .trimmingCharacters(in: .whitespacesAndNewlines),
        !configured.isEmpty {
       candidates.append(configured)

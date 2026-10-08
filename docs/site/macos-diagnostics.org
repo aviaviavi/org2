@@ -12,7 +12,7 @@ Build and start the helper from the repository root:
 npm run diagnostics:macos
 #+end_src
 
-By default it follows the daily app with bundle identifier =org.org.workspace= and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in =org2.json=. Pass an explicit corpus or monitor the isolated Codex app when needed:
+By default it follows the installed daily app and reads that app's remembered corpus from machine-local preferences. The corpus must have a valid portable identity in =celorga.json=. Pass an explicit corpus or monitor the isolated Codex app when needed:
 
 #+begin_src sh
 npm run diagnostics:macos -- --corpus /path/to/corpus
@@ -55,7 +55,7 @@ Run the optimized regression boundary with:
 npm run test:macos-performance
 #+end_src
 
-The GitHub Actions workflow *OpenOrg macOS correctness and performance* runs the correctness suite before deterministic release-mode performance regressions and records its Xcode, Swift, and SDK versions. Once the shared runtime builds, the performance step still runs after a correctness failure so performance does not go unmeasured. A failure in either step fails the workflow; cancellation stops further work. Inspect the failed step before treating the workflow result as a measured slowdown. Existing regression thresholds remain enforced in the release-mode step. The full interactive scale benchmark runs separately through =npm run test:macos-performance= with its generated corpus and measurement report.
+The repository's macOS correctness and performance GitHub Actions workflow runs the correctness suite before deterministic release-mode performance regressions and records its Xcode, Swift, and SDK versions. Once the shared runtime builds, the performance step still runs after a correctness failure so performance does not go unmeasured. A failure in either step fails the workflow; cancellation stops further work. Inspect the failed step before treating the workflow result as a measured slowdown. Existing regression thresholds remain enforced in the release-mode step. The full interactive scale benchmark runs separately through =npm run test:macos-performance= with its generated corpus and measurement report.
 
 On Apple Silicon the test launcher runs Swift natively even when npm itself is
 running through Rosetta, so the optimized test bundle matches the app's target
@@ -88,13 +88,13 @@ in-process diagnostics consumers.
 Captured evidence is primary input, so it belongs under =raw/= rather than =compiled/=:
 
 #+begin_example
-raw/diagnostics/org2-workspace/YYYY/MM/DD/
+raw/diagnostics/APP/YYYY/MM/DD/
   TIMESTAMP-TRIGGER-PID-ID/
     incident.json
     stacks.sample.txt
 #+end_example
 
-=incident.json= uses the versioned =org2:workspace-diagnostic:v1= envelope defined by =spec/v0/workspace-diagnostic.schema.json= and records the trigger, app/build identity, recent resource snapshots, sampling status, and a privacy-safe hot-path fingerprint. =stacks.sample.txt= is the macOS thread-sampling report.
+=incident.json= uses the versioned =celorga:workspace-diagnostic:v1= envelope defined by =spec/v0/workspace-diagnostic.schema.json= and records the trigger, app/build identity, recent resource snapshots, sampling status, and a privacy-safe hot-path fingerprint. =stacks.sample.txt= is the macOS thread-sampling report.
 
 These files use =.json= and =.sample.txt= extensions, so the Celorga app's corpus event classifier does not parse them or invalidate workspace projections. Generated grouping, diagnosis, and fix reports should go under =views/diagnostics/= and cite the raw incident directory.
 

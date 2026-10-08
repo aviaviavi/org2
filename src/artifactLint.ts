@@ -1,5 +1,6 @@
 import { ORG2_ARTIFACT_REVIEW_STATUS_VALUES, ORG2_CLAIM_STATE_VALUES } from "./artifactMetadata.js";
 import { parseIsoCalendarDate } from "./calendarDate.js";
+import { brandProperty, brandPropertyKey } from "./brandNames.js";
 
 export type ArtifactRole = "raw" | "canonical" | "compiled" | "view" | "report";
 
@@ -251,18 +252,18 @@ function evaluateArtifactProperties(
   issues: ArtifactLintIssue[],
   enforcePathRole = true,
 ): void {
-  const roleRaw = normalizePropertyValue(props.get("ORG2_ARTIFACT_ROLE") || "");
-  const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
-  const generatedAtRaw = normalizePropertyValue(props.get("ORG2_GENERATED_AT") || "");
-  const generatorRaw = normalizePropertyValue(props.get("ORG2_GENERATOR") || "");
-  const sourceHashesRaw = normalizePropertyValue(props.get("ORG2_SOURCE_HASHES") || "");
-  const reviewStatusRaw = normalizePropertyValue(props.get("ORG2_REVIEW_STATUS") || "");
+  const roleRaw = normalizePropertyValue(brandProperty(props, "ORG2_ARTIFACT_ROLE") || "");
+  const provenanceRaw = normalizePropertyValue(brandProperty(props, "ORG2_PROVENANCE") || "");
+  const generatedAtRaw = normalizePropertyValue(brandProperty(props, "ORG2_GENERATED_AT") || "");
+  const generatorRaw = normalizePropertyValue(brandProperty(props, "ORG2_GENERATOR") || "");
+  const sourceHashesRaw = normalizePropertyValue(brandProperty(props, "ORG2_SOURCE_HASHES") || "");
+  const reviewStatusRaw = normalizePropertyValue(brandProperty(props, "ORG2_REVIEW_STATUS") || "");
   const idRaw = normalizePropertyValue(props.get("ID") || "");
-  const claimStateRaw = normalizePropertyValue(props.get("ORG2_CLAIM_STATE") || "");
-  const observedAtRaw = normalizePropertyValue(props.get("ORG2_OBSERVED_AT") || "");
-  const validAsOfRaw = normalizePropertyValue(props.get("ORG2_VALID_AS_OF") || "");
-  const staleAfterRaw = normalizePropertyValue(props.get("ORG2_STALE_AFTER") || "");
-  const expiresAtRaw = normalizePropertyValue(props.get("ORG2_EXPIRES_AT") || "");
+  const claimStateRaw = normalizePropertyValue(brandProperty(props, "ORG2_CLAIM_STATE") || "");
+  const observedAtRaw = normalizePropertyValue(brandProperty(props, "ORG2_OBSERVED_AT") || "");
+  const validAsOfRaw = normalizePropertyValue(brandProperty(props, "ORG2_VALID_AS_OF") || "");
+  const staleAfterRaw = normalizePropertyValue(brandProperty(props, "ORG2_STALE_AFTER") || "");
+  const expiresAtRaw = normalizePropertyValue(brandProperty(props, "ORG2_EXPIRES_AT") || "");
 
   const role = parseArtifactRole(roleRaw);
   if (roleRaw && !role) {
@@ -497,7 +498,7 @@ function collectArtifactProvenanceRefsFromProperties(
   line: number,
   refs: ArtifactProvenanceRef[],
 ): void {
-  const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
+  const provenanceRaw = normalizePropertyValue(brandProperty(props, "ORG2_PROVENANCE") || "");
   const provenanceEntries = splitProvenance(provenanceRaw);
 
   for (const entry of provenanceEntries) {
@@ -580,7 +581,7 @@ export function lintArtifactMetadataInText(content: string, filePath: string): A
     for (const drawer of fileDrawers) {
       for (const [key, value] of drawer.properties) fileProperties.set(key, value);
     }
-    const metadataDrawer = fileDrawers.find((drawer) => drawer.properties.has("ORG2_ARTIFACT_ROLE")) || fileDrawers[0]!;
+    const metadataDrawer = fileDrawers.find((drawer) => (brandPropertyKey(drawer.properties, "ORG2_ARTIFACT_ROLE") !== undefined)) || fileDrawers[0]!;
     evaluateArtifactProperties(fileProperties, filePath, metadataDrawer.startLine, issues);
   }
 

@@ -68,6 +68,8 @@ struct OrgProseStateError: Error, Equatable, LocalizedError {
 
 enum OrgProseStateFormat {
   static let markerPrefix = "ORG2_PROSE_STATE_V"
+  /// Marker prefixes accepted when reading, Celorga first. Writers keep `markerPrefix`.
+  static let markerPrefixes = [CelorgaNames.celorgaName(markerPrefix), markerPrefix]
   static let marker = "ORG2_PROSE_STATE_V1"
   static let beginLine = "#+BEGIN_COMMENT"
   static let endLine = "#+END_COMMENT"
@@ -459,7 +461,9 @@ struct OrgProseDocument: Sendable {
 
   static func parse(_ text: String) -> OrgProseDocument {
     let ns = text as NSString
-    guard ns.range(of: OrgProseStateFormat.markerPrefix, options: .literal).location != NSNotFound
+    guard OrgProseStateFormat.markerPrefixes.contains(where: {
+      ns.range(of: $0, options: .literal).location != NSNotFound
+    })
     else {
       return OrgProseDocument(text: text, status: .absent, state: OrgProseState())
     }
@@ -470,31 +474,33 @@ struct OrgProseDocument: Sendable {
       let version: String
     }
     var candidates: [Candidate] = []
-    var searchStart = 0
-    while searchStart < ns.length {
-      let hit = ns.range(
-        of: OrgProseStateFormat.markerPrefix,
-        options: .literal,
-        range: NSRange(location: searchStart, length: ns.length - searchStart)
-      )
-      guard hit.location != NSNotFound else { break }
-      searchStart = NSMaxRange(hit)
-      let line = ns.lineRange(for: hit)
-      guard line.location > 0,
-            let content = lineContent(of: line, in: ns)?
-              .trimmingCharacters(in: .whitespaces),
-            content.hasPrefix(OrgProseStateFormat.markerPrefix)
-      else { continue }
-      let version = String(content.dropFirst(OrgProseStateFormat.markerPrefix.count))
-      guard !version.isEmpty, version.allSatisfy(\.isASCII), version.allSatisfy(\.isNumber) else {
-        continue
+    for markerPrefix in OrgProseStateFormat.markerPrefixes {
+      var searchStart = 0
+      while searchStart < ns.length {
+        let hit = ns.range(
+          of: markerPrefix,
+          options: .literal,
+          range: NSRange(location: searchStart, length: ns.length - searchStart)
+        )
+        guard hit.location != NSNotFound else { break }
+        searchStart = NSMaxRange(hit)
+        let line = ns.lineRange(for: hit)
+        guard line.location > 0,
+              let content = lineContent(of: line, in: ns)?
+                .trimmingCharacters(in: .whitespaces),
+              content.hasPrefix(markerPrefix)
+        else { continue }
+        let version = String(content.dropFirst(markerPrefix.count))
+        guard !version.isEmpty, version.allSatisfy(\.isASCII), version.allSatisfy(\.isNumber) else {
+          continue
+        }
+        let previous = ns.lineRange(for: NSRange(location: line.location - 1, length: 0))
+        guard lineContent(of: previous, in: ns)?
+          .trimmingCharacters(in: .whitespaces)
+          .caseInsensitiveCompare(OrgProseStateFormat.beginLine) == .orderedSame
+        else { continue }
+        candidates.append(Candidate(begin: previous, marker: line, version: version))
       }
-      let previous = ns.lineRange(for: NSRange(location: line.location - 1, length: 0))
-      guard lineContent(of: previous, in: ns)?
-        .trimmingCharacters(in: .whitespaces)
-        .caseInsensitiveCompare(OrgProseStateFormat.beginLine) == .orderedSame
-      else { continue }
-      candidates.append(Candidate(begin: previous, marker: line, version: version))
     }
 
     guard let candidate = candidates.first else {

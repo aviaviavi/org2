@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { guardedWriteFile, readGuardedFile } from "./guardedFile.js";
 import { safeIdentifier } from "./safeIdentifier.js";
+import { configFilePath, stateDir } from "./brandNames.js";
 
 /** A portable, symbolic owner; addresses and credentials belong to local server config. */
 export function automationHostRef(root: string): string {
-  const file = path.join(root, "org2.json");
+  const file = configFilePath(root);
   if (!fs.existsSync(file)) return "desktop";
   const config = JSON.parse(fs.readFileSync(file, "utf8"));
   return safeIdentifier(config.automationHostRef ?? "desktop");
@@ -14,7 +15,7 @@ export function automationHostRef(root: string): string {
 
 export function assignAutomationHost(root: string, hostRef: string, apply: boolean) {
   const owner = safeIdentifier(hostRef);
-  const snapshot = readGuardedFile(path.join(root, "org2.json"));
+  const snapshot = readGuardedFile(configFilePath(root));
   const config = JSON.parse(snapshot.content);
   const previousHostRef = config.automationHostRef ?? "desktop";
   config.automationHostRef = owner;
@@ -25,7 +26,7 @@ export function assignAutomationHost(root: string, hostRef: string, apply: boole
 
 /** Serialize check-and-create for one workflow on an actual shared filesystem. */
 export function acquireWorkflowDispatchLock(root: string, workflowID: string): () => void {
-  const directory = path.join(root, ".org2", "workflow-dispatch-locks");
+  const directory = stateDir(root, "workflow-dispatch-locks");
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, `${safeIdentifier(workflowID)}.lock`);
   // Do not reclaim ambiguous locks or locks owned by another machine. A person

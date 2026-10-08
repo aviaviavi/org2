@@ -877,23 +877,23 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const header: string[] = [];
   if (titleText) {
     cursorY += 20;
-    header.push(`<text class="org2-chart-title" x="0" y="${cursorY}" font-size="15" font-weight="600" letter-spacing="-0.01em" fill="var(--org2-chart-title, #0f172a)">${escapeXml(titleText)}</text>`);
+    header.push(`<text class="org2-chart-title" x="0" y="${cursorY}" font-size="15" font-weight="600" letter-spacing="-0.01em" fill="var(--celorga-chart-title, var(--org2-chart-title, #0f172a))">${escapeXml(titleText)}</text>`);
   }
   cursorY += titleText ? 19 : 14;
-  header.push(`<text class="org2-chart-subtitle" x="0" y="${cursorY}" font-size="12" fill="var(--org2-chart-label, #64748b)">${escapeXml(subtitleText)}</text>`);
+  header.push(`<text class="org2-chart-subtitle" x="0" y="${cursorY}" font-size="12" fill="var(--celorga-chart-label, var(--org2-chart-label, #64748b))">${escapeXml(subtitleText)}</text>`);
 
-  const labelColor = "var(--org2-chart-label, #64748b)";
-  const gridColor = "var(--org2-chart-grid, #e2e8f0)";
-  const axisColor = "var(--org2-chart-axis, #94a3b8)";
+  const labelColor = "var(--celorga-chart-label, var(--org2-chart-label, #64748b))";
+  const gridColor = "var(--celorga-chart-grid, var(--org2-chart-grid, #e2e8f0))";
+  const axisColor = "var(--celorga-chart-axis, var(--org2-chart-axis, #94a3b8))";
   const seriesColors = [
-    "var(--org2-chart-mark, #2563eb)",
-    "var(--org2-chart-series-2, #dc2626)",
-    "var(--org2-chart-series-3, #16a34a)",
-    "var(--org2-chart-series-4, #9333ea)",
-    "var(--org2-chart-series-5, #ea580c)",
-    "var(--org2-chart-series-6, #0891b2)",
-    "var(--org2-chart-series-7, #c026d3)",
-    "var(--org2-chart-series-8, #4d7c0f)",
+    "var(--celorga-chart-mark, var(--org2-chart-mark, #2563eb))",
+    "var(--celorga-chart-series-2, var(--org2-chart-series-2, #dc2626))",
+    "var(--celorga-chart-series-3, var(--org2-chart-series-3, #16a34a))",
+    "var(--celorga-chart-series-4, var(--org2-chart-series-4, #9333ea))",
+    "var(--celorga-chart-series-5, var(--org2-chart-series-5, #ea580c))",
+    "var(--celorga-chart-series-6, var(--org2-chart-series-6, #0891b2))",
+    "var(--celorga-chart-series-7, var(--org2-chart-series-7, #c026d3))",
+    "var(--celorga-chart-series-8, var(--org2-chart-series-8, #4d7c0f))",
   ];
   const colorForSeries = (index: number): string => seriesColors[index % seriesColors.length] || seriesColors[0]!;
 
@@ -909,7 +909,7 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
         legendX = 0;
         legendRowY += 20;
       }
-      legend.push(`<g class="org2-chart-legend-item" data-series="${escapeXml(name)}"><rect x="${legendX.toFixed(1)}" y="${(legendRowY - 5).toFixed(1)}" width="10" height="10" rx="3" fill="${colorForSeries(index)}"/><text x="${(legendX + 16).toFixed(1)}" y="${(legendRowY + 4).toFixed(1)}" font-size="12" fill="var(--org2-chart-title, #0f172a)">${escapeXml(label)}</text></g>`);
+      legend.push(`<g class="org2-chart-legend-item" data-series="${escapeXml(name)}"><rect x="${legendX.toFixed(1)}" y="${(legendRowY - 5).toFixed(1)}" width="10" height="10" rx="3" fill="${colorForSeries(index)}"/><text x="${(legendX + 16).toFixed(1)}" y="${(legendRowY + 4).toFixed(1)}" font-size="12" fill="var(--celorga-chart-title, var(--org2-chart-title, #0f172a))">${escapeXml(label)}</text></g>`);
       legendX += itemWidth;
     });
     cursorY = legendRowY + 5;
@@ -1030,11 +1030,11 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
       }
       group.push(`<path class="org2-chart-line" data-series="${escapeXml(name)}" d="${path}" fill="none" stroke="${color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`);
       const [endX, endY] = coordinates[coordinates.length - 1]!;
-      group.push(`<circle class="org2-chart-endpoint" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="3.5" fill="${color}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="2" pointer-events="none"/>`);
+      group.push(`<circle class="org2-chart-endpoint" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="3.5" fill="${color}" stroke="var(--celorga-chart-surface, var(--org2-chart-surface, #ffffff))" stroke-width="2" pointer-events="none"/>`);
       group.push(`<text class="org2-chart-end-label" x="${(endX + 9).toFixed(1)}" y="${(endLabelY[seriesIndex]! + 4).toFixed(1)}" font-size="11" font-weight="600" fill="${color}" pointer-events="none">${escapeXml(endLabels[seriesIndex]!)}</text>`);
       points.forEach((point, index) => {
         const [x, y] = coordinates[index]!;
-        group.push(`<circle ${markAttributes(point, x, " org2-chart-point")} cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${color}" fill-opacity="0" stroke="var(--org2-chart-surface, #ffffff)" stroke-opacity="0" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(nativeTitle(point))}</title></circle>`);
+        group.push(`<circle ${markAttributes(point, x, " org2-chart-point")} cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${color}" fill-opacity="0" stroke="var(--celorga-chart-surface, var(--org2-chart-surface, #ffffff))" stroke-opacity="0" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(nativeTitle(point))}</title></circle>`);
       });
       group.push(`</g>`);
       marks.push(group.join(""));

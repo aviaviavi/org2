@@ -1484,7 +1484,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
     // converted to immutable entries on the next successful write.
     if let data = try? Data(contentsOf: currentViewURL, options: .mappedIfSafe),
        let legacy = try? JSONDecoder().decode(LegacyManifest.self, from: data),
-       legacy.schema == LegacyManifest.schemaValue {
+       CelorgaNames.schemaMatches(legacy.schema, LegacyManifest.schemaValue) {
       let entries = legacy.threads.map { thread in
         let shard = "threads/\(thread.id.uuidString.lowercased()).json"
         let shardData = try? Data(
@@ -1589,7 +1589,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
             !isSymbolicLink(url),
             let data = try? Data(contentsOf: url, options: .mappedIfSafe),
             let head = try? decoder.decode(StoreHead.self, from: data),
-            head.schema == StoreHead.schemaValue,
+            CelorgaNames.schemaMatches(head.schema, StoreHead.schemaValue),
             head.version == 1,
             isValidDigest(head.currentDigest),
             head.previousManifest == nil || head.previousDigest.map(isValidDigest) == true
@@ -1617,7 +1617,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private static func legacyPointer(at url: URL) -> CommitPointer? {
     guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
           let marker = try? JSONDecoder().decode(StoreMarker.self, from: data),
-          marker.schema == StoreMarker.schemaValue,
+          CelorgaNames.schemaMatches(marker.schema, StoreMarker.schemaValue),
           marker.version == 1,
           isValidDigest(marker.currentDigest),
           marker.previousManifest == nil || marker.previousDigest.map(isValidDigest) == true
@@ -1910,7 +1910,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
   private static func isStructurallyValid(_ manifest: Manifest) -> Bool {
     let ancestorCommitIDs = manifest.ancestorCommitIDs ?? []
     let mergedCommitIDs = manifest.mergedCommitIDs ?? []
-    guard manifest.schema == Manifest.schemaValue,
+    guard CelorgaNames.schemaMatches(manifest.schema, Manifest.schemaValue),
           manifest.version == 2,
           !manifest.commitID.isEmpty,
           manifest.commitID == URL(fileURLWithPath: manifest.commitID).lastPathComponent,
@@ -2009,7 +2009,7 @@ final class AIChatTranscriptStore: @unchecked Sendable {
           let data = try? Data(contentsOf: shardURL, options: .mappedIfSafe),
           digest(data) == entry.shardDigest,
           let shard = try? JSONDecoder().decode(ThreadShard.self, from: data),
-          shard.schema == ThreadShard.schemaValue,
+          CelorgaNames.schemaMatches(shard.schema, ThreadShard.schemaValue),
           shard.version == 1,
           validateStoredReferences(shard, storeURL: storeURL)
     else { return nil }
