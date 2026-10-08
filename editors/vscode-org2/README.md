@@ -31,7 +31,7 @@ code --install-extension AviPress.org2-vscode
 Use this path for extension development or unreleased builds:
 
 ```sh
-git clone https://github.com/aviaviavi/org2.git
+git clone https://github.com/aviaviavi/celorga.git
 cd org2
 npm ci
 npm run build

@@ -116,7 +116,7 @@ for (const [label, text] of [
   ["general skill", generalSkill],
   ["repository agent guide", agents],
 ]) {
-  for (const required of ["Emacs", "emacsclient", "https://github.com/aviaviavi/org2/issues", "reviewed writes"]) {
+  for (const required of ["Emacs", "emacsclient", "https://github.com/aviaviavi/celorga/issues", "reviewed writes"]) {
     if (!text.includes(required)) fail(`${label} is missing native-tool guidance: ${required}`);
   }
 }

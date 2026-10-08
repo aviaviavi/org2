@@ -83,7 +83,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/aviaviavi/org2"
+    "url": "https://github.com/aviaviavi/celorga"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -1654,9 +1654,9 @@
     "publish:ovsx": "npx ovsx publish"
   },
   "icon": "icon.png",
-  "homepage": "https://github.com/aviaviavi/org2/tree/main/editors/vscode-org2",
+  "homepage": "https://github.com/aviaviavi/celorga/tree/main/editors/vscode-org2",
   "bugs": {
-    "url": "https://github.com/aviaviavi/org2/issues"
+    "url": "https://github.com/aviaviavi/celorga/issues"
   },
   "keywords": [
     "celorga",

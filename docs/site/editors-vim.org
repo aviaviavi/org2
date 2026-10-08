@@ -9,7 +9,7 @@ The plugin lives in this repository at =editors/vim-org2/=.
 For Vim 8+ native packages:
 
 #+begin_src sh
-git clone https://github.com/aviaviavi/org2.git ~/.vim/pack/plugins/start/org2
+git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/org2
 #+end_src
 
 Add the plugin runtime directory to your Vim config:

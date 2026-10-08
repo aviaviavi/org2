@@ -19,7 +19,7 @@ The plugin directory, the `org2` filetype, `g:org2_*` options, and `:Org2*` comm
 Clone into a `pack/*/start/` directory:
 
 ```sh
-git clone https://github.com/aviaviavi/org2.git ~/.vim/pack/plugins/start/org2
+git clone https://github.com/aviaviavi/celorga.git ~/.vim/pack/plugins/start/org2
 ```
 
 Then ensure the Vim runtime path includes the plugin directory:

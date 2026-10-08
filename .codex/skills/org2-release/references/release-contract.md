@@ -2,7 +2,7 @@
 
 ## Public channels
 
-- Repository: `aviaviavi/org2`
+- Repository: `aviaviavi/celorga` (renamed from `aviaviavi/org2`; GitHub redirects the old URLs)
 - npm: `celorga` (from the Celorga rename on; releases before it were published as `@aviaviavi/org2`, which gets a final deprecation notice at cutover)
 - VS Code Marketplace: `AviPress.org2-vscode`
 - Git tag: unprefixed SemVer, for example `0.4.1`
@@ -44,7 +44,7 @@ The private key stays outside the repository. Do not log it, copy it into releas
 - Default domain: `org2.gateway.scarf.sh`
 - Route ID: `X3Eyp83Kad`
 - Incoming path: `/downloads/{version}/{artifact}`
-- Outgoing URL: `https://github.com/aviaviavi/org2/releases/download/{version}/{artifact}`
+- Outgoing URL: `https://github.com/aviaviavi/celorga/releases/download/{version}/{artifact}`
 - Public template: `https://org2.gateway.scarf.sh/downloads/{version}/{artifact}`
 
 Scarf Gateway is a redirect and measurement layer only. GitHub Releases remains the underlying file host. Do not upload release binaries to Scarf or create a new Scarf package per version.

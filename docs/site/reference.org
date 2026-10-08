@@ -46,7 +46,7 @@ Celorga reference is split into two detailed sections:
 - [[file:celorga-vs-org-mode.org][Celorga vs Org Mode]]
 - [[file:celorga-vs-markdown.org][Celorga vs Markdown]]
 
-For the independently implementable language standard, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][SPEC.org]], [[https://github.com/aviaviavi/org2/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]], and [[https://github.com/aviaviavi/org2/blob/main/spec/v0/PARSING.org][PARSING.org]].
+For the independently implementable language standard, see [[https://github.com/aviaviavi/celorga/blob/main/spec/v0/SPEC.org][SPEC.org]], [[https://github.com/aviaviavi/celorga/blob/main/spec/v0/GRAMMAR.ebnf][GRAMMAR.ebnf]], and [[https://github.com/aviaviavi/celorga/blob/main/spec/v0/PARSING.org][PARSING.org]].
 
 * Live embed resolution
 

@@ -64,7 +64,7 @@ Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
     <h3>Build it with Xcode</h3>
     <p>Open the included Xcode project, select your Apple development team, configure the shared App Group, and install directly on your own iPhone.</p>
     <p class="org2-download-meta">Source · Xcode</p>
-    <a class="org2-download-button" href="https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
+    <a class="org2-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
   </article>
 </section>
 #+END_EXPORT
@@ -86,4 +86,4 @@ https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg
 https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg-Intel.dmg
 #+end_src
 
-Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.
+Scarf redirects those requests to the matching =github.com/aviaviavi/celorga/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.

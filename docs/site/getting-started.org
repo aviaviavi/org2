@@ -164,7 +164,7 @@ Your workspace is an ordinary folder on your Mac. Celorga does not require a hos
 - External messages, publication, deletion, and other consequential actions require an explicit approval.
 - Back up the workspace folder with Git, Time Machine, iCloud Drive, Syncthing, or another file-oriented system you understand.
 
-Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisions, and failures. For help with a reproducible issue, use [[https://github.com/aviaviavi/org2/issues][GitHub issues]] with sanitized diagnostics; never attach credentials or private corpus content.
+Open *Agent Work* to inspect cited inputs, artifacts, validation, pending decisions, and failures. For help with a reproducible issue, use [[https://github.com/aviaviavi/celorga/issues][GitHub issues]] with sanitized diagnostics; never attach credentials or private corpus content.
 
 * Find and connect what you know
 
@@ -213,7 +213,7 @@ The Mac app is the easiest onramp. You can also install the Celorga extension in
 The CLI also works well beside VS Code, Vim/Neovim, Emacs, or another editor:
 
 #+begin_src sh
-npm install -g @aviaviavi/org2
+npm install -g celorga
 org2 --version
 celorga agenda --dir /path/to/your/corpus --recursive
 celorga agenda --dir /path/to/your/corpus --recursive --tui
@@ -222,7 +222,7 @@ celorga agenda --dir /path/to/your/corpus --recursive --tui
 You can try the CLI without a global install:
 
 #+begin_src sh
-npx @aviaviavi/org2 --help
+npx celorga --help
 #+end_src
 
 See [[file:editors.org][Editor integrations]] and [[file:editors-vscode.org][VS Code]] for setup details.
@@ -237,7 +237,7 @@ Long chats display a page of messages at a time. Use *Earlier messages*, *Newer 
 
 The chat microphone keeps the screen awake while dictation is recording so you can follow the live transcript without touching the phone. Normal auto-lock behavior resumes when recording stops. Leaving the app stops recording and preserves the draft.
 
-Developers can also [[https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile][build the iOS app from source]].
+Developers can also [[https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile][build the iOS app from source]].
 
 * Coming from Emacs Org mode?
 
@@ -258,7 +258,7 @@ See [[file:editors-emacs.org][Using Celorga from Emacs]], [[file:celorga-vs-org-
 For contribution work or local dogfooding:
 
 #+begin_src sh
-git clone https://github.com/aviaviavi/org2.git
+git clone https://github.com/aviaviavi/celorga.git
 cd org2
 npm ci
 npm run build

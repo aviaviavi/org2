@@ -140,7 +140,7 @@
   <section class="org2-feature-cta" aria-labelledby="feature-cta-title">
     <h2 id="feature-cta-title">Where to start</h2>
     <p>Celorga for macOS is the primary product experience. The Celorga CLI, VS Code extension, language server, and file format provide independent developer surfaces for the same local corpus.</p>
-    <p class="org2-feature-links"><a href="getting-started.html">Getting started</a><a href="reference.html">Reference</a><a href="https://github.com/aviaviavi/org2">GitHub</a></p>
+    <p class="org2-feature-links"><a href="getting-started.html">Getting started</a><a href="reference.html">Reference</a><a href="https://github.com/aviaviavi/celorga">GitHub</a></p>
   </section>
 </div>
 #+END_EXPORT

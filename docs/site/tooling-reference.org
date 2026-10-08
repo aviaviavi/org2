@@ -65,7 +65,7 @@ celorga plugin add https://github.com/example/org2-calendar.git --dir ~/notes --
 celorga plugin add github:example/org2-calendar --dir ~/notes --trust --apply
 
 # Install a package from a monorepo.
-celorga plugin add https://github.com/aviaviavi/org2.git \
+celorga plugin add https://github.com/aviaviavi/celorga.git \
   --subdir examples/plugins/chess-pgn --dir ~/notes --trust --apply
 
 celorga plugin list --dir ~/notes --json
@@ -217,7 +217,7 @@ frames, objects, workers, or top-level navigation, and only inline code plus
 as an actionable error instead of preventing the rest of the document from
 rendering.
 
-The repository includes [[https://github.com/aviaviavi/org2/tree/main/examples/plugins/chess-pgn][a dependency-free chess PGN renderer and note template]] as a complete reference package.
+The repository includes [[https://github.com/aviaviavi/celorga/tree/main/examples/plugins/chess-pgn][a dependency-free chess PGN renderer and note template]] as a complete reference package.
 
 * Corpus identity
 

@@ -53,7 +53,7 @@ later migration explicitly adds an alias first.
 | Source identifiers (=Org2Workspace=, =OpenOrgServer=, =src/*.ts= names, CSS classes such as =org2-nav=) | Internal; renaming them is churn with no user value. Optional later. |
 | Application Support / cache paths (for example =~/Library/Application Support/org2=) | Existing data. Migrate only with an explicit copy-and-fallback. |
 | Release artifact names already published (=OpenOrg.dmg=, =OpenOrg-Intel.dmg=) | Old appcast entries and GitHub assets reference them. Releases from the cutover on ship =Celorga.dmg= and =Celorga-Intel.dmg= (volume name "Celorga"); the app inside stays =OpenOrg.app=. |
-| GitHub repo URL =github.com/aviaviavi/org2= | Until the repo is renamed; GitHub redirects afterwards. |
+| GitHub repo URL =github.com/aviaviavi/org2= | Renamed to =aviaviavi/celorga= at cutover; GitHub redirects the old web, git and release-download URLs. Links on the branch use the new name. |
 
 * Audit
 

@@ -10,7 +10,7 @@ From a corpus, install the package from this repository and explicitly trust
 its resolved content hash:
 
 #+begin_src sh
-org2 plugin add https://github.com/aviaviavi/org2.git \
+org2 plugin add https://github.com/aviaviavi/celorga.git \
   --subdir examples/plugins/chess-pgn --trust --apply
 #+end_src
 

@@ -13,7 +13,7 @@ MCP is the bounded typed surface. The skill is the operating guide and CLI fallb
 Install the npm package, then start the local stdio server with an absolute corpus path:
 
 #+begin_src sh
-npm install --global @aviaviavi/org2
+npm install --global celorga
 celorga mcp serve --dir /absolute/path/to/notes
 #+end_src
 

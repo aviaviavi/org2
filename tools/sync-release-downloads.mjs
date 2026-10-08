@@ -6,7 +6,7 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const repository = "aviaviavi/org2";
+export const repository = "aviaviavi/celorga";
 export const scarfGatewayBase = "https://org2.gateway.scarf.sh/downloads";
 export const vscodeMarketplaceUrl = "https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode";
 export const npmPackageUrl = "https://www.npmjs.com/package/celorga";
@@ -212,7 +212,7 @@ For example, the current Celorga builds are:
 ${currentMacAssets.slice(0, 2).map((asset) => scarfDownloadUrl(current.tag_name, asset.name)).join("\n")}
 #+end_src
 
-Scarf redirects those requests to the matching =github.com/aviaviavi/org2/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.` : "";
+Scarf redirects those requests to the matching =github.com/aviaviavi/celorga/releases/download/{version}/{artifact}= files. No release files are hosted separately by Scarf.` : "";
 
   return `#+TITLE: Downloads
 #+SUBTITLE: Install Celorga and its developer tools
@@ -251,7 +251,7 @@ Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
     <h3>Build it with Xcode</h3>
     <p>Open the included Xcode project, select your Apple development team, configure the shared App Group, and install directly on your own iPhone.</p>
     <p class="org2-download-meta">Source · Xcode</p>
-    <a class="org2-download-button" href="https://github.com/aviaviavi/org2/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
+    <a class="org2-download-button" href="https://github.com/aviaviavi/celorga/tree/main/apps/ios/Org2Mobile">View iOS source <span aria-hidden="true">↗</span></a>
   </article>
 </section>
 #+END_EXPORT

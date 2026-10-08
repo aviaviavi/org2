@@ -254,6 +254,6 @@
     <a href="features.html"><strong>All features</strong><span>A tour of everything Celorga does</span></a>
     <a href="architecture.html"><strong>Architecture</strong><span>How the Celorga app and runtime fit together</span></a>
   </nav>
-  <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="celorga-vs-obsidian.html">Obsidian</a>, <a href="celorga-vs-markdown.html">Markdown</a>, or <a href="celorga-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/org2">GitHub</a>.</p>
+  <p class="org2-home-compare">Coming from somewhere else? Compare with <a href="celorga-vs-obsidian.html">Obsidian</a>, <a href="celorga-vs-markdown.html">Markdown</a>, or <a href="celorga-vs-org-mode.html">Org mode</a>. Source on <a href="https://github.com/aviaviavi/celorga">GitHub</a>.</p>
 </section>
 #+END_EXPORT

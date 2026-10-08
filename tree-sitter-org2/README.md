@@ -35,7 +35,7 @@ local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
 parser_config.org2 = {
   install_info = {
     -- This is a monorepo; point at the `tree-sitter-org2` subdir.
-    url = "https://github.com/aviaviavi/org2", 
+    url = "https://github.com/aviaviavi/celorga", 
     files = { "src/parser.c" },
     branch = "main",
     generate_requires_npm = true,

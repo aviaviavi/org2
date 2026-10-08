@@ -922,7 +922,7 @@ async function synchronize(plan) {
 
 async function verifyScarf(plan) {
   for (const artifact of MAC_DMG_ARTIFACTS) {
-    const expected = `https://github.com/aviaviavi/org2/releases/download/${plan.version}/${artifact}`;
+    const expected = `https://github.com/aviaviavi/celorga/releases/download/${plan.version}/${artifact}`;
     const response = await fetch(`https://org2.gateway.scarf.sh/downloads/${plan.version}/${artifact}`, { redirect: "manual" });
     if (response.status < 300 || response.status >= 400 || response.headers.get("location") !== expected) {
       throw new Error(`Scarf redirect mismatch for ${artifact}: ${response.status} ${response.headers.get("location")}`);

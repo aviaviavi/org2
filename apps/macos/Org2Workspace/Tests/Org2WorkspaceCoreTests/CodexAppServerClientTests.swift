@@ -252,7 +252,7 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("Do not invoke =emacs=, =emacsclient="))
       XCTAssertTrue(prompt.contains("Use Emacs only when the user explicitly requests an Emacs-specific task"))
       XCTAssertTrue(prompt.contains("reproduce and fix the shortcoming"))
-      XCTAssertTrue(prompt.contains("https://github.com/aviaviavi/org2/issues"))
+      XCTAssertTrue(prompt.contains("https://github.com/aviaviavi/celorga/issues"))
       XCTAssertTrue(prompt.contains("Do not publish an issue or private corpus content"))
       XCTAssertTrue(prompt.contains("If shell execution is unavailable, use the exposed tools"))
     }

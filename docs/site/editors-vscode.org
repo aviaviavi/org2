@@ -7,7 +7,7 @@ Celorga's most complete editor integration today is VS Code.
 Install the CLI first:
 
 #+begin_src sh
-npm install -g @aviaviavi/org2
+npm install -g celorga
 org2 --help
 #+end_src
 
@@ -30,7 +30,7 @@ For extension development or unreleased builds, use the repository copy at =edit
 1. Build Celorga CLI and repository artifacts:
 
 #+begin_src sh
-git clone https://github.com/aviaviavi/org2.git
+git clone https://github.com/aviaviavi/celorga.git
 cd org2
 npm ci
 npm run build

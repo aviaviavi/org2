@@ -287,7 +287,7 @@ Large file-sync batches preserve every changed path when updating the search ind
 
 * Install and troubleshoot
 
-Download the signed and notarized app from [[file:downloads.org][Downloads]]. Developers who want to build Celorga from source can follow the repository instructions on [[https://github.com/aviaviavi/org2][GitHub]].
+Download the signed and notarized app from [[file:downloads.org][Downloads]]. Developers who want to build Celorga from source can follow the repository instructions on [[https://github.com/aviaviavi/celorga][GitHub]].
 
 Celorga checks for signed updates when it opens and every two hours by default. Use *Celorga → Check for Updates…* to check manually, or the *Updates* settings to turn automatic checks off and choose whether downloads should install when you quit. Update prompts can also remind you later or skip a version.
 
