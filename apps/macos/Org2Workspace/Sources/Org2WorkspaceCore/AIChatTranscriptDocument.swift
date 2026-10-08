@@ -1025,6 +1025,7 @@ enum AIChatTranscriptHTML {
       const css=doc.querySelector('style');
       if(css && !document.getElementById('renderer-style')) { css.id='renderer-style'; document.head.prepend(css); }
       doc.querySelectorAll('script,.org2-document-header').forEach(x=>x.remove());
+      window.__org2PrepareSandboxFrames?.(doc);
       const source=doc.querySelector('main') || doc.body;
       const body=document.createElement(tagName); body.className='org2-document'; body.append(...source.childNodes);
       for(const pre of body.querySelectorAll('pre')) {
@@ -1318,7 +1319,7 @@ enum AIChatTranscriptHTML {
   """#
 
   static let shell = """
-  <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src about:; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"><style>\(style)</style></head><body><button id="earlier" hidden></button><div id="messages"></div><section id="live" hidden aria-label="Live agent activity"></section><div id="status"></div><button id="latest" hidden aria-label="Jump to latest message">↓</button></body></html>
+  <!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src about: org2-frame:; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'"><style>\(style)</style></head><body><button id="earlier" hidden></button><div id="messages"></div><section id="live" hidden aria-label="Live agent activity"></section><div id="status"></div><button id="latest" hidden aria-label="Jump to latest message">↓</button></body></html>
   """
 }
 
@@ -1338,8 +1339,9 @@ struct AIChatTranscriptWebView: NSViewRepresentable {
     let config=WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
     config.setURLSchemeHandler(context.coordinator.resources, forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme)
+    config.setURLSchemeHandler(context.coordinator.frames, forURLScheme: AIChatSandboxFrames.scheme)
     for name in ["transcript", "chatCopyCode"] { config.userContentController.add(context.coordinator, name: name) }
-    config.userContentController.addUserScript(WKUserScript(source: AIChatTranscriptHTML.script + "\n" + OrgHTMLRichCopy.installationScript,
+    config.userContentController.addUserScript(WKUserScript(source: AIChatSandboxFrames.script + "\n" + AIChatTranscriptHTML.script + "\n" + OrgHTMLRichCopy.installationScript,
       injectionTime: .atDocumentEnd, forMainFrameOnly: true))
     let view=WKWebView(frame: .zero, configuration: config)
     view.navigationDelegate=context.coordinator

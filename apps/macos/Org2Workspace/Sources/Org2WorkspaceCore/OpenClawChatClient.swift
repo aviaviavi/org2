@@ -476,6 +476,12 @@ public struct AIChatWorkspaceContext: Sendable {
     x: Stage
     y: Days
     #+end_src
+  - Interactive content in chat: for a game board, simulation, calculator, diagram, or visualization a chart block cannot express, reply with one complete html source block containing HTML, CSS, and inline <script>. Celorga runs it inline in an isolated sandbox sized to its content (add :height 480 after html for a fixed height), with the source one click away. Scripts may load libraries or data over HTTPS but cannot reach the chat, the corpus, or local files, so inline any data the page needs:
+
+    #+begin_src html
+    <button id="count">Count</button> <output id="total">0</output>
+    <script>let total = 0; document.getElementById('count').onclick = () => { document.getElementById('total').textContent = ++total; };</script>
+    #+end_src
   - Source blocks use exactly one # before the + directive:
 
     #+begin_src sh

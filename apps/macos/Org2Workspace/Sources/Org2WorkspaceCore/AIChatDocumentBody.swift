@@ -161,8 +161,10 @@ enum AIChatDocumentHTML {
         const copy = document.createElement('style'); copy.dataset.chatRenderer = '1';
         copy.textContent = style.textContent; document.head.prepend(copy);
       }
-      // Message HTML is compiler output. Imported scripts are deliberately not executed.
+      // Message HTML is compiler output. Imported scripts are deliberately not executed
+      // in the chat page; live HTML previews run only inside their sandboxed frames.
       next.querySelectorAll('script, .org2-document-header').forEach(s => s.remove());
+      window.__org2PrepareSandboxFrames?.(next);
       // A heading without a body would still render a fold toggle that hides
       // nothing. Replace its <details> with a static block of the same shape.
       for (const details of next.querySelectorAll('details.org2-headline')) {
@@ -223,10 +225,11 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     configuration.userContentController.add(context.coordinator, name: "chatHeight")
     configuration.userContentController.add(context.coordinator, name: "chatCopyCode")
     configuration.userContentController.addUserScript(WKUserScript(
-      source: AIChatDocumentHTML.updateScript + "\n" + OrgHTMLRichCopy.installationScript,
+      source: AIChatSandboxFrames.script + "\n" + AIChatDocumentHTML.updateScript + "\n" + OrgHTMLRichCopy.installationScript,
       injectionTime: .atDocumentEnd, forMainFrameOnly: true
     ))
     configuration.setURLSchemeHandler(context.coordinator.resources, forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme)
+    configuration.setURLSchemeHandler(context.coordinator.frames, forURLScheme: AIChatSandboxFrames.scheme)
     let view = WKWebView(frame: .zero, configuration: configuration)
     view.navigationDelegate = context.coordinator
     view.underPageBackgroundColor = .clear
@@ -250,7 +253,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
     if !coordinator.loaded {
       if !coordinator.loading {
         coordinator.loading = true
-        view.loadHTMLString("<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; frame-src about:; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'\"><style>\(AIChatDocumentHTML.style)</style></head><body><main></main></body></html>",
+        view.loadHTMLString("<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; frame-src about: org2-frame:; img-src https: http: data: org2-resource:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'\"><style>\(AIChatDocumentHTML.style)</style></head><body><main></main></body></html>",
           baseURL: URL(fileURLWithPath: sourcePath).deletingLastPathComponent())
       }
     } else {
@@ -268,6 +271,7 @@ struct AIChatDocumentWebView: NSViewRepresentable {
 
   class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     let resources = OrgHTMLLocalResourceSchemeHandler()
+    let frames = AIChatSandboxFrameSchemeHandler()
     var html: String?
     var loaded = false
     var loading = false

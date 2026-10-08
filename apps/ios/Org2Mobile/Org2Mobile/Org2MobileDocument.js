@@ -4672,6 +4672,19 @@ body.org2-resizing-column { cursor: col-resize; user-select: none; }
     };
   }
 
+  // Live HTML previews report their content height; only the frame that sent
+  // the message, and only one that asked for automatic sizing, is resized.
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || data.type !== "org2-frame-size" || !Number.isFinite(data.height)) return;
+    for (const frame of document.querySelectorAll("iframe[data-org2-autosize='true']")) {
+      if (frame.contentWindow !== event.source) continue;
+      const chrome = frame.offsetHeight - frame.clientHeight;
+      frame.style.height = Math.min(1600, Math.max(24, Math.ceil(data.height))) + chrome + "px";
+      break;
+    }
+  });
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       installHeadingActions();
@@ -5425,15 +5438,66 @@ ${rows}
     const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
     const pre = `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
     if (context.profile === "app" && language === "html" && node.terminated) {
-      const csp = "default-src 'none'; base-uri 'none'; connect-src 'none'; form-action 'none'; frame-src 'none'; img-src data:; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'";
-      const document = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html{color-scheme:light dark}body{margin:12px;font-family:system-ui}*{box-sizing:border-box}</style></head><body>${raw}</body></html>`;
-      return `<figure class="org2-html-preview"${renderSourceAttributes(node, context)}><iframe title="HTML preview" sandbox="" referrerpolicy="no-referrer" style="display:block;width:100%;height:320px;border:1px solid rgba(127,127,127,0.28);border-radius:10px" srcdoc="${escapeAttr(document)}"></iframe><details class="org2-html-source"><summary>HTML source</summary>${pre}</details></figure>`;
+      return renderHtmlPreview(raw, String(node.begin.afterKeywordRaw || ""), pre, renderSourceAttributes(node, context));
     }
     const lineCount = raw.split("\n").length;
     if (context.profile === "app" && (raw.length > 32768 || lineCount > 200)) {
       return `<details class="org2-large-source"${renderSourceAttributes(node, context)}><summary>${language ? `${escapeHtml2(language)} source` : "Source"} \xB7 ${lineCount} lines</summary>${pre}</details>`;
     }
     return pre;
+  }
+  var HTML_PREVIEW_SIZE_MESSAGE = "org2-frame-size";
+  var HTML_PREVIEW_DEFAULT_HEIGHT = 320;
+  var HTML_PREVIEW_MAX_HEIGHT = 1600;
+  var HTML_PREVIEW_SIZING_SCRIPT = `(() => {
+  let last = 0, growth = 0, repeats = 0;
+  const measure = () => {
+    const root = document.documentElement, body = document.body;
+    let height = root.scrollHeight;
+    if (body) {
+      const style = getComputedStyle(body);
+      const bottom = body.getBoundingClientRect().bottom + scrollY + (parseFloat(style.marginBottom) || 0);
+      height = root.scrollHeight > innerHeight + 1 ? Math.max(bottom, root.scrollHeight) : bottom;
+    }
+    height = Math.ceil(height);
+    if (Math.abs(height - last) < 1) return;
+    const delta = height - innerHeight;
+    if (delta > 0 && delta === growth) { if (++repeats >= 3) return; } else repeats = 0;
+    growth = delta; last = height;
+    parent.postMessage({ type: "${HTML_PREVIEW_SIZE_MESSAGE}", height }, "*");
+  };
+  const start = () => {
+    const observer = new ResizeObserver(() => requestAnimationFrame(measure));
+    observer.observe(document.documentElement);
+    if (document.body) observer.observe(document.body);
+    addEventListener("load", measure);
+    measure();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();`;
+  function renderHtmlPreview(raw, parameters, sourcePre, sourceAttributes) {
+    const csp = [
+      "default-src 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-src 'none'",
+      "object-src 'none'",
+      "script-src 'unsafe-inline' 'unsafe-eval' https: blob:",
+      "style-src 'unsafe-inline' https:",
+      "img-src data: blob: https:",
+      "font-src data: https:",
+      "media-src data: blob: https:",
+      "connect-src https:",
+      "worker-src blob:"
+    ].join("; ");
+    const requested = Number(/(?:^|\s):height\s+(\d+)(?:px)?(?=\s|$)/i.exec(parameters)?.[1]);
+    const fixedHeight = Number.isFinite(requested) && requested > 0 ? Math.min(HTML_PREVIEW_MAX_HEIGHT, Math.max(24, Math.round(requested))) : void 0;
+    const sizing = fixedHeight ? "" : `<script>${HTML_PREVIEW_SIZING_SCRIPT}<\/script>`;
+    const document = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html{color-scheme:light dark}body{margin:12px;font-family:system-ui}*{box-sizing:border-box}</style>${sizing}</head><body>${raw}</body></html>`;
+    const height = fixedHeight ?? HTML_PREVIEW_DEFAULT_HEIGHT;
+    const autosize = fixedHeight ? "" : ' data-org2-autosize="true"';
+    return `<figure class="org2-html-preview"${sourceAttributes}><iframe title="HTML preview" sandbox="allow-scripts allow-forms allow-popups" referrerpolicy="no-referrer"${autosize} style="display:block;box-sizing:border-box;width:100%;height:${height}px;border:1px solid rgba(127,127,127,0.28);border-radius:10px" srcdoc="${escapeAttr(document)}"></iframe><details class="org2-html-source"><summary>HTML source</summary>${sourcePre}</details></figure>`;
   }
   function renderPluginFrame(render, sourceAttributes = "") {
     const identity = `${render.pluginId}:${render.rendererId}`;

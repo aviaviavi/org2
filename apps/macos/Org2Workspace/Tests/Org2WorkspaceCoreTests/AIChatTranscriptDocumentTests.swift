@@ -46,6 +46,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       resources,
       forURLScheme: OrgHTMLLocalResourceSchemeHandler.scheme
     )
+    configuration.setURLSchemeHandler(AIChatSandboxFrameSchemeHandler(), forURLScheme: AIChatSandboxFrames.scheme)
     let view = WKWebView(
       frame: NSRect(x: 0, y: 0, width: 460, height: 320),
       configuration: configuration
@@ -56,6 +57,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(20))
     }
     try await view.evaluateJavaScript("window.events=[]; window.webkit={messageHandlers:{transcript:{postMessage:x=>events.push(x)},chatCopyCode:{postMessage:x=>events.push({code:x})}}}; null;")
+    try await view.evaluateJavaScript(AIChatSandboxFrames.script)
     try await view.evaluateJavaScript(AIChatTranscriptHTML.script)
     return view
   }
@@ -65,38 +67,7 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
     try await Task.sleep(for: .milliseconds(80))
   }
 
-  func testHTMLSnippetRendersInsideSandboxWithSourceDisclosure() async throws {
-    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
-    let html = try await cli.renderAppHTML("""
-    #+begin_src html
-    <style>body { margin:0; background:rgb(255,0,128) }</style>
-    <div style="height:200px">Diagram → rendered</div>
-    <script>parent.document.body.dataset.escaped='yes'</script>
-    #+end_src
-    """, sourcePath: "/tmp/chat-html.org")
-    let view = try await document()
-    view.setFrameSize(NSSize(width: 460, height: 600))
-    try await view.evaluateJavaScript("window.violations=[];document.addEventListener('securitypolicyviolation',e=>violations.push({directive:e.effectiveDirective,blocked:e.blockedURI}));null")
-    try await update(view, payload([entry("html", html)]))
-    try await Task.sleep(for: .milliseconds(300))
-    let result = try await view.evaluateJavaScript("""
-      (() => {
-        const frame=document.querySelector('.org2-html-preview iframe');
-        let isolated=false;
-        try { void frame.contentWindow.document; } catch { isolated=true; }
-        return {violations:window.violations.length, frame:!!frame, sandbox:frame?.getAttribute('sandbox'), isolated,
-          escaped:document.body.dataset.escaped || '',
-          source:document.querySelector('.org2-html-source')?.textContent,
-          height:frame?.getBoundingClientRect().height};
-      })()
-      """) as? [String: Any]
-    XCTAssertEqual(result?["violations"] as? Int, 0)
-    XCTAssertEqual(result?["frame"] as? Bool, true)
-    XCTAssertEqual(result?["sandbox"] as? String, "")
-    XCTAssertEqual(result?["isolated"] as? Bool, true)
-    XCTAssertEqual(result?["escaped"] as? String, "")
-    XCTAssertTrue((result?["source"] as? String)?.contains("Diagram → rendered") == true)
-    XCTAssertGreaterThan(try XCTUnwrap(result?["height"] as? Double), 100)
+  private func pinkPixelCount(_ view: WKWebView) async throws -> Int {
     let image = try await view.takeSnapshot(configuration: nil)
     let bitmap = try XCTUnwrap(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
     var pinkPixels = 0
@@ -107,7 +78,130 @@ final class AIChatTranscriptDocumentTests: XCTestCase {
            color.blueComponent > 0.3, color.blueComponent < 0.8 { pinkPixels += 1 }
       }
     }
-    XCTAssertGreaterThan(pinkPixels, 100, "HTML CSS must actually paint inside the production chat shell")
+    return pinkPixels
+  }
+
+  private func waitForFrameMessages(_ view: WKWebView, count: Int) async throws {
+    for _ in 0..<100 {
+      if let seen = try await view.evaluateJavaScript("window.frameMessages.length") as? Int, seen >= count { return }
+      try await Task.sleep(for: .milliseconds(30))
+    }
+  }
+
+  func testHTMLSnippetRunsScriptsInsideIsolatedSandboxWithSourceDisclosure() async throws {
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML("""
+    #+begin_src html
+    <style>body { margin:0 }</style>
+    <div id="board" style="height:40px">Waiting</div>
+    <script>
+      const board = document.getElementById('board');
+      board.style.height = '600px';
+      board.textContent = 'Diagram → rendered by script ' + (6 * 7);
+      document.body.style.background = 'rgb(255,0,128)';
+      let isolated = false;
+      try { parent.document.body.dataset.escaped = 'yes'; } catch { isolated = true; }
+      parent.postMessage({type: 'probe', value: 6 * 7, isolated}, '*');
+    </script>
+    #+end_src
+    """, sourcePath: "/tmp/chat-html.org")
+    let view = try await document()
+    view.setFrameSize(NSSize(width: 460, height: 900))
+    try await view.evaluateJavaScript("""
+      window.violations=[]; window.frameMessages=[];
+      document.addEventListener('securitypolicyviolation',e=>violations.push({directive:e.effectiveDirective,blocked:e.blockedURI}));
+      addEventListener('message',e=>{ if(e.data && e.data.type==='probe') frameMessages.push(e.data); });
+      null
+      """)
+    try await update(view, payload([entry("html", html)]))
+    try await waitForFrameMessages(view, count: 1)
+    try await Task.sleep(for: .milliseconds(400))
+    let result = try await view.evaluateJavaScript("""
+      (() => {
+        const frame=document.querySelector('.org2-html-preview iframe');
+        let isolated=false;
+        try { void frame.contentWindow.document; } catch { isolated=true; }
+        return {violations:window.violations.length, frame:!!frame, sandbox:frame?.getAttribute('sandbox'), isolated,
+          src:frame?.getAttribute('src') || '', srcdoc:frame?.hasAttribute('srcdoc'),
+          messages:JSON.stringify(window.frameMessages),
+          escaped:document.body.dataset.escaped || '',
+          source:document.querySelector('.org2-html-source')?.textContent,
+          height:frame?.getBoundingClientRect().height};
+      })()
+      """) as? [String: Any]
+    XCTAssertEqual(result?["violations"] as? Int, 0)
+    XCTAssertEqual(result?["frame"] as? Bool, true)
+    XCTAssertEqual(result?["sandbox"] as? String, "allow-scripts allow-forms allow-popups")
+    XCTAssertTrue((result?["src"] as? String)?.hasPrefix("org2-frame://frame/?document=") == true)
+    XCTAssertEqual(result?["srcdoc"] as? Bool, false)
+    XCTAssertEqual(result?["isolated"] as? Bool, true)
+    XCTAssertEqual(result?["escaped"] as? String, "")
+    XCTAssertEqual(result?["messages"] as? String, #"[{"type":"probe","value":42,"isolated":true}]"#)
+    XCTAssertTrue((result?["source"] as? String)?.contains("Diagram → rendered") == true)
+    let height = try XCTUnwrap(result?["height"] as? Double)
+    XCTAssertGreaterThan(height, 595, "the frame grows to the height its script produced")
+    XCTAssertLessThan(height, 640)
+    let pinkPixels = try await pinkPixelCount(view)
+    XCTAssertGreaterThan(pinkPixels, 100, "script output must actually paint inside the production chat shell")
+  }
+
+  func testHTMLSnippetHeightIsFixedOrBoundedForViewportSizedContent() async throws {
+    let cli = Org2CLI(repoRoot: try Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML("""
+    #+begin_src html :height 180
+    <div style="height:900px">Tall but fixed</div>
+    #+end_src
+
+    #+begin_src html
+    <div style="height:100vh">Viewport sized</div>
+    <script>parent.postMessage({type: 'probe'}, '*')</script>
+    #+end_src
+
+    #+begin_src html
+    <p>Short</p>
+    <script>parent.postMessage({type: 'probe'}, '*')</script>
+    #+end_src
+    """, sourcePath: "/tmp/chat-html.org")
+    let view = try await document()
+    view.setFrameSize(NSSize(width: 460, height: 900))
+    try await view.evaluateJavaScript("window.frameMessages=[]; addEventListener('message',e=>{ if(e.data && e.data.type==='probe') frameMessages.push(1); }); null")
+    try await update(view, payload([entry("html", html)]))
+    try await waitForFrameMessages(view, count: 2)
+    try await Task.sleep(for: .milliseconds(800))
+    let heights = try await view.evaluateJavaScript(
+      "[...document.querySelectorAll('.org2-html-preview iframe')].map(f=>f.getBoundingClientRect().height)"
+    ) as? [Double]
+    XCTAssertEqual(heights?.count, 3)
+    XCTAssertEqual(heights?[0] ?? 0, 180, accuracy: 0.5)
+    XCTAssertLessThan(heights?[1] ?? .infinity, 500, "viewport-sized content must not grow without bound")
+    XCTAssertLessThan(heights?[2] ?? .infinity, 120, "short content shrinks the frame")
+    XCTAssertGreaterThan(heights?[2] ?? 0, 30)
+  }
+
+  func testScriptedPluginFramesRunButSameOriginFramesKeepTheChatPolicy() async throws {
+    func frame(_ sandbox: String, _ body: String) -> String {
+      let document = "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'\"></head><body>\(body)</body></html>"
+      let escaped = document.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+      return "<iframe sandbox=\"\(sandbox)\" srcdoc=\"\(escaped)\"></iframe>"
+    }
+    let html = """
+    <main class="org2-document"><figure class="org2-plugin-render">\(frame("allow-scripts", "<script>parent.postMessage({type:'probe', from:'plugin'}, '*')</script>"))</figure>
+    <section class="org2-live-embed">\(frame("allow-same-origin", "<script>parent.postMessage({type:'probe', from:'embed'}, '*')</script>"))</section></main>
+    """
+    let view = try await document()
+    try await view.evaluateJavaScript("window.frameMessages=[]; addEventListener('message',e=>{ if(e.data && e.data.type==='probe') frameMessages.push(e.data.from); }); null")
+    try await update(view, payload([entry("plugin", html)]))
+    try await waitForFrameMessages(view, count: 1)
+    try await Task.sleep(for: .milliseconds(500))
+    let result = try await view.evaluateJavaScript("""
+      ({messages: frameMessages.join(','),
+        embedSrcdoc: document.querySelector('.org2-live-embed iframe').hasAttribute('srcdoc'),
+        pluginSrc: document.querySelector('.org2-plugin-render iframe').getAttribute('src') || ''})
+      """) as? [String: Any]
+    XCTAssertEqual(result?["messages"] as? String, "plugin")
+    XCTAssertEqual(result?["embedSrcdoc"] as? Bool, true)
+    XCTAssertTrue((result?["pluginSrc"] as? String)?.hasPrefix("org2-frame:") == true)
   }
 
   func testSelectableTranscriptDoesNotSuppressLiveActivityInSharedRooms() throws {
