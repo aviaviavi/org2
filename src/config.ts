@@ -1,3 +1,4 @@
+import { configFileIn } from "./brandNames.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Org2CorpusIdentity } from "./corpusIdentity.js";
@@ -144,8 +145,9 @@ export function findConfigFile(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
 
   while (true) {
-    const configPath = path.join(currentDir, "org2.json");
-    if (fs.existsSync(configPath)) {
+    // celorga.json wins over the legacy org2.json in the same directory.
+    const configPath = configFileIn(currentDir);
+    if (configPath) {
       return configPath;
     }
 

@@ -4,6 +4,10 @@
 // need not initialize the full document/search/agenda command implementation.
 import fs from "node:fs";
 import process from "node:process";
+import { mirrorCelorgaEnvironment } from "./brandNames.js";
+
+// CELORGA_* environment variables are accepted everywhere ORG2_* ones are.
+mirrorCelorgaEnvironment();
 
 function org2PackageVersion(): string {
   const packageUrl = new URL("../package.json", import.meta.url);

@@ -36,6 +36,35 @@ checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
 | =org2-lsp= | =celorga-lsp= | |
 | openorg.so, org2.avi.press | celorga.io | |
 
+* Dual names (decided 2026-10-08)
+
+Every pre-rename name gets a Celorga equivalent. Both work for several
+releases; there is no hard cutover. Shared helpers: =src/brandNames.ts= (CLI)
+and =CelorgaNames.swift= (apps).
+
+| Legacy | Celorga | Reader rule |
+|--------+---------+-------------|
+| =:ORG2_X:= properties | =:CELORGA_X:= | Read =CELORGA_X= first, then =ORG2_X=. |
+| =ORG2_X= environment variables | =CELORGA_X= | =CELORGA_X= wins; processes mirror it to =ORG2_X= at start. |
+| =org2.json= | =celorga.json= | =celorga.json= wins in the same directory. |
+| =.org2/= state directory | =.celorga/= | =.celorga/= is used once it exists, otherwise =.org2/=. |
+| =org2:KIND:vN= record types | =celorga:KIND:vN= | Both accepted wherever a record type is checked. |
+| =org2_X= MCP tools | =celorga_X= | Both names registered; listings show =celorga_X=. |
+| =org2.X= VS Code commands and settings | =celorga.X= | Both commands registered; settings read =celorga.X= first. |
+| =org2= / =org2-lsp= executables | =celorga= / =celorga-lsp= | Permanent aliases. |
+
+** Phases
+1. *Dual read (0.9.0).* Every reader in the CLI, Mac and iOS apps, VS Code
+   extension and OpenClaw plugin accepts both names. Writers keep the legacy
+   names, so devices still on 0.8.x keep working on a shared corpus. The website
+   documents only the Celorga names; [[file:../site/name-compatibility.org][one compatibility page]] lists the old ones.
+2. *Migration (after every app Avi uses runs a dual-read build).* A
+   preview-first =celorga migrate-names= rewrites a corpus: property keys,
+   =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, record types. A corpus
+   with =celorga.json= is "migrated", and writers use Celorga names in it. New
+   corpora start migrated.
+3. *Retirement (much later).* Stop reading legacy names only after a deprecation notice.
+
 * Compatibility surface: do not rename
 
 These identifiers are persisted in user corpora, installed apps, scripts, or

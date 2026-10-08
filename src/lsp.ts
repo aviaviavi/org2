@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { updateCheckboxInText, checkboxMarkers } from "./checkbox.js";
+import { mirrorCelorgaEnvironment } from "./brandNames.js";
 
 import {
   parseOrgToCanonicalAst,
@@ -29,6 +30,8 @@ import { formatLocalOrgTimestamp } from "./calendarDate.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+mirrorCelorgaEnvironment();
 
 // ============================================================================
 // LSP Types (minimal subset)
