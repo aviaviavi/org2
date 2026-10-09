@@ -242,6 +242,13 @@ export function applyMigrateNames(rootInput: string, options: { force?: boolean;
     };
   }
   const root = plan.root;
+  // Ignore device-local state under its new name before moving it, so Syncthing
+  // never treats .celorga/index/ and similar as new files to sync.
+  if (plan.stignore.add.length) {
+    const file = path.join(root, ".stignore");
+    const current = fs.readFileSync(file, "utf8");
+    atomicWrite(file, `${current}${current.endsWith("\n") || !current ? "" : "\n"}${plan.stignore.add.join("\n")}\n`);
+  }
   if (plan.config.action === "rename") {
     const legacy = path.join(root, LEGACY_CONFIG_FILE);
     const modern = path.join(root, CONFIG_FILE);
@@ -259,11 +266,6 @@ export function applyMigrateNames(rootInput: string, options: { force?: boolean;
     const file = path.join(root, change.file);
     const result = migratePropertyText(fs.readFileSync(file, "utf8"));
     if (result.renamed || result.droppedDuplicates) atomicWrite(file, result.text);
-  }
-  if (plan.stignore.add.length) {
-    const file = path.join(root, ".stignore");
-    const current = fs.readFileSync(file, "utf8");
-    atomicWrite(file, `${current}${current.endsWith("\n") || !current ? "" : "\n"}${plan.stignore.add.join("\n")}\n`);
   }
   return { ...plan, applied: true };
 }
