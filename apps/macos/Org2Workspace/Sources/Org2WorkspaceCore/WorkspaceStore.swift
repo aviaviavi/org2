@@ -6120,18 +6120,28 @@ extension WorkspaceStore {
         automationOwnerHostRef = hostRef
       }
       if payload.due.isEmpty {
-        automationSchedulerStatusText = payload.reason ?? (payload.skipped.isEmpty
+        let failures = payload.failures ?? []
+        automationSchedulerErrorText = failures.isEmpty ? nil : failures
+          .map { "\($0.title): \($0.failure)" }.joined(separator: "\n")
+        automationSchedulerStatusText = payload.reason ?? (!failures.isEmpty
+          ? "\(failures.count) automation\(failures.count == 1 ? "" : "s") last failed"
+          : payload.skipped.isEmpty
           ? "Automations are up to date"
           : "\(payload.skipped.count) automation\(payload.skipped.count == 1 ? "" : "s") waiting for an active run")
         return
       }
       automationSchedulerStatusText = "Dispatching \(payload.due.count) automation\(payload.due.count == 1 ? "" : "s")…"
       var dispatchedCount = 0
+      var dispatchErrors: [String] = []
       for item in payload.due {
         if await dispatchScheduledAgentAutomation(item) {
           dispatchedCount += 1
+        } else if let failure = automationSchedulerErrorText {
+          dispatchErrors.append("\(item.title): \(failure)")
         }
+        automationSchedulerErrorText = nil
       }
+      automationSchedulerErrorText = dispatchErrors.isEmpty ? nil : dispatchErrors.joined(separator: "\n")
       automationSchedulerStatusText = dispatchedCount == payload.due.count
         ? "Dispatched \(dispatchedCount) automation\(dispatchedCount == 1 ? "" : "s")"
         : "Dispatched \(dispatchedCount) of \(payload.due.count) automations"
@@ -8005,7 +8015,11 @@ extension WorkspaceStore {
       }
       preparedRunID = run.id
       guard let destination = resolvedAutomationDestination(destinationRef ?? run.destinationRef) else {
-        await failAgentAutomationRun(run.id, reason: "The configured AI destination is unavailable or disabled.")
+        let requestedDestination = destinationRef ?? run.destinationRef ?? "default"
+        await failAgentAutomationRun(
+          run.id,
+          reason: "AI destination \"\(requestedDestination)\" is unavailable or disabled on automation host \"\(automationHostRef)\". Choose a destination available on this host or enable it in the host configuration."
+        )
         return nil
       }
       if let reasoningEffort = prepared.reasoningEffort,
@@ -8095,6 +8109,7 @@ extension WorkspaceStore {
 
   private func failAgentAutomationRun(_ runID: String, reason: String) async {
     guard let corpusRoot else { return }
+    automationSchedulerErrorText = reason
     _ = try? await cli.run([
       "run", "fail", runID,
       "--reason", reason,

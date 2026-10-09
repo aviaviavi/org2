@@ -353,7 +353,15 @@ public struct AgentWorkflowDueListPayload: Decodable, Sendable {
   public let now: String
   public let due: [AgentWorkflowDueItem]
   public let skipped: [AgentWorkflowDueItem]
+  public let failures: [AgentWorkflowFailureItem]?
   public let hostRef: String?
+}
+
+public struct AgentWorkflowFailureItem: Decodable, Sendable {
+  public let workflowId: String
+  public let title: String
+  public let runId: String
+  public let failure: String
 }
 
 public struct AgentWorkflowDueItem: Decodable, Hashable, Sendable, Identifiable {

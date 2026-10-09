@@ -94,6 +94,10 @@ For each due occurrence Celorga:
 4. Opens a destination thread and sends the resolved prompt through the same destination-neutral path used by AI Chat.
 5. Retains the reply, result, errors, artifacts, approvals, duration, and destination thread in the shared run history.
 
+Failed, completed, and canceled attempts do not block a later scheduled occurrence. The failed occurrence stays in history and is not dispatched again on every scheduler check. The scheduler keeps the latest failure visible until a newer attempt supersedes it; =celorga workflow due --json= reports these warnings separately in =failures= without removing eligible work from =due=.
+
+An explicit destination must be enabled on the host selected by =automationHostRef=. A destination configured on a laptop may be absent from the headless server that owns its schedule. Dispatch failures identify the missing destination and executing host so the workflow binding can be repaired. Celorga preserves the explicit destination rather than falling back to another runtime.
+
 Codex, Claude Code, OpenClaw, and enabled custom or direct-provider destinations all use this path. Manual *Run Now* uses the same durable preparation and dispatch without waiting for the clock. Pausing the automation stops new attempts; it does not erase its source or history.
 
 Automation threads use the workflow's exact =model= and =reasoningEffort= when present. Otherwise they use the configured destination model and runtime reasoning default. They do not inherit overrides from interactive chats. Ordinary new chats continue to remember those choices. A runtime that rejects a pinned value fails that attempt visibly; Celorga does not retry a file-configured automation with different defaults.

@@ -244,6 +244,81 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     XCTAssertEqual(thread.model, "opus")
     XCTAssertEqual(thread.messages.last(where: { $0.role == .assistant })?.content, "The weekly brief is ready.")
   }
+
+  func testFailedDailyDispatchRemainsVisibleAndRecoversOnLaterDays() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("celorga-daily-recovery-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "WorkspaceClaudeCodeDestinationTests.recovery.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    _ = try await cli.run([
+      "workflow", "create", "daily-repair", "--title", "Daily repair",
+      "--prompt", "Repair today's items.", "--destination-ref", "missing-on-host",
+      "--schedule", "45 23 * * *", "--timezone", "America/Los_Angeles",
+      "--now", "2099-10-07T23:10:00Z", "--dir", root.path, "--json"
+    ])
+    let store = WorkspaceStore(
+      cli: cli, defaults: defaults, aiChatTranscriptURL: root.appendingPathComponent("chats.json"),
+      claudeSendHandlerForTesting: { _, _, _ in
+        ClaudeCodeTurnResult(sessionID: "recovered-daily", reply: "Today's repair completed.")
+      }, legacyDefaultsDomains: []
+    )
+    store.setWorkspaceRealtimeRefreshActive(false)
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.setAutomationSchedulerActive(true, checkIntervalNanoseconds: 3_600_000_000_000)
+    defer { store.setAutomationSchedulerActive(false) }
+    let formatter = ISO8601DateFormatter()
+    let firstDay = try XCTUnwrap(formatter.date(from: "2099-10-08T06:46:00Z"))
+    await store.checkDueAgentAutomations(now: firstDay)
+    let first = try XCTUnwrap(store.agentRuns.first(where: { $0.workflowId == "daily-repair" }))
+    XCTAssertEqual(first.status, "failed")
+    XCTAssertTrue(first.failure?.contains("missing-on-host") == true)
+    XCTAssertTrue(first.failure?.contains("desktop") == true)
+    XCTAssertTrue(first.failure?.contains("available on this host") == true)
+    XCTAssertTrue(store.aiChatThreads.isEmpty, "an unavailable explicit destination must not fall back")
+
+    await store.checkDueAgentAutomations(now: firstDay)
+    XCTAssertEqual(store.agentRuns.filter { $0.workflowId == "daily-repair" }.count, 1)
+    XCTAssertEqual(store.automationSchedulerStatusText, "1 automation last failed")
+    XCTAssertTrue(store.automationSchedulerErrorText?.contains("missing-on-host") == true)
+
+    let secondDay = try XCTUnwrap(formatter.date(from: "2099-10-09T06:46:00Z"))
+    await store.checkDueAgentAutomations(now: secondDay)
+    let failed = store.agentRuns.filter { $0.workflowId == "daily-repair" }
+    XCTAssertEqual(failed.count, 2)
+    XCTAssertTrue(failed.allSatisfy { $0.status == "failed" })
+    XCTAssertEqual(Set(failed.compactMap { $0.attempt?.number }), [1, 2])
+
+    var claude = try XCTUnwrap(AIChatDestinationConfiguration.defaults.first {
+      $0.id == AIChatDestinationConfiguration.localClaudeID
+    })
+    claude.isEnabled = true
+    store.updateAIChatDestination(claude)
+    _ = try await cli.run([
+      "workflow", "schedule", "daily-repair", "--cron", "45 23 * * *",
+      "--timezone", "America/Los_Angeles", "--destination-ref", claude.id,
+      "--dir", root.path, "--json"
+    ])
+    let thirdDay = try XCTUnwrap(formatter.date(from: "2099-10-10T06:46:00Z"))
+    await store.checkDueAgentAutomations(now: thirdDay)
+    let timeout = Date().addingTimeInterval(8)
+    while Date() < timeout && !store.agentRuns.contains(where: {
+      $0.workflowId == "daily-repair" && $0.status == "completed"
+    }) {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let recovered = try XCTUnwrap(store.agentRuns.first {
+      $0.workflowId == "daily-repair" && $0.status == "completed"
+    })
+    XCTAssertEqual(recovered.attempt?.number, 3)
+    XCTAssertEqual(recovered.destinationRef, claude.id)
+    await store.checkDueAgentAutomations(now: thirdDay)
+    XCTAssertNil(store.automationSchedulerErrorText)
+    XCTAssertEqual(store.automationSchedulerStatusText, "Automations are up to date")
+  }
 }
 
 private extension Array where Element == String {

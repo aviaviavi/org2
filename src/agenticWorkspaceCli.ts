@@ -29,6 +29,7 @@ import {
   requestAgentRunApproval,
   renderAgentRunOrg,
   saveAgentRun,
+  summarizeAgentRunAttempts,
   supersedeAgentRunApproval,
   transitionAgentRun,
   updateAgentRunAssignment,
@@ -1412,14 +1413,31 @@ function workflowCommand(parsed: ParsedArgs): void {
     const owner = automationHostRef(corpus);
     const requestingHost = flag(parsed, "host-ref") || "desktop";
     if (owner !== requestingHost) {
-      output(parsed, { schema: "org2:automation-due-list:v1", now, due: [], skipped: [], hostRef: owner, reason: `Automations are owned by ${owner}` }, `Automations are owned by ${owner}.`);
+      output(parsed, { schema: "org2:automation-due-list:v1", now, due: [], skipped: [], failures: [], hostRef: owner, reason: `Automations are owned by ${owner}` }, `Automations are owned by ${owner}.`);
       return;
     }
     const activeStatuses = new Set<AgentRunStatus>(["queued", "running", "blocked", "waiting-approval"]);
     const runs = listAgentRuns(corpus);
     const due: Array<Record<string, unknown>> = [];
     const skipped: Array<Record<string, unknown>> = [];
+    const failures: Array<Record<string, unknown>> = [];
+    const runsById = new Map(runs.map((run) => [run.id, run]));
+    const latestScheduledAttempts = new Map(summarizeAgentRunAttempts(
+      runs.filter((run) => run.attempt?.triggerType === "schedule"),
+    ).map((attempt) => [attempt.logicalWorkId, runsById.get(attempt.latestRunId)!]));
     for (const item of listWorkflows(corpus).filter((candidate) => candidate.state === "active")) {
+      const latestAttempt = latestScheduledAttempts.get(`workflow:${item.id}`);
+      if (item.triggers.some((trigger) => trigger.type === "schedule" && trigger.enabled)
+          && latestAttempt?.status === "failed") {
+        failures.push({
+          workflowId: item.id,
+          title: item.title,
+          runId: latestAttempt.id,
+          destinationRef: latestAttempt.destinationRef,
+          scheduledFor: latestAttempt.attempt?.scheduledFor,
+          failure: latestAttempt.failure || "The latest scheduled attempt failed.",
+        });
+      }
       for (const occurrence of workflowScheduleOccurrences(item, { now })) {
         const logicalWorkId = `workflow:${item.id}`;
         const activeRun = runs.find((run) => run.logicalWorkId === logicalWorkId && activeStatuses.has(run.status));
@@ -1440,7 +1458,7 @@ function workflowCommand(parsed: ParsedArgs): void {
         else due.push(summary);
       }
     }
-    output(parsed, { schema: "org2:automation-due-list:v1", now, due, skipped, hostRef: owner }, due.length ? due.map((item) => `${item.workflowId}\t${item.scheduledFor}`).join("\n") : "No automations due.");
+    output(parsed, { schema: "org2:automation-due-list:v1", now, due, skipped, failures, hostRef: owner }, due.length ? due.map((item) => `${item.workflowId}\t${item.scheduledFor}`).join("\n") : "No automations due.");
     return;
   }
   const id = required(parsed.positional[1], `workflow id is required for ${action}`);
