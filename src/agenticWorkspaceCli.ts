@@ -180,12 +180,14 @@ const HELP = `Agentic workspace commands:
   celorga workspace agent-state --dir CORPUS --json
   celorga workspace agenda --mount CORPUS [--mount CORPUS ...] [--from DATE --to DATE]
   celorga workspace search QUERY --mount CORPUS [--mount CORPUS ...] [--limit N]
-  celorga thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
+  celorga thread list|show|post|send|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
   celorga thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
   celorga thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--request-turn AGENT ...] [--dir CORPUS] [--apply]
     Message delivery only unless --request-turn names shared-room agents. Single-agent chats do not support this flag.
     Preview writes nothing; --apply queues delivery for Celorga to consume. Queuing a turn request does not confirm a started turn.
-    To start or steer a single agent, send a message in the Celorga app or use the agent runtime's supported send command.
+  celorga thread send THREAD --message TEXT [--author NAME] [--idempotency-key KEY] [--dir CORPUS] [--apply]
+    Explicit single-agent send through the existing queue. An active turn receives a queued follow-up; this does not steer it.
+    Requires a Celorga consumer supporting send-message:v1 with the configured destination available. Queue acceptance does not confirm runtime start.
   celorga thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   celorga thread configure THREAD --agent-turn-limit N|default [--dir CORPUS] [--apply]
   celorga thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
@@ -597,13 +599,14 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
     return;
   }
   const apply = enabled(parsed, "apply");
-  if (action === "post") {
+  if (action === "post" || action === "send") {
     const id = required(parsed.positional[1], "thread id is required");
     const result = queueAIChatInboxMessage(
       corpus,
       id,
       required(flag(parsed, "message"), "--message is required"),
       {
+        send: action === "send",
         authorLabel: flag(parsed, "author"),
         authorAgentRef: flag(parsed, "agent-ref"),
         source: flag(parsed, "source"),
@@ -618,7 +621,9 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
     output(
       parsed,
       result,
-      `${delivery} message for ${id}\n${responders
+      `${delivery} ${action === "send" ? "single-agent send request" : "message"} for ${id}\n${action === "send"
+        ? `Turn start unconfirmed. Celorga must consume the request with destination ${result.message.destinationID} available.\nUse celorga thread wait ${id} --after ${result.message.id} --until reply --dir CORPUS --timeout 60 to check for a reply.`
+        : responders
         ? `Turn request for ${responders}; turn start unconfirmed. Celorga resolves requests when it consumes the inbox; room limits and agent availability apply.\nUse celorga thread wait ${id} --after ${result.message.id} --until reply --dir CORPUS --timeout 60 to check for a reply.`
         : "No agent turn requested; message delivery only."}\n${result.file}`,
     );

@@ -124,7 +124,7 @@ try {
   assert.notEqual(single.status, 0);
   assert.match(single.stderr, /needs a shared AI room/);
   assert.match(single.stderr, /No message was queued/);
-  assert.match(single.stderr, /send a message in the Celorga app/);
+  assert.match(single.stderr, /celorga thread send THREAD/);
   assert.match(single.stderr, /will not start a turn/);
   assert.equal(fs.readdirSync(path.dirname(queued.file)).length, 1, "rejection must not queue a second envelope");
 

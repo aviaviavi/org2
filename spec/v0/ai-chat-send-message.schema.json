@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "org2:ai-chat-send-message:v1",
+  "title": "Celorga Single-Agent Send Message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "threadID",
+    "content",
+    "createdAt",
+    "authorLabel",
+    "destinationID"
+  ],
+  "properties": {
+    "schema": {
+      "const": "org2:ai-chat-send-message:v1"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "threadID": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200000
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authorLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "destinationID": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

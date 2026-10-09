@@ -53,7 +53,8 @@ export interface OpenClawChatThreadRecord {
   settledAt?: number | string | null;
   unreadMessageCount?: number;
   pendingTurn?: unknown;
-  runtime?: "openClaw" | "codex" | "claude";
+  runtime?: "openClaw" | "codex" | "claude" | "pi" | "openCode";
+  destinationID?: string;
   runtimeThreadID?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;

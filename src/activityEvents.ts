@@ -264,7 +264,7 @@ export function threadMessageEvents(thread: OpenClawChatThreadRecord, sinceMs = 
 }
 
 function inboxEvents(corpusRoot: string, sinceMs: number): ActivityEvent[] {
-  return pendingInboxMessages(corpusRoot).flatMap((message) => {
+  return pendingInboxMessages(corpusRoot).filter((message) => !message.isSend).flatMap((message) => {
     const at = Date.parse(message.createdAt);
     if (!Number.isFinite(at) || at <= sinceMs) return [];
     return [{
@@ -780,7 +780,7 @@ export async function waitForThread(corpusRootRaw: string, threadId: string, unt
           reply = { messageId: String(message.id), at: new Date(messageTime(message)).toISOString(), role: "assistant", source: "transcript", ...(typeof message.authorLabel === "string" ? { author: message.authorLabel } : {}) };
           return "matched" as const;
         }
-        const inbox = pendingInboxMessages(corpusRoot, threadId).find((item) => Date.parse(item.createdAt) > baseline.at);
+        const inbox = pendingInboxMessages(corpusRoot, threadId).find((item) => !item.isSend && Date.parse(item.createdAt) > baseline.at);
         if (inbox) {
           reply = { messageId: inbox.id, at: inbox.createdAt, role: "assistant", source: "inbox", ...(inbox.authorLabel ? { author: inbox.authorLabel } : {}) };
           return "matched" as const;

@@ -458,6 +458,7 @@ export function messageTime(message: OpenClawChatMessageRecord | undefined): num
 }
 
 export interface PendingInboxMessage {
+  isSend: boolean;
   id: string;
   threadID: string;
   createdAt: string;
@@ -466,7 +467,7 @@ export interface PendingInboxMessage {
   file: string;
 }
 
-/** Background replies queued with `celorga thread post` that the app has not imported yet. */
+/** Pending background posts and explicit user sends, kept distinct from replies. */
 export function pendingInboxMessages(corpusRoot: string, threadID?: string): PendingInboxMessage[] {
   const directory = aiChatInboxDirectory(corpusRoot);
   let names: string[] = [];
@@ -483,6 +484,7 @@ export function pendingInboxMessages(corpusRoot: string, threadID?: string): Pen
       if (!isRecord(raw) || !str(raw.threadID) || !str(raw.id)) return [];
       if (wanted && normalizedID(String(raw.threadID)) !== wanted) return [];
       return [{
+        isSend: schemaMatches(raw.schema, "org2:ai-chat-send-message:v1"),
         id: String(raw.id),
         threadID: String(raw.threadID),
         createdAt: str(raw.createdAt) ?? new Date(fs.statSync(file).mtimeMs).toISOString(),
@@ -689,7 +691,14 @@ export function explainThread(thread: OpenClawChatThreadRecord, context: ThreadC
     );
   }
 
-  const inbox = context.inboxByThread.get(key) ?? [];
+  const pendingInbox = context.inboxByThread.get(key) ?? [];
+  const sends = pendingInbox.filter((message) => message.isSend);
+  if (sends.length > 0) {
+    const newest = sends.reduce((lhs, rhs) => Date.parse(lhs.createdAt) >= Date.parse(rhs.createdAt) ? lhs : rhs);
+    evidence.push({ source: "inbox", ref: newest.file, at: newest.createdAt, detail: `${sends.length} single-agent send request(s) awaiting Celorga consumption; runtime start unconfirmed` });
+    return result("queued", "send-request-queued", "Single-agent send awaits Celorga consumption", "cached", "Read from the AI chat inbox; runtime start unconfirmed", signal("message", Date.parse(newest.createdAt), now));
+  }
+  const inbox = pendingInbox.filter((message) => !message.isSend);
   if (inbox.length > 0) {
     const newest = inbox.reduce((lhs, rhs) => (Date.parse(lhs.createdAt) >= Date.parse(rhs.createdAt) ? lhs : rhs));
     evidence.push({ source: "inbox", ref: newest.file, at: newest.createdAt, detail: `${inbox.length} background message(s) waiting to be imported${newest.authorLabel ? ` from ${newest.authorLabel}` : ""}` });

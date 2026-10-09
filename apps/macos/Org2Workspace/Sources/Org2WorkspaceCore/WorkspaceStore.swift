@@ -860,6 +860,11 @@ private struct AIChatInboxMessage: Decodable, Sendable {
   let source: String?
   /// Shared-room agents (IDs or mentions) asked to respond to this post.
   let requestedResponders: [String]?
+  let destinationID: String?
+
+  var isSingleAgentSend: Bool {
+    CelorgaNames.schemaMatches(schema, "org2:ai-chat-send-message:v1")
+  }
 }
 
 private struct AIChatInboxFileLoad: Sendable {
@@ -24439,6 +24444,66 @@ extension WorkspaceStore {
       }
       guard isCurrentAIChatCorpusContext(context) else { return }
 
+      if envelope.isSingleAgentSend {
+        if let origin = aiChatSendOriginsByThreadID[thread.id],
+           !aiChatSendOrigin(origin, belongsTo: context) {
+          errorText = "AI chat send retained: another corpus owns this thread's active send queue."
+          continue
+        }
+        if let existing = thread.messages.first(where: { $0.id == envelope.id }) {
+          guard existing.role == .user, existing.content == content,
+                existing.targetDestinationID == envelope.destinationID,
+                existing.provenance?.requestedByLabel == authorLabel
+          else {
+            errorText = "AI chat send retained: message ID already belongs to a different delivery."
+            continue
+          }
+        } else {
+          guard !thread.isSharedRoom, thread.destinationID == envelope.destinationID,
+                let destination = aiChatDestination(id: thread.destinationID),
+                destination.isEnabled, destination.runtime == thread.runtime
+          else {
+            errorText = "AI chat send retained: single-agent destination is unavailable or changed. Enable the original destination in Celorga; shared rooms use thread post --request-turn."
+            continue
+          }
+          if thread.isSettled { reopenAIChatThread(thread.id) }
+          let queued = enqueueAIChatMessage(
+            content,
+            attachments: [],
+            in: thread.id,
+            deliveryKind: isAIChatThreadRunning(thread.id) ? .followUp : .turn,
+            context: context,
+            origin: AIChatMessageProvenance(
+              originClient: .inbox,
+              requestedByLabel: authorLabel,
+              requestedByMessageID: envelope.id
+            ),
+            messageID: envelope.id
+          )
+          guard case .enqueued = queued else {
+            errorText = "AI chat send retained: this host could not accept the send queue entry."
+            continue
+          }
+        }
+        // Persist the user send before consuming its recovery envelope or
+        // starting the existing runtime queue. A retry reuses this message ID.
+        guard await persistAIChatTranscriptDurably(context: context) else { continue }
+        guard isCurrentAIChatCorpusContext(context) else { return }
+        do {
+          try FileManager.default.removeItem(at: load.file)
+        } catch {
+          errorText = "AI chat send retained: \(error.localizedDescription)"
+          continue
+        }
+        if aiChatPendingUserMessageIDs(for: thread.id).contains(envelope.id),
+           !drainingAIChatThreadIDs.contains(thread.id),
+           thread.pendingTurn?.dispatchOwnerID == nil
+             || thread.pendingTurn?.dispatchOwnerID == Self.aiChatDispatchOwnerID {
+          Task { @MainActor [weak self] in await self?.drainAIChatSendQueue(for: thread.id) }
+        }
+        continue
+      }
+
       if !thread.messages.contains(where: { $0.id == envelope.id }) {
         if thread.isSettled { reopenAIChatThread(thread.id) }
         let message = AIChatMessage(
@@ -24654,11 +24719,23 @@ extension WorkspaceStore {
             AIChatInboxMessage.self,
             from: Data(contentsOf: file, options: .mappedIfSafe)
           )
-          guard CelorgaNames.schemaMatches(envelope.schema, "org2:ai-chat-inbox-message:v1") else {
+          guard CelorgaNames.schemaMatches(envelope.schema, "org2:ai-chat-inbox-message:v1")
+            || envelope.isSingleAgentSend else {
             throw CocoaError(
               .fileReadCorruptFile,
               userInfo: [NSLocalizedDescriptionKey: "Unsupported AI chat inbox schema in \(file.lastPathComponent)."]
             )
+          }
+          if envelope.isSingleAgentSend {
+            guard let destinationID = envelope.destinationID,
+                  !destinationID.isEmpty, destinationID.count <= 200,
+                  envelope.requestedResponders?.isEmpty ?? true,
+                  envelope.authorAgentRef == nil, envelope.source == nil
+            else {
+              throw CocoaError(.validationMissingMandatoryProperty, userInfo: [
+                NSLocalizedDescriptionKey: "Single-agent send requires a destination and cannot request room responders."
+              ])
+            }
           }
           let content = envelope.content.trimmingCharacters(in: .whitespacesAndNewlines)
           let authorLabel = envelope.authorLabel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -26323,7 +26400,8 @@ extension WorkspaceStore {
     deliveryKind: AIChatMessage.DeliveryKind = .turn,
     audience: AIChatAudience? = nil,
     context: AIChatCorpusContextToken? = nil,
-    origin: AIChatMessageProvenance? = nil
+    origin: AIChatMessageProvenance? = nil,
+    messageID: UUID? = nil
   ) -> AIChatEnqueueResult {
     let context = context ?? captureAIChatCorpusContext()
     guard isCurrentAIChatCorpusContext(context) else { return .rejected }
@@ -26342,7 +26420,8 @@ extension WorkspaceStore {
           deliveryKind: deliveryKind,
           audience: audience,
           context: context,
-          origin: origin
+          origin: origin,
+          messageID: messageID
         )
         return await self.resolveDeferredAIChatEnqueue(retry)
       }
@@ -26430,7 +26509,7 @@ extension WorkspaceStore {
     let userMessages = targetDestinationIDs.enumerated().map { index, destinationID in
       let runtime = aiChatDestinationRuntime(destinationID)
       return AIChatMessage(
-        id: index == 0 ? (roomRoundID ?? UUID()) : UUID(),
+        id: index == 0 ? (roomRoundID ?? messageID ?? UUID()) : UUID(),
         role: .user,
         content: effectiveText,
         attachments: attachments,
@@ -42453,7 +42532,10 @@ extension WorkspaceStore {
       receivedByHostName: host.name,
       executionHostRef: target?.ref ?? host.ref,
       executionHostName: target?.name ?? host.name,
-      acceptedAt: target == nil ? date : nil
+      acceptedAt: target == nil ? date : nil,
+      requestedByLabel: origin?.requestedByLabel,
+      requestedByDestinationID: origin?.requestedByDestinationID,
+      requestedByMessageID: origin?.requestedByMessageID
     )
   }
 

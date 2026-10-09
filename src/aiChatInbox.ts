@@ -8,9 +8,12 @@ import {
 import { findOpenClawThread, loadOpenClawThreadState } from "./openClawThreadState.js";
 
 export const AI_CHAT_INBOX_SCHEMA = "org2:ai-chat-inbox-message:v1";
+export const AI_CHAT_SEND_SCHEMA = "org2:ai-chat-send-message:v1";
 
 export interface AIChatInboxMessage {
-  schema: typeof AI_CHAT_INBOX_SCHEMA;
+  schema: typeof AI_CHAT_INBOX_SCHEMA | typeof AI_CHAT_SEND_SCHEMA;
+  /** Explicit sends bind the existing single-agent destination at queue time. */
+  destinationID?: string;
   id: string;
   threadID: string;
   content: string;
@@ -30,6 +33,8 @@ export interface QueueAIChatInboxMessageOptions {
   authorAgentRef?: string;
   source?: string;
   requestedResponders?: string[];
+  /** Explicitly enqueue a single-agent user send instead of a background post. */
+  send?: boolean;
   idempotencyKey?: string;
   apply?: boolean;
   now?: Date;
@@ -98,6 +103,7 @@ function sameDelivery(left: AIChatInboxMessage, right: AIChatInboxMessage): bool
   return left.schema === right.schema
     && left.id === right.id
     && left.threadID === right.threadID
+    && left.destinationID === right.destinationID
     && left.content === right.content
     && left.authorLabel === right.authorLabel
     && left.authorAgentRef === right.authorAgentRef
@@ -126,7 +132,7 @@ export function queueAIChatInboxMessage(
     ? uuidForIdempotencyKey(`${canonicalThreadID}\u0000${idempotencyKey}`)
     : crypto.randomUUID();
   const authorAgentRef = normalizedOptional(options.authorAgentRef);
-  const authorLabel = normalizedOptional(options.authorLabel) || authorAgentRef;
+  const authorLabel = normalizedOptional(options.authorLabel) || authorAgentRef || (options.send ? "CLI" : undefined);
   if (!authorLabel) throw new Error("AI chat message author or agent ref is required");
   if (authorLabel.length > 200) throw new Error("AI chat message author exceeds 200 characters");
   if (authorAgentRef && authorAgentRef.length > 1_000) throw new Error("AI chat agent ref exceeds 1000 characters");
@@ -135,15 +141,33 @@ export function queueAIChatInboxMessage(
   const source = normalizedOptional(options.source);
   if (source && source.length > 2_000) throw new Error("AI chat source exceeds 2000 characters");
   const requestedResponders = normalizedRequestedResponders(options.requestedResponders);
+  let destinationID: string | undefined;
+  if (options.send) {
+    if (thread.isSharedRoom === true) {
+      throw new Error("thread send requires a single-agent chat. For a shared room, use thread post --request-turn AGENT; no message was queued.");
+    }
+    if (requestedResponders.length || authorAgentRef || source) {
+      throw new Error("thread send accepts --author but not --request-turn, --agent-ref, or --source; use thread post for attributed background delivery.");
+    }
+    if (thread.runtime !== undefined && !["openClaw", "codex", "claude", "pi", "openCode"].includes(thread.runtime)) {
+      throw new Error(`unsupported single-agent runtime: ${thread.runtime}; no message was queued`);
+    }
+    destinationID = typeof thread.destinationID === "string"
+      ? thread.destinationID.trim()
+      : `builtin.${(thread.runtime || "openClaw").toLowerCase()}`;
+    if (!destinationID || destinationID.length > 200) {
+      throw new Error("thread has no valid single-agent destination; choose a configured agent in Celorga before thread send. No message was queued.");
+    }
+  }
   if (requestedResponders.length > 0 && thread.isSharedRoom !== true) {
     throw new Error("--request-turn needs a shared AI room; this thread has a single agent. "
-      + "No message was queued. To start or steer this agent, send a message in the Celorga app "
-      + "or use the agent runtime's supported send command. "
+      + "No message was queued. Use celorga thread send THREAD --message TEXT --apply to request a single-agent turn. "
       + "Omit --request-turn only for background message delivery; it will not start a turn.");
   }
-  const turnStatus = requestedResponders.length > 0 ? "unconfirmed" : "not-requested";
+  const turnStatus = options.send || requestedResponders.length > 0 ? "unconfirmed" : "not-requested";
   const message: AIChatInboxMessage = {
-    schema: AI_CHAT_INBOX_SCHEMA,
+    schema: options.send ? AI_CHAT_SEND_SCHEMA : AI_CHAT_INBOX_SCHEMA,
+    ...(destinationID ? { destinationID } : {}),
     id,
     threadID: canonicalThreadID,
     content,
@@ -154,14 +178,16 @@ export function queueAIChatInboxMessage(
     ...(requestedResponders.length > 0 ? { requestedResponders } : {}),
   };
   const file = path.join(aiChatInboxDirectory(corpusRoot), `${id}.json`);
-  const delivered = thread.messages?.find((item) => item.id === id);
+  const delivered = thread.messages?.find((item) => item.id?.toLowerCase() === id);
   if (delivered) {
-    const matches = delivered.content === message.content
-      && delivered.authorLabel === message.authorLabel
-      && delivered.authorAgentRef === message.authorAgentRef
-      && delivered.source === message.source;
-    // Delivered transcript messages do not record the request itself; the
-    // requested turn already ran (or was refused) when the Celorga app delivered it.
+    const provenance = delivered.provenance as { requestedByLabel?: string } | undefined;
+    const matches = delivered.content === message.content && (options.send
+      ? delivered.role === "user" && delivered.targetDestinationID === destinationID
+        && provenance?.requestedByLabel === authorLabel
+      : delivered.role === "assistant" && delivered.authorLabel === message.authorLabel
+        && delivered.authorAgentRef === message.authorAgentRef && delivered.source === message.source);
+    // Transcript presence confirms delivery only. The runtime may still be
+    // queued, running, refused, or failed; never infer a start from this receipt.
     if (!matches) {
       throw new Error(`AI chat idempotency key already delivered a different message to ${canonicalThreadID}`);
     }
