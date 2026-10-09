@@ -4,14 +4,21 @@ import XCTest
 
 private actor SingleAgentSendRecorder {
   var messageIDs: [UUID] = []
-  func record(_ messages: [AIChatMessage]) {
+  let pausesFirst: Bool
+  var firstContinuation: CheckedContinuation<Void, Never>?
+  init(pausesFirst: Bool = false) { self.pausesFirst = pausesFirst }
+  func resumeFirst() { firstContinuation?.resume(); firstContinuation = nil }
+  func record(_ messages: [AIChatMessage]) async {
     messageIDs.append(messages.last(where: { $0.role == .user })!.id)
+    if pausesFirst && messageIDs.count == 1 {
+      await withCheckedContinuation { firstContinuation = $0 }
+    }
   }
 }
 
 final class AIChatSingleAgentSendTests: XCTestCase {
   @MainActor
-  private func fixture(destinationAvailable: Bool = true) throws -> (WorkspaceStore, URL, UUID, SingleAgentSendRecorder) {
+  private func fixture(destinationAvailable: Bool = true, pausesFirst: Bool = false) throws -> (WorkspaceStore, URL, UUID, SingleAgentSendRecorder) {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("celorga-single-send-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -26,7 +33,7 @@ final class AIChatSingleAgentSendTests: XCTestCase {
       }
       defaults.set(try JSONEncoder().encode(destinations), forKey: "Org2Workspace.aiChat.destinations.v1")
     }
-    let recorder = SingleAgentSendRecorder()
+    let recorder = SingleAgentSendRecorder(pausesFirst: pausesFirst)
     let store = WorkspaceStore(
       defaults: defaults,
       aiChatTranscriptURL: root.appendingPathComponent(".org2/openclaw-chat.json"),
@@ -55,12 +62,12 @@ final class AIChatSingleAgentSendTests: XCTestCase {
   }
 
   @MainActor
-  private func waitForReply(_ store: WorkspaceStore, threadID: UUID) async throws {
+  private func waitForReply(_ store: WorkspaceStore, threadID: UUID, expectedCount: Int = 1) async throws {
     let deadline = Date().addingTimeInterval(5)
     while Date() < deadline {
-      if store.aiChatThreads.first(where: { $0.id == threadID })?.messages.contains(where: {
+      if store.aiChatThreads.first(where: { $0.id == threadID })?.messages.filter({
         $0.role == .assistant && $0.content == "SINGLE_SEND_OK"
-      }) == true, !store.isAIChatThreadRunning(threadID) { return }
+      }).count == expectedCount, !store.isAIChatThreadRunning(threadID) { return }
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTFail("The existing Codex send queue did not finish the request: \(store.errorText ?? "")")
@@ -105,6 +112,34 @@ final class AIChatSingleAgentSendTests: XCTestCase {
     try await waitForReply(store, threadID: threadID)
     let after = await recorder.messageIDs
     XCTAssertEqual(after, [messageID])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+  }
+
+  @MainActor
+  func testBusyQueueCannotDispatchFollowUpBeforeInboxDurability() async throws {
+    let (store, root, threadID, recorder) = try fixture(pausesFirst: true)
+    let initial = Task { await store.sendAIChatMessage(text: "First request") }
+    let deadline = Date().addingTimeInterval(5)
+    while await recorder.messageIDs.isEmpty, Date() < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let messageID = UUID()
+    let file = try writeSend(root: root, threadID: threadID, messageID: messageID)
+    store.aiChatTranscriptSaverForTesting = { throw CocoaError(.fileWriteUnknown) }
+    await store.drainAIChatInbox()
+    await recorder.resumeFirst()
+    await initial.value
+    let before = await recorder.messageIDs
+    XCTAssertEqual(before.count, 1, "the active queue must not take the uncommitted follow-up")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertEqual(store.aiChatThreads.first(where: { $0.id == threadID })?.messages
+      .first(where: { $0.id == messageID })?.deliveryKind, .followUp)
+    store.aiChatTranscriptSaverForTesting = nil
+    await store.drainAIChatInbox()
+    try await waitForReply(store, threadID: threadID, expectedCount: 2)
+    let after = await recorder.messageIDs
+    XCTAssertEqual(after.count, 2)
+    XCTAssertEqual(after.last, messageID)
     XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
   }
 

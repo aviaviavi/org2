@@ -24478,7 +24478,8 @@ extension WorkspaceStore {
               requestedByLabel: authorLabel,
               requestedByMessageID: envelope.id
             ),
-            messageID: envelope.id
+            messageID: envelope.id,
+            enqueueForDispatch: false
           )
           guard case .enqueued = queued else {
             errorText = "AI chat send retained: this host could not accept the send queue entry."
@@ -24494,6 +24495,14 @@ extension WorkspaceStore {
         } catch {
           errorText = "AI chat send retained: \(error.localizedDescription)"
           continue
+        }
+        if let accepted = aiChatMessages(for: thread.id).first(where: { $0.id == envelope.id }),
+           accepted.deliveryStatus == .sending,
+           accepted.provenance?.executionHostRef == aiChatHostIdentity.ref,
+           !aiChatForeignPendingMessageIDs.contains(envelope.id),
+           !aiChatDispatchedUserMessageIDs.contains(envelope.id),
+           !aiChatPendingUserMessageIDs(for: thread.id).contains(envelope.id) {
+          enqueueAIChatUserMessage(envelope.id, in: thread.id)
         }
         if aiChatPendingUserMessageIDs(for: thread.id).contains(envelope.id),
            !drainingAIChatThreadIDs.contains(thread.id),
@@ -26401,7 +26410,8 @@ extension WorkspaceStore {
     audience: AIChatAudience? = nil,
     context: AIChatCorpusContextToken? = nil,
     origin: AIChatMessageProvenance? = nil,
-    messageID: UUID? = nil
+    messageID: UUID? = nil,
+    enqueueForDispatch: Bool = true
   ) -> AIChatEnqueueResult {
     let context = context ?? captureAIChatCorpusContext()
     guard isCurrentAIChatCorpusContext(context) else { return .rejected }
@@ -26421,7 +26431,8 @@ extension WorkspaceStore {
           audience: audience,
           context: context,
           origin: origin,
-          messageID: messageID
+          messageID: messageID,
+          enqueueForDispatch: enqueueForDispatch
         )
         return await self.resolveDeferredAIChatEnqueue(retry)
       }
@@ -26536,6 +26547,9 @@ extension WorkspaceStore {
       return .enqueued(threadID: threadID, shouldDrain: false)
     }
     replaceAIChatMessages(messages, for: threadID, shouldPersist: true)
+    guard enqueueForDispatch else {
+      return .enqueued(threadID: threadID, shouldDrain: false)
+    }
     for userMessage in userMessages {
       enqueueAIChatUserMessage(userMessage.id, in: threadID)
     }
