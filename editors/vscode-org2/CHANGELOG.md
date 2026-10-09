@@ -4,6 +4,20 @@ All notable changes to the Celorga VS Code extension (formerly Org2) are documen
 
 ## Unreleased
 
+## 0.9.0 - 2026-10-09
+
+# Celorga 0.9.0
+
+OpenOrg and Org2 are now Celorga: one name for the app, CLI, and workspace runtime.
+
+- Renamed app, website, CLI, and agent-facing instructions to Celorga. Install the CLI with `npm i -g celorga`; `org2` remains supported.
+- Added compatibility for Celorga configuration, state, properties, tools, editor commands, and plugin names while preserving existing Org2 workspaces. No automatic corpus migration is performed.
+- Improved shared AI conversations, agent hand-offs, and single-agent message delivery across hosts.
+- Fixed server drain/restart recovery and excluded Skill Workshop background reviews from Agent Work runs.
+- Renamed the Vim integration directory to `editors/vim-celorga`; existing Vim users should update their runtime path.
+
+Apple Silicon and Intel Mac installers require macOS 14 or later and are Developer ID signed and Apple notarized. The iPhone build is distributed through TestFlight as version 0.9.0, build 46.
+
 - Renamed the extension to Celorga. The display name, command palette titles (`Celorga: …`), Explorer views, settings section, messages, and documentation now use the Celorga name; the language mode is labeled "Celorga Org".
 - The extension now runs the `celorga` CLI when it is on `PATH` and `celorga.agenda.command` (or the legacy `org2.agenda.command`) is not set explicitly, and falls back to `org2`, which remains a permanent compatibility alias.
 - The default workspace export index title is now "Celorga Export Index".
