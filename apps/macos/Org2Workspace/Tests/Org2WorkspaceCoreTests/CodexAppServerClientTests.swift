@@ -343,6 +343,11 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
       XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
+      // Agents must know what the chat surface and the agent network can do.
+      XCTAssertTrue(prompt.contains("Celorga chat capabilities"))
+      XCTAssertTrue(prompt.contains("live, sandboxed HTML, CSS, and JavaScript app"))
+      XCTAssertTrue(prompt.contains("@mention another agent in your reply"))
+      XCTAssertTrue(prompt.contains("--request-turn @AGENT"))
       XCTAssertTrue(prompt.contains("exactly one fewer + join than the number of columns"))
       XCTAssertTrue(prompt.contains("#+begin_src sh"))
       XCTAssertTrue(prompt.contains("Never write ##+begin_src or ##+end_src."))

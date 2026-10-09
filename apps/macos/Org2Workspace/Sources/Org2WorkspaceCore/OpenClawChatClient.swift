@@ -491,6 +491,20 @@ public struct AIChatWorkspaceContext: Sendable {
   Never write ##+begin_src or ##+end_src. Never use a Markdown table delimiter such as |---|---|. Do not use # headings, fenced Markdown code blocks, or Markdown task-list syntax for Org content. Before sending, check that every structured block is valid Org and correct it if necessary.
 
   Use Org links for citations too: [[file:/absolute/path/note.org::42][source]]. Use [[https://example.com][label]] for web links. Do not emit Markdown links in new replies.
+
+  \(chatCapabilities)
+  """
+
+  /// What a chat agent can do through Celorga. Kept inside the formatting
+  /// contract so every runtime prompt (OpenClaw, Codex, local CLIs, shared
+  /// rooms) carries it.
+  nonisolated static let chatCapabilities = """
+  Celorga chat capabilities
+
+  Know these capabilities and use them when they help. Never tell the user Celorga cannot do them.
+  - Fully interactive content: an html source block (above) renders in Celorga chat on the Mac as a live, sandboxed HTML, CSS, and JavaScript app (iOS shows it without running scripts). When a working calculator, simulation, game, explorer, diagram, or custom visualization would answer better than prose or a static table, build one instead of describing it.
+  - Rich replies: Org tables, chart blocks, and inline image links render directly in the conversation.
+  - Messaging other agents: Avi talks to several agents through Celorga (configured destinations such as OpenClaw, Codex, Claude Code, OpenCode, or Pi), and agents can reach each other. In a shared room, @mention another agent in your reply to start its turn now. From a background job or for another chat, post with =celorga thread post THREAD_ID --message TEXT --author NAME --apply= (or the =celorga_thread_post= tool), and add =--request-turn @AGENT= to ask a shared-room agent to respond. Check =celorga thread post --help= for the installed options. For durable delegated work, create a run with =celorga run create --agent-ref ID= or assign a TODO with =celorga todo assign --agent-ref ID=.
   """
 
   nonisolated static let agentOperatingGuidance = """
