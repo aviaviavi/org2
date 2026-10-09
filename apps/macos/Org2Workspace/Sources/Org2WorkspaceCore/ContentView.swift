@@ -2676,6 +2676,17 @@ private struct SidebarView: View {
                   SidebarChatThreadGroupLabel(title: "Recent", count: recentChatThreads.count)
                 }
 
+                if store.actionableAutomationAIChatThreadCount > 0 {
+                  SidebarSettleAutomationThreadsRow(
+                    count: store.actionableAutomationAIChatThreadCount
+                  ) {
+                    withAnimation(WorkspaceMotion.disclosure) {
+                      _ = store.markAllAutomationAIChatThreadsReadAndSettled()
+                    }
+                  }
+                  .listRowBackground(Color.clear)
+                }
+
                 ForEach(recentChatThreads) { summary in
                   chatThreadRow(summary)
                     .id(AIChatSidebarThreadRowIdentity(summary: summary))
@@ -3088,6 +3099,41 @@ private struct SidebarChatThreadGroupLabel: View {
     .foregroundStyle(WorkspaceDesign.tertiaryText)
     .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
     .padding(.top, 4)
+  }
+}
+
+/// Inline, always-visible entry point for settling every automation thread at
+/// once. Shown above the recent threads whenever at least one automation
+/// thread is unread or still open, so the action does not hide in a menu.
+private struct SidebarSettleAutomationThreadsRow: View {
+  let count: Int
+  let settle: () -> Void
+
+  var body: some View {
+    Button(action: settle) {
+      HStack(spacing: 6) {
+        Image(systemName: AIChatAutomationThreadsAction.systemImage)
+          .font(.caption2.weight(.semibold))
+        Text(Self.title(count: count))
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        Text("Settle all")
+          .fontWeight(.semibold)
+          .foregroundStyle(Color.accentColor)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .padding(.leading, AIChatSidebarThreadLayout.leadingPadding)
+    .padding(.vertical, 2)
+    .help(AIChatAutomationThreadsAction.title)
+    .accessibilityLabel("\(AIChatAutomationThreadsAction.title), \(Self.title(count: count))")
+  }
+
+  static func title(count: Int) -> String {
+    count == 1 ? "1 automation thread" : "\(count) automation threads"
   }
 }
 

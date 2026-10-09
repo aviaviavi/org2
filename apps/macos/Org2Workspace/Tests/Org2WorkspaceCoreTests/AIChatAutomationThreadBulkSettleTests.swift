@@ -64,6 +64,11 @@ final class AIChatAutomationThreadBulkSettleTests: XCTestCase {
     await store.waitForAIChatTranscriptLoadForTesting()
     try await store.waitForAIChatTranscriptPersistenceForTesting()
 
+    XCTAssertEqual(
+      store.actionableAutomationAIChatThreadCount,
+      automations.count + 1,
+      "The sidebar's inline settle-all row counts exactly what the action changes"
+    )
     let settledAt = Date(timeIntervalSince1970: 2_000)
     let changed = store.markAllAutomationAIChatThreadsReadAndSettled(at: settledAt)
 
@@ -84,6 +89,7 @@ final class AIChatAutomationThreadBulkSettleTests: XCTestCase {
     XCTAssertEqual(byID[forkedAutomation.id]?.unreadMessageCount, 1)
     XCTAssertEqual(store.aiChatUnreadMessageCount, 2)
 
+    XCTAssertEqual(store.actionableAutomationAIChatThreadCount, 0, "The inline row hides once settled")
     XCTAssertEqual(store.markAllAutomationAIChatThreadsReadAndSettled(), 0, "A second run is a no-op")
 
     store.flushDeferredAIChatTranscriptPersistence()

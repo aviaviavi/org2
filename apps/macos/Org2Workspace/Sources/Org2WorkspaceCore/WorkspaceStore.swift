@@ -33126,6 +33126,21 @@ extension WorkspaceStore {
     title.hasPrefix("Automation:")
   }
 
+  /// Automation threads that "Mark All Automation Threads Read & Settled"
+  /// would still change: unsettled ones that are not running, plus any with
+  /// unread messages. The sidebar shows its inline settle-all row from this.
+  public var actionableAutomationAIChatThreadCount: Int {
+    aiChatThreads.reduce(into: 0) { count, thread in
+      guard Self.isAutomationAIChatThreadTitle(thread.title) else { return }
+      let isRunning = thread.pendingTurn != nil
+        || aiChatSendingThreadIDs.contains(thread.id)
+        || drainingAIChatThreadIDs.contains(thread.id)
+      if (!thread.isSettled && !isRunning) || thread.unreadMessageCount != 0 {
+        count += 1
+      }
+    }
+  }
+
   /// Marks every "Automation: …" thread read and settles those not running,
   /// as one in-memory update with a single receipt write and one debounced
   /// transcript save, regardless of how many threads match.
