@@ -127,6 +127,40 @@ public enum OrgDocumentPreviewPreference: String, CaseIterable, Identifiable, Se
 struct OrgHTMLDocumentLayout: Equatable {
   let width: RenderedDocumentWidth
   let margin: RenderedDocumentMargin
+
+  nonisolated static let styleElementID = "org2-app-layout"
+
+  /// Puts the chosen width and margin into the page itself, so the first
+  /// paint already has the final layout instead of reflowing at load end.
+  func injecting(into html: String) -> String {
+    let element = "<style id=\"\(Self.styleElementID)\">:root { --org2-content-width: \(width.cssValue); --org2-page-padding: \(margin.cssValue); }</style>"
+    if let range = html.range(of: "</head>", options: [.caseInsensitive, .backwards]) {
+      var result = html
+      result.replaceSubrange(range, with: element + "</head>")
+      return result
+    }
+    return element + html
+  }
+}
+
+/// Decides how a rendered document reload is presented. Re-rendering the
+/// file that is already on screen (after a save, an external change, or a
+/// checkbox edit) keeps the previous frame and exact scroll offset until the
+/// new page has settled, so saving does not flash or jump.
+enum OrgHTMLDocumentReloadStyle: Equatable {
+  case fresh
+  case preservingFrame
+
+  static func style(
+    loadedSourceFile: String?,
+    nextSourceFile: String,
+    hasLoadedPage: Bool
+  ) -> OrgHTMLDocumentReloadStyle {
+    guard hasLoadedPage, let loadedSourceFile, loadedSourceFile == nextSourceFile else {
+      return .fresh
+    }
+    return .preservingFrame
+  }
 }
 
 struct OrgHTMLTableViewSnapshot: Equatable, Sendable {
@@ -670,12 +704,14 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       coordinator.renderID = renderID
       coordinator.searchQuery = searchQuery
       coordinator.searchOccurrenceIndex = searchOccurrenceIndex
-      webView.loadHTMLString(
-        WorkspaceThemeDocumentStyle.injecting(
+      coordinator.load(
+        html: layout.injecting(into: WorkspaceThemeDocumentStyle.injecting(
           themeStylesheet,
           into: OrgHTMLLocalResourceSchemeHandler.rewritingLocalImageSources(in: html)
-        ),
-        baseURL: Self.sourceFileURL(source, corpusRoot: corpusRoot).deletingLastPathComponent()
+        )),
+        baseURL: Self.sourceFileURL(source, corpusRoot: corpusRoot).deletingLastPathComponent(),
+        sourceFile: source.file,
+        in: webView
       )
     } else if layoutChanged || themeChanged {
       if layoutChanged { coordinator.applyLayout(to: webView) }
@@ -804,7 +840,108 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     private var fileLinkResolutionTask: Task<Void, Never>?
     private var fileLinkResolutionGeneration: UInt64 = 0
 
+    // MARK: Reloading without a flash
+
+    private var loadedSourceFile: String?
+    private var hasLoadedPage = false
+    private var loadGeneration: UInt64 = 0
+    /// Exact scroll offset to restore after a same-document re-render.
+    private var preservedScrollY: Double?
+    /// The scroll request already applied when the reload began. Only a newer
+    /// request (for example, a jump to a search hit) overrides the preserved
+    /// offset; a stale one would otherwise re-scroll on every save.
+    private var scrollRequestIDAtPreservedLoad: Int?
+    private var freezeFrameView: NSImageView?
+
+    func load(html: String, baseURL: URL, sourceFile: String, in webView: WKWebView) {
+      loadGeneration &+= 1
+      let generation = loadGeneration
+      let style = OrgHTMLDocumentReloadStyle.style(
+        loadedSourceFile: loadedSourceFile,
+        nextSourceFile: sourceFile,
+        hasLoadedPage: hasLoadedPage && !webView.isLoading && webView.bounds.width > 0
+      )
+      loadedSourceFile = sourceFile
+      scrollRequestIDAtPreservedLoad = scrollRequestID
+      guard style == .preservingFrame else {
+        preservedScrollY = nil
+        removeFreezeFrame(animated: false)
+        webView.loadHTMLString(html, baseURL: baseURL)
+        return
+      }
+      // Capture the exact scroll offset and the current frame, cover the web
+      // view with that frame, then load. didFinish restores the offset and
+      // removes the cover once the new page has painted.
+      webView.evaluateJavaScript("window.scrollY") { [weak self, weak webView] value, _ in
+        MainActor.assumeIsolated {
+          guard let self, let webView, generation == self.loadGeneration else { return }
+          self.preservedScrollY = (value as? NSNumber)?.doubleValue
+          webView.takeSnapshot(with: nil) { [weak self, weak webView] image, _ in
+            MainActor.assumeIsolated {
+              guard let self, let webView, generation == self.loadGeneration else { return }
+              if let image { self.showFreezeFrame(image, over: webView) }
+              webView.loadHTMLString(html, baseURL: baseURL)
+              // Never leave a stale frame up if the load stalls.
+              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, generation == self.loadGeneration else { return }
+                self.removeFreezeFrame(animated: true)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    private func showFreezeFrame(_ image: NSImage, over webView: WKWebView) {
+      removeFreezeFrame(animated: false)
+      let view = NSImageView(frame: webView.bounds)
+      view.image = image
+      view.imageScaling = .scaleAxesIndependently
+      view.autoresizingMask = [.width, .height]
+      view.wantsLayer = true
+      webView.addSubview(view)
+      freezeFrameView = view
+    }
+
+    private func removeFreezeFrame(animated: Bool) {
+      guard let view = freezeFrameView else { return }
+      freezeFrameView = nil
+      guard animated else {
+        view.removeFromSuperview()
+        return
+      }
+      NSAnimationContext.runAnimationGroup({ context in
+        context.duration = 0.08
+        view.animator().alphaValue = 0
+      }, completionHandler: {
+        view.removeFromSuperview()
+      })
+    }
+
+    /// Restores the exact pre-reload offset, waits for the next painted
+    /// frame, then lifts the freeze frame.
+    private func finishPreservedReload(scrollY: Double, in webView: WKWebView) {
+      let generation = loadGeneration
+      webView.callAsyncJavaScript(
+        """
+        window.scrollTo(0, y);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        window.scrollTo(0, y);
+        return true;
+        """,
+        arguments: ["y": scrollY],
+        in: nil,
+        in: .page
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self, generation == self.loadGeneration else { return }
+          self.removeFreezeFrame(animated: true)
+        }
+      }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+      hasLoadedPage = true
       applyLayout(to: webView)
       themeStylesheet = WorkspaceThemeCenter.shared.trackedDocumentStylesheet()
       applyTheme(to: webView)
@@ -818,10 +955,18 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       webView.evaluateJavaScript(OrgLinkHoverPreview.installationScript)
       applyHeadingWork(to: webView)
       applySearch(to: webView, backwards: false)
-      if let scrollRequest {
+      let preservedScrollY = self.preservedScrollY
+      self.preservedScrollY = nil
+      if let preservedScrollY, scrollRequestID == scrollRequestIDAtPreservedLoad {
+        finishPreservedReload(scrollY: preservedScrollY, in: webView)
+      } else if let scrollRequest {
         applyScrollRequest(scrollRequest, to: webView)
-      } else if let restorationSourceLine {
-        applySourceLineScroll(restorationSourceLine, to: webView)
+        removeFreezeFrame(animated: true)
+      } else {
+        if let restorationSourceLine {
+          applySourceLineScroll(restorationSourceLine, to: webView)
+        }
+        removeFreezeFrame(animated: true)
       }
     }
 
