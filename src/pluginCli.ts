@@ -97,7 +97,7 @@ macOS sandbox that denies corpus writes (and corpus reads or network unless
 the manifest requests read-corpus or network), and return proposals that stay
 pending under .org2/plugin-proposals/ until a person applies them.
 
-Source intent lives in celorga.json (or org2.json). org2.plugins.lock.json pins an exact Git
+Source intent lives in celorga.json. org2.plugins.lock.json pins an exact Git
 commit and SHA-256 content hash. sync reproduces the lock without moving refs;
 update is the explicit operation that advances mutable refs. Plugin code runs
 only after its exact content hash is trusted on the current machine.`;

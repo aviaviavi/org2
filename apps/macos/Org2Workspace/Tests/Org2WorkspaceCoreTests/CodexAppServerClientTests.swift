@@ -340,7 +340,7 @@ final class CodexAppServerClientTests: XCTestCase {
       XCTAssertTrue(prompt.contains("opening Preview does not embed it"))
       XCTAssertTrue(prompt.contains("never link an absolute path outside the corpus"))
       XCTAssertTrue(prompt.contains("Inline emphasis does not nest in Celorga's Org profile."))
-      XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org2="))
+      XCTAssertTrue(prompt.contains("*no duplicate in* =recipes.org="))
       XCTAssertTrue(prompt.contains("|-------+--------------|"))
       XCTAssertTrue(prompt.contains("Never use a Markdown table delimiter such as |---|---|."))
       XCTAssertTrue(prompt.contains("exactly one fewer + join than the number of columns"))

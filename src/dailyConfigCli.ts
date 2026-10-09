@@ -26,7 +26,7 @@ Reads, infers, or previews where daily notes live. Output is JSON.
          relative to the corpus. --date is the reference date used to rank
          ambiguous examples (default: today).
   set    (--template FORMAT | --clear) [--if-revision REVISION] [--apply]
-         Preview or write roam.dailyFileTemplate in celorga.json (or org2.json). --clear restores
+         Preview or write roam.dailyFileTemplate in celorga.json. --clear restores
          the dailiesDir/YYYY-MM-DD.org convention.
 
 Formats are corpus-relative paths with date tokens:

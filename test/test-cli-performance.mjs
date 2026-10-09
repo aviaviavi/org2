@@ -16,9 +16,9 @@ const indexHome = path.join(fixtureRoot, "index");
 const fileCount = 500;
 const headingsPerFile = 10;
 const agendaFileCount = Number.parseInt(process.env.ORG2_PERF_AGENDA_FILES || "2000", 10);
-const scale = Number.parseFloat(process.env.ORG2_PERF_BUDGET_SCALE || "1");
+const scale = Number.parseFloat(process.env.CELORGA_PERF_BUDGET_SCALE || process.env.ORG2_PERF_BUDGET_SCALE || "1");
 
-assert.ok(Number.isFinite(scale) && scale >= 0.5 && scale <= 10, "ORG2_PERF_BUDGET_SCALE must be from 0.5 to 10");
+assert.ok(Number.isFinite(scale) && scale >= 0.5 && scale <= 10, "CELORGA_PERF_BUDGET_SCALE must be from 0.5 to 10");
 assert.ok(
   Number.isFinite(agendaFileCount) && agendaFileCount >= 500 && agendaFileCount <= 20_000,
   "ORG2_PERF_AGENDA_FILES must be from 500 to 20000",

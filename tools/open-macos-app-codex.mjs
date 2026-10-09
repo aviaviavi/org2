@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import "./celorga-env.mjs";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";

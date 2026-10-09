@@ -60,13 +60,13 @@ export function corpusIdentityStatus(root: string): CorpusIdentityStatus {
     return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: "root", message: "must be an existing directory" }] };
   }
   if (!fs.existsSync(configFile)) {
-    return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: "org2.json", message: "is required for a portable corpus identity" }] };
+    return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: path.basename(configFile), message: "is required for a portable corpus identity" }] };
   }
   let config: Org2Config;
   try {
     config = JSON.parse(fs.readFileSync(configFile, "utf8")) as Org2Config;
   } catch (error) {
-    return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: "org2.json", message: `could not be read: ${error instanceof Error ? error.message : String(error)}` }] };
+    return { schema: ORG2_CORPUS_SCHEMA, root: resolvedRoot, configFile, valid: false, issues: [{ path: path.basename(configFile), message: `could not be read: ${error instanceof Error ? error.message : String(error)}` }] };
   }
   const result = validateCorpusIdentity(config.corpus);
   issues.push(...result.issues);
@@ -76,7 +76,7 @@ export function corpusIdentityStatus(root: string): CorpusIdentityStatus {
 function starterConfig(identity: Org2CorpusIdentity): Org2Config {
   return {
     corpus: identity,
-    agendaFiles: ["inbox.org2", "notes/**/*.org2", "notes/**/*.org", "daily/**/*.org2", "daily/**/*.org"],
+    agendaFiles: ["inbox.org", "inbox.org2", "notes/**/*.org", "notes/**/*.org2", "daily/**/*.org", "daily/**/*.org2"],
     recursive: true,
     ignorePatterns: [".git/**", ".#*", "compiled/**"],
     roam: { indexDir: "notes", nodesDir: "notes", dailiesDir: "daily" },

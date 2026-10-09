@@ -5,8 +5,8 @@ import path from "node:path";
  * Celorga names and their pre-rename (Org2/OpenOrg) equivalents.
  *
  * Phase 1 of the rename (see docs/rename/celorga.org): every reader accepts
- * both spellings, preferring the Celorga one. Writers keep the legacy spelling
- * until a corpus is migrated, so devices still on 0.8.x keep working.
+ * both spellings, preferring the Celorga one. Writers keep editing whichever
+ * config file a corpus already has; brand-new corpora get `celorga.json`.
  */
 
 export const PROPERTY_PREFIX = "CELORGA_";
@@ -133,11 +133,10 @@ export function configFileIn(dir: string): string | null {
 
 /**
  * The config file to read or edit in a directory: the existing `celorga.json`
- * or `org2.json`, otherwise the legacy `org2.json` path new corpora still get
- * in phase 1.
+ * or `org2.json`, otherwise `celorga.json` for a new corpus.
  */
 export function configFilePath(dir: string): string {
-  return configFileIn(dir) ?? path.join(dir, LEGACY_CONFIG_FILE);
+  return configFileIn(dir) ?? path.join(dir, CONFIG_FILE);
 }
 
 /** Whether a file name is a workspace config file (either spelling). */

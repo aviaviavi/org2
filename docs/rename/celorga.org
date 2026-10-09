@@ -1,8 +1,26 @@
 #+TITLE: Celorga rename contract
 
 This file is the engineering contract for renaming OpenOrg and Org2 to
-*Celorga*. It lives on the =rename/celorga= branch until cutover. The tracking
-checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
+*Celorga*. The tracking checklist and decisions live in Avi's corpus
+(=notes/celorga-rename.org=).
+
+* Status (2026-10-09)
+
+- Celorga 0.9.0 is released with dual read (phase 1 below): every app reads
+  both the Celorga and the legacy names.
+- The repository's own site config is =celorga.json= (was =org2.json=), and
+  =celorga.json.example= replaces =org2.json.example=. Tools, workflows and docs
+  use =npm run celorga -- ...=; the =org2= npm script remains as an alias.
+- New workspaces are created with =celorga.json=. Existing corpora keep
+  whichever config file they already have.
+- Readers see Celorga names only. README, AGENTS.md, the editor and
+  integration READMEs and the docs under =docs/= no longer mention the old
+  names, except one "formerly OpenOrg and Org2" line at the end of README.
+  Backward compatibility is documented in exactly two places: the website page
+  [[file:../site/name-compatibility.org][name-compatibility.org]] and this file.
+- The macOS build tools accept =CELORGA_WORKSPACE_*= environment variables
+  (mirrored to =ORG2_WORKSPACE_*= by =tools/celorga-env.mjs=),
+  =CELORGA_RELEASE_BUILD_CACHE= and =CELORGA_PERF_BUDGET_SCALE=.
 
 * Decided
 
@@ -16,7 +34,7 @@ checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
 - Mac downloads: =Celorga.dmg= and =Celorga-Intel.dmg= from the cutover release;
   the app inside stays =OpenOrg.app= for now so Sparkle updates in place.
 - New workspaces: =~/Documents/Celorga=. An existing =~/Documents/OpenOrg=
-  workspace (one with =org2.json=) is reused instead.
+  workspace (one with =celorga.json= or =org2.json=) is reused instead.
 - Launch telemetry: =org2.gateway.scarf.sh/telemetry/celorga/launch=, a new
   route on the existing Scarf package; the old route keeps counting older builds.
 - VS Code: the marketplace ID stays =AviPress.org2-vscode=.
@@ -32,7 +50,7 @@ checklist and decisions live in Avi's corpus (=notes/celorga-rename.org=).
 | Org2 (runtime, CLI, compiler, profile) | Celorga | "the Org2 runtime" becomes "the Celorga runtime"; "Org2 CLI" becomes "Celorga CLI". |
 | OpenOrg vs. Org2 layers | the Celorga app / the Celorga runtime | Keep the two-layer explanation, but under one name. |
 | Org2 documents, Org2 syntax | Org documents, Celorga's Org profile | The format is ordinary Org text plus Celorga semantics. |
-| =org2 agenda= (commands in prose/docs) | =celorga agenda= | Mention once per reference page that =org2= remains an alias. |
+| =org2 agenda= (commands in prose/docs) | =celorga agenda= | Do not mention the =org2= alias outside the name-compatibility page. |
 | =org2-lsp= | =celorga-lsp= | |
 | openorg.so, org2.avi.press | celorga.io | |
 
@@ -54,15 +72,15 @@ and =CelorgaNames.swift= (apps).
 | =org2= / =org2-lsp= executables | =celorga= / =celorga-lsp= | Permanent aliases. |
 
 ** Phases
-1. *Dual read (0.9.0).* Every reader in the CLI, Mac and iOS apps, VS Code
-   extension and OpenClaw plugin accepts both names. Writers keep the legacy
+1. *Dual read (0.9.0, released).* Every reader in the CLI, Mac and iOS apps, VS Code
+   extension and OpenClaw plugin accepts both names. In existing corpora, writers keep the legacy
    names, so devices still on 0.8.x keep working on a shared corpus. The website
    documents only the Celorga names; [[file:../site/name-compatibility.org][one compatibility page]] lists the old ones.
 2. *Migration (after every app Avi uses runs a dual-read build).* A
    preview-first =celorga migrate-names= rewrites a corpus: property keys,
    =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, record types. A corpus
    with =celorga.json= is "migrated", and writers use Celorga names in it. New
-   corpora start migrated.
+   corpora start migrated (new workspaces already get =celorga.json=).
 3. *Retirement (much later).* Stop reading legacy names only after a deprecation notice.
 
 * Compatibility surface: do not rename
@@ -75,14 +93,14 @@ later migration explicitly adds an alias first.
 |------------+--------------|
 | =org.org2.workspace=, =org.org2.mobile= and other bundle IDs | Sparkle updates, Keychain items, TCC grants, iCloud and App Group containers. |
 | Sparkle EdDSA key and the =openorg.so/assets/appcast-*.xml= URLs | Every shipped build polls these. The legacy host must keep serving them. |
-| =.org2= extension, =org2.json=, =.org2/= state directory | Present in every existing corpus. New aliases (for example =celorga.json=) may be added later; never drop the old names. |
+| =.org2= extension, =org2.json=, =.org2/= state directory | Present in every existing corpus. The Celorga names (=celorga.json=, =.celorga/=) are read first; never drop the old names. |
 | =ORG2_*= environment variables and =:ORG2_*:= properties | Written into user documents and agent configs. |
 | Schema IDs (=org2:agent-run:v1=, =org2:graph-audit:v1=, …) | Versioned wire formats. |
 | =org2= / =org2-lsp= executables | Scripts, MCP configs, editor plugins, agent skills. |
 | Source identifiers (=Org2Workspace=, =OpenOrgServer=, =src/*.ts= names, CSS classes such as =org2-nav=) | Internal; renaming them is churn with no user value. Optional later. |
 | Application Support / cache paths (for example =~/Library/Application Support/org2=) | Existing data. Migrate only with an explicit copy-and-fallback. |
 | Release artifact names already published (=OpenOrg.dmg=, =OpenOrg-Intel.dmg=) | Old appcast entries and GitHub assets reference them. Releases from the cutover on ship =Celorga.dmg= and =Celorga-Intel.dmg= (volume name "Celorga"); the app inside stays =OpenOrg.app=. |
-| GitHub repo URL =github.com/aviaviavi/org2= | Renamed to =aviaviavi/celorga= at cutover; GitHub redirects the old web, git and release-download URLs. Links on the branch use the new name. |
+| GitHub repo URL =github.com/aviaviavi/org2= | Renamed to =aviaviavi/celorga=; GitHub redirects the old web, git and release-download URLs. Links use the new name. |
 
 * Audit
 

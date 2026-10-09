@@ -9,8 +9,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDir = join(repoRoot, "apps", "macos", "Org2Workspace");
 const corpusRoot = join(repoRoot, "examples", "macos-workspace-demo");
-const renderCorpusContainer = "/tmp/org2-macos-workspace-demo";
-const renderCorpusRoot = join(renderCorpusContainer, "Org2 Demo");
+const renderCorpusContainer = "/tmp/celorga-macos-workspace-demo";
+const renderCorpusRoot = join(renderCorpusContainer, "Celorga Demo");
+
+function corpusConfigName(root) {
+  return existsSync(join(root, "celorga.json")) ? "celorga.json" : "org2.json";
+}
 const screenshotDir = join(repoRoot, "docs", "site", "assets", "screenshots");
 // Published screenshots use one catalog theme so the site stays visually
 // consistent. Override with --theme=ID (for example --theme=spacemacs-dark).
@@ -133,7 +137,7 @@ function captureScenario(scenario, theme) {
   // Cropped homepage shots render the full window first, then keep only the
   // region named in points so the published image stays readable at page size.
   const renderPath = scenario.crop
-    ? join(tmpdir(), `org2-screenshot-${process.pid}-${scenario.fileName}`)
+    ? join(tmpdir(), `celorga-screenshot-${process.pid}-${scenario.fileName}`)
     : outputPath;
   run("swift", ["run", "Org2WorkspaceScreenshotRenderer", "--out", renderPath], {
     cwd: packageDir,
@@ -223,7 +227,7 @@ SCHEDULED: ${stamp(2)}
 
 Link the refreshed tour from the release notes.
 `);
-  const configPath = join(renderCorpusRoot, "org2.json");
+  const configPath = join(renderCorpusRoot, corpusConfigName(renderCorpusRoot));
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   config.agendaFiles = ["notes/projects/launch.org", "notes/projects/website.org"];
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
@@ -258,11 +262,12 @@ function main() {
       // Other scenarios continue to use their established demo records.
       rmSync(join(renderCorpusRoot, "notes/projects/launch.org"));
       rmSync(join(renderCorpusRoot, "notes/projects/website.org"));
-      cpSync(join(corpusRoot, "org2.json"), join(renderCorpusRoot, "org2.json"));
+      const configName = corpusConfigName(corpusRoot);
+      cpSync(join(corpusRoot, configName), join(renderCorpusRoot, configName));
     }
   }
 
-  run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
+  run("npm", ["run", "celorga", "--", "publish", "docs-site", "--config", "celorga.json"]);
   console.log("Updated macOS Workspace screenshot assets.");
 }
 

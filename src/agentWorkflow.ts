@@ -852,8 +852,8 @@ export function packagedCorpusTemplate(workflow: AgentWorkflow): Record<string, 
     compatibility: workflow.compatibility,
     directories: ["notes", "raw", "views", "compiled", "workflows", ".org2/runs"],
     starterFiles: [
-      { path: "inbox.org2", content: "#+TITLE: Inbox\n\n* Inbox\n" },
-      { path: "notes/welcome.org2", content: `#+TITLE: ${workflow.title}\n\nThis workspace includes the ${workflow.id} workflow.\n` },
+      { path: "inbox.org", content: "#+TITLE: Inbox\n\n* Inbox\n" },
+      { path: "notes/welcome.org", content: `#+TITLE: ${workflow.title}\n\nThis workspace includes the ${workflow.id} workflow.\n` },
     ],
     workflows: [packagedWorkflowManifest(workflow)],
   };

@@ -83,7 +83,7 @@ const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/site/getting-st
 const downloads = fs.readFileSync(path.join(repoRoot, "docs/site/downloads.org"), "utf8");
 const productArchitecture = fs.readFileSync(path.join(repoRoot, "docs/site/architecture.org"), "utf8");
 const macosWorkspace = fs.readFileSync(path.join(repoRoot, "docs/site/editors-macos.org"), "utf8");
-const publishConfig = fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8");
+const publishConfig = fs.readFileSync(path.join(repoRoot, "celorga.json"), "utf8");
 const parsedPublishConfig = JSON.parse(publishConfig);
 // Docs may show either the celorga command or its org2 compatibility alias.
 const mentionsCommand = (text, rest) => text.includes(`celorga ${rest}`) || text.includes(`org2 ${rest}`);
@@ -284,7 +284,7 @@ if (/org2\.gateway\.scarf\.sh\/downloads\/[^\s\]]+\.(?:vsix|tgz)/i.test(download
 if (!downloads.includes("* Celorga for iOS") || !downloads.includes("Request TestFlight access")) {
   fail("downloads page is missing the iOS TestFlight and source-install surface");
 }
-if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "org2.json"), "utf8"))).includes("downloads.html")) {
+if (!JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, "celorga.json"), "utf8"))).includes("downloads.html")) {
   fail("site navigation is missing the downloads page");
 }
 if (!siteStyles.includes(".celorga-download-grid") || !siteStyles.includes(".celorga-download-button")) {

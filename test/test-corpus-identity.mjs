@@ -9,14 +9,15 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-identity-"));
 try {
   const preview = initializeCorpusIdentity(root, { id: "team-operations", name: "Team Operations", kind: "shared" });
   assert.equal(preview.applied, false);
-  assert.equal(fs.existsSync(path.join(root, "org2.json")), false);
+  assert.equal(fs.existsSync(path.join(root, "celorga.json")), false);
 
   const applied = initializeCorpusIdentity(root, { id: "team-operations", name: "Team Operations", kind: "shared" }, { apply: true });
   assert.equal(applied.status.valid, true);
   assert.equal(applied.status.identity?.kind, "shared");
   assert.equal(fs.existsSync(path.join(root, "workflows")), true);
 
-  const config = JSON.parse(fs.readFileSync(path.join(root, "org2.json"), "utf8"));
+  assert.equal(fs.existsSync(path.join(root, "org2.json")), false);
+  const config = JSON.parse(fs.readFileSync(path.join(root, "celorga.json"), "utf8"));
   assert.deepEqual(config.corpus, {
     schema: "org2:corpus:v1",
     id: "team-operations",
@@ -64,7 +65,7 @@ try {
     const duplicateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-duplicate-"));
     const invalidMount = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-invalid-mount-"));
     try {
-      fs.writeFileSync(path.join(duplicateRoot, "org2.json"), fs.readFileSync(path.join(root, "org2.json"), "utf8"));
+      fs.writeFileSync(path.join(duplicateRoot, "org2.json"), fs.readFileSync(path.join(root, "celorga.json"), "utf8"));
       const problematicMounts = spawnSync(process.execPath, [
         "dist/cli.js", "workspace", "search", "roadmap phrase",
         "--mount", root, "--mount", duplicateRoot, "--mount", invalidMount, "--recursive", "--json",
@@ -74,7 +75,7 @@ try {
       assert.deepEqual(problematicPayload.corpora.map((corpus) => corpus.id), ["team-operations"]);
       assert.equal(problematicPayload.issues.length, 2, JSON.stringify(problematicPayload, null, 2));
       assert.ok(problematicPayload.issues.some((issue) => issue.root === path.resolve(duplicateRoot) && /duplicates corpus id team-operations/.test(issue.message)));
-      assert.ok(problematicPayload.issues.some((issue) => issue.root === path.resolve(invalidMount) && /org2\.json: is required/.test(issue.message)));
+      assert.ok(problematicPayload.issues.some((issue) => issue.root === path.resolve(invalidMount) && /celorga\.json: is required/.test(issue.message)));
       assert.deepEqual(
         problematicPayload.issues,
         [...problematicPayload.issues].sort((left, right) => left.root.localeCompare(right.root) || left.message.localeCompare(right.message)),
@@ -85,6 +86,19 @@ try {
     }
   } finally {
     fs.rmSync(personalRoot, { recursive: true, force: true });
+  }
+
+  const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-legacy-"));
+  try {
+    fs.writeFileSync(path.join(legacyRoot, "org2.json"), JSON.stringify({ recursive: true }) + "\n");
+    initializeCorpusIdentity(legacyRoot, { id: "legacy-corpus", name: "Legacy", kind: "personal" }, { apply: true });
+    assert.equal(fs.existsSync(path.join(legacyRoot, "celorga.json")), false);
+    const legacyConfig = JSON.parse(fs.readFileSync(path.join(legacyRoot, "org2.json"), "utf8"));
+    assert.equal(legacyConfig.recursive, true);
+    assert.equal(legacyConfig.corpus.id, "legacy-corpus");
+    assert.equal(corpusIdentityStatus(legacyRoot).identity?.id, "legacy-corpus");
+  } finally {
+    fs.rmSync(legacyRoot, { recursive: true, force: true });
   }
 
   const invalidRoot = fs.mkdtempSync(path.join(os.tmpdir(), "org2-corpus-invalid-"));

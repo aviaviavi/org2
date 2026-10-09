@@ -334,7 +334,7 @@ private struct AIChatDestinationEditor: View {
           TextField(
             "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
-            prompt: Text("/home/user/avi.org2")
+            prompt: Text("/home/user/notes")
           )
         } else if destination.adapter == .codexManagedRemote {
           TextField(
@@ -345,7 +345,7 @@ private struct AIChatDestinationEditor: View {
           TextField(
             "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
-            prompt: Text("~/avi.org2")
+            prompt: Text("~/notes")
           )
         } else if destination.adapter == .piRemote || destination.adapter == .openCodeRemote {
           TextField(
@@ -356,7 +356,7 @@ private struct AIChatDestinationEditor: View {
           TextField(
             "Corpus workspace on that machine",
             text: $destination.workspaceRoot,
-            prompt: Text("~/avi.org2")
+            prompt: Text("~/notes")
           )
           TextField(
             "Model (optional)",

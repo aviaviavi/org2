@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import "./celorga-env.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 

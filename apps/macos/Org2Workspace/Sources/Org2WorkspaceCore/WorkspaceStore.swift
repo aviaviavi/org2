@@ -4472,7 +4472,7 @@ extension WorkspaceStore {
       "roam": ["indexDir": "notes", "nodesDir": "notes", "dailiesDir": "daily"]
     ]
     let configData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
-    try (configData + Data("\n".utf8)).write(to: root.appendingPathComponent("org2.json"), options: .atomic)
+    try (configData + Data("\n".utf8)).write(to: root.appendingPathComponent(CelorgaNames.configFileName), options: .atomic)
 
     let inbox = """
     #+TITLE: Inbox
@@ -5953,7 +5953,7 @@ extension WorkspaceStore {
     sourceDraft = WorkspaceSourceDraft(editing: profile)
   }
 
-  /// Adds or updates any catalog source in `org2.json` through `org2 source add`,
+  /// Adds or updates any catalog source in `celorga.json` through `celorga source add`,
   /// and stores an entered secret in Keychain. Returns an error message.
   @discardableResult
   public func saveSourceDraft(_ draft: WorkspaceSourceDraft) async -> String? {
@@ -14220,7 +14220,7 @@ extension WorkspaceStore {
       return DataNotebookRefreshFailure(
         kind: .query,
         title: "Notebook data source is misconfigured",
-        message: "The Metabase profile needs a positive numeric databaseId in celorga.json (or org2.json). Database IDs are non-secret and should not be stored as app credentials."
+        message: "The Metabase profile needs a positive numeric databaseId in celorga.json. Database IDs are non-secret and should not be stored as app credentials."
       )
     }
 
@@ -25761,7 +25761,7 @@ extension WorkspaceStore {
     }
     guard let corpusRoot else { return "Open a corpus first, then run /publish." }
     guard let config = CelorgaNames.configFile(in: corpusRoot) else {
-      return "Publishing requires celorga.json or org2.json in the corpus root."
+      return "Publishing requires celorga.json in the corpus root."
     }
     var parts = arguments.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     let preview = parts.first?.lowercased() == "preview"
@@ -49475,7 +49475,7 @@ extension WorkspaceStore {
 
   nonisolated private static func dailyNoteLocationOffMain(corpusRoot: URL) -> DailyNoteLocation {
     let root = corpusRoot.standardizedFileURL
-    let configURL = CelorgaNames.configFileOrLegacy(in: root)
+    let configURL = CelorgaNames.configFilePath(in: root)
     let config = (try? Data(contentsOf: configURL))
       .flatMap { try? JSONDecoder().decode(WorkspaceDailyNoteConfig.self, from: $0) }
     return DailyNoteLocation(
@@ -49574,7 +49574,7 @@ extension WorkspaceStore {
     return dailyNoteDirectoriesByCorpusPath[corpusRoot.standardizedFileURL.path]?.template
   }
 
-  /// Re-reads daily note configuration after Settings changes org2.json.
+  /// Re-reads daily note configuration after Settings changes celorga.json.
   /// File watching also invalidates it; this avoids waiting for the event.
   public func reloadDailyNoteConfiguration() {
     guard let corpusRoot else { return }
@@ -50381,7 +50381,7 @@ extension WorkspaceStore {
     ]
 
     if let corpusRoot {
-      let config = CelorgaNames.configFileOrLegacy(in: corpusRoot, fileManager: fileManager)
+      let config = CelorgaNames.configFilePath(in: corpusRoot, fileManager: fileManager)
       let corpusWritable = fileManager.isWritableFile(atPath: corpusRoot.path)
       checks.append(WorkspaceHealthCheck(
         id: "corpus-root",
@@ -50404,7 +50404,7 @@ extension WorkspaceStore {
         status: fileManager.fileExists(atPath: config.path) ? .ready : .warning,
         detail: fileManager.fileExists(atPath: config.path)
           ? "\(config.lastPathComponent) found"
-          : "No celorga.json or org2.json in selected corpus; defaults will be used",
+          : "No celorga.json in selected corpus; defaults will be used",
         remediationTitle: fileManager.fileExists(atPath: config.path) ? nil : "Add config"
       ))
     } else {

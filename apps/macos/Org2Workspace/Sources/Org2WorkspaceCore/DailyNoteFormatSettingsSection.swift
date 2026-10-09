@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// The user points at one existing daily note; `org2 daily-config infer`
 /// turns its path into a format such as `ops/{YYYY}/{MM}{DD}-startup.md`,
-/// which is saved to org2.json as `roam.dailyFileTemplate`.
+/// which is saved to celorga.json as `roam.dailyFileTemplate`.
 public struct DailyNoteFormatSettingsSection: View {
   @Environment(WorkspaceStore.self) private var store
   @State private var savedTemplate: String?
@@ -39,7 +39,7 @@ public struct DailyNoteFormatSettingsSection: View {
     } header: {
       Label("Daily Note Format", systemImage: "calendar.badge.clock")
     } footer: {
-      SettingsFooterText("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and Celorga works out the pattern. The format is stored in the corpus config (celorga.json or org2.json) as roam.dailyFileTemplate and is shared with this corpus.")
+      SettingsFooterText("Today, Yesterday, Tomorrow, Home, and ⌘7–⌘9 open the file this format names. Choose one of your existing daily notes and Celorga works out the pattern. The format is stored in the corpus's celorga.json as roam.dailyFileTemplate and is shared with this corpus.")
     }
     .disabled(isBusy)
     .task(id: store.corpusRoot?.path) { await load() }

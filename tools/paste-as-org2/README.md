@@ -1,4 +1,4 @@
-# Paste as Org2 — local experiment
+# Paste as Org — local experiment
 
 An additive development prototype, pending human review. It preserves source
 text while suggesting document structure. It is **not ready for automatic
@@ -20,7 +20,7 @@ npm run prototype:paste -- 8126
 Open the printed `http://127.0.0.1:8126` URL. Paste into **Source**, place the
 cursor in the scratch document, then choose **Preview structure**. Edit the
 Org preview and choose **Insert reviewed Org**, or cancel. Download the Org
-document for opening in OpenOrg; download the JSON review packet to retain the
+document for opening in Celorga; download the JSON review packet to retain the
 original plain text, original HTML, source URL, labels, source offsets, proposed
 Org and your edited Org. Editing the source invalidates its previous preview and
 HTML association. Changing the destination after preview blocks insertion.
@@ -46,7 +46,7 @@ tab discards this application's in-memory state. Stop the server with Ctrl-C.
 
 Existing surfaces inspected: `OrgSyntaxTextEditor.swift` pastes plain text;
 `WorkspaceStore.captureDraftByImportingPasteboard` appends plain clipboard text
-and attachments; `org2 capture` accepts reviewed text/files/stdin. This prototype
+and attachments; `celorga capture` accepts reviewed text/files/stdin. This prototype
 uses reviewed Org export as the integration boundary. The focused test feeds its
 output into the real preview-first capture command and verifies that no file is
 written. For a deliberate capture preview, for example:
@@ -56,7 +56,7 @@ node dist/cli.js capture --file /path/to/reviewed-document.org \
   --to /path/to/scratch-inbox.org --title 'Reviewed paste' --format json
 ```
 
-No native app is rebuilt, launched, or replaced. A native Paste as Org2 action
+No native app is rebuilt, launched, or replaced. A native Paste as Org action
 would need a separate UI review and plumbing to this shared preview contract.
 This developer harness does not add a public CLI capability or change shipped
 app behavior; public discovery/docs/generated site are therefore unchanged.

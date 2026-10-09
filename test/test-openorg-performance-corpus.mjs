@@ -84,7 +84,7 @@ try {
   assert.ok((generatedLargestText.match(/^:PROPERTIES:/gmu) ?? []).length >= 2);
   assert.ok(generatedLargestText.split(/\r?\n/u).some((line) => line.length >= 600));
   assert.match(generatedLargestText, /Malformed-looking fixture token/u);
-  const generatedConfig = JSON.parse(await readFile(join(corpusRoot, "org2.json"), "utf8"));
+  const generatedConfig = JSON.parse(await readFile(join(corpusRoot, "celorga.json"), "utf8"));
   assert.deepEqual(generatedConfig.agendaFiles, ["**/*.org", "**/*.org2"]);
   assert.equal(generatedConfig.recursive, true);
   assert.deepEqual(generatedConfig.roam, {
@@ -361,7 +361,7 @@ try {
   await access(join(privateClone, ".org2", "openclaw-chat.store", "manifest.json"));
   await assert.rejects(access(join(privateClone, ".org2", "index", "must-not-copy.json")));
   await assert.rejects(access(join(privateClone, "media", "must-not-copy.wav")));
-  const cloneConfigurationText = await readFile(join(privateClone, "org2.json"), "utf8");
+  const cloneConfigurationText = await readFile(join(privateClone, "celorga.json"), "utf8");
   const cloneConfiguration = JSON.parse(cloneConfigurationText);
   assert.deepEqual(cloneConfiguration.agendaFiles, ["**/*.org", "**/*.org2"]);
   assert.equal(cloneConfiguration.recursive, true);

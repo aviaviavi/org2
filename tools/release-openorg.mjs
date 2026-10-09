@@ -907,7 +907,7 @@ async function synchronize(plan) {
   await runJob(plan, "Synchronize release downloads", process.execPath, [
     "tools/sync-release-downloads.mjs", "--release", plan.version, "--apply-page", "--apply-release-notes",
   ]);
-  await runJob(plan, "Publish documentation site", "npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
+  await runJob(plan, "Publish documentation site", "npm", ["run", "celorga", "--", "publish", "docs-site", "--config", "celorga.json"]);
   capture("git", [
     "add", "--",
     "docs/site/downloads.org",

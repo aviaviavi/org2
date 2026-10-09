@@ -55,9 +55,9 @@ try {
   assert.equal(automationHostRef(corpus), "desktop", "ownership previews must not mutate the corpus");
   assignAutomationHost(corpus, "press", true);
   assert.equal(automationHostRef(corpus), "press");
-  const before = fs.readFileSync(path.join(corpus, "org2.json"), "utf8");
+  const before = fs.readFileSync(path.join(corpus, "celorga.json"), "utf8");
   assert.throws(() => assignAutomationHost(corpus, "../bad", true));
-  assert.equal(fs.readFileSync(path.join(corpus, "org2.json"), "utf8"), before);
+  assert.equal(fs.readFileSync(path.join(corpus, "celorga.json"), "utf8"), before);
 
   const init = run("server", "init", "--dir", corpus, "--host-ref", "press", "--bind", "100.64.1.2", "--config", configFile);
   assert.equal(init.applied, false);

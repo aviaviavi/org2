@@ -305,7 +305,7 @@ export async function generatePerformanceCorpus(shapePath, outputDirectory) {
     ])
   );
   await writeFile(
-    join(root, "org2.json"),
+    join(root, "celorga.json"),
     `${JSON.stringify({
       agendaFiles,
       recursive: true,
@@ -722,12 +722,7 @@ export async function cloneReadOnlyPerformanceCorpus(corpusRoot, outputDirectory
     filter: (relativePath) => allowedExtensions.has(extname(relativePath).toLowerCase()),
   });
   const documentCount = await copyRelativeFiles(sourceRoot, targetRoot, documentPaths);
-  let sourceConfiguration = {};
-  try {
-    sourceConfiguration = JSON.parse(await readFile(join(sourceRoot, "org2.json"), "utf8"));
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
+  const sourceConfiguration = (await readCorpusConfiguration(sourceRoot)) ?? {};
 
   const runsRoot = join(sourceRoot, ".org2", "runs");
   const runPaths = await collectRegularFiles(runsRoot, {
@@ -752,7 +747,7 @@ export async function cloneReadOnlyPerformanceCorpus(corpusRoot, outputDirectory
 
   const cloneConfiguration = sanitizePerformanceCloneConfiguration(sourceConfiguration);
   await writeFile(
-    join(targetRoot, "org2.json"),
+    join(targetRoot, "celorga.json"),
     `${JSON.stringify(cloneConfiguration, null, 2)}\n`,
     { mode: 0o600 }
   );
@@ -811,18 +806,26 @@ export async function profilePerformanceCorpus(corpusRoot, outputPath) {
   return shape;
 }
 
+// celorga.json wins over the legacy org2.json in the same directory.
+async function readCorpusConfiguration(root) {
+  for (const name of ["celorga.json", "org2.json"]) {
+    try {
+      return JSON.parse(await readFile(join(root, name), "utf8"));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return undefined;
+}
+
 async function aggregateWorkspaceScale(root) {
   const runPaths = await collectRegularFiles(join(root, ".org2", "runs"), {
     filter: (relativePath) => extname(relativePath).toLowerCase() === ".org2",
   });
   let declaredSourceProfileCount = 0;
-  try {
-    const config = JSON.parse(await readFile(join(root, "org2.json"), "utf8"));
-    if (config?.externalSources && typeof config.externalSources === "object") {
-      declaredSourceProfileCount = Object.keys(config.externalSources).length;
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+  const config = await readCorpusConfiguration(root);
+  if (config?.externalSources && typeof config.externalSources === "object") {
+    declaredSourceProfileCount = Object.keys(config.externalSources).length;
   }
   return {
     agentRunCount: Math.max(4_205, runPaths.length),

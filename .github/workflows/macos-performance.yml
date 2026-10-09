@@ -1,4 +1,4 @@
-name: OpenOrg macOS correctness and performance
+name: Celorga macOS correctness and performance
 
 on:
   pull_request:
@@ -60,17 +60,17 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Build shared Org2 runtime
+      - name: Build shared Celorga runtime
         id: runtime
         run: npm run build
 
-      - name: Enforce OpenOrg context token budget
+      - name: Enforce Celorga context token budget
         run: npm run benchmark:openorg-context
 
-      - name: Run OpenOrg macOS correctness suite
+      - name: Run Celorga macOS correctness suite
         run: node tools/run-swift-tests.mjs
 
-      - name: Run release-mode OpenOrg performance regressions
+      - name: Run release-mode Celorga performance regressions
         # A correctness failure must not leave performance unmeasured.
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
         run: >-

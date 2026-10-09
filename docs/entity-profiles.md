@@ -4,12 +4,12 @@
 
 An entity is any file or heading with either:
 
-- `:ORG2_ENTITY_TYPE:` / `:ENTITY_TYPE:` property, or
+- `:CELORGA_ENTITY_TYPE:` / `:ENTITY_TYPE:` property, or
 - a `:type_person:`, `:type_company:`, `:type_project:`, etc. tag.
 
 Aliases come from `#+ROAM_ALIASES:` and `:ROAM_ALIASES:`. Wiki links such as `[[Sonatype Inc]]` resolve through the canonical title and aliases when the alias maps to exactly one entity.
 
-In OpenOrg for macOS, the badge beside a loaded node's title shows this type and opens a picker for common or custom values. The picker writes the canonical `ORG2_ENTITY_TYPE` property to the file or heading. Full-page `person`, `company`, and `project` entities also show a bounded action-item panel backed by `celorga query actions`.
+In Celorga for macOS, the badge beside a loaded node's title shows this type and opens a picker for common or custom values. The picker writes the canonical entity-type property to the file or heading. Full-page `person`, `company`, and `project` entities also show a bounded action-item panel backed by `celorga query actions`.
 
 ## CLI
 
@@ -22,7 +22,7 @@ Profiles include:
 
 - canonical name, type, aliases, and backing node keys
 - backlinks and alias mentions with file/line provenance
-- relationship edges from explicit `ORG2_RELATION_*` properties and supported source-agnostic inference
+- relationship edges from explicit `CELORGA_RELATION_*` properties and supported source-agnostic inference
 - durable facts from properties with provenance
 - `reviewNeeded` entries for conflicting facts or ambiguous aliases
 

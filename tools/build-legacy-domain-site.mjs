@@ -101,7 +101,7 @@ function htmlPages(dir) {
 
 function main() {
   if (!existsSync(join(siteDir, "index.html"))) {
-    throw new Error(`No published site at ${siteDir}. Run: npm run org2 -- publish docs-site --config org2.json`);
+    throw new Error(`No published site at ${siteDir}. Run: npm run celorga -- publish docs-site --config celorga.json`);
   }
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(join(outDir, "assets"), { recursive: true });

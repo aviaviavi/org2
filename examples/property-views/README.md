@@ -1,7 +1,7 @@
 # Property view demo
 
 This synthetic corpus contains an editable saved card view. Open this folder as
-an isolated OpenOrg development corpus, then choose **Property Views** in the
+an isolated Celorga development corpus, then choose **Property Views** in the
 sidebar. The saved **Roadmap by assignee** view demonstrates filters, numeric
 sorting, groups and inherited properties. Change **Layout** to **Table** and
 **Apply View** to inspect the same rows in a table.

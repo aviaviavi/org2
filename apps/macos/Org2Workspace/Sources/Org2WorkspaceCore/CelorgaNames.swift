@@ -3,8 +3,8 @@ import Foundation
 /// Celorga names and their pre-rename (Org2/OpenOrg) equivalents.
 ///
 /// Phase 1 of the rename (see docs/rename/celorga.org): every reader accepts
-/// both spellings, preferring the Celorga one. Writers keep the legacy spelling
-/// until a corpus is migrated, so devices still on 0.8.x keep working.
+/// both spellings, preferring the Celorga one. Writers keep editing whichever
+/// config file a corpus already has; brand-new corpora get `celorga.json`.
 /// Mirrors `src/brandNames.ts`.
 public enum CelorgaNames {
   public static let propertyPrefix = "CELORGA_"
@@ -167,11 +167,11 @@ public enum CelorgaNames {
     configFile(in: directory, fileManager: fileManager) != nil
   }
 
-  /// The config file to read in a directory, falling back to the legacy name
-  /// (the file a new corpus would write) when neither exists.
-  public static func configFileOrLegacy(in directory: URL, fileManager: FileManager = .default) -> URL {
+  /// The config file to read or edit in a directory: the existing `celorga.json`
+  /// or `org2.json`, otherwise `celorga.json` for a new corpus.
+  public static func configFilePath(in directory: URL, fileManager: FileManager = .default) -> URL {
     configFile(in: directory, fileManager: fileManager)
-      ?? directory.appendingPathComponent(legacyConfigFileName, isDirectory: false)
+      ?? directory.appendingPathComponent(configFileName, isDirectory: false)
   }
 
   /// Whether a directory name is a corpus state directory (either spelling).

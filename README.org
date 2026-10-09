@@ -4,13 +4,18 @@
 putting it to work with people and AI agents. It has two layers under one name:
 the *Celorga app* for macOS and iOS, and the *Celorga runtime*, an independently
 specified compiler, semantic Org profile, CLI (=celorga=), npm package, schemas,
-and editor tooling. Documents are ordinary =.org= files; existing =.org2= files
-and structured runtime records remain supported.
+and editor tooling. Documents are ordinary =.org= files, configured per
+workspace with =celorga.json=.
 
-Celorga was previously called OpenOrg (the app) and Org2 (the runtime). The
-=org2= and =org2-lsp= commands remain as compatibility aliases, and
-compatibility identifiers such as =org2.json=, =ORG2_*= names, schema IDs, and
-this repository's name keep their old spelling. See =docs/rename/celorga.org=.
+Install the CLI and language server from npm:
+
+#+begin_src sh
+npm i -g celorga
+celorga --help
+#+end_src
+
+The Mac app, iOS app, and editor extensions are available from
+https://celorga.io/downloads.html.
 
 The initial plugin runtime installs self-contained Git packages through
 =celorga plugin=, pins exact commits and SHA-256 contents in a corpus lock file,
@@ -39,7 +44,7 @@ celorga agent capabilities
 celorga agent --help
 #+end_src
 
-The first command emits the versioned =org2:capabilities:v1= JSON manifest with
+The first command emits a versioned JSON capabilities manifest with
 workflow families, safety rules, client roles, and canonical documentation
 links. See https://celorga.io/agent-quickstart.html.
 
@@ -83,7 +88,7 @@ runs timing-sensitive checks serially. A failed test fails the command without
 an automatic retry. To choose the worker count and save per-test timings:
 
 #+begin_src sh
-npm test -- --jobs 4 --report /tmp/openorg-tests.json
+npm test -- --jobs 4 --report /tmp/celorga-tests.json
 #+end_src
 
 For serial debugging, run the same test list with =npm run test:serial=.
@@ -91,7 +96,7 @@ For serial debugging, run the same test list with =npm run test:serial=.
 Run the native macOS suite with:
 
 #+begin_src sh
-npm run test:macos -- --report /tmp/openorg-swift-tests.json
+npm run test:macos -- --report /tmp/celorga-swift-tests.json
 #+end_src
 
 This builds the shared runtime and Swift test binaries once, runs native
@@ -123,7 +128,7 @@ npm run test:performance
 
 It enforces explicit budgets for CLI startup, compilation, lint, graph audit,
 cold/warm agent context, and a one-file incremental rebuild. On known slower CI
-hardware, multiply all budgets with =ORG2_PERF_BUDGET_SCALE=2 npm run
+hardware, multiply all budgets with =CELORGA_PERF_BUDGET_SCALE=2 npm run
 test:performance= rather than weakening the checked-in defaults.
 
 Build or update the local macOS app bundle with:
@@ -171,27 +176,27 @@ npm run build:macos-app:codex:release  # isolated optimized app
 The build refuses to place an implicit debug binary at the daily app's bundle
 identifier; the normal local-fast command and explicit =:debug= command are the
 two authorized development modes. The app reports *Debug* or *Optimized
-release* under its audio/runtime settings, and the bundle records the same mode
-as =Org2BuildConfiguration= in =Info.plist=.
+release* under its audio/runtime settings, and the bundle's =Info.plist= records
+the same mode.
 
-By default this writes to =~/Applications/OpenOrg.app=, signs it with
-bundle id =org.org2.workspace=, and uses the first available stable code-signing
-identity. Stable signing matters for macOS Screen/System Audio permissions;
+By default this installs the daily app under =~/Applications=, signs it with
+the app's stable bundle identifier, and uses the first available stable
+code-signing identity. Stable signing matters for macOS Screen/System Audio permissions;
 ad-hoc signing changes the app's TCC identity on each rebuild. Override the
-signing identity with =ORG2_WORKSPACE_CODE_SIGN_IDENTITY=, or set it to =adhoc=
+signing identity with =CELORGA_WORKSPACE_CODE_SIGN_IDENTITY=, or set it to =adhoc=
 to force ad-hoc signing. Override the app path or bundle id with
-=ORG2_WORKSPACE_APP_PATH= or =ORG2_WORKSPACE_BUNDLE_ID= when needed. On Apple
-Silicon it builds arm64 by default; override with =ORG2_WORKSPACE_SWIFT_ARCH= if
+=CELORGA_WORKSPACE_APP_PATH= or =CELORGA_WORKSPACE_BUNDLE_ID= when needed. On Apple
+Silicon it builds arm64 by default; override with =CELORGA_WORKSPACE_SWIFT_ARCH= if
 needed.
 
-The isolated development commands write =OpenOrg Preview.app=. Release packaging
-uses =tools/package-openorg-macos.mjs= to build in temporary staging, preserve
-the compatibility identifiers, apply hardened runtime, notarize and staple the
-DMG, and verify it with Gatekeeper. It never writes to the daily app path.
+The isolated development commands install a separate preview app with its own
+bundle identifier. Release packaging builds in temporary staging, keeps the
+shipped bundle identifiers, applies hardened runtime, notarizes and staples the
+DMG, and verifies it with Gatekeeper. It never writes to the daily app path.
 Standalone DMG packaging and coordinated releases share persistent Swift
-compilation caches under =~/Library/Caches/OpenOrg/release-build/=, with separate
+compilation caches under =~/Library/Caches/=, with separate
 =swift-release-arm64= and =swift-release-x86_64= directories. Set
-=OPENORG_RELEASE_BUILD_CACHE= to relocate them, or pass =--swift-scratch-path=
+=CELORGA_RELEASE_BUILD_CACHE= to relocate them, or pass =--swift-scratch-path=
 to standalone packaging for an explicit cache. App bundle staging, native npm
 dependencies, signing, and notarization still run for each new artifact.
 
@@ -199,3 +204,5 @@ The canonical test layout is =test/= for Node test scripts, with feature
 subdirectories for nearby fixtures when useful. Agent/context-pack coverage
 lives under =test/agent/=; run a targeted agent test with
 =node test/agent/test-agent-context.mjs= after =npm run build=.
+
+Celorga was formerly called OpenOrg and Org2.

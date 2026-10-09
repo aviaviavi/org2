@@ -1251,7 +1251,7 @@ private struct CorpusOnboardingView: View {
         HStack(alignment: .top, spacing: 18) {
           onboardingCard(
             title: "Open an existing corpus",
-            detail: "Choose any folder containing .org or .org2 files. Celorga will scan it and derive Agenda, search, graph, and workspace views.",
+            detail: "Choose any folder containing .org files. Celorga will scan it and derive Agenda, search, graph, and workspace views.",
             systemImage: "folder",
             actionTitle: "Choose Folder"
           ) {
@@ -1279,7 +1279,7 @@ private struct CorpusOnboardingView: View {
         VStack(spacing: 5) {
           Text("Already use Org Mode?")
             .font(.callout.weight(.semibold))
-          Text("No migration is required. New documents use .org, and existing .org2 files remain fully supported.")
+          Text("No migration is required. Celorga works with your existing .org files as they are.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -9910,7 +9910,7 @@ private struct SourcesView: View {
         Spacer()
         EmptyStateView(
           title: "No Sources Configured",
-          detail: "Add a Slack workspace, Notion workspace, or email account. Settings go in this corpus’s celorga.json (or org2.json); tokens and passwords stay in macOS Keychain.",
+          detail: "Add a Slack workspace, Notion workspace, or email account. Settings go in this corpus’s celorga.json; tokens and passwords stay in macOS Keychain.",
           action: "Add Source…"
         ) {
           store.presentNewSource(type: WorkspaceSourceCatalog.types[0])
@@ -10356,7 +10356,7 @@ private struct SourceScheduleSheet: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("\(profile.id.capitalized) Sync Schedule")
           .font(.title2.weight(.semibold))
-        Text("The schedule is stored with this connector in the corpus config (celorga.json or org2.json). Run Now remains available when scheduled sync is paused.")
+        Text("The schedule is stored with this connector in the corpus's celorga.json. Run Now remains available when scheduled sync is paused.")
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -12117,7 +12117,7 @@ private struct DataSourceConfigurationSheet: View {
       Toggle("Clear saved API key", isOn: $clearAPIKey)
         .disabled(!store.scarfMetabaseHasStoredAPIKey)
 
-      Text("The API key is stored in macOS Keychain. Non-secret data-source settings live in the corpus config (celorga.json or org2.json).")
+      Text("The API key is stored in macOS Keychain. Non-secret data-source settings live in the corpus's celorga.json.")
         .font(.caption)
         .foregroundStyle(.secondary)
 

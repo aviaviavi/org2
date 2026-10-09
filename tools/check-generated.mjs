@@ -18,7 +18,7 @@ function main() {
   run("npm", ["run", "check:mobile-document"]);
   run("node", ["tools/generate-code-languages.mjs", "--check"]);
   run("npm", ["run", "fixtures", "--", "--e2e"]);
-  run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
+  run("npm", ["run", "celorga", "--", "publish", "docs-site", "--config", "celorga.json"]);
   run("git", [
     "diff",
     "--exit-code",

@@ -56,10 +56,14 @@ assert.equal(mirrored.ORG2_KEEP, "legacy");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "celorga-brand-names-"));
 try {
-  // Config file: celorga.json is found, wins over org2.json, and new corpora still get org2.json.
+  // Config file: new corpora get celorga.json, an existing org2.json keeps being
+  // edited in place, and celorga.json wins when both exist.
   const nested = path.join(root, "notes", "deep");
   fs.mkdirSync(nested, { recursive: true });
-  assert.equal(configFilePath(root), path.join(root, "org2.json"));
+  assert.equal(configFilePath(root), path.join(root, "celorga.json"));
+  fs.writeFileSync(path.join(nested, "org2.json"), JSON.stringify({}));
+  assert.equal(configFilePath(nested), path.join(nested, "org2.json"));
+  fs.rmSync(path.join(nested, "org2.json"));
   fs.writeFileSync(path.join(root, "celorga.json"), JSON.stringify({ include: ["**/*.org"] }));
   assert.equal(findConfigFile(nested), path.join(root, "celorga.json"));
   assert.equal(configFileIn(root), path.join(root, "celorga.json"));

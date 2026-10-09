@@ -1,0 +1,19 @@
+#+title: Celorga Chess PGN plugin
+
+This self-contained example plugin renders =pgn= and =chess-pgn= source blocks
+as an interactive board through the shared Celorga HTML runtime. It therefore
+works in =celorga export html= and the Celorga app without a separate Mac
+extension. It uses the v1 process protocol and ships without an install step or
+third-party dependencies.
+
+From a corpus, install the package from this repository and explicitly trust
+its resolved content hash:
+
+#+begin_src sh
+celorga plugin add https://github.com/aviaviavi/celorga.git \
+  --subdir examples/plugins/chess-pgn --trust --apply
+#+end_src
+
+The first install is pinned in the corpus plugin lock file. Later
+=celorga plugin sync --apply= reproduces that exact version; use
+=celorga plugin update org2.chess-pgn --apply= to advance it deliberately.

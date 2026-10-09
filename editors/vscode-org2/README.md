@@ -4,17 +4,9 @@ VS Code extension for Celorga workflows on ordinary Org files.
 
 ## Requirements
 
-- This extension requires the `celorga` CLI. The `org2` executable remains a permanent compatibility alias for `celorga`, and the extension accepts either.
-- If neither `celorga` nor `org2` is available, language-only features still work, but agenda/editing/roam/export commands will fail.
-- Formerly published as "Org2". The marketplace ID (`AviPress.org2-vscode`), the `org2` language ID, view IDs, and `.org`/`.org2` file associations keep their names so existing installs keep working.
-
-### Command and setting names
-
-Commands are `celorga.*` (for example `celorga.openAgenda`) and settings are `celorga.*` (for example `celorga.agenda.dir`). The pre-rename names still work for several releases:
-
-- Every `org2.*` command is still registered as an alias of its `celorga.*` command, so keybindings and scripts that use `org2.*` IDs keep working. The aliases are hidden from the command palette.
-- Every `org2.*` setting is still read. The extension uses `celorga.X` when you set it, otherwise `org2.X` when you set that, otherwise the default. VS Code marks `org2.*` settings as deprecated; rename them to `celorga.*` when convenient.
-- The power keymap and VSCodeVim line navigation honor `celorga.keymap.power` / `celorga.vim.visibleLineNavigation` with the same `org2.*` fallback.
+- This extension requires the `celorga` CLI.
+- If `celorga` is not available, language-only features still work, but agenda/editing/roam/export commands will fail.
+- Commands are `celorga.*` (for example `celorga.openAgenda`) and settings are `celorga.*` (for example `celorga.agenda.dir`).
 
 ## Quick start (60 seconds)
 
@@ -40,16 +32,16 @@ Use this path for extension development or unreleased builds:
 
 ```sh
 git clone https://github.com/aviaviavi/celorga.git
-cd org2
+cd celorga
 npm ci
 npm run build
 ```
 
-Then install/run the extension from `editors/vscode-org2` with the Extension Development Host, or package a VSIX and install it manually. Ensure `celorga` (or the `org2` alias) is on your `PATH` or use the repo fallback.
+Then install/run the extension from `editors/vscode-org2` with the Extension Development Host, or package a VSIX and install it manually. Ensure `celorga` is on your `PATH` or use the repo fallback.
 
 ## What you get
 
-- Language support for `*.org` and `*.org2`:
+- Language support for `*.org` files:
   - syntax highlighting
   - folding for headings/lists/property drawers
   - clickable links
@@ -60,11 +52,11 @@ Then install/run the extension from `editors/vscode-org2` with the Extension Dev
   - AI draft review workflows, including meeting/transcript summary drafts
 - LSP-backed editing:
   - definitions, hovers, completion, rename, formatting, code lens, and more
-- Extension-aware serialization: `*.org` saves and formatting rewrite accepted fenced/backtick shorthand to ordinary Org syntax; existing `*.org2` files remain lossless by default.
+- Extension-aware serialization: `*.org` saves and formatting rewrite accepted fenced/backtick shorthand to ordinary Org syntax.
 
 ## Feature details
 
-- File association for `*.org` and `*.org2`
+- File association for `*.org`
 - Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, checkbox progress cookies, timestamps, emphasis, links, tables, plus TODO aliases like `OPEN`, `BACKLOG`, `BLOCKED`, `PAUSED`, and `CANCELED` in headlines)
 - Folding provider for headings, list items, and `:PROPERTIES:` drawers
 - Auto-fold on open/activation (configurable):
@@ -89,7 +81,7 @@ The extension can toggle/set TODO keywords on the current headline via the `celo
 - Command: **Celorga: Set Todo Status** (`celorga.setTodoStatus`) — command args accept the same aliases as CLI `todo set --status` (e.g. `open`, `backlog`, `in-progress`, `completed`, `cancelled`).
 - Command: **Celorga: Set Priority** (`celorga.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
 - Direct commands: `celorga.setTodoTODO`, `celorga.setTodoInProgress`, `celorga.setTodoDone`, `celorga.setTodoCanceled`
-- Handoff command: `celorga.markDoneAndHandoff` marks the heading `DONE`, sets `STATUS=ready-for-agent`, and writes `ORG2_AGENT_HANDOFF_AT`.
+- Handoff command: `celorga.markDoneAndHandoff` marks the heading `DONE`, sets `STATUS=ready-for-agent`, and records the handoff time.
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
@@ -135,7 +127,7 @@ The extension can show an *agenda* view powered by the `celorga` CLI.
 
 1. Ensure `celorga` is available:
    - If you have this repo checked out and built, the extension will *try* to fall back to running `node <repo>/dist/cli.js`.
-   - Otherwise install/provide `celorga` (or the `org2` alias) on your `PATH`, or configure `celorga.agenda.command` + `celorga.agenda.args`.
+   - Otherwise install/provide `celorga` on your `PATH`, or configure `celorga.agenda.command` + `celorga.agenda.args`.
 2. Run the command: **`Celorga: Open Agenda`**.
 3. Use the view title buttons:
    - **Refresh** (`Celorga: Refresh Agenda`)
@@ -200,7 +192,7 @@ The extension can show an *agenda* view powered by the `celorga` CLI.
 - `celorga.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `celorga.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
 - `celorga.formatter.excludeFileFilter`: exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)
-- `celorga.formatter.configFile`: optional `celorga.json` (or legacy `org2.json`) path for workspace formatter commands; when set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `celorga.agenda.dir` recursively
+- `celorga.formatter.configFile`: optional `celorga.json` path for workspace formatter commands; when set, workspace check/apply uses `celorga fmt --config <path>` instead of scanning `celorga.agenda.dir` recursively
 - `celorga.capture.defaultFile`: optional default target file for `Celorga: Capture Quick Entry`; absolute paths are used directly, relative paths resolve against `celorga.agenda.dir`/workspace root
 - `celorga.capture.defaultTemplate`: default template ordering (`note` or `task`) for `Celorga: Capture Quick Entry`
 - `celorga.capture.defaultTodoKeyword`: default TODO keyword ordering for task captures (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, `CANCELLED`)
@@ -214,17 +206,17 @@ The extension can show an *agenda* view powered by the `celorga` CLI.
 - `celorga.export.tocDepth`: optional TOC depth limit; values `>0` pass `--toc-depth N` (and enable TOC automatically), `0` keeps full-depth behavior
 - `celorga.export.numberHeadings`: when true, prefix exported headings (and TOC entries when present) with generated section numbers (`--number-headings`)
 - `celorga.export.numberHeadingsDepth`: optional heading-number depth limit; values `>0` pass `--number-headings-depth N` (and enable heading numbers automatically), `0` keeps full-depth numbering behavior
-- `celorga.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output and emit heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)
+- `celorga.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`) to `.html` hrefs in exported output and emit heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)
 - `celorga.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,status,priority,effort,id,level,time,kind,tags,line`); prefix a key with `-` (or suffix with `:desc`) for descending order
 - `celorga.agenda.groupBy`: optional per-day grouping keys (`default`, or comma-separated keys like `status,todo,id,file`); uses the same key syntax as `sortBy` (including `status`, `id`, `time`, and `-key`/`:desc`)
 - `celorga.agenda.dayLimit`: optional per-day row cap applied after sort/group ordering and before global `limit` (`0` = no per-day cap)
 - `celorga.agenda.groupLimit`: optional per-day per-group row cap when `groupBy` is set (`0` = no per-group cap)
 - `celorga.agenda.dateOrder`: overall date ordering for agenda groups (`asc` oldest-first or `desc` newest-first)
 - `celorga.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
-- `celorga.roam.dailiesDir`: optional root directory for Roam dailies (new files use `YYYY-MM-DD.org`; existing `.org2` dailies remain discoverable); defaults to `celorga.roam.indexDir`, then `celorga.agenda.dir`, then workspace root
+- `celorga.roam.dailiesDir`: optional root directory for Roam dailies (new files use `YYYY-MM-DD.org`); defaults to `celorga.roam.indexDir`, then `celorga.agenda.dir`, then workspace root
 - `celorga.roam.indexDir`: optional root directory for Roam ID/query/backlinks/db-sync operations; absolute paths are used directly, relative paths resolve against `celorga.agenda.dir`/workspace root
 - `celorga.roam.nodesDir`: optional directory for `Celorga: Roam — New Node`; absolute paths are used directly, relative paths resolve against `celorga.roam.indexDir` (or `celorga.agenda.dir`/workspace root)
-- `celorga.agenda.command`: command used to run the Celorga CLI (default: `org2`; when left unset, the extension runs `celorga` if it is on `PATH` and falls back to the `org2` alias)
+- `celorga.agenda.command`: command used to run the Celorga CLI (when left unset, the extension runs `celorga` from `PATH`)
 - `celorga.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `celorga.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
 - `celorga.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning/archive apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
@@ -399,7 +391,7 @@ Power keymap (enabled by default via `celorga.keymap.power: true`):
   - `t c` → Set CANCELED
   - `t p` → Set Priority (A/B/C/Clear)
 
-All defaults are scoped to `org`/`org2` editors.
+All defaults are scoped to Org editors.
 
 ### VSCodeVim note
 

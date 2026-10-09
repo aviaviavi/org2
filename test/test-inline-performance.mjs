@@ -13,5 +13,5 @@ assert.equal(mixed.at(-1).value, ' ' + prose);
 const falseOpeners = 'h'.repeat(200_000);
 assert.deepEqual(parseInlinesFromText(falseOpeners), [{ type: 'Text', value: falseOpeners }]);
 const elapsed = performance.now() - start;
-assert.ok(elapsed < 2_000 * Number(process.env.ORG2_PERF_BUDGET_SCALE || 1), `Long-prose inline parsing took ${elapsed.toFixed(0)}ms`);
+assert.ok(elapsed < 2_000 * Number(process.env.CELORGA_PERF_BUDGET_SCALE || process.env.ORG2_PERF_BUDGET_SCALE || 1), `Long-prose inline parsing took ${elapsed.toFixed(0)}ms`);
 console.log(`Inline parser: long plain/mixed Unicode prose and false URL openers passed in ${elapsed.toFixed(1)}ms`);

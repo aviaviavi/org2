@@ -262,7 +262,7 @@ function assertNoSecrets(id: string, value: unknown, where: string): void {
 }
 
 /**
- * Validates one org2.json externalSources entry. The shared contract behind
+ * Validates one celorga.json externalSources entry. The shared contract behind
  * `celorga source add` and the Celorga app's source sheet: only known, non-secret keys.
  */
 export function validateExternalSourceProfile(id: string, value: unknown): Org2ExternalSourceConfig {
@@ -337,7 +337,7 @@ function usage(): string {
   celorga source import [PROFILE...] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
   celorga source sync [PROFILE...] [--ingest] [--since 14d|TIMESTAMP] [--limit N] [--timeout SECONDS] [--dir CORPUS] [--apply] [--json]
 
-The corpus declares non-secret externalSources in celorga.json (or org2.json); \`source add\` validates one entry of any
+The corpus declares non-secret externalSources in celorga.json; \`source add\` validates one entry of any
 supported type (${EXTERNAL_SOURCE_TYPES.join(", ")}) and refuses credential-like keys or values. Machine-local bindings are stored
 outside the corpus under ORG2_INDEX_HOME (or ~/.org2/index). Slack and Notion sync delegates to
 slacrawl/notcrawl. Email profiles read IMAP directly (read-only EXAMINE and BODY.PEEK, so mail is not
@@ -483,7 +483,7 @@ function parseArgs(args: string[]) {
 function resolveCorpus(dir: string): { root: string; configFile: string; profiles: Record<string, Org2ExternalSourceConfig> } {
   const start = path.resolve(dir || process.cwd());
   const configFile = findConfigFile(start);
-  if (!configFile) throw new Error(`no celorga.json or org2.json found from ${start}`);
+  if (!configFile) throw new Error(`no celorga.json found from ${start}`);
   const root = path.dirname(configFile);
   return { root, configFile, profiles: loadConfig(configFile).externalSources || {} };
 }

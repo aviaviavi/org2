@@ -1,11 +1,11 @@
 ---
 name: org2-release
-description: Publish, repair, or verify coordinated Org2 releases across npm, the VS Code Marketplace, GitHub Releases, notarized macOS DMGs, TestFlight, Scarf-tracked downloads, and release notes. Use when cutting an Org2 version, repairing a missing channel, attaching release artifacts, updating release links, or auditing release completeness.
+description: Publish, repair, or verify coordinated Celorga releases across npm, the VS Code Marketplace, GitHub Releases, notarized macOS DMGs, TestFlight, Scarf-tracked downloads, and release notes. Use when cutting a Celorga version, repairing a missing channel, attaching release artifacts, updating release links, or auditing release completeness.
 ---
 
-# Org2 Release
+# Celorga Release
 
-Ship one coordinated Org2 version without touching the user's daily app. Treat the notarized Mac artifacts and GitHub Release as the primary release path: TestFlight distribution and Marketplace visibility must not delay them or cause them to be rolled back. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
+Ship one coordinated Celorga version without touching the user's daily app. Treat the notarized Mac artifacts and GitHub Release as the primary release path: TestFlight distribution and Marketplace visibility must not delay them or cause them to be rolled back. Keep GitHub Releases as the artifact host and route public direct downloads through the permanent Scarf Gateway template.
 
 Read [references/release-contract.md](references/release-contract.md) before mutating a registry, tag, GitHub Release, Scarf configuration, or download surface.
 
@@ -36,10 +36,10 @@ npm run release:openorg -- patch \
 The orchestrator:
 
 - fails closed on a dirty or unsynchronized `main`;
-- checkpoints every phase and each input-fingerprinted validation and packaging job under `/tmp/openorg-release-VERSION/state.json`;
+- checkpoints every phase and each input-fingerprinted validation and packaging job in a per-version release directory under `/tmp/` (`state.json`);
 - builds the shared runtime once, then runs validation and packaging concurrently; nothing is tagged or published until both pass;
 - runs docs, Node (via `tools/run-tests-parallel.mjs`), VS Code, and Swift validation concurrently; Swift uses a persistent, release-private arm64 scratch directory so its build is incremental;
-- builds the arm64 DMG, Intel DMG, and iOS archive concurrently, reusing the validated TypeScript output, installing each architecture's production dependencies in separate staging, and reusing persistent per-architecture Swift release scratch directories under `~/Library/Caches/OpenOrg/release-build` (`--clean-build-cache` forces a cold build);
+- builds the arm64 DMG, Intel DMG, and iOS archive concurrently, reusing the validated TypeScript output, installing each architecture's production dependencies in separate staging, and reusing persistent per-architecture Swift release scratch directories under `~/Library/Caches/` (`--clean-build-cache` forces a cold build);
 - overlaps the GitHub tag workflow/DMG publication with the TestFlight binary upload; each DMG upload retries with backoff and is checkpointed separately, and a completed TestFlight upload is never repeated on resume;
 - leaves TestFlight metadata, group assignment, and external beta review for the signed-in App Store Connect browser flow described below;
 - synchronizes GitHub, Scarf-backed downloads, and the generated site before parallel public verification;
@@ -75,8 +75,8 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
 1. Stamp root and VS Code manifests and lockfiles with `npm version VERSION --no-git-tag-version --allow-same-version` and the equivalent `npm --prefix editors/vscode-org2 version` command.
 2. Add a concise VS Code changelog entry. Avoid npm serialization noise unrelated to the version.
 3. Validate `npm pack --dry-run --json` and package the VSIX from `editors/vscode-org2`.
-4. The orchestrator packages both architectures concurrently with `tools/package-openorg-macos.mjs`. Each package gets its own temporary app staging and Swift scratch directory. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, shared Google OAuth desktop client, and notarytool Keychain profile through the environment variables in the release contract. The command fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch the daily app at `~/Applications/OpenOrg.app` or its historical `~/Applications/Org2Workspace.app` path during release packaging.
-5. Require `Celorga.dmg` for Apple Silicon and `Celorga-Intel.dmg` for Intel (releases up to 0.8.8 used `OpenOrg*.dmg`; the app inside is still `OpenOrg.app`). Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
+4. The orchestrator packages both architectures concurrently with `tools/package-openorg-macos.mjs`. Each package gets its own temporary app staging and Swift scratch directory. Supply the target-architecture Node binary, pinned native whisper.cpp executable, verified `ggml-base.en.bin` model, Developer ID identity, shared Google OAuth desktop client, and notarytool Keychain profile through the environment variables in the release contract. The command fails closed when a runtime or notarization credential is missing, signs nested code with hardened runtime, submits the DMG for notarization, staples it, runs Gatekeeper verification, and records a sidecar manifest and SHA-256. Never overwrite or relaunch the daily app in `~/Applications` during release packaging.
+5. Require `Celorga.dmg` for Apple Silicon and `Celorga-Intel.dmg` for Intel (the app bundle inside keeps its shipped name so Sparkle updates in place). Verify the app with `codesign --verify --deep --strict`, the image with `hdiutil verify`, and the stapled artifact with `xcrun stapler validate` and `spctl`.
 
 ## 4. Publish
 
@@ -91,18 +91,18 @@ Use `--through PHASE` for an intentional checkpoint, `--restart` to discard phas
      -f publish_only=true
    ```
 
-4. Upload the verified OpenOrg DMGs with their canonical architecture names and replace generated notes with reviewer-facing highlights, installation requirements, notarization status, checksums, and the full changelog.
+4. Upload the verified Celorga DMGs with their canonical architecture names and replace generated notes with reviewer-facing highlights, installation requirements, notarization status, checksums, and the full changelog.
 5. Unless iOS was explicitly skipped, let the orchestrator upload the stamped archive concurrently with GitHub publication. Complete TestFlight distribution through the browser after the binary reaches a valid processed state.
 
 ## TestFlight browser completion
 
 Use an existing signed-in App Store Connect browser session for every release. Do not use the App Store Connect API to update review details, attach the external group, or submit beta review; API-key roles may allow upload and reads while forbidding those distribution actions.
 
-Avi's standing release instruction authorizes TestFlight submission, access for all existing OpenOrg TestFlight groups, and automatic tester notifications as part of cutting a release. Complete these steps without requesting a separate TestFlight approval.
+Avi's standing release instruction authorizes TestFlight submission, access for all existing TestFlight groups, and automatic tester notifications as part of cutting a release. Complete these steps without requesting a separate TestFlight approval.
 
-1. Open the exact OpenOrg version and build under TestFlight and wait for processing to complete.
+1. Open the exact app version and build under TestFlight and wait for processing to complete.
 2. Set the English `What to Test` text from the prepared release file.
-3. Select all existing OpenOrg TestFlight groups, including `Org2 Internal` and `OpenOrg Alpha`.
+3. Select all existing TestFlight groups, including `Org2 Internal` and `OpenOrg Alpha`.
 4. Enable `Automatically notify testers` unless the user specifies otherwise for this release.
 5. Click `Submit for Review` to grant group access and submit Apple beta review.
 6. After submission, verify the build page shows every selected group and the external review/testing status. Browser completion is part of an iOS release even though it runs outside the orchestrator checkpoint.
@@ -119,7 +119,7 @@ Then apply both durable surfaces:
 
 ```sh
 node tools/sync-release-downloads.mjs --apply-page --apply-release-notes
-npm run org2 -- publish docs-site --config org2.json
+npm run celorga -- publish docs-site --config celorga.json
 ```
 
 The sync tool regenerates `docs/site/downloads.org` from GitHub Release assets and inserts an idempotent managed Scarf block into each release body. Commit and push the resulting page and generated site output. Do not hand-author a second set of artifact URLs.

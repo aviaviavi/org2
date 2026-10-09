@@ -17,12 +17,12 @@ public struct WorkspaceSourceChoice: Identifiable, Equatable, Sendable {
 }
 
 /// One non-secret configuration field of a source type and where its value
-/// lives in the type's `org2.json` `externalSources` entry.
+/// lives in the type's `celorga.json` `externalSources` entry.
 public struct WorkspaceSourceField: Identifiable, Equatable, Sendable {
   public enum Kind: Equatable, Sendable {
     case text
     case integer
-    /// Comma-separated in the form, a JSON string list in org2.json.
+    /// Comma-separated in the form, a JSON string list in celorga.json.
     case list
     case choice([WorkspaceSourceChoice])
   }
@@ -116,7 +116,7 @@ public struct WorkspaceSourceType: Identifiable, Equatable, Sendable {
       "- \(field.label)\(field.isRequired ? " (required)" : "")\(field.help.map { ": \($0)" } ?? "")"
     }.joined(separator: "\n")
     let secretLine = secret.map {
-      "It authenticates with a \($0.label.lowercased()). Never put it in celorga.json (or org2.json), a file, or a command line; ask me to save it with the source's “Add \($0.label)” button in Celorga's Sources view (macOS Keychain) instead."
+      "It authenticates with a \($0.label.lowercased()). Never put it in celorga.json, a file, or a command line; ask me to save it with the source's “Add \($0.label)” button in Celorga's Sources view (macOS Keychain) instead."
     } ?? "It needs no stored credential."
     return """
     Help me set up a \(displayName) source for this corpus. \(summary)

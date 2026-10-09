@@ -56,7 +56,7 @@ Clients that accept the common JSON server shape can use:
 }
 #+end_src
 
-Existing configurations written for releases made before the rename keep working; see [[file:name-compatibility.org][Upgrading from earlier releases]]. If a GUI-launched client cannot find =celorga= on its =PATH=, set =command= to the absolute executable path returned by =command -v celorga=.
+If a GUI-launched client cannot find =celorga= on its =PATH=, set =command= to the absolute executable path returned by =command -v celorga=.
 
 * Connect to a headless Celorga server
 

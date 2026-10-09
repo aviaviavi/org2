@@ -1,12 +1,11 @@
 # Celorga Agent Guide
 
-The product is being renamed from OpenOrg (app) and Org2 (runtime, CLI) to
-**Celorga**: one brand for the app, runtime, and CLI. The CLI is `celorga`;
-`org2` remains a permanent alias, and older installs only have `org2`. Follow
-`docs/rename/celorga.org` for what to rename in user-facing text and which
-identifiers must keep their old spelling (bundle IDs, `.org2`, `org2.json`,
-`ORG2_*`, schema IDs, Keychain and preference keys, source identifiers such as
-`Org2Workspace`). Check progress with `node tools/celorga-rename-audit.mjs`.
+**Celorga** is one brand for the app, runtime, and CLI (`celorga`). User-facing
+text says Celorga. Some persisted and internal identifiers keep their earlier
+spelling (bundle IDs, schema IDs, Keychain and preference keys, source
+identifiers such as `Org2Workspace`); `docs/rename/celorga.org` lists them and
+the name-compatibility rules. Check remaining user-facing names with
+`node tools/celorga-rename-audit.mjs`.
 
 This repository contains two closely related layers:
 
@@ -14,8 +13,6 @@ This repository contains two closely related layers:
 - **The Celorga runtime** is the independently specified compiler/runtime and
   semantic profile for ordinary `.org` documents, plus the CLI, schemas,
   publishing system, plugin runtime, and editor tooling beneath the app.
-  Existing `.org2` files and structured runtime records remain supported for
-  compatibility.
 
 These instructions are runtime-neutral. OpenClaw, Codex, Claude Code, and other
 agents may work here, but no agent runtime, app cache, generated index, or model
@@ -27,7 +24,7 @@ memory is the source of truth.
    worktree before editing. Preserve unrelated work in a dirty checkout.
 2. Decide whether the request changes this repository or a Celorga corpus. This
    file governs repository work. Corpus work also follows the nearest corpus
-   `AGENTS.md` and `celorga.json` (or the legacy `org2.json`); ordinary `.org2` and `.org` files remain
+   `AGENTS.md` and `celorga.json`; the corpus's plain-text files remain
    canonical there.
 3. In a fresh checkout, install the locked dependencies with `npm ci`. Reuse
    an existing `node_modules/` only when the lockfile has not changed.
@@ -36,14 +33,13 @@ memory is the source of truth.
 
    ```sh
    npm run build
-   npm run org2 -- agent capabilities
-   npm run org2 -- --help
-   npm run org2 -- COMMAND --help
+   npm run celorga -- agent capabilities
+   npm run celorga -- --help
+   npm run celorga -- COMMAND --help
    ```
 
-   Prefer `npm run org2 -- ...` (the npm script keeps its old name) or
-   `node dist/cli.js ...` during development. A globally installed `celorga`
-   or `org2` may expose a different version.
+   Prefer `npm run celorga -- ...` or `node dist/cli.js ...` during
+   development. A globally installed `celorga` may expose a different version.
 5. Choose the smallest affected surface and its focused tests before making a
    broad change. Check documentation impact at the same time as code impact.
 
@@ -77,7 +73,7 @@ If a native operation appears missing or broken, check the installed version, ca
   user's daily app unless the user explicitly authorizes that action.
 - Durable run and workflow writes are guarded and atomic. Carry
   `--if-revision` when state crosses requests; never hand-edit machine-state
-  blocks in `.org2/runs/*.org2`.
+  blocks in the corpus state directory's run files.
 
 ## Working in a concurrent repository
 
@@ -109,7 +105,8 @@ If a native operation appears missing or broken, check the installed version, ca
 - `apps/ios/Org2Mobile/` is the source-distributed mobile capture, corpus, chat,
   and approval client. Its inbox flows are transport boundaries, not new
   language semantics.
-- `integrations/openclaw/` contains the optional `org2-lifecycle` adapter.
+- `integrations/openclaw/` contains the optional Celorga Lifecycle adapter
+  (plugin ID `org2-lifecycle`).
   OpenClaw is a native integration, not the owner of runs, workflows, approvals,
   or corpus state.
 - The plugin runtime installs content-addressed Git packages, pins exact commits
@@ -121,8 +118,8 @@ If a native operation appears missing or broken, check the installed version, ca
 
 ## Agent runtimes and durable work
 
-- Goals are portable `org2:goal:v1` records and named workers are
-  `org2:agent-profile:v1` records. OpenClaw, Codex, Claude Code, model names,
+- Goals are portable goal records and named workers are agent-profile
+  records. OpenClaw, Codex, Claude Code, model names,
   and session IDs are execution details, not `AGENT_REF` values.
 - Resolve the current runtime binding with `celorga agent-profile resolve` before
   creating delegated work. Preserve an existing `AGENT_REF` or `GOAL_REF`;
@@ -245,7 +242,8 @@ contract that reads this file.
 
 ## macOS development safety
 
-The user's daily app is `/Users/avi/Applications/OpenOrg.app` with bundle
+The user's daily Celorga app is installed at
+`/Users/avi/Applications/OpenOrg.app` with bundle
 identifier `org.org2.workspace`. Do not quit, overwrite, re-sign, or relaunch
 it unless the user explicitly asks to update the daily app.
 
@@ -260,7 +258,8 @@ These commands install `/Users/avi/Applications/OpenOrg Preview.app` with
 bundle identifier `org.org2.workspace.codex` and use the disposable
 `.codex/org2-workspace-corpus`. Do not point the preview at a personal corpus
 without explicit permission. If the build guard reports that the preview is
-running, quit only **OpenOrg Preview** before rebuilding.
+running, quit only the preview app (shown as **Celorga Preview**) before
+rebuilding.
 
 Use `npm run build:macos-app` only when the user asks to promote a validated
 build to the daily app. Release packaging uses isolated staging and must not

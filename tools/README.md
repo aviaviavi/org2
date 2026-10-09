@@ -1,6 +1,6 @@
-# Org2 Tools
+# Celorga tools
 
-## Coordinated OpenOrg releases
+## Coordinated Celorga releases
 
 `release-openorg.mjs` is the resumable release orchestrator for npm, VS Code, notarized Apple Silicon and Intel DMGs, GitHub Releases, TestFlight, Scarf-backed downloads, and the generated site. It prints a read-only plan by default:
 
@@ -10,11 +10,11 @@ npm run release:openorg -- patch \
   --notes /absolute/path/to/release-notes.md
 ```
 
-Add `--execute` only after reviewing the plan. Long validation and packaging lanes run concurrently, each writes its own log under `/tmp/openorg-release-VERSION/`, and successful phases are checkpointed in `state.json`. Validation jobs are checkpointed individually against a fingerprint of the release source tree, so retrying a failed lane preserves the successful build, docs, Node, VS Code, Swift, generated-artifact, and pack checks. Changing tracked or untracked release inputs invalidates those job checkpoints. `--restart` clears both phase and job checkpoints.
+Add `--execute` only after reviewing the plan. Long validation and packaging lanes run concurrently, each writes its own log under a per-version release directory under `/tmp/`, and successful phases are checkpointed in `state.json`. Validation jobs are checkpointed individually against a fingerprint of the release source tree, so retrying a failed lane preserves the successful build, docs, Node, VS Code, Swift, generated-artifact, and pack checks. Changing tracked or untracked release inputs invalidates those job checkpoints. `--restart` clears both phase and job checkpoints.
 
-Release validation builds the shared runtime once, then uses the `*:built` checks to avoid rebuilding identical output between the docs, Node, and generated-artifact gates. Packaging needs only that build, so the arm64 DMG, Intel DMG, and iOS archive run concurrently with validation; nothing is tagged or published until both phases pass. Docs, Node, VS Code, and Swift validation run concurrently. The Node lane uses `run-tests-parallel.mjs`, and Swift test and release builds reuse persistent per-architecture SwiftPM scratch directories under `~/Library/Caches/OpenOrg/release-build` (override with `OPENORG_RELEASE_BUILD_CACHE`; discard with `--clean-build-cache`). Each DMG upload retries with backoff and is checkpointed separately, as is the TestFlight upload, so a resumed release never repeats a completed upload. The tag workflow still runs one independent `npm test` publication gate, but publishes the already-packed tarball with lifecycle scripts disabled so `prepublishOnly` does not repeat that full suite.
+Release validation builds the shared runtime once, then uses the `*:built` checks to avoid rebuilding identical output between the docs, Node, and generated-artifact gates. Packaging needs only that build, so the arm64 DMG, Intel DMG, and iOS archive run concurrently with validation; nothing is tagged or published until both phases pass. Docs, Node, VS Code, and Swift validation run concurrently. The Node lane uses `run-tests-parallel.mjs`, and Swift test and release builds reuse persistent per-architecture SwiftPM scratch directories under `~/Library/Caches/` (override with `CELORGA_RELEASE_BUILD_CACHE`; discard with `--clean-build-cache`). Each DMG upload retries with backoff and is checkpointed separately, as is the TestFlight upload, so a resumed release never repeats a completed upload. The tag workflow still runs one independent `npm test` publication gate, but publishes the already-packed tarball with lifecycle scripts disabled so `prepublishOnly` does not repeat that full suite.
 
-The normal iOS path passes `--skip-testflight-groups`: the orchestrator uploads the build, then the release operator uses the signed-in App Store Connect browser to set `What to Test`, attach both tester groups, and submit external beta review. API keys are not used for those distribution actions because App Store Connect may permit upload and reads while forbidding external-group or review mutations. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`, the Sparkle EdDSA signing key stored under the `org.org2.workspace` Keychain account, and `ORG2_GOOGLE_OAUTH_CLIENT_JSON` pointing at the protected OpenOrg Desktop OAuth client JSON. The release build reads that JSON without copying it into source and fails closed if the shared Google client is absent. Each release signs architecture-specific update feeds and publishes them with the site. Run `npm run release:openorg -- --help` for repair and partial-run options.
+The normal iOS path passes `--skip-testflight-groups`: the orchestrator uploads the build, then the release operator uses the signed-in App Store Connect browser to set `What to Test`, attach both tester groups, and submit external beta review. API keys are not used for those distribution actions because App Store Connect may permit upload and reads while forbidding external-group or review mutations. macOS publication requires the existing `OPENORG_NOTARY_KEYCHAIN_PROFILE`, the Sparkle EdDSA signing key stored under the `org.org2.workspace` Keychain account, and `ORG2_GOOGLE_OAUTH_CLIENT_JSON` pointing at the protected Desktop OAuth client JSON. The release build reads that JSON without copying it into source and fails closed if the shared Google client is absent. Each release signs architecture-specific update feeds and publishes them with the site. Run `npm run release:openorg -- --help` for repair and partial-run options.
 
 ## Parallel test runner
 
@@ -23,7 +23,7 @@ The normal iOS path passes `--skip-testflight-groups`: the orchestrator uploads 
 The explicit `test:parallel` command and release validation retain one isolated retry for a failed leaf and report a passing retry as `FLAKY`; `--no-retry` disables that behavior.
 
 ```bash
-npm test -- --jobs 4 --report /tmp/openorg-tests.json
+npm test -- --jobs 4 --report /tmp/celorga-tests.json
 npm run test:serial
 ```
 
@@ -37,7 +37,7 @@ selections preserve the full discovered suite. Failures remain failures;
 there are no automatic retries. A failed build stops before testing.
 
 ```bash
-npm run test:macos -- --jobs 4 --report /tmp/openorg-swift-tests.json
+npm run test:macos -- --jobs 4 --report /tmp/celorga-swift-tests.json
 npm run test:macos:serial
 node tools/run-swift-tests.mjs --skip-build --configuration debug
 ```
@@ -54,14 +54,14 @@ its timing phase still waits until concurrent work has finished.
 
 ## Documentation coverage check
 
-`npm run docs:check` builds the CLI, verifies that every top-level help family is represented in `org2 agent capabilities`, and checks that the canonical agent/documentation entry points exist. GitHub Pages CI runs the same check before publishing.
+`npm run docs:check` builds the CLI, verifies that every top-level help family is represented in `celorga agent capabilities`, and checks that the canonical agent/documentation entry points exist. GitHub Pages CI runs the same check before publishing.
 
 ## Generated artifact check
 
 Verifies that source-controlled generated artifacts are current.
 
 ```bash
-cd /path/to/org2
+cd /path/to/celorga
 npm run check:generated
 ```
 
@@ -75,7 +75,7 @@ Disposable generated output should stay outside the repository, be ignored, or l
 
 ## Release download synchronization
 
-`sync-release-downloads.mjs` reads GitHub Release assets, generates the canonical downloads page with Scarf Gateway links for OpenOrg disk images and registry links for the VS Code and npm packages, and maintains an idempotent direct-download block in GitHub release notes. Its default mode is read-only:
+`sync-release-downloads.mjs` reads GitHub Release assets, generates the canonical downloads page with Scarf Gateway links for Celorga disk images and registry links for the VS Code and npm packages, and maintains an idempotent direct-download block in GitHub release notes. Its default mode is read-only:
 
 ```bash
 node tools/sync-release-downloads.mjs
@@ -106,21 +106,21 @@ npm run test:language-spec
 Auto mode will run end-to-end validation if the reference parser is available at `dist/parse.js`; otherwise it runs schema-only.
 
 ```bash
-cd /path/to/org2
+cd /path/to/celorga
 npm test
 ```
 
 ### Run (schema-only)
 
 ```bash
-cd /path/to/org2
+cd /path/to/celorga
 node tools/fixture-runner.mjs --schema-only
 ```
 
 ### Run (force end-to-end)
 
 ```bash
-cd /path/to/org2
+cd /path/to/celorga
 npm install
 npm run build
 node tools/fixture-runner.mjs --e2e

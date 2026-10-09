@@ -1,4 +1,4 @@
-# org2 Language Server Protocol (LSP)
+# Celorga Language Server Protocol (LSP)
 
 This is the Language Server Protocol implementation for org-mode files using the celorga parser. It enables editor integrations for VS Code, Emacs, Vim, and other editors that support LSP.
 
@@ -83,13 +83,13 @@ Content-Length: 87
   - `textDocument/onTypeFormatting` - Table-aware canonical Org formatting while typing (`|` / newline triggers)
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
   - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
-  - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
+  - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `celorga.roamShowBacklinksById` in VS Code)
   - `textDocument/linkedEditingRange` - Synchronized linked editing across `[[id:...]]` links + matching `:ID:` values, and matching file-link targets
   - `textDocument/documentColor` + `textDocument/colorPresentation` - Hex color literal detection (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) with editable presentation labels
   - `textDocument/inlayHint` - Inlay hints for unlabeled `[[id:...]]` and `[[file:...]]` links (resolved from heading/title metadata)
   - `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` - Call hierarchy for Org ID/file links
 
-Corpus TODO defaults come from the nearest `org2.json` (`todo.sequences`); file-local TODO declarations override them. Completion and semantic tokens refresh from this configuration on each request.
+Corpus TODO defaults come from the nearest `celorga.json` (`todo.sequences`); file-local TODO declarations override them. Completion and semantic tokens refresh from this configuration on each request.
 
 ## Editor Integration Examples
 
@@ -103,14 +103,14 @@ export function activate(context: vscode.ExtensionContext) {
   const serverOptions: ServerOptions = {
     command: 'npm',
     args: ['run', 'lsp'],
-    options: { cwd: '/path/to/org2' }
+    options: { cwd: '/path/to/celorga' }
   };
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', language: 'org' }]
   };
 
-  const client = new LanguageClient('celorga-lsp', 'org2 Language Server', serverOptions, clientOptions);
+  const client = new LanguageClient('celorga-lsp', 'Celorga Language Server', serverOptions, clientOptions);
   context.subscriptions.push(client.start());
 }
 ```
@@ -206,7 +206,7 @@ EOF
 - **No external dependencies**: Pure Node.js implementation
 - **JSON-RPC 2.0 compliant**: Full protocol support
 - **Streaming I/O**: Efficient stdin/stdout handling
-- **Parser integration**: Uses org2's `parseOrgToCanonicalAst`
+- **Parser integration**: Uses Celorga's `parseOrgToCanonicalAst`
 
 ### Diagnostics Collection
 - Parser errors are caught and converted to LSP Diagnostic objects
@@ -228,7 +228,7 @@ EOF
 
 ## Limitations
 
-1. **Line Information**: The org2 AST doesn't store position info, so ranges are reconstructed from source
+1. **Line Information**: The Celorga AST doesn't store position info, so ranges are reconstructed from source
 2. **Incremental Sync**: Only full document sync is implemented (not incremental changes)
 3. **Search**: Linear search for node positions (could use indexing for large files)
 4. **Error Recovery**: Parser stops on first error (could implement error recovery for partial parsing)

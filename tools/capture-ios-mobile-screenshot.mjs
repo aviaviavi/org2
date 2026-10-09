@@ -9,7 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const projectPath = join(repoRoot, "apps", "ios", "Org2Mobile", "Org2Mobile.xcodeproj");
 const demoCorpus = join(repoRoot, "examples", "macos-workspace-demo");
 const outputPath = join(repoRoot, "docs", "site", "assets", "screenshots", "ios-mobile-approvals.png");
-const derivedDataPath = "/tmp/org2-ios-site-screenshot-derived";
+const derivedDataPath = "/tmp/celorga-ios-site-screenshot-derived";
 const bundleID = "org.org2.mobile";
 
 function run(command, args, options = {}) {
@@ -109,7 +109,7 @@ function main() {
   execFileSync("sleep", ["18"]);
   mkdirSync(dirname(outputPath), { recursive: true });
   run("xcrun", ["simctl", "io", device.udid, "screenshot", outputPath]);
-  run("npm", ["run", "org2", "--", "publish", "docs-site", "--config", "org2.json"]);
+  run("npm", ["run", "celorga", "--", "publish", "docs-site", "--config", "celorga.json"]);
   console.log(`Rendered ${outputPath}`);
 }
 

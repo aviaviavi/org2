@@ -1,11 +1,11 @@
-// Optional real Chromium extension E2E. Set ORG2_PLAYWRIGHT_MODULE to an installed
+// Optional real Chromium extension E2E. Set CELORGA_PLAYWRIGHT_MODULE to an installed
 // Playwright index.mjs, or install Playwright separately for this test.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-const { chromium } = await import(process.env.ORG2_PLAYWRIGHT_MODULE || "playwright");
+const { chromium } = await import(process.env.CELORGA_PLAYWRIGHT_MODULE || process.env.ORG2_PLAYWRIGHT_MODULE || "playwright");
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "org2-clip-browser-"));
 const downloads = path.join(profile, "downloads");
 fs.mkdirSync(downloads);

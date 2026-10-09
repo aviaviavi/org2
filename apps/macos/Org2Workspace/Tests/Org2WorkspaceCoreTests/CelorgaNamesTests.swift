@@ -99,10 +99,11 @@ final class CelorgaNamesTests: XCTestCase {
 
     XCTAssertNil(CelorgaNames.configFile(in: root))
     XCTAssertFalse(CelorgaNames.hasConfigFile(in: root))
-    XCTAssertEqual(CelorgaNames.configFileOrLegacy(in: root).lastPathComponent, "org2.json")
+    XCTAssertEqual(CelorgaNames.configFilePath(in: root).lastPathComponent, "celorga.json")
 
     try Data("{}".utf8).write(to: root.appendingPathComponent("org2.json"))
     XCTAssertEqual(CelorgaNames.configFile(in: root)?.lastPathComponent, "org2.json")
+    XCTAssertEqual(CelorgaNames.configFilePath(in: root).lastPathComponent, "org2.json")
 
     try Data("{}".utf8).write(to: root.appendingPathComponent("celorga.json"))
     XCTAssertEqual(CelorgaNames.configFile(in: root)?.lastPathComponent, "celorga.json")

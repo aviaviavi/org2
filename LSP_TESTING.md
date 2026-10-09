@@ -1,6 +1,6 @@
-# org2 LSP Testing Guide
+# Celorga LSP Testing Guide
 
-This guide explains how to test the org2 Language Server Protocol (LSP) implementation.
+This guide explains how to test the Celorga Language Server Protocol (LSP) implementation.
 
 ## Quick Start
 
@@ -34,14 +34,14 @@ This harness will:
 
 ### Testing with VS Code (Future Enhancement)
 
-To integrate org2-lsp with VS Code:
+To integrate celorga-lsp with VS Code:
 
 1. Create a VS Code extension that spawns the LSP server:
    ```typescript
    const serverOptions = {
      command: 'npm',
      args: ['run', 'lsp'],
-     options: { cwd: '/path/to/org2' }
+     options: { cwd: '/path/to/celorga' }
    };
    ```
 

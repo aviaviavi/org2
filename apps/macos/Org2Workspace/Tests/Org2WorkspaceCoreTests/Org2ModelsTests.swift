@@ -685,7 +685,8 @@ final class Org2ModelsTests: XCTestCase {
     let welcomeURL = try WorkspaceStore.initializeStarterCorpus(at: root)
 
     XCTAssertEqual(welcomeURL.standardizedFileURL.path, root.appendingPathComponent("notes/welcome.org").path)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("celorga.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("inbox.org").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("daily").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("views").path))
@@ -702,7 +703,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(welcome.contains("move or rename this folder"))
     XCTAssertTrue(welcome.contains("Open =Help → Getting Started="))
 
-    let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
+    let configData = try Data(contentsOf: root.appendingPathComponent("celorga.json"))
     let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
     XCTAssertEqual(config["recursive"] as? Bool, true)
     XCTAssertNotNil(config["roam"] as? [String: Any])
@@ -781,7 +782,7 @@ final class Org2ModelsTests: XCTestCase {
     let created = try WorkspaceStore.prepareAutomaticStarterCorpus(preferredRoot: preferred)
 
     XCTAssertEqual(created.lastPathComponent, "Celorga 2")
-    XCTAssertTrue(FileManager.default.fileExists(atPath: created.appendingPathComponent("org2.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: created.appendingPathComponent("celorga.json").path))
     XCTAssertEqual(
       try String(contentsOf: preferred.appendingPathComponent("unrelated.txt"), encoding: .utf8),
       "keep me\n"
@@ -811,7 +812,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .home)
     XCTAssertTrue(store.hasWorkspaceDetailContent)
     XCTAssertTrue(store.isLaunchGuidePresented)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: preferred.appendingPathComponent("org2.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: preferred.appendingPathComponent("celorga.json").path))
     XCTAssertTrue(store.selectedLocation?.file.contains("/daily/") == true)
   }
 
@@ -891,7 +892,7 @@ final class Org2ModelsTests: XCTestCase {
 
     _ = try WorkspaceStore.initializeStarterCorpus(at: root, kind: "shared")
 
-    let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
+    let configData = try Data(contentsOf: root.appendingPathComponent("celorga.json"))
     let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
     let identity = try XCTUnwrap(config["corpus"] as? [String: Any])
     XCTAssertEqual(identity["kind"] as? String, "shared")
@@ -988,7 +989,7 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertThrowsError(try WorkspaceStore.initializeStarterCorpus(at: root))
     XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "user data\n")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("celorga.json").path))
   }
 
   func testDecodesAgendaPayload() throws {
@@ -14781,7 +14782,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains("celorga agent capabilities"))
     XCTAssertTrue(prompt.contains("celorga search <query> --dir <root>"))
     XCTAssertTrue(prompt.contains("Connected Celorga sources"))
-    XCTAssertTrue(prompt.contains("external-source profiles in its root celorga.json (or org2.json)"))
+    XCTAssertTrue(prompt.contains("external-source profiles in its root celorga.json"))
     XCTAssertTrue(prompt.contains("Do not make the user explain or select source infrastructure"))
     XCTAssertTrue(prompt.contains("team-knowledge — type: knowledge-base; enabled; ready; healthy; scopes: workspace-a"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/raw/connectors/knowledge/team"))

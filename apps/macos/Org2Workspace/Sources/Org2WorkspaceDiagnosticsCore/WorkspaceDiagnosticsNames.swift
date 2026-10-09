@@ -5,13 +5,13 @@ import Foundation
 public enum WorkspaceDiagnosticsNames {
   static let configFileNames = ["celorga.json", "org2.json"]
 
-  /// `celorga.json` if present, else `org2.json` (whether or not it exists).
+  /// `celorga.json` or `org2.json` if present, else `celorga.json`.
   public static func configFile(in directory: URL, fileManager: FileManager = .default) -> URL {
     for name in configFileNames {
       let candidate = directory.appendingPathComponent(name)
       if fileManager.fileExists(atPath: candidate.path) { return candidate }
     }
-    return directory.appendingPathComponent("org2.json")
+    return directory.appendingPathComponent("celorga.json")
   }
 
   /// `celorga:kind:vN` and `org2:kind:vN` are the same record type.

@@ -433,7 +433,7 @@ struct DocumentPublishSheet: View {
           .font(.caption.monospaced())
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
-        Text("Celorga saved this link and Drive version in the .org2 source. Publishing the same scope and format again updates this file instead of creating a duplicate.")
+        Text("Celorga saved this link and Drive version in the Org source. Publishing the same scope and format again updates this file instead of creating a duplicate.")
           .font(.callout)
           .foregroundStyle(.secondary)
         HStack {

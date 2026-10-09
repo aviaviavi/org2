@@ -12,7 +12,7 @@ const runs = path.join(corpus, ".org2", "runs");
 const indexHome = path.join(fixtureRoot, "index");
 const previousIndexHome = process.env.ORG2_INDEX_HOME;
 const runCount = Number.parseInt(process.env.ORG2_PERF_APPROVAL_RUNS || "2500", 10);
-const scale = Number.parseFloat(process.env.ORG2_PERF_BUDGET_SCALE || "1");
+const scale = Number.parseFloat(process.env.CELORGA_PERF_BUDGET_SCALE || process.env.ORG2_PERF_BUDGET_SCALE || "1");
 
 assert.ok(Number.isFinite(runCount) && runCount >= 500 && runCount <= 20_000);
 assert.ok(Number.isFinite(scale) && scale >= 0.5 && scale <= 10);

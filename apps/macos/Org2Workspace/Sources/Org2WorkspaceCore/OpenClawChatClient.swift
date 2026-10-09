@@ -239,7 +239,7 @@ public struct OpenClawChatClient: Sendable {
     var output = [
       OpenAIChatMessage(
         role: "system",
-        content: .text("You are OpenClaw working with the user's Celorga workspace. Use the provided Celorga workspace context, configured remote paths, and existing Celorga tooling. Keep answers grounded in the corpus. Use Org syntax throughout. Cite workspace facts with Org file links using the mapped path and line number, for example [[file:/path/to/file.org2::42][source]].")
+        content: .text("You are OpenClaw working with the user's Celorga workspace. Use the provided Celorga workspace context, configured remote paths, and existing Celorga tooling. Keep answers grounded in the corpus. Use Org syntax throughout. Cite workspace facts with Org file links using the mapped path and line number, for example [[file:/path/to/file.org::42][source]].")
       )
     ]
 
@@ -456,10 +456,10 @@ public struct AIChatWorkspaceContext: Sendable {
   nonisolated static let responseFormattingContract = """
   Celorga response formatting contract
 
-  Use Org syntax, not Markdown, whenever you structure an answer or show content that may be copied into an .org2 or .org file.
+  Use Org syntax, not Markdown, whenever you structure an answer or show content that may be copied into an .org file.
   - Headings use leading stars: * Heading, ** Subheading.
   - Emphasis uses *bold*, /italic/, =verbatim=, and ~code~ rather than Markdown **bold** or backticks.
-  - Inline emphasis does not nest in Celorga's Org profile. Close one span before starting another: write *no duplicate in* =recipes.org2=, never *no duplicate in =recipes.org2=*.
+  - Inline emphasis does not nest in Celorga's Org profile. Close one span before starting another: write *no duplicate in* =recipes.org=, never *no duplicate in =recipes.org=*.
   - Document links use [[target][label]].
   - Images in chat: include an actual image link in your reply on its own line, for example [[file:images/qr.png][QR code]] or [[https://example.com/chart.png][Chart]]. Celorga renders image links inline; a prose claim that an image was sent, a tool result, or opening Preview does not embed it in the conversation. Do not put the image link inside a source block or a verbatim span.
   - For generated images or base64 image results, save the image as a PNG or JPEG inside the active corpus (for example images/) and link it with a corpus-relative path such as [[file:images/chart.png][Chart]]; relative paths resolve against the corpus on the user's machine. The user may read chat on a different machine than the one you run on, where only the synced corpus exists, so never link an absolute path outside the corpus. Use a real existing file, not an invented path or a sandbox: URL. Keep private images such as login QR codes local; do not upload them to a public image host. If you cannot make the image accessible, say so instead of claiming it is visible here.
@@ -496,9 +496,9 @@ public struct AIChatWorkspaceContext: Sendable {
   nonisolated static let agentOperatingGuidance = """
   Celorga agent operating guidance
 
-  Treat ordinary .org and .org2 files as canonical source. Before relying on a remembered CLI surface, inspect =celorga agent capabilities= when execution is available, and read the nearest =celorga.json= (or =org2.json=) for corpus-specific behavior. Prefer bounded JSON interfaces and existing typed tools over ad hoc parsing.
+  Treat ordinary .org files as canonical source. Before relying on a remembered CLI surface, inspect =celorga agent capabilities= when execution is available, and read the nearest =celorga.json= for corpus-specific behavior. Prefer bounded JSON interfaces and existing typed tools over ad hoc parsing.
 
-  Use Celorga's native CLI by default for Org operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Celorga workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with =celorga agent capabilities= and =celorga COMMAND --help= before choosing a workaround. If =celorga= is not on PATH, the same commands work as =org2= (older installs). Celorga is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.
+  Use Celorga's native CLI by default for Org operations such as search, agenda, TODOs, links, tables, export, and validation. Prefer exposed Celorga workspace/MCP tools for operations they support; client-required effective-text reads and reviewed writes take precedence over shell access. Discover commands with =celorga agent capabilities= and =celorga COMMAND --help= before choosing a workaround. Celorga is an independent runtime: a .org file does not imply GNU Org semantics or an Emacs dependency.
 
   Do not invoke =emacs=, =emacsclient=, batch Emacs Lisp, or an Emacs Org exporter as an implicit fallback. Do not assume Emacs is installed, probe for it, or install it for ordinary Celorga work. Use Emacs only when the user explicitly requests an Emacs-specific task. This does not prohibit other tools for work outside Celorga's scope.
 
@@ -583,7 +583,7 @@ public struct AIChatWorkspaceContext: Sendable {
     sections.append("""
     Celorga working rules
 
-    Celorga is a plain-text, org-mode-inspired knowledge workspace. New documents use .org; existing .org2 files remain fully supported. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
+    Celorga is a plain-text, org-mode-inspired knowledge workspace. Documents are .org files. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
 
     Use existing Celorga tooling when available instead of inventing a parser:
     - celorga agent capabilities for the current machine-readable command and safety contract
@@ -687,7 +687,7 @@ public struct AIChatWorkspaceContext: Sendable {
       """
       Celorga working rules
 
-      Celorga is a plain-text, org-mode-inspired knowledge workspace. New documents use .org; existing .org2 files remain fully supported. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
+      Celorga is a plain-text, org-mode-inspired knowledge workspace. Documents are .org files. Headings use leading stars; TODO state, priority, and tags live on headings. Planning metadata uses SCHEDULED, DEADLINE, and CLOSED lines. Stable node identity lives in :PROPERTIES: drawers using :ID:. Links commonly use [[id:<uuid>][label]].
 
       Preserve the Org plaintext format, make the smallest useful edit, and cite exact file paths plus line numbers for concrete claims. Do not write generated Backlinks sections into note files; backlinks are computed views.
       """,
@@ -795,7 +795,7 @@ public struct AIChatWorkspaceContext: Sendable {
     var lines = [
       "Connected Celorga sources",
       "",
-      "The active corpus can declare external-source profiles in its root celorga.json (or org2.json). Those declarations and the `celorga source` CLI are the authority for which sources are connected, how they are scoped, where their staged material lives, and whether their local mirror is ready. Do not make the user explain or select source infrastructure that the corpus already declares.",
+      "The active corpus can declare external-source profiles in its root celorga.json. Those declarations and the `celorga source` CLI are the authority for which sources are connected, how they are scoped, where their staged material lives, and whether their local mirror is ready. Do not make the user explain or select source infrastructure that the corpus already declares.",
       "",
       "When a request may depend on connected material, handle discovery automatically:",
       "1. Run `celorga source list --dir <root> --json` and match the request against the returned profile IDs, types, scopes, raw zones, and review zones. Never infer a specific organization or provider when the profile metadata can answer it.",

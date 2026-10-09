@@ -277,8 +277,7 @@ specifically need an optimized distribution or performance-validation build.
 Keep the Swift package's =.build/= directory between iterations; SwiftPM
 rebuilds changed inputs automatically. Standalone Mac DMG packaging and
 coordinated releases also reuse persistent, architecture-specific Swift caches
-in the app's folder under =~/Library/Caches=. The
-[[file:name-compatibility.org][compatibility page]] lists the exact cache path and its override variable.
+in the app's folder under =~/Library/Caches=.
 
 For a local dogfooding loop, =make macos-app-restart= (or
 =npm run build:macos-app:restart=) leaves the current daily app open while it compiles

@@ -132,7 +132,7 @@ private struct GeneralSettingsView: View {
       } header: {
         Label("Corpus", systemImage: "folder")
       } footer: {
-        SettingsFooterText("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in the corpus config (celorga.json or org2.json).")
+        SettingsFooterText("The corpus remains an ordinary folder. Move or rename it in Finder, then open its new location here. Its portable name and kind are stored in the corpus's celorga.json.")
       }
       if store.corpusRoot != nil {
         Section {
@@ -160,7 +160,7 @@ private struct GeneralSettingsView: View {
         } header: {
           Label("Automations", systemImage: "clock.arrow.circlepath")
         } footer: {
-          SettingsFooterText("Scheduler ownership applies to every automation in this corpus and is configured in the corpus config (celorga.json or org2.json).")
+          SettingsFooterText("Scheduler ownership applies to every automation in this corpus and is configured in the corpus's celorga.json.")
         }
       }
       if store.corpusRoot != nil { CorpusTodoSettingsSection() }
@@ -361,7 +361,7 @@ private struct DocumentSettingsView: View {
       Section {
         Toggle("Format Org files on save", isOn: $store.formatOrgFilesOnSave)
 
-        Text("Runs the shared Celorga formatter before saving a full .org or .org2 page. Turn this off to preserve layout as typed; .org typing conveniences such as code fences are still saved as standard Org syntax.")
+        Text("Runs the shared Celorga formatter before saving a full .org page. Turn this off to preserve layout as typed; .org typing conveniences such as code fences are still saved as standard Org syntax.")
           .font(.callout)
           .foregroundStyle(.secondary)
       } header: {

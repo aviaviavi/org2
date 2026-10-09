@@ -1,7 +1,7 @@
 /**
  * Email as an external sync source.
  *
- * A corpus declares an `email` profile in `org2.json` `externalSources` with
+ * A corpus declares an `email` profile in `celorga.json` `externalSources` with
  * non-secret account settings (IMAP host, port, security, username,
  * mailboxes, and optionally the account's SMTP submission server for
  * reference). Celorga reads mail over IMAP itself (no crawler binary), stages

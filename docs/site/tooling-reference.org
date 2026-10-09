@@ -4,7 +4,7 @@ This page covers the practical Celorga tooling surface today. For the product fr
 
 The CLI is the shared backend for editor integrations and automation. You can use it directly or through VS Code commands.
 
-Install with =npm install -g celorga=. The commands are =celorga= and =celorga-lsp=. Names from releases made before the rename keep working; see [[file:name-compatibility.org][Upgrading from earlier releases]].
+Install with =npm install -g celorga=. The commands are =celorga= and =celorga-lsp=.
 
 * Core command families
 

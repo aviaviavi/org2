@@ -7,8 +7,8 @@ Celorga was previously released as *OpenOrg* (the Mac app) and *Org2* (the runti
 
 - The old names keep working for several releases. There is no hard cutover, and you don't need to rename anything to upgrade.
 - When both spellings are present, Celorga prefers the new one: =celorga.json= wins over =org2.json= in the same folder, a =:CELORGA_X:= property wins over =:ORG2_X:=, and a =CELORGA_X= environment variable wins over =ORG2_X=.
-- Until a workspace is migrated, Celorga keeps writing the old names in it, so devices still running an earlier release keep working on the same files.
-- A later =celorga migrate-names= command will preview and then rewrite an existing workspace to the new names: property keys, =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, and record types. It is not available yet. New workspaces will start with the new names.
+- New workspaces start with =celorga.json=. In an existing workspace, Celorga keeps editing the configuration file it already has and keeps writing the other old names, so devices still running an earlier release keep working on the same files.
+- A later =celorga migrate-names= command will preview and then rewrite an existing workspace to the new names: property keys, =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, and record types. It is not available yet.
 
 * Old and new names
 
@@ -67,4 +67,3 @@ These identifiers have no Celorga spelling yet. Use them as written.
 | Release build cache | =~/Library/Caches/OpenOrg/release-build/=, overridden by =OPENORG_RELEASE_BUILD_CACHE= |
 | Native server worker product | =OpenOrgServer= |
 | Bundled Google OAuth client properties | =OpenOrgGoogleOAuthClientID=, =OpenOrgGoogleOAuthClientSecret= |
-| npm script that runs the checkout's CLI | =npm run org2 -- ...= (or =node dist/cli.js ...=) |

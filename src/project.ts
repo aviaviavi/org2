@@ -27,7 +27,7 @@ function inside(root: string, file: string): string {
   const resolved = path.resolve(fs.realpathSync(ancestor), path.relative(ancestor, target));
   const relative = path.relative(base, resolved);
   if (!relative || relative.startsWith(".." + path.sep) || relative === ".." || path.isAbsolute(relative)) throw new Error("Project notes must stay inside the corpus");
-  if (![".org", ".org2"].includes(path.extname(target))) throw new Error("A project must be an .org or .org2 file");
+  if (![".org", ".org2"].includes(path.extname(target))) throw new Error("A project must be an .org file");
   return target;
 }
 function document(raw: string) {

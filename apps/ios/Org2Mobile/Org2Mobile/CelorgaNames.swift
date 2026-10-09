@@ -3,8 +3,8 @@ import Foundation
 /// The subset of the macOS app's `CelorgaNames` that the mobile client needs.
 ///
 /// Phase 1 of the rename (see docs/rename/celorga.org): readers accept both
-/// spellings, preferring Celorga; writers keep the legacy `ORG2_`, `org2.json`
-/// and `.org2/` names so devices still on 0.8.x keep working.
+/// spellings, preferring Celorga; writers keep the legacy `ORG2_` and `.org2/`
+/// names so devices still on 0.8.x keep working.
 enum CelorgaNames {
   static let propertyPrefix = "CELORGA_"
   static let legacyPropertyPrefix = "ORG2_"

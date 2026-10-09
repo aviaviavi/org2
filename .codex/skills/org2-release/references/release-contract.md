@@ -1,17 +1,17 @@
-# Org2 release contract
+# Celorga release contract
 
 ## Public channels
 
-- Repository: `aviaviavi/celorga` (renamed from `aviaviavi/org2`; GitHub redirects the old URLs)
-- npm: `celorga` (from the Celorga rename on; releases before it were published as `@aviaviavi/org2`, which gets a final deprecation notice at cutover)
+- Repository: `aviaviavi/celorga`
+- npm: `celorga`
 - VS Code Marketplace: `AviPress.org2-vscode`
 - Git tag: unprefixed SemVer, for example `0.4.1`
 - GitHub Release assets:
-  - `celorga-{version}.tgz` (historical releases: `aviaviavi-org2-{version}.tgz`)
-  - `org2-vscode-{version}.vsix`
-  - OpenOrg `0.5.0`–`0.8.8`: `OpenOrg.dmg` and `OpenOrg-Intel.dmg`
-  - Celorga (from the rename release): `Celorga.dmg` and `Celorga-Intel.dmg`
-  - Historical Org2 Workspace releases: `Org2Workspace.dmg` and `Org2Workspace-Intel.dmg`
+  - `celorga-{version}.tgz`
+  - `org2-vscode-{version}.vsix` (named after the Marketplace extension ID)
+  - `Celorga.dmg` and `Celorga-Intel.dmg`
+
+Releases before the Celorga rename used the pre-rename artifact names (`@aviaviavi/org2` on npm, `OpenOrg*.dmg`, `Org2Workspace*.dmg`); leave those historical assets and their download rows unchanged.
 
 The iOS client is distributed separately through TestFlight. Its marketing version is coordinated with the desktop/CLI release, while its monotonically increasing build number remains separate.
 
@@ -22,7 +22,7 @@ The iOS client is distributed separately through TestFlight. Its marketing versi
 - External group: `OpenOrg Alpha` (`566e8d38-3c80-442c-8b9a-4f7916181149`)
 - Public beta link: `https://testflight.apple.com/join/Yp3hfBng`
 
-Run `tools/release-openorg.mjs` with `--skip-testflight-groups` for a normal iOS release. The orchestrator archives and uploads the client while Mac publication proceeds. Finish distribution in an existing signed-in App Store Connect browser session: wait for the exact version/build to process, set the English `What to Test` text, attach all existing OpenOrg TestFlight groups (including `Org2 Internal` and `OpenOrg Alpha`), enable automatic tester notifications unless the user specifies otherwise, and submit external beta review. Avi has given standing authorization for these TestFlight steps as part of a release; do not request a separate TestFlight approval.
+Run `tools/release-openorg.mjs` with `--skip-testflight-groups` for a normal iOS release. The orchestrator archives and uploads the client while Mac publication proceeds. Finish distribution in an existing signed-in App Store Connect browser session: wait for the exact version/build to process, set the English `What to Test` text, attach all existing TestFlight groups (including `Org2 Internal` and `OpenOrg Alpha`), enable automatic tester notifications unless the user specifies otherwise, and submit external beta review. Avi has given standing authorization for these TestFlight steps as part of a release; do not request a separate TestFlight approval.
 
 Do not use API automation for TestFlight review details, external-group assignment, or beta-review submission. App Store Connect API roles can permit binary upload, build reads, localization updates, and internal assignment while returning security-forbidden errors for external distribution. The browser flow is the release contract, not an exceptional fallback.
 
@@ -66,10 +66,10 @@ Environment variable names and non-secret paths may be recorded in local operato
 
 - Build `Celorga.dmg` for Apple Silicon and `Celorga-Intel.dmg` for Intel (`x86_64`) with `tools/package-openorg-macos.mjs`.
 - Bundle a native whisper.cpp executable and the verified English `base.en` model so dictation does not require Homebrew, a model download, or runtime environment variables. Keep macOS Speech only as a fallback.
-- Require Developer ID signing, hardened runtime, Apple notarization, ticket stapling, and Gatekeeper verification for every OpenOrg DMG. The package command fails closed without a configured notarytool Keychain profile.
-- Historical Org2 Workspace DMGs remain developer-signed but not notarized; say so plainly on their download page.
-- Never build into, replace, or relaunch the daily app at `~/Applications/OpenOrg.app` or its historical `~/Applications/Org2Workspace.app` path as part of release packaging.
-- Build each macOS architecture with a distinct `ORG2_WORKSPACE_SWIFT_SCRATCH_PATH`; parallel release builds must never share SwiftPM's mutable build directory.
+- Require Developer ID signing, hardened runtime, Apple notarization, ticket stapling, and Gatekeeper verification for every Celorga DMG. The package command fails closed without a configured notarytool Keychain profile.
+- Historical pre-notarization DMGs remain developer-signed but not notarized; say so plainly on their download page.
+- Never build into, replace, or relaunch the daily app in `~/Applications` as part of release packaging.
+- Build each macOS architecture with a distinct `CELORGA_WORKSPACE_SWIFT_SCRATCH_PATH`; parallel release builds must never share SwiftPM's mutable build directory.
 - Preserve `/usr/bin`, `/bin`, `/usr/sbin`, and `/sbin` when customizing `PATH`; Gatekeeper verification requires `/usr/sbin/spctl`. A missing executable is an environment failure, not evidence that notarization failed.
 - Attach all distributable files to the matching GitHub Release before synchronizing downloads.
 

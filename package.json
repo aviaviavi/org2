@@ -78,6 +78,7 @@
     "screenshots:ios": "node tools/capture-ios-mobile-screenshot.mjs",
     "parse": "node dist/parse.js",
     "print": "node dist/print.js",
+    "celorga": "node dist/cli.js",
     "org2": "node dist/cli.js",
     "lsp": "node dist/lsp.js",
     "fixtures": "npm run check:language-spec && node tools/fixture-runner.mjs",

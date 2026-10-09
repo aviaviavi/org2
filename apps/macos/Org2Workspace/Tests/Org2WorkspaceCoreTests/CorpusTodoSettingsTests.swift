@@ -14,8 +14,10 @@ final class CorpusTodoSettingsTests: XCTestCase {
     let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
     let args = ["todo-config", "set", "--dir", root.path, "--sequences-json", "[\"TODO missed | DONE SKIPPED\"]"]
     let preview: CorpusTodoConfiguration = try await cli.runJSON(args)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("celorga.json").path))
     let saved: CorpusTodoConfiguration = try await cli.runJSON(args + ["--if-revision", preview.revision, "--apply"])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("celorga.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
     XCTAssertEqual(saved.sequenceFields.first?.active, "TODO missed")
     XCTAssertEqual(saved.sequenceFields.first?.terminal, "DONE SKIPPED")
     let document: Org2CanonicalDocument = try await cli.parseFileJSON(file, sourceRanges: true)

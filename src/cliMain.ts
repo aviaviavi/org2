@@ -5283,7 +5283,9 @@ function openAgendaTuiItem(item: ScheduledItem): void {
 
 function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: string): string {
   const dailiesRoot = resolveRoamDailiesRootDir(config || {}, baseDir);
-  return path.join(dailiesRoot, `${getTodayString()}.org2`);
+  // Reuse an existing legacy .org2 daily note; new ones are .org.
+  const legacy = path.join(dailiesRoot, `${getTodayString()}.org2`);
+  return fs.existsSync(legacy) ? legacy : path.join(dailiesRoot, `${getTodayString()}.org`);
 }
 
 function formatAgendaTuiDateTimestamp(dateIso: string): string {
@@ -9243,7 +9245,7 @@ function parseAgentRankingWeight(raw: string, flag: string): number {
 }
 
 function printGeneralUsage(exitCode: number): never {
-  console.error(`Celorga CLI (celorga; org2 remains a compatibility alias)
+  console.error(`Celorga CLI
 
 Usage:
   celorga <command> [options]
@@ -9482,7 +9484,7 @@ Usage:
 Flags:
   --file FILE          Source file
   --pos LINE[:COL]     Heading position
-  --archive-file FILE  Destination archive file (default FILE_archive for .org/.org2)
+  --archive-file FILE  Destination archive file (default FILE_archive for .org)
   --format text|diff|json  Output format; diff/json include archive provenance preview
   --apply              Write changes instead of previewing`;
   } else if (command === "refile") {
@@ -9606,7 +9608,7 @@ Flags:
 Usage:
   celorga search QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
-Search scans .org and .org2 files for literal, case-insensitive text and returns cited file/line matches. Directory scans are non-recursive unless --recursive is set.
+Search scans .org files for literal, case-insensitive text and returns cited file/line matches. Directory scans are non-recursive unless --recursive is set.
 
 Flags:
   --dir DIR          Root directory to scan
@@ -9730,7 +9732,7 @@ Input:
   type: csv|parquet|json plus path/url, type: table plus source:
   named_org_table, type: clickhouse plus profile/query, or type: metabase
   plus profile/question. Remote profiles are resolved from dataSources in the
-  nearest celorga.json (or org2.json) and secrets are read from profile-named environment
+  nearest celorga.json and secrets are read from profile-named environment
   variables. Optional \`\`\`sql view=NAME blocks define reusable
   DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
   result names must be unique. Dataset names and SQL view names must not

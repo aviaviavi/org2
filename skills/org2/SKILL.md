@@ -5,14 +5,14 @@ description: Work safely with a Celorga corpus using its installed CLI or MCP se
 
 # Celorga
 
-Treat ordinary `.org` and `.org2` files as the source of truth. Derived indexes, views, app state, run projections, and generated artifacts are secondary.
+Treat ordinary `.org` files as the source of truth. Derived indexes, views, app state, run projections, and generated artifacts are secondary.
 
 ## Start with discovery
 
 1. Identify the authorized corpus root. Do not infer access to another corpus from app history or nearby folders.
-2. Run `celorga agent capabilities` before relying on remembered commands. Installs that predate the rename only have the `org2` executable, which remains an alias with the same commands.
-3. Read the nearest `celorga.json` (or legacy `org2.json`) for corpus identity, agenda selection, ignored paths, publishing projects, and other declared behavior.
-4. Prefer MCP resources and typed tools when the harness already exposes the Celorga MCP server. Start retrieval with `celorga_search`, `celorga_fetch`, or `celorga_context` (`org2_*` on older servers); their results are bounded and preserve citations. Use bounded CLI JSON for capabilities that MCP does not expose.
+2. Run `celorga agent capabilities` before relying on remembered commands.
+3. Read the nearest `celorga.json` for corpus identity, agenda selection, ignored paths, publishing projects, and other declared behavior.
+4. Prefer MCP resources and typed tools when the harness already exposes the Celorga MCP server. Start retrieval with `celorga_search`, `celorga_fetch`, or `celorga_context`; their results are bounded and preserve citations. Use bounded CLI JSON for capabilities that MCP does not expose.
 
 For retrieval, start with `celorga agent search`, `celorga agent context`, or `celorga agent fetch`. Keep file paths, line ranges, IDs, provenance, and uncertainty in the result.
 
@@ -27,7 +27,7 @@ If a native operation appears missing or broken, check the installed version, ca
 ## Make reviewable changes
 
 - Preserve Org syntax and make the smallest useful plaintext edit.
-- New human-authored documents use `.org`; existing `.org2` files remain supported and should not be renamed implicitly.
+- New human-authored documents use `.org`. Do not rename existing files implicitly.
 - Do not write generated Backlinks sections. Backlinks are computed views.
 - Preview mutating commands first. Add `--apply` only after inspecting the exact target and proposed change.
 - Keep raw imports under `raw/` and generated or review-required work under `views/` or `compiled/` until it is promoted deliberately.

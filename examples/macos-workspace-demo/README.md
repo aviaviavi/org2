@@ -1,4 +1,4 @@
-# Org2 Workspace demo corpus
+# Celorga demo corpus
 
 Synthetic corpus used for macOS Workspace screenshots.
 

@@ -8,7 +8,7 @@ export async function runTodoConfigCommand(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`celorga todo-config <show|set> --dir CORPUS [--sequences-json '["TODO WAITING | DONE CANCELED"]'] [--if-revision REVISION] [--apply]
 
-Reads or previews corpus-wide TODO defaults in celorga.json (or org2.json). Output is JSON.
+Reads or previews corpus-wide TODO defaults in celorga.json. Output is JSON.
 set requires --sequences-json; [] restores built-in defaults. File-local
 #+TODO:, #+SEQ_TODO:, and #+TYP_TODO: declarations override these defaults.
 Writes require --apply; use --if-revision from show/preview to reject stale edits.`);

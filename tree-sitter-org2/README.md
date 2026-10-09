@@ -1,6 +1,8 @@
-# tree-sitter-org2
+# Celorga Tree-sitter grammar
 
-A minimal Tree-sitter grammar scaffold for **Celorga** (formerly Org2). The grammar, parser, and Neovim language keep the name `org2` for compatibility with existing editor configurations.
+A minimal Tree-sitter grammar scaffold for **Celorga**. The grammar and parser
+are registered under the language name `org2`, which the configuration below
+uses.
 
 ## Status
 
@@ -68,7 +70,7 @@ vim.wo.foldmethod = "expr"
 vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 ```
 
-If you use a different file extension than `*.org2`, ensure your filetype is set to `org2`.
+Set the filetype of buffers you want this parser to handle to `org2`.
 
 ## Development
 

@@ -1,4 +1,4 @@
-name: Docs site (Org2 publish + GitHub Pages)
+name: Docs site (Celorga publish + GitHub Pages)
 
 on:
   pull_request:
@@ -25,12 +25,12 @@ jobs:
           node-version: 22
       - name: Install deps
         run: npm ci
-      - name: Build org2
+      - name: Build celorga
         run: npm run build
       - name: Check agent and CLI docs coverage
         run: node tools/check-docs.mjs
       - name: Publish docs-site
-        run: npm run org2 -- publish docs-site --config org2.json
+        run: npm run celorga -- publish docs-site --config celorga.json
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

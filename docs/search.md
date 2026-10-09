@@ -1,19 +1,19 @@
 # Cited local search
 
-`celorga search` provides a local-first cited retrieval surface for humans and agents working over an Org2 corpus. It is a literal, case-insensitive full-text line scan over `.org` and `.org2` files. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
+`celorga search` provides a local-first cited retrieval surface for humans and agents working over a Celorga corpus. It is a literal, case-insensitive full-text line scan over the corpus's Org files. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
 
 ## Examples
 
 ```sh
 celorga search "open loops" --dir notes --recursive
 celorga search "waiting on me" --dir notes --recursive --todo TODO --tag project --format json
-celorga query "decision record" --file notes/decisions.org2 --context 2 --limit 10 --format json
+celorga query "decision record" --file notes/decisions.org --context 2 --limit 10 --format json
 ```
 
 Human-readable output is citation-first:
 
 ```text
-notes/decisions.org2:42 Architecture decision [DONE :project:]
+notes/decisions.org:42 Architecture decision [DONE :project:]
   We decided to ship local cited search first.
 ```
 
@@ -25,7 +25,7 @@ JSON output uses the `org2:search:v1` schema:
   "query": "decision",
   "results": [
     {
-      "file": "notes/decisions.org2",
+      "file": "notes/decisions.org",
       "line": 42,
       "lineEnd": 42,
       "heading": "Architecture decision",
@@ -42,7 +42,7 @@ JSON output uses the `org2:search:v1` schema:
 
 ## Flags
 
-- `--dir DIR`, `--recursive`, `--file FILE`, `--files FILE ...` select the corpus. If omitted, `org2.json` is used when present. Directory scans are non-recursive unless `--recursive` is set.
+- `--dir DIR`, `--recursive`, `--file FILE`, `--files FILE ...` select the corpus. If omitted, `celorga.json` is used when present. Directory scans are non-recursive unless `--recursive` is set.
 - `--format text|json` chooses human or machine-readable output.
 - `--todo TODO`, `--tag TAG`, and `--heading TEXT` filter by nearest containing heading metadata.
 - `--limit N` caps matches (default: 50).
@@ -56,13 +56,13 @@ JSON output uses the `org2:search:v1` schema:
 ~/.org2/index/<corpus-slug>-<hash>/search-v1.json
 ```
 
-`celorga compile corpus --incremental` uses the same per-corpus local index directory for its incremental cache. This keeps derived data out of synced note folders and avoids cross-machine merge conflicts. Set `ORG2_INDEX_HOME=/path/to/index-root` to override the base directory.
+`celorga compile corpus --incremental` uses the same per-corpus local index directory for its incremental cache. This keeps derived data out of synced note folders and avoids cross-machine merge conflicts. Set `CELORGA_INDEX_HOME=/path/to/index-root` to override the base directory.
 
 ## Recency and salience tuning
 
 `celorga agent search`, `celorga agent context`, and `celorga context` rank matched notes with configurable recency and salience signals in addition to keyword/title/tag matches. Defaults are `--recency-weight 1` and `--salience-weight 1`; set either weight to `0` to disable that signal.
 
-Recency uses `UPDATED`, `DATE`, `CREATED`, `CLOSED`, or planning timestamps when present. Salience uses explicit `ORG2_SALIENCE`/`SALIENCE`/`IMPORTANCE`, pinned or important metadata, active TODO/SCHEDULED/DEADLINE state, backlinks/mentions, and project/entity scope proximity. JSON results include `ranking` and per-result `selectionReason`; rendered context packs include a “Selected because” line so agents can explain why each item was selected.
+Recency uses `UPDATED`, `DATE`, `CREATED`, `CLOSED`, or planning timestamps when present. Salience uses explicit `CELORGA_SALIENCE`/`SALIENCE`/`IMPORTANCE`, pinned or important metadata, active TODO/SCHEDULED/DEADLINE state, backlinks/mentions, and project/entity scope proximity. JSON results include `ranking` and per-result `selectionReason`; rendered context packs include a “Selected because” line so agents can explain why each item was selected.
 
 Examples:
 
@@ -77,16 +77,16 @@ Agents should treat search results as evidence, not answers. Quote or summarize 
 
 ## Claim provenance, review, and freshness metadata
 
-Agents should prefer claims that are source-backed, reviewed, and fresh enough for the task. Org2 models this with optional org property drawer fields on files/headings and generated artifacts:
+Agents should prefer claims that are source-backed, reviewed, and fresh enough for the task. Celorga models this with optional org property drawer fields on files/headings and generated artifacts:
 
-- `ORG2_PROVENANCE`: comma-separated refs like `file:notes/foo.org2`, `id:project-alpha`, `url:https://...`, `query:...`, or `artifact:...`.
-- `ORG2_CLAIM_STATE`: one of `source-backed`, `inference`, `human-reviewed`, or `raw-source`.
-- `ORG2_REVIEW_STATUS`: one of `generated`, `review-required`, `reviewed`, or `promoted`.
-- `ORG2_OBSERVED_AT`: ISO date or timestamp when the source was observed.
-- `ORG2_VALID_AS_OF`: ISO date or timestamp the claim was known valid.
-- `ORG2_STALE_AFTER`: ISO date or timestamp after which the claim should be treated as stale.
-- `ORG2_EXPIRES_AT`: ISO date or timestamp after which the claim should be treated as expired.
+- `CELORGA_PROVENANCE`: comma-separated refs like `file:notes/foo.org`, `id:project-alpha`, `url:https://...`, `query:...`, or `artifact:...`.
+- `CELORGA_CLAIM_STATE`: one of `source-backed`, `inference`, `human-reviewed`, or `raw-source`.
+- `CELORGA_REVIEW_STATUS`: one of `generated`, `review-required`, `reviewed`, or `promoted`.
+- `CELORGA_OBSERVED_AT`: ISO date or timestamp when the source was observed.
+- `CELORGA_VALID_AS_OF`: ISO date or timestamp the claim was known valid.
+- `CELORGA_STALE_AFTER`: ISO date or timestamp after which the claim should be treated as stale.
+- `CELORGA_EXPIRES_AT`: ISO date or timestamp after which the claim should be treated as expired.
 
-Generated `compiled`, `view`, and `report` artifacts must include provenance plus either `ORG2_OBSERVED_AT` or `ORG2_VALID_AS_OF`, and must set `ORG2_CLAIM_STATE`. The artifact linter reports missing or invalid values.
+Generated `compiled`, `view`, and `report` artifacts must include provenance plus either `CELORGA_OBSERVED_AT` or `CELORGA_VALID_AS_OF`, and must set `CELORGA_CLAIM_STATE`. The artifact linter reports missing or invalid values.
 
 Agent context output exposes these fields as `claimState` for every result and includes a compact review/freshness line in text context. Search scoring gives a small boost to reviewed/promoted and fresh claims, and penalizes stale or expired claims so equally relevant fresh reviewed facts rank ahead of older generated ones.
