@@ -4,32 +4,29 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>OpenOrg</title>
         <item>
-            <title>0.8.8</title>
-            <pubDate>Wed, 07 Oct 2026 11:41:09 -0700</pubDate>
-            <link>https://openorg.so/downloads.html</link>
-            <sparkle:version>0.8.8</sparkle:version>
-            <sparkle:shortVersionString>0.8.8</sparkle:shortVersionString>
+            <title>0.9.0</title>
+            <pubDate>Thu, 08 Oct 2026 23:13:17 -0700</pubDate>
+            <link>https://celorga.io/downloads.html</link>
+            <sparkle:version>0.9.0</sparkle:version>
+            <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[## OpenOrg 0.8.8
+            <description sparkle:format="markdown"><![CDATA[# Celorga 0.9.0
 
-- Browse web links and HTML files directly in the workspace, with find, zoom, copy-link, and expand controls.
-- See interactive charts in AI chat and documents, with updated styling, tooltips, and series controls.
-- Configure Slack, Notion, and IMAP email sources from a single setup form.
-- Understand running work through Activity status explanations, host visibility, and clearer Reply & Resume progress.
-- Start agent work from TODOs, settle completed chats, and keep active turns recoverable across app and server upgrades.
-- Enjoy collapsible sidebar sections, consistent theme surfaces, document @ file suggestions, and syntax highlighting for more than 60 formats.
-- Fix stuck chats, stale synced turns, navigation delays during source sync, and OpenClaw steering compatibility.
-- On iOS, improve shared chart rendering and syntax highlighting in documents.
+OpenOrg and Org2 are now Celorga: one name for the app, CLI, and workspace runtime.
 
-Install the Apple Silicon or Intel DMG for your Mac. Both builds require macOS 14 or later and are Developer ID signed and Apple notarized. The iOS build is distributed separately through TestFlight.
+- Renamed app, website, CLI, and agent-facing instructions to Celorga. Install the CLI with `npm i -g celorga`; `org2` remains supported.
+- Added compatibility for Celorga configuration, state, properties, tools, editor commands, and plugin names while preserving existing Org2 workspaces. No automatic corpus migration is performed.
+- Improved shared AI conversations, agent hand-offs, and single-agent message delivery across hosts.
+- Fixed server drain/restart recovery and excluded Skill Workshop background reviews from Agent Work runs.
+- Renamed the Vim integration directory to `editors/vim-celorga`; existing Vim users should update their runtime path.
 
-Full changelog: https://github.com/aviaviavi/org2/compare/0.8.7...0.8.8
+Apple Silicon and Intel Mac installers require macOS 14 or later and are Developer ID signed and Apple notarized. The iPhone build is distributed through TestFlight as version 0.9.0, build 46.
 ]]></description>
-            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.8.8/OpenOrg.dmg" length="241468280" type="application/octet-stream" sparkle:edSignature="m1Naah/136up8Hyzod75Xslv7PaeS1DbJc1K444wzIy+J9TT9cjFy9UcR5InsQRkqEO6CibhLg568z8n6IPKAg=="></enclosure>
+            <enclosure url="https://org2.gateway.scarf.sh/downloads/0.9.0/Celorga.dmg" length="241449921" type="application/octet-stream" sparkle:edSignature="QXpxCFo7LXEaFcw7Ym6Sq+C27Ymznode0rLUEr6hm4cVpG2ybBQBqwgFLVW5NG2Un1UnnCZ5rnFWz/kXPiVBAA=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: SH2Ldvov9+4uT5pcJC94EV20ysscd2l8rJixbh9/oCV6bfQEfA5esjjbuBBgftR7NFqOczeHl9Yzbm+xdSVYDA==
-length: 2397
+edSignature: rv7PcIR31n+4b8K7WxelGlGuhABkLl6vc/5afYuq6LN8MqfuhpynIMdCQO5cBusezy3bqR08hXjBFTcU1gZIAQ==
+length: 2196
 -->
