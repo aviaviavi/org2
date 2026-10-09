@@ -60,6 +60,17 @@ try {
   // A post with no request stays context only: the envelope has no responders.
   const contextOnly = queueAIChatInboxMessage(root, roomID, "FYI", { authorLabel: "Worker" });
   assert.equal("requestedResponders" in contextOnly.message, false);
+  assert.equal(contextOnly.deliveryStatus, "preview");
+  assert.equal(contextOnly.turnStatus, "not-requested");
+
+  const help = runCLI("thread", "post", "--help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Single-agent chats do not support this flag/);
+  assert.match(help.stdout, /Queuing a turn request does not confirm a started turn/);
+
+  const messageOnly = runCLI("thread", "post", singleID, "--message", "FYI", "--author", "Worker");
+  assert.equal(messageOnly.status, 0, messageOnly.stderr);
+  assert.match(messageOnly.stdout, /No agent turn requested; message delivery only/);
 
   // The CLI records requested responders and reports them.
   const preview = runCLI(
@@ -71,7 +82,10 @@ try {
     "--idempotency-key", "export-review",
   );
   assert.equal(preview.status, 0, preview.stderr);
-  assert.match(preview.stdout, /would queue message for .* requesting a turn from @codex, @opencode/);
+  assert.match(preview.stdout, /would queue message for/);
+  assert.match(preview.stdout, /Turn request for @codex, @opencode; turn start unconfirmed/);
+  assert.match(preview.stdout, /thread wait .* --after .* --until reply/);
+  assert.equal(fs.existsSync(path.join(root, ".org2", "ai-chat-inbox")), false);
   const applied = runCLI(
     "thread", "post", roomID,
     "--message", "Export finished; please review it.",
@@ -83,6 +97,8 @@ try {
   );
   assert.equal(applied.status, 0, applied.stderr);
   const queued = JSON.parse(applied.stdout);
+  assert.equal(queued.deliveryStatus, "queued");
+  assert.equal(queued.turnStatus, "unconfirmed");
   assert.deepEqual(queued.message.requestedResponders, ["codex", "opencode"]);
   assert.deepEqual(JSON.parse(fs.readFileSync(queued.file, "utf8")).requestedResponders, ["codex", "opencode"]);
 
@@ -103,9 +119,20 @@ try {
     "--message", "Wake up",
     "--author", "Worker",
     "--request-turn", "codex",
+    "--apply",
   );
   assert.notEqual(single.status, 0);
   assert.match(single.stderr, /needs a shared AI room/);
+  assert.match(single.stderr, /No message was queued/);
+  assert.match(single.stderr, /send a message in the Celorga app/);
+  assert.match(single.stderr, /will not start a turn/);
+  assert.equal(fs.readdirSync(path.dirname(queued.file)).length, 1, "rejection must not queue a second envelope");
+
+  for (const request of [["--request-turn"], ["--request-turn="], ["--request-turn", "@"]]) {
+    const invalid = runCLI("thread", "post", roomID, "--message", "FYI", "--author", "Worker", ...request);
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /requires a shared-room agent destination ID or @mention/);
+  }
 
   // The per-room agent turn limit is configurable through the operation journal.
   const limitPreview = runCLI("thread", "configure", roomID, "--agent-turn-limit", "2");

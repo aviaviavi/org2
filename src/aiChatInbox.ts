@@ -38,6 +38,9 @@ export interface QueueAIChatInboxMessageOptions {
 export interface QueueAIChatInboxMessageResult {
   applied: boolean;
   changed: boolean;
+  deliveryStatus: "preview" | "queued" | "delivered";
+  /** A queued or delivered request does not confirm that a model turn started. */
+  turnStatus: "not-requested" | "unconfirmed";
   file: string;
   message: AIChatInboxMessage;
 }
@@ -80,6 +83,9 @@ export function normalizedRequestedResponders(values: readonly string[] | undefi
   }
   if (result.length > AI_CHAT_MAX_REQUESTED_RESPONDERS) {
     throw new Error(`--request-turn accepts at most ${AI_CHAT_MAX_REQUESTED_RESPONDERS} agents`);
+  }
+  if (values?.length && result.length === 0) {
+    throw new Error("--request-turn requires a shared-room agent destination ID or @mention");
   }
   return result;
 }
@@ -130,8 +136,12 @@ export function queueAIChatInboxMessage(
   if (source && source.length > 2_000) throw new Error("AI chat source exceeds 2000 characters");
   const requestedResponders = normalizedRequestedResponders(options.requestedResponders);
   if (requestedResponders.length > 0 && thread.isSharedRoom !== true) {
-    throw new Error("--request-turn needs a shared AI room; this thread has a single agent");
+    throw new Error("--request-turn needs a shared AI room; this thread has a single agent. "
+      + "No message was queued. To start or steer this agent, send a message in the Celorga app "
+      + "or use the agent runtime's supported send command. "
+      + "Omit --request-turn only for background message delivery; it will not start a turn.");
   }
+  const turnStatus = requestedResponders.length > 0 ? "unconfirmed" : "not-requested";
   const message: AIChatInboxMessage = {
     schema: AI_CHAT_INBOX_SCHEMA,
     id,
@@ -155,16 +165,18 @@ export function queueAIChatInboxMessage(
     if (!matches) {
       throw new Error(`AI chat idempotency key already delivered a different message to ${canonicalThreadID}`);
     }
-    return { applied: false, changed: false, file, message };
+    return { applied: false, changed: false, deliveryStatus: "delivered", turnStatus, file, message };
   }
   // The Swift consumer caps the complete UTF-8 envelope at 512,000 bytes.
   // Validate that exact representation before preview or publication.
   encodedJSONEnvelope(message);
-  if (!options.apply) return { applied: false, changed: true, file, message };
+  if (!options.apply) return { applied: false, changed: true, deliveryStatus: "preview", turnStatus, file, message };
   const published = publishJSONEnvelope(file, message, sameDelivery, "message");
   return {
     applied: published.applied,
     changed: published.applied,
+    deliveryStatus: "queued",
+    turnStatus,
     file,
     message: published.payload,
   };

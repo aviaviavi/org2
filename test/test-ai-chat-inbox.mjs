@@ -53,6 +53,8 @@ try {
   });
   assert.equal(preview.applied, false);
   assert.equal(preview.changed, true);
+  assert.equal(preview.deliveryStatus, "preview");
+  assert.equal(preview.turnStatus, "not-requested");
   assert.equal(fs.existsSync(preview.file), false);
   assert.equal(preview.message.schema, AI_CHAT_INBOX_SCHEMA);
   assert.equal(preview.message.threadID, threadID);
@@ -67,6 +69,7 @@ try {
     now: new Date("2026-08-19T12:00:00Z"),
   });
   assert.equal(applied.applied, true);
+  assert.equal(applied.deliveryStatus, "queued");
   assert.equal(fs.existsSync(applied.file), true);
   assert.deepEqual(JSON.parse(fs.readFileSync(applied.file, "utf8")), applied.message);
 
@@ -79,6 +82,7 @@ try {
   });
   assert.equal(duplicate.applied, false);
   assert.equal(duplicate.changed, false);
+  assert.equal(duplicate.deliveryStatus, "queued");
   assert.equal(duplicate.message.id, applied.message.id);
   assert.throws(
     () => queueAIChatInboxMessage(root, threadID, "Conflicting background result", {
@@ -258,9 +262,23 @@ try {
     preview.message.content,
     { ...options, apply: true },
   );
+  assert.equal(delivered.deliveryStatus, "delivered");
+  assert.equal(delivered.turnStatus, "not-requested");
   assert.equal(delivered.applied, false);
   assert.equal(delivered.changed, false);
   assert.equal(fs.existsSync(delivered.file), false);
+  const deliveredCLI = spawnSync(process.execPath, [
+    path.resolve("dist/cli.js"), "thread", "post", shardedThreadID,
+    "--message", preview.message.content,
+    "--author", options.authorLabel,
+    "--agent-ref", options.authorAgentRef,
+    "--source", options.source,
+    "--idempotency-key", options.idempotencyKey,
+    "--dir", shardedRoot, "--apply",
+  ], { encoding: "utf8" });
+  assert.equal(deliveredCLI.status, 0, deliveredCLI.stderr);
+  assert.match(deliveredCLI.stdout, /already delivered message/);
+  assert.equal(fs.existsSync(delivered.file), false, "a delivered retry must not requeue the envelope");
 } finally {
   fs.rmSync(shardedRoot, { recursive: true, force: true });
 }

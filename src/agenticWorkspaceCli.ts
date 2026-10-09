@@ -131,6 +131,9 @@ function parseArgs(args: string[]): ParsedArgs {
     const equal = item.indexOf("=");
     const name = equal >= 0 ? item.slice(2, equal) : item.slice(2);
     const explicit = equal >= 0 ? item.slice(equal + 1) : undefined;
+    if (name === "request-turn" && !(explicit ?? (args[i + 1]?.startsWith("--") ? "" : args[i + 1]))?.trim()) {
+      throw new Error("--request-turn requires a shared-room agent destination ID or @mention");
+    }
     const value = explicit ?? (args[i + 1] && !args[i + 1]!.startsWith("--") ? args[++i]! : "true");
     flags.set(name, [...(flags.get(name) || []), value]);
   }
@@ -180,6 +183,9 @@ const HELP = `Agentic workspace commands:
   celorga thread list|show|post|wait|settle|reopen|configure|auto-settle|repair [--dir CORPUS] [--apply]
   celorga thread repair [--dir CORPUS] [--apply] [--if-revision SHA256] [--watch --interval SECONDS] [--executable PATH] [--json]
   celorga thread post THREAD --message TEXT --author NAME [--agent-ref ID] [--source REF] [--idempotency-key KEY] [--request-turn AGENT ...] [--dir CORPUS] [--apply]
+    Message delivery only unless --request-turn names shared-room agents. Single-agent chats do not support this flag.
+    Preview writes nothing; --apply queues delivery for Celorga to consume. Queuing a turn request does not confirm a started turn.
+    To start or steer a single agent, send a message in the Celorga app or use the agent runtime's supported send command.
   celorga thread configure --auto-settle never|SECONDS [--dir CORPUS] [--apply]
   celorga thread configure THREAD --agent-turn-limit N|default [--dir CORPUS] [--apply]
   celorga thread wait THREAD --until reply|needs-you|idle|working [--after MESSAGE_ID] [--since ISO|DURATION] [--timeout SECONDS] [--json]
@@ -607,10 +613,14 @@ async function threadCommand(parsed: ParsedArgs): Promise<void> {
       },
     );
     const responders = result.message.requestedResponders?.map((token) => `@${token}`).join(", ");
+    const delivery = result.deliveryStatus === "delivered" ? "already delivered"
+      : result.applied ? "queued" : result.changed ? "would queue" : "already queued";
     output(
       parsed,
       result,
-      `${result.applied ? "queued" : result.changed ? "would queue" : "already queued"} message for ${id}${responders ? ` requesting a turn from ${responders}` : ""}\n${result.file}`,
+      `${delivery} message for ${id}\n${responders
+        ? `Turn request for ${responders}; turn start unconfirmed. Celorga resolves requests when it consumes the inbox; room limits and agent availability apply.\nUse celorga thread wait ${id} --after ${result.message.id} --until reply --dir CORPUS --timeout 60 to check for a reply.`
+        : "No agent turn requested; message delivery only."}\n${result.file}`,
     );
     return;
   }
