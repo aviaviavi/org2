@@ -827,4 +827,57 @@ final class AIChatSharedRoomTests: XCTestCase {
     }
     XCTAssertEqual(contextMessage.id, context.id)
   }
+
+  func testLegacyRoundDoesNotHideAgentRequestedReplyBeforeNextHumanMessage() {
+    let sourceID = "remote-opencode"
+    let codexID = AIChatDestinationConfiguration.localCodexID
+    let trigger = AIChatMessage(
+      role: .user, content: "Finish testing", audienceDestinationIDs: [sourceID],
+      targetDestinationID: sourceID
+    )
+    let sourceReply = AIChatMessage(
+      role: .assistant, content: "@codex release now", authorDestinationID: sourceID
+    )
+    let handoffRoundID = UUID()
+    let dispatch = AIChatMessage(
+      role: .user, content: sourceReply.content,
+      audienceDestinationIDs: [codexID], targetDestinationID: codexID,
+      isRoomDispatchCopy: true, roomRoundID: handoffRoundID,
+      provenance: AIChatMessageProvenance(requestedByLabel: "OpenCode")
+    )
+    let handoffReply = AIChatMessage(
+      role: .assistant, content: "Release complete", authorDestinationID: codexID,
+      roomRoundID: handoffRoundID,
+      provenance: AIChatMessageProvenance(requestedByLabel: "OpenCode")
+    )
+    let nextHuman = AIChatMessage(role: .user, content: "Did the release run?")
+    let window = AIChatTranscriptWindow(
+      messages: [trigger, sourceReply, dispatch, handoffReply, nextHuman],
+      isSharedRoom: true, displayLimit: AIChatTranscriptWindow.initialLimit
+    )
+    XCTAssertEqual(window.visibleMessagesForPresentation.map(\.id),
+                   [trigger.id, sourceReply.id, handoffReply.id, nextHuman.id])
+    XCTAssertTrue(AIChatThreadSearch.candidates(in: window.visibleItems)
+      .contains { $0.messageID == handoffReply.id })
+    let searchReply = AIChatThreadSearch.candidates(
+      in: [trigger, sourceReply, dispatch, handoffReply, nextHuman], isSharedRoom: true
+    ).first { $0.messageID == handoffReply.id }
+    XCTAssertEqual(searchReply?.scrollTargetID, handoffReply.id)
+
+    // Older hand-off replies may retain provenance without a round ID.
+    let untaggedReply = AIChatMessage(
+      role: .assistant, content: "Legacy hand-off reply", authorDestinationID: codexID,
+      provenance: AIChatMessageProvenance(requestedByLabel: "OpenCode")
+    )
+    let legacyWindow = AIChatTranscriptWindow(
+      messages: [trigger, sourceReply, untaggedReply, nextHuman],
+      isSharedRoom: true, displayLimit: AIChatTranscriptWindow.initialLimit
+    )
+    XCTAssertEqual(legacyWindow.visibleMessagesForPresentation.map(\.id),
+                   [trigger.id, sourceReply.id, untaggedReply.id, nextHuman.id])
+    XCTAssertEqual(AIChatThreadSearch.candidates(
+      in: [trigger, sourceReply, untaggedReply, nextHuman], isSharedRoom: true
+    ).first { $0.messageID == untaggedReply.id }?.scrollTargetID, untaggedReply.id)
+  }
+
 }

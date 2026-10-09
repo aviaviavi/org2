@@ -2059,7 +2059,12 @@ enum AIChatRoomTranscriptPresentation {
       if let roomRoundID = message.roomRoundID {
         groupedMessages = messagesByRoundID[roomRoundID] ?? [message]
       } else {
-        groupedMessages = Array(messages[index..<legacyGroupEndIndexes[index]])
+        // Legacy human rounds end at the next visible human post, but agent
+        // hand-offs can finish inside that range. Their replies are separate
+        // turns, not response columns belonging to the original audience.
+        groupedMessages = messages[index..<legacyGroupEndIndexes[index]].filter {
+          $0.roomRoundID == nil && $0.provenance?.isAgentTurnRequest != true
+        }
       }
       consumed.formUnion(groupedMessages.map(\.id))
 
@@ -2155,6 +2160,7 @@ struct AIChatThreadSearchMessageInput: Sendable {
   let isRoomDispatchCopy: Bool
   let roomRoundID: UUID?
   let beginsLegacySharedRound: Bool
+  let isAgentTurnRequest: Bool
 
   nonisolated init(_ message: AIChatMessage) {
     messageID = message.id
@@ -2163,6 +2169,7 @@ struct AIChatThreadSearchMessageInput: Sendable {
     attachmentFileNames = message.attachments.map(\.fileName)
     isRoomDispatchCopy = message.isRoomDispatchCopy
     roomRoundID = message.roomRoundID
+    isAgentTurnRequest = message.provenance?.isAgentTurnRequest == true
     beginsLegacySharedRound = message.role == .user
       && (!message.audienceDestinationIDs.isEmpty || message.audience != nil)
   }
@@ -2224,8 +2231,18 @@ enum AIChatThreadSearch {
         scrollTargetID = message.messageID
         anchorIndex = index
       } else if let roundID = message.roomRoundID {
-        scrollTargetID = roundID
-        anchorIndex = explicitRoundAnchors[roundID] ?? index
+        if let roundAnchor = explicitRoundAnchors[roundID] {
+          scrollTargetID = roundID
+          anchorIndex = roundAnchor
+        } else {
+          // An agent-requested round has only a hidden dispatch; its visible
+          // reply is a standalone row, so there is no round row to scroll to.
+          scrollTargetID = message.messageID
+          anchorIndex = index
+        }
+      } else if message.isAgentTurnRequest {
+        scrollTargetID = message.messageID
+        anchorIndex = index
       } else if message.role == .user {
         if message.beginsLegacySharedRound {
           legacyRoundAnchor = (message.messageID, index)

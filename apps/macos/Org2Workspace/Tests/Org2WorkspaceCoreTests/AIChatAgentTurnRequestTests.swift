@@ -219,6 +219,12 @@ final class AIChatAgentTurnRequestTests: XCTestCase {
     XCTAssertTrue(requested.allSatisfy { $0.isRoomDispatchCopy && $0.deliveryStatus == .sent })
     let visible = thread.messages.filter { !$0.isRoomDispatchCopy }
     XCTAssertEqual(visible.filter { $0.role == .assistant }.count, 5)
+    let window = AIChatTranscriptWindow(
+      messages: thread.messages, isSharedRoom: true,
+      displayLimit: AIChatTranscriptWindow.initialLimit
+    )
+    XCTAssertEqual(window.visibleMessagesForPresentation.map(\.id), visible.map(\.id))
+
     let replyFromOpenClaw = try XCTUnwrap(visible.first { $0.authorDestinationID == openClaw })
     XCTAssertEqual(replyFromOpenClaw.provenance?.requestedByLabel, "Codex")
     XCTAssertEqual(store.aiChatProvenanceCaption(for: replyFromOpenClaw), "requested by Codex")
