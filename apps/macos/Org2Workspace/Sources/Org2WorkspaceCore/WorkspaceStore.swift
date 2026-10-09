@@ -6119,8 +6119,8 @@ extension WorkspaceStore {
          !hostRef.isEmpty {
         automationOwnerHostRef = hostRef
       }
+      let failures = payload.failures ?? []
       if payload.due.isEmpty {
-        let failures = payload.failures ?? []
         automationSchedulerErrorText = failures.isEmpty ? nil : failures
           .map { "\($0.title): \($0.failure)" }.joined(separator: "\n")
         automationSchedulerStatusText = payload.reason ?? (!failures.isEmpty
@@ -6132,16 +6132,20 @@ extension WorkspaceStore {
       }
       automationSchedulerStatusText = "Dispatching \(payload.due.count) automation\(payload.due.count == 1 ? "" : "s")…"
       var dispatchedCount = 0
-      var dispatchErrors: [String] = []
+      var failureMessages = Dictionary(uniqueKeysWithValues: failures.map {
+        ($0.workflowId, "\($0.title): \($0.failure)")
+      })
       for item in payload.due {
         if await dispatchScheduledAgentAutomation(item) {
           dispatchedCount += 1
+          failureMessages.removeValue(forKey: item.workflowId)
         } else if let failure = automationSchedulerErrorText {
-          dispatchErrors.append("\(item.title): \(failure)")
+          failureMessages[item.workflowId] = "\(item.title): \(failure)"
         }
         automationSchedulerErrorText = nil
       }
-      automationSchedulerErrorText = dispatchErrors.isEmpty ? nil : dispatchErrors.joined(separator: "\n")
+      automationSchedulerErrorText = failureMessages.isEmpty ? nil : failureMessages
+        .sorted { $0.key < $1.key }.map { $0.value }.joined(separator: "\n")
       automationSchedulerStatusText = dispatchedCount == payload.due.count
         ? "Dispatched \(dispatchedCount) automation\(dispatchedCount == 1 ? "" : "s")"
         : "Dispatched \(dispatchedCount) of \(payload.due.count) automations"
