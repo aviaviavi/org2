@@ -285,6 +285,23 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     XCTAssertEqual(store.automationSchedulerStatusText, "1 automation last failed")
     XCTAssertTrue(store.automationSchedulerErrorText?.contains("missing-on-host") == true)
 
+    var claude = try XCTUnwrap(AIChatDestinationConfiguration.defaults.first {
+      $0.id == AIChatDestinationConfiguration.localClaudeID
+    })
+    claude.isEnabled = true
+    store.updateAIChatDestination(claude)
+    _ = try await cli.run([
+      "workflow", "create", "other-work", "--title", "Other work",
+      "--prompt", "Prepare the brief.", "--destination-ref", claude.id,
+      "--schedule", "0 0 * * *", "--timezone", "UTC",
+      "--now", "2099-10-07T23:10:00Z", "--dir", root.path, "--json"
+    ])
+    await store.checkDueAgentAutomations(now: firstDay)
+    XCTAssertEqual(store.automationSchedulerStatusText, "Dispatched 1 automation")
+    XCTAssertTrue(store.automationSchedulerErrorText?.contains("missing-on-host") == true,
+                  "dispatching unrelated work must preserve the failed job's warning")
+    _ = try await cli.run(["workflow", "pause", "other-work", "--dir", root.path, "--json"])
+
     let secondDay = try XCTUnwrap(formatter.date(from: "2099-10-09T06:46:00Z"))
     await store.checkDueAgentAutomations(now: secondDay)
     let failed = store.agentRuns.filter { $0.workflowId == "daily-repair" }
@@ -292,11 +309,6 @@ final class WorkspaceClaudeCodeDestinationTests: XCTestCase {
     XCTAssertTrue(failed.allSatisfy { $0.status == "failed" })
     XCTAssertEqual(Set(failed.compactMap { $0.attempt?.number }), [1, 2])
 
-    var claude = try XCTUnwrap(AIChatDestinationConfiguration.defaults.first {
-      $0.id == AIChatDestinationConfiguration.localClaudeID
-    })
-    claude.isEnabled = true
-    store.updateAIChatDestination(claude)
     _ = try await cli.run([
       "workflow", "schedule", "daily-repair", "--cron", "45 23 * * *",
       "--timezone", "America/Los_Angeles", "--destination-ref", claude.id,
