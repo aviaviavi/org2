@@ -248,11 +248,20 @@ function socketPath(configFile: string): string {
   return path.join(path.dirname(configFile), `control-${crypto.createHash("sha256").update(configFile).digest("hex").slice(0, 12)}.sock`);
 }
 
+// Stopping persists every chat before the worker exits, which can take well
+// over 30 seconds on a large corpus.
+export const STOP_CONTROL_TIMEOUT_MS = 180_000;
+const DEFAULT_CONTROL_TIMEOUT_MS = 30_000;
+
+function controlTimeoutMs(command: string): number {
+  return command === "stop" ? STOP_CONTROL_TIMEOUT_MS : DEFAULT_CONTROL_TIMEOUT_MS;
+}
+
 export function serverControl(configFile: string, command: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const client = net.createConnection(socketPath(configFile));
     let buffer = "";
-    client.setTimeout(30_000, () => client.destroy(new Error("Server control request timed out")));
+    client.setTimeout(controlTimeoutMs(command) + 5_000, () => client.destroy(new Error("Server control request timed out")));
     client.on("error", reject);
     client.on("connect", () => client.write(`${JSON.stringify({ command, ...extra })}\n`));
     client.on("data", (chunk) => {
@@ -264,6 +273,21 @@ export function serverControl(configFile: string, command: string, extra: Record
     });
     client.on("end", () => { if (!buffer.includes("\n")) reject(new Error("Server closed the control connection")); });
   });
+}
+
+/** Resolve once nothing accepts connections on the control socket, or after timeoutMs. */
+export async function waitForControlSocketClosed(configFile: string, timeoutMs: number, pollMs = 250): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const open = await new Promise<boolean>((resolve) => {
+      const probe = net.createConnection(socketPath(configFile));
+      probe.once("connect", () => { probe.destroy(); resolve(true); });
+      probe.once("error", () => resolve(false));
+    });
+    if (!open) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
 }
 
 async function serve(configFile: string, config: ServerConfiguration): Promise<void> {
@@ -292,7 +316,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
     clients.add(client);
     client.on("close", () => clients.delete(client));
     client.on("error", () => {});
-    client.setTimeout(35_000, () => client.destroy());
+    client.setTimeout(STOP_CONTROL_TIMEOUT_MS + 10_000, () => client.destroy());
     let buffer = "";
     client.on("data", (chunk) => {
       buffer += chunk.toString();
@@ -304,7 +328,7 @@ async function serve(configFile: string, config: ServerConfiguration): Promise<v
         if (!["status", "pair", "revoke", "stop", "push-config", "drain", "resume"].includes(request.command)) throw new Error("Unknown control command");
         if (!child?.stdin?.writable) throw new Error("Server worker is starting or unavailable");
         const id = crypto.randomUUID();
-        const timer = setTimeout(() => { pending.delete(id); client.end('{"error":"Worker timed out"}\n'); }, 30_000);
+        const timer = setTimeout(() => { pending.delete(id); client.end('{"error":"Worker timed out"}\n'); }, controlTimeoutMs(request.command));
         pending.set(id, { client, timer, command: request.command });
         child.stdin.write(`${JSON.stringify({ ...request, id })}\n`);
       } catch (error) { client.end(`${JSON.stringify({ error: (error as Error).message })}\n`); }
@@ -599,8 +623,16 @@ export async function runServerCommand(args: string[]): Promise<void> {
     if (!drained.drained) {
       throw new Error(`${drained.remaining} turn(s) are still running after ${drained.waitedSeconds}s; run celorga server resume, wait, or stop without --drain to interrupt them`);
     }
-    const result = await serverControl(configFile, "stop");
-    if (result.error) throw new Error(String(result.error));
+    let result: Record<string, unknown>;
+    try {
+      result = await serverControl(configFile, "stop");
+    } catch (error) {
+      // The worker may still be shutting down. For restart, wait for it to go
+      // away and start it again instead of leaving the service stopped.
+      if (command !== "restart") throw error;
+      result = { stopped: "unknown", stopError: (error as Error).message };
+    }
+    if (result.error && command !== "restart") throw new Error(String(result.error));
     let restart: Record<string, unknown> | undefined;
     if (command === "restart") {
       // A deliberate stop leaves the launchd service stopped; start it again
@@ -615,7 +647,10 @@ export async function runServerCommand(args: string[]): Promise<void> {
             if (Date.now() >= deadline) break;
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
+        } else {
+          await waitForControlSocketClosed(configFile, STOP_CONTROL_TIMEOUT_MS);
         }
+        // Without -k, kickstart starts a stopped service and leaves a running one alone.
         const kick = spawnSync("launchctl", ["kickstart", `gui/${process.getuid?.()}/${label}`], { encoding: "utf8" });
         restart = { service: label, started: kick.status === 0, ...(kick.status === 0 ? {} : { error: (kick.stderr || kick.stdout || "").trim() }) };
       } else {
