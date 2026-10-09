@@ -1214,12 +1214,18 @@ final class OrgSyntaxTextView: NSTextView {
     }
   }
 
+  /// The editor that most recently took keyboard focus. Commands that finish
+  /// after a modal panel (such as `/image`) insert into it through the native
+  /// editing path; see ``OrgSyntaxTextEditorInsertionTarget``.
+  static weak var lastFocused: OrgSyntaxTextView?
+
   override func becomeFirstResponder() -> Bool {
     if let window, !window.isKeyWindow {
       window.makeKey()
     }
     let becameFirstResponder = super.becomeFirstResponder()
     if becameFirstResponder {
+      Self.lastFocused = self
       needsDisplay = true
       enclosingScrollView?.needsDisplay = true
       window?.contentView?.needsDisplay = true
@@ -1957,6 +1963,65 @@ enum OrgSyntaxTextSelectionBridge {
     let localPoint = textView.convert(windowPoint, from: nil)
     let length = textView.textStorage?.length ?? 0
     return min(max(0, textView.characterIndexForInsertion(at: localPoint)), length)
+  }
+}
+
+/// The focused editor and document a deferred insertion belongs to.
+///
+/// Opening a modal panel takes focus from the editor, which checkpoints its
+/// native buffer asynchronously. Text written into the SwiftUI binding after
+/// the panel closes can then be overwritten by that checkpoint or by the next
+/// buffer publication, so a `/image` link silently disappeared. Inserting
+/// through the text view itself (with undo) goes through the same path as
+/// typing and cannot be lost that way.
+@MainActor
+struct OrgSyntaxTextEditorInsertionTarget {
+  private weak var textView: OrgSyntaxTextView?
+  private let documentGeneration: UInt64?
+
+  /// Captures the most recently focused editor that is still on screen.
+  static func focused() -> OrgSyntaxTextEditorInsertionTarget? {
+    guard let view = OrgSyntaxTextView.lastFocused, view.window != nil, view.isEditable else {
+      return nil
+    }
+    return OrgSyntaxTextEditorInsertionTarget(
+      textView: view,
+      documentGeneration: view.pasteDocumentGeneration?()
+    )
+  }
+
+  /// Whether the editor is still mounted and still shows the same document.
+  var isCurrent: Bool {
+    guard let textView, textView.window != nil, textView.isEditable else { return false }
+    return textView.pasteDocumentGeneration?() == documentGeneration
+  }
+
+  /// Replaces `range` (clamped to the document), or the current selection
+  /// when nil, with `text` as one undoable edit, and leaves the caret after
+  /// it. When `expectedPrefix` is set, the replaced text must start with it.
+  @discardableResult
+  func replace(
+    _ range: NSRange? = nil,
+    with text: String,
+    expectedPrefix: String? = nil
+  ) -> Bool {
+    guard isCurrent, let textView, let storage = textView.textStorage else { return false }
+    let target = range ?? textView.selectedRange()
+    let location = min(max(0, target.location), storage.length)
+    let replacement = NSRange(
+      location: location,
+      length: min(max(0, target.length), storage.length - location)
+    )
+    if let expectedPrefix,
+       !storage.attributedSubstring(from: replacement).string.hasPrefix(expectedPrefix) {
+      return false
+    }
+    guard textView.shouldChangeText(in: replacement, replacementString: text) else { return false }
+    storage.replaceCharacters(in: replacement, with: text)
+    textView.didChangeText()
+    textView.setSelectedRange(NSRange(location: location + (text as NSString).length, length: 0))
+    textView.window?.makeFirstResponder(textView)
+    return true
   }
 }
 

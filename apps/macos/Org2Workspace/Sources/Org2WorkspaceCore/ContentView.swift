@@ -14156,13 +14156,20 @@ private struct OrgSourceEditorWithLinkTools: View {
           options: options,
           selectedIndex: slashCommandState.selectedIndex(for: slashMatch, optionCount: options.count),
           choose: { command in
-            OrgSyntaxTextEditor.publishPendingTextChanges()
-            let text = interaction.text as NSString
-            guard NSMaxRange(slashMatch.replacementRange) <= text.length else { return }
-            applyInlineEdit(InlineSelectionReplacement(
-              text: text.replacingCharacters(in: slashMatch.replacementRange, with: ""),
-              selectedRange: NSRange(location: slashMatch.replacementRange.location, length: 0)
-            ))
+            let removedNatively = OrgSyntaxTextEditorInsertionTarget.focused()?.replace(
+              slashMatch.replacementRange,
+              with: "",
+              expectedPrefix: "/"
+            ) == true
+            if !removedNatively {
+              OrgSyntaxTextEditor.publishPendingTextChanges()
+              let text = interaction.text as NSString
+              guard NSMaxRange(slashMatch.replacementRange) <= text.length else { return }
+              applyInlineEdit(InlineSelectionReplacement(
+                text: text.replacingCharacters(in: slashMatch.replacementRange, with: ""),
+                selectedRange: NSRange(location: slashMatch.replacementRange.location, length: 0)
+              ))
+            }
             runSlashCommand(command)
           }
         )
@@ -14321,9 +14328,20 @@ private struct OrgSourceEditorWithLinkTools: View {
   private func runSlashCommand(_ command: WorkspaceSlashCommand) {
     switch command {
     case .image:
+      // Capture the editor before the picker takes focus from it.
+      let target = OrgSyntaxTextEditorInsertionTarget.focused()
       guard let imageURL = WorkspaceSlashCommands.chooseImage() else { return }
       Task { @MainActor in
         guard let link = await store.importSourceEditorImage(from: imageURL) else { return }
+        if let target {
+          if target.replace(with: link) { return }
+          // The editor closed or switched documents while the image was
+          // chosen. Never drop the link silently.
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(link, forType: .string)
+          store.statusText = "The editor changed before the image was inserted. Its link is on the clipboard."
+          return
+        }
         OrgSyntaxTextEditor.publishPendingTextChanges()
         let text = interaction.text as NSString
         let selection = interaction.selection
