@@ -835,7 +835,10 @@ private final class WorkspaceCacheReleaseSink: @unchecked Sendable {
 
 private struct CorpusChangeObservation {
   let eventSerial: Int
-  let snapshot: AIChatCorpusSnapshot
+  /// Reads the pre-turn corpus text in the background. Dispatch never waits
+  /// for it: on a large corpus the read took tens of seconds and held every
+  /// agent turn at "Connecting". The change summary awaits it after the turn.
+  let snapshot: Task<AIChatCorpusSnapshot, Never>
 }
 
 struct CorpusFileEventClassification: Equatable, Sendable {
@@ -1338,12 +1341,17 @@ private struct AIChatBlockContextPointer: Equatable, Sendable {
 private struct AIChatCorpusSnapshot: Sendable {
   let rootPath: String
   let files: [String: AIChatSnapshotFile]
+  /// Files already modified after the turn began when the background read
+  /// reached them. Their pre-turn text is unknown, so the change summary
+  /// leaves them out rather than reporting a wrong diff.
+  var unknownPaths: Set<String> = []
 
   func filtered(to relativePaths: Set<String>) -> AIChatCorpusSnapshot {
     guard !relativePaths.isEmpty else { return self }
     return AIChatCorpusSnapshot(
       rootPath: rootPath,
-      files: files.filter { relativePaths.contains($0.key) }
+      files: files.filter { relativePaths.contains($0.key) },
+      unknownPaths: unknownPaths.intersection(relativePaths)
     )
   }
 }
@@ -3274,6 +3282,10 @@ public final class WorkspaceStore {
   private var staleCodexRuntimeThreadIDs: Set<UUID> = []
   private var activeSharedRoomRuntimeByThreadID: [UUID: AIChatRuntime] = [:]
   private var activeSharedRoomDestinationByThreadID: [UUID: String] = [:]
+  /// Runs inside the background pre-turn corpus read before it starts.
+  var aiChatCorpusSnapshotGateForTesting: (@Sendable () async -> Void)?
+  /// When the user sent the turn now being dispatched, for timing logs.
+  private var aiChatDispatchSentAtByThreadID: [UUID: Date] = [:]
   var aiChatSteerHandlerForTesting: ((
     _ runtime: AIChatRuntime,
     _ threadID: UUID,
@@ -26888,6 +26900,8 @@ extension WorkspaceStore {
         removeFirstPendingAIChatUserMessage(in: threadID)
         continue
       }
+      aiChatDispatchSentAtByThreadID[threadID] = userMessage.createdAt
+      AIChatDispatchTiming.record("drain", threadID: threadID, sentAt: userMessage.createdAt)
       var dispatchDestinationID = chatThread.isSharedRoom
         ? (userMessage.targetDestinationID
             ?? userMessage.targetRuntime.map(AIChatDestinationConfiguration.defaultID(for:))
@@ -26980,6 +26994,11 @@ extension WorkspaceStore {
         } else {
           changeObservation = nil
         }
+        AIChatDispatchTiming.record(
+          "dispatch \(dispatchDestination.adapter.rawValue)",
+          threadID: threadID,
+          sentAt: userMessage.createdAt
+        )
         let reply: String
         switch dispatchDestination.adapter {
         case .openClaw:
@@ -28181,6 +28200,11 @@ extension WorkspaceStore {
         )
       }
     }
+    AIChatDispatchTiming.record(
+      "opencode launch",
+      threadID: threadID,
+      sentAt: aiChatDispatchSentAtByThreadID[threadID]
+    )
     let result: OpenCodeTurnResult
     do {
       result = try await openCodeClient(forDestinationID: destinationID).runTurn(
@@ -29352,6 +29376,11 @@ extension WorkspaceStore {
   private func handleOpenCodeEvent(_ event: OpenCodeEvent, threadID: UUID) async {
     switch event {
     case .processStarted:
+      AIChatDispatchTiming.record(
+        "opencode process started",
+        threadID: threadID,
+        sentAt: aiChatDispatchSentAtByThreadID[threadID]
+      )
       guard aiChatThreads.contains(where: { $0.id == threadID }) else { return }
       aiChatLastEventAtByThreadID[threadID] = Date()
       openClawGatewayStateByThreadID[threadID] = .connected
@@ -29398,6 +29427,11 @@ extension WorkspaceStore {
     threadID: UUID,
     title: String
   ) {
+    AIChatDispatchTiming.record(
+      "\(title.lowercased()) first event",
+      threadID: threadID,
+      sentAt: aiChatDispatchSentAtByThreadID.removeValue(forKey: threadID)
+    )
     guard aiChatThreads.contains(where: { $0.id == threadID }) else { return }
     aiChatLastEventAtByThreadID[threadID] = Date()
     openClawGatewayStateByThreadID[threadID] = .connected
@@ -31507,24 +31541,31 @@ extension WorkspaceStore {
     guard let corpusRoot = requestedCorpusRoot ?? corpusRoot else {
       return CorpusChangeObservation(
         eventSerial: serial,
-        snapshot: AIChatCorpusSnapshot(rootPath: "", files: [:])
+        snapshot: Task { AIChatCorpusSnapshot(rootPath: "", files: [:]) }
       )
     }
     let root = corpusRoot.standardizedFileURL
-    let files = corpusFiles
-    let snapshot = await Task.detached(priority: .utility) {
-      if let index = Self.freshWorkspaceSearchIndex(files: files, corpusRoot: root) {
-        return AIChatCorpusSnapshot(
-          rootPath: root.path,
-          files: Dictionary(uniqueKeysWithValues: index.files.map {
-            ($0.relativePath, AIChatSnapshotFile(text: $0.lines.joined(separator: "\n")))
-          })
-        )
-      }
-      return (try? Self.aiChatCorpusSnapshot(corpusRoot: root))
-        ?? AIChatCorpusSnapshot(rootPath: root.path, files: [:])
+    let startedAt = Date()
+    let gate = aiChatCorpusSnapshotGateForTesting
+    // Listing paths is fast (well under a second for ~10,000 files) and fixes
+    // which files existed before the turn. Reading their text is not: a large
+    // corpus held every turn at "Connecting" for tens of seconds. Small corpora
+    // are still read before dispatch; large ones are read in the background.
+    let listing = await Task.detached(priority: .userInitiated) {
+      Self.aiChatCorpusSnapshotListing(corpusRoot: root)
     }.value
-    return CorpusChangeObservation(eventSerial: serial, snapshot: snapshot)
+    let read = Task.detached(priority: .userInitiated) {
+      if let gate { await gate() }
+      return Self.aiChatCorpusSnapshot(
+        corpusRoot: root,
+        listing: listing,
+        modifiedBefore: startedAt
+      )
+    }
+    if listing.totalBytes <= Self.aiChatChangeSnapshotEagerReadMaxBytes, gate == nil {
+      _ = await read.value
+    }
+    return CorpusChangeObservation(eventSerial: serial, snapshot: read)
   }
 
   private func aiChatChangeSummary(
@@ -31538,13 +31579,18 @@ extension WorkspaceStore {
       in: reply,
       corpusRoot: root
     )
+    let beforeAll = await observation.snapshot.value
     if self.corpusRoot?.standardizedFileURL.path != root.path {
       let afterSnapshot = await Task.detached(priority: .utility) {
         try? Self.aiChatCorpusSnapshot(corpusRoot: root)
       }.value
-      guard let afterSnapshot else { return nil }
+      guard var afterSnapshot else { return nil }
+      afterSnapshot = AIChatCorpusSnapshot(
+        rootPath: afterSnapshot.rootPath,
+        files: afterSnapshot.files.filter { !beforeAll.unknownPaths.contains($0.key) }
+      )
       return Self.aiChatChangeSummary(
-        before: observation.snapshot,
+        before: beforeAll,
         after: afterSnapshot
       ).map {
         attributedAIChatChangeSummary($0, referencedPaths: referencedPaths)
@@ -31561,7 +31607,8 @@ extension WorkspaceStore {
         .map(\.path))
       for relativePath in referencedPaths {
         let path = root.appendingPathComponent(relativePath).standardizedFileURL.path
-        if (observation.snapshot.files[relativePath] != nil) != FileManager.default.fileExists(atPath: path) {
+        if !beforeAll.unknownPaths.contains(relativePath),
+           (beforeAll.files[relativePath] != nil) != FileManager.default.fileExists(atPath: path) {
           changedPaths.insert(path)
         }
       }
@@ -31569,12 +31616,13 @@ extension WorkspaceStore {
       let relativeChangedPaths = Set(changedPaths.compactMap { path -> String? in
         let prefix = root.path + "/"
         return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : nil
-      })
+      }).subtracting(beforeAll.unknownPaths)
+      guard !relativeChangedPaths.isEmpty else { continue }
       let afterSnapshot = await Task.detached(priority: .utility) {
         try? Self.aiChatCorpusSnapshot(corpusRoot: root, relativePaths: relativeChangedPaths)
       }.value
       guard let afterSnapshot else { continue }
-      let beforeSnapshot = observation.snapshot.filtered(to: relativeChangedPaths)
+      let beforeSnapshot = beforeAll.filtered(to: relativeChangedPaths)
       if let summary = Self.aiChatChangeSummary(before: beforeSnapshot, after: afterSnapshot) {
         return attributedAIChatChangeSummary(summary, referencedPaths: referencedPaths)
       }
@@ -48687,6 +48735,80 @@ extension WorkspaceStore {
   nonisolated private static let roamTodoKeywords = Set([
     "TODO", "OPEN", "BACKLOG", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"
   ])
+
+  nonisolated private static let aiChatChangeSnapshotEagerReadMaxBytes = 16_000_000
+
+  struct AIChatCorpusSnapshotListing: Sendable {
+    struct Entry: Sendable {
+      let url: URL
+      let relativePath: String
+    }
+
+    var entries: [Entry] = []
+    var totalBytes = 0
+  }
+
+  /// Text files eligible for the pre-turn snapshot, without reading them.
+  nonisolated static func aiChatCorpusSnapshotListing(corpusRoot: URL) -> AIChatCorpusSnapshotListing {
+    let root = corpusRoot.standardizedFileURL
+    let rootPath = root.path
+    let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
+    var listing = AIChatCorpusSnapshotListing()
+    guard let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: Array(resourceKeys),
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else { return listing }
+    for case let url as URL in enumerator {
+      guard let values = try? url.resourceValues(forKeys: resourceKeys) else { continue }
+      if values.isDirectory == true {
+        if shouldSkipDefaultCorpusDirectory(url.lastPathComponent) {
+          enumerator.skipDescendants()
+        }
+        continue
+      }
+      guard values.isRegularFile == true,
+            aiChatChangeSnapshotAllowedExtensions.contains(url.pathExtension.lowercased()),
+            let byteCount = values.fileSize,
+            byteCount <= aiChatChangeSnapshotMaxFileBytes
+      else { continue }
+      let path = url.standardizedFileURL.path
+      let relativePath = path.hasPrefix(rootPath + "/")
+        ? String(path.dropFirst(rootPath.count + 1))
+        : url.lastPathComponent
+      listing.entries.append(.init(url: url, relativePath: relativePath))
+      listing.totalBytes += byteCount
+    }
+    return listing
+  }
+
+  /// Reads the listed files. A file already modified after `modifiedBefore`
+  /// when the read reaches it existed before the turn, but its pre-turn text
+  /// is gone, so it is recorded as unknown instead.
+  nonisolated private static func aiChatCorpusSnapshot(
+    corpusRoot: URL,
+    listing: AIChatCorpusSnapshotListing,
+    modifiedBefore: Date
+  ) -> AIChatCorpusSnapshot {
+    let rootPath = corpusRoot.standardizedFileURL.path
+    var files: [String: AIChatSnapshotFile] = [:]
+    var unknownPaths: Set<String> = []
+    for entry in listing.entries {
+      guard let data = try? Data(contentsOf: entry.url) else {
+        // Removed or replaced during the turn.
+        unknownPaths.insert(entry.relativePath)
+        continue
+      }
+      let attributes = try? FileManager.default.attributesOfItem(atPath: entry.url.path)
+      if let modified = attributes?[.modificationDate] as? Date, modified >= modifiedBefore {
+        unknownPaths.insert(entry.relativePath)
+        continue
+      }
+      guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { continue }
+      files[entry.relativePath] = AIChatSnapshotFile(text: text)
+    }
+    return AIChatCorpusSnapshot(rootPath: rootPath, files: files, unknownPaths: unknownPaths)
+  }
 
   nonisolated private static func aiChatCorpusSnapshot(corpusRoot: URL) throws -> AIChatCorpusSnapshot {
     let root = corpusRoot.standardizedFileURL
