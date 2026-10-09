@@ -33,6 +33,7 @@ const scenarios = [
   {
     mode: "approvals",
     target: "publish the beacon launch brief",
+    scale: 2,
     fileName: "macos-workspace-runs-review.png",
   },
   {
@@ -56,11 +57,13 @@ const scenarios = [
   },
   {
     mode: "ai-room",
+    scale: 2,
     fileName: "macos-workspace-ai-room.png",
   },
   {
     mode: "meetings",
     target: "beta review",
+    scale: 2,
     fileName: "macos-workspace-meetings.png",
   },
   // Homepage crops: rendered at 2x and cropped (in points) to the part of the

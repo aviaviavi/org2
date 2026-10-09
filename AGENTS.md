@@ -235,7 +235,9 @@ contract that reads this file.
   `celorga agent capabilities`, `docs/site/agent-quickstart.org`,
   `docs/site/llms.txt`, `docs/site/features.org`, and the relevant
   reference/editor page aligned.
-- Keep public positioning provider-neutral. Runtime-specific integration details
+- Keep public positioning provider-neutral. The homepage and features page may
+  name supported harnesses and providers as compatibility examples, but must
+  not imply any one runtime is required. Runtime-specific integration details
   belong in the agent quickstart, tooling reference, or integration docs rather
   than the product homepage.
 - If no user-facing documentation change is needed, state why in the handoff.

@@ -1,38 +1,86 @@
 * Celorga
 
-*Celorga* is a local-first workspace for building knowledge in plain text and
-putting it to work with people and AI agents. It has two layers under one name:
-the *Celorga app* for macOS and iOS, and the *Celorga runtime*, an independently
-specified compiler, semantic Org profile, CLI (=celorga=), npm package, schemas,
-and editor tooling. Documents are ordinary =.org= files, configured per
-workspace with =celorga.json=.
+*Every AI agent you use. One workspace you own.*
 
-Install the CLI and language server from npm:
+Celorga is an open-source control plane for AI agents, built for knowledge work
+instead of code. Run Claude Code, Codex, OpenCode, and local models side by side
+on your notes, tasks, meetings, and data, and approve what matters from your
+desk or your phone. Everything they read and write is a plain-text file you own.
+
+[[https://celorga.io/][Website]] · [[https://celorga.io/downloads.html][Download]] · [[https://celorga.io/getting-started.html][Getting started]] · [[https://celorga.io/features.html][Features]] · [[https://celorga.io/reference.html][Developer docs]]
+
+[[file:docs/site/assets/screenshots/home-agents-room.png]]
+
+** Why people use it
+
+- *Bring your own agents.* Celorga drives the harnesses and models you already
+  use: Claude Code, Codex, OpenCode, Pi, OpenClaw, Ollama, Anthropic,
+  OpenRouter, or any OpenAI-compatible endpoint, locally or over SSH. It never
+  resells tokens, and credentials stay with the harness or in the keychain.
+- *Agents side by side.* Put several agents in one conversation, compare their
+  answers, and let one hand off to the next with visible turns and loop limits.
+- *Hand off a task, not a prompt.* Start agent work from any TODO. Celorga opens
+  a durable run that cites the task and shows a live status badge on it.
+  Scheduled automations, an Activity view, and a headless server keep work
+  moving while your laptop sleeps.
+- *Decisions wait for you.* Publishing, follow-ups, and AI-written summaries go
+  to one approval queue that you can clear from your desktop or iPhone.
+- *Memory you can read.* Notes are ordinary =.org= files. Every agent reads and
+  cites the same files, generated work keeps its provenance until a person
+  accepts it, and sensitive sections can be encrypted to a single agent.
+- *More than a chat window.* Agenda and linked notes, local meeting
+  transcription, SQL data notebooks with charts, a distraction-free Prose mode,
+  and one-step publishing to the web, PDF, slides, or Google Docs.
+
+If you've used a desktop app for coding agents, the shape will feel familiar.
+Celorga brings it to research, planning, writing, meetings, and operations, and
+builds it on open files instead of a hosted database.
+
+** Where it runs
+
+| Surface                     | Status                                         |
+|-----------------------------+------------------------------------------------|
+| Mac app                     | Available for Apple Silicon and Intel          |
+| iPhone app                  | TestFlight beta; also buildable from source    |
+| Headless server             | Available on an always-on Mac (macOS 14+)      |
+| CLI, MCP server, LSP        | npm package, macOS and Linux                   |
+| Editors                     | VS Code, Vim/Neovim, Emacs                     |
+| Linux desktop app           | On the roadmap                                 |
+
+Download the apps from https://celorga.io/downloads.html, or install the CLI
+and language server from npm:
 
 #+begin_src sh
 npm i -g celorga
-celorga --help
+celorga agenda --dir ~/notes --recursive
+celorga mcp serve --dir ~/notes
 #+end_src
 
-The Mac app, iOS app, and editor extensions are available from
-https://celorga.io/downloads.html.
+** How it's built
 
-The initial plugin runtime installs self-contained Git packages through
+Celorga has two layers under one name: the *Celorga app* for macOS and iOS, and
+the *Celorga runtime*, an independently specified compiler, semantic Org
+profile, CLI (=celorga=), npm package, schemas, and editor tooling. The apps,
+CLI, editors, and agents all read the same plain-text files through that shared
+runtime, so nothing depends on a private database. Each workspace is configured
+with an optional =celorga.json=.
+
+The independently implementable v0 language standard for Celorga's Org profile
+lives under =spec/v0/=. It combines a normative surface grammar, deterministic
+contextual parsing rules, the canonical AST schema, and executable conformance
+cases. The optimized TypeScript parser and editor parsers implement that
+contract; they do not define separate language dialects.
+
+The plugin runtime installs self-contained Git packages through
 =celorga plugin=, pins exact commits and SHA-256 contents in a corpus lock file,
 and requires machine-local trust before contributed CLI commands or sandboxed
 document renderers execute. The same renderer contribution is used by CLI HTML
 export and the Celorga app; there is no separate native-app plugin ABI. See
 https://celorga.io/tooling-reference.html#plugins.
 
-Product site and developer docs: https://celorga.io/
+The canonical project docs live on the website: https://celorga.io/
 
-For now, the canonical project docs live on the website.
-
-The independently implementable v0 language standard for Celorga's Org profile lives under
-=spec/v0/=. It combines a normative surface grammar, deterministic contextual
-parsing rules, the canonical AST schema, and executable conformance cases. The
-optimized TypeScript parser and editor parsers implement that contract; they do
-not define separate language dialects.
+Celorga is licensed under the Apache License 2.0.
 
 ** Agent discovery
 

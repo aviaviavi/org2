@@ -199,7 +199,14 @@ if (
 if (!/<h2\s+id="[^"]+">/.test(features)) {
   fail("features page sections must use addressable level-two headings");
 }
-if (/\b(?:Codex|OpenClaw)\b/.test(homepage) || /\b(?:Codex|OpenClaw)\b/.test(features)) {
+// Named harnesses may appear as compatibility examples, but the positioning must
+// stay provider-neutral: no single runtime is required, and any compatible
+// endpoint or MCP client works.
+if (
+  !homepage.includes("Nothing here is required")
+  || !homepage.includes("OpenAI-compatible")
+  || !homepage.includes("any MCP client")
+) {
   fail("homepage and feature positioning must remain agent- and model-neutral");
 }
 if (
@@ -214,7 +221,7 @@ if (
   fail("public onboarding must explain the provider-neutral agent boundary");
 }
 if (
-  !homepage.includes("#+TITLE: Your notes, your files, and your AI agents, working together.")
+  !homepage.includes("#+TITLE: Every AI agent you use. One workspace you own.")
   || !homepage.includes("The Celorga runtime provides the independently specified compiler")
   || !productArchitecture.includes("A local-first workspace built on ordinary files and an open toolkit.")
   || !productArchitecture.includes("The npm package is =celorga=")

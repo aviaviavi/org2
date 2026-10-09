@@ -219,7 +219,7 @@ Scarf redirects those requests to the matching =github.com/aviaviavi/celorga/rel
 
 #+BEGIN_EXPORT html
 <section class="celorga-page-intro celorga-downloads-intro">
-  <p>Celorga is a local-first workspace app with an open runtime, CLI, and developer toolkit. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
+  <p>Celorga is an open-source, local-first workspace for AI agents and the work they do, with an open runtime, CLI, and developer toolkit underneath. Celorga disk images are hosted by GitHub Releases, while the VS Code extension and npm package link to their canonical registry pages.</p>
 </section>
 #+END_EXPORT${alphaPreamble}
 
@@ -256,7 +256,11 @@ Celorga brings capture, agenda, approvals, and Mac-hosted AI chat to iPhone. The
 </section>
 #+END_EXPORT
 
-The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.${stableDownloadSection}
+The [[file:getting-started.org::*iOS app][iOS setup guide]] covers source signing, the share extension, corpus sync, and pairing Mobile Remote with the Mac app over Tailscale.
+
+* Linux and other platforms
+
+The Celorga runtime already runs on Linux. Install the CLI, MCP server, and language server with =npm i -g celorga=, then use the [[file:editors-vscode.org][VS Code]], [[file:editors-vim.org][Vim / Neovim]], or [[file:editors-emacs.org][Emacs]] integrations with the same files you sync from a Mac. A native Linux desktop app is on the roadmap; follow progress or ask for it on [[https://github.com/aviaviavi/celorga][GitHub]].${stableDownloadSection}
 `;
 }
 

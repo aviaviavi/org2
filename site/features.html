@@ -8,26 +8,26 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
-<meta name="description" content="Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the…" />
+<meta name="description" content="Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of…" />
 <link rel="canonical" href="https://celorga.io/features.html" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Celorga" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:title" content="Celorga features" />
-<meta property="og:description" content="Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the…" />
+<meta property="og:description" content="Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of…" />
 <meta property="og:url" content="https://celorga.io/features.html" />
 <meta property="og:image" content="https://celorga.io/assets/og/features.png" />
 <meta property="og:image:secure_url" content="https://celorga.io/assets/og/features.png" />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Celorga features: Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the…" />
+<meta property="og:image:alt" content="Celorga features: Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of…" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Celorga features" />
-<meta name="twitter:description" content="Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the…" />
+<meta name="twitter:description" content="Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of…" />
 <meta name="twitter:url" content="https://celorga.io/features.html" />
 <meta name="twitter:image" content="https://celorga.io/assets/og/features.png" />
-<meta name="twitter:image:alt" content="Celorga features: Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the…" />
+<meta name="twitter:image:alt" content="Celorga features: Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of…" />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -66,7 +66,47 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </header>
 <div class="celorga-features-page">
   <section class="celorga-page-intro">
-    <p>Celorga is a local-first workspace for running work with people and agents from files you control. It keeps the source behind a decision, delegates work with bounded context, brings back the decisions that need you, and records the finished result in plain-text Org files.</p>
+    <p>Celorga is an open-source control plane for AI agents, built for knowledge work instead of code. It brings the agents you already use into one workspace, gives them a shared memory made of plain-text files you own, and keeps you in charge of anything consequential. This page tours what it does today.</p>
+  </section>
+
+  <section class="celorga-feature-story" id="multi-agent-chat" aria-labelledby="multi-agent-chat-title">
+    <div class="celorga-feature-copy">
+      <h2 id="multi-agent-chat-title">One conversation, many agents</h2>
+      <p>Celorga works with the models and agent harnesses you already use: Claude Code, Codex, OpenCode, and Pi locally or over SSH, an OpenClaw gateway, or Anthropic, OpenRouter, Ollama, and other OpenAI-compatible APIs. It drives the harnesses you're already signed into rather than reselling tokens. A shared AI room lets you bring any named local, remote, hosted, or self-hosted destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
+      <ul>
+        <li>Mention <code>@research</code>, <code>@writer</code>, <code>@local-model</code>, or any destination you configure; <code>@all</code> asks every participant.</li>
+        <li>Enable Experimental features in Settings → General to reveal workspace tools, which let a compatible direct model search, read, and propose edits through the built-in agent. Review each patch in Celorga before applying it.</li>
+        <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
+        <li>Synced chat history has deterministic repair without a model call, with a configurable background interval and an off option.</li>
+        <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched. The original agent stays the room's default, so later messages without an <code>@mention</code> keep going to it; change the default from the composer at any time.</li>
+        <li>Agents can hand work to each other: when one agent's reply <code>@mentions</code> another agent in the room, that agent takes the next turn. A per-room limit (four in a row by default) keeps agents from looping until you reply, and background jobs can ask a room agent to respond with <code>celorga thread post --request-turn</code>.</li>
+        <li>Agents can disagree, compare approaches, or propose explicit handoffs without Celorga hiding an autonomous loop behind the interface.</li>
+      </ul>
+      <p class="celorga-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="agent-quickstart.html">Connect an agent</a></p>
+    </div>
+    <div class="celorga-feature-media">
+      <figure><img src="assets/screenshots/macos-workspace-ai-room.png?v=20261009" alt="Celorga shared AI room showing one question answered side by side by two configured agents" loading="lazy" /><figcaption>One agent round, two independently attributed answers, and a shared corpus-backed conversation.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="celorga-feature-story celorga-feature-story-reverse" id="agent-work" aria-labelledby="agent-work-title">
+    <div class="celorga-feature-copy">
+      <h2 id="agent-work-title">Hand off tasks, not prompts</h2>
+      <p>Any TODO can become agent work. <em>Start work</em> picks an agent, model, and reasoning effort, opens a durable run that cites the task, and shows a live <em>Working</em>, <em>Your turn</em>, <em>Needs you</em>, or <em>Done</em> badge on the heading and in Agenda. Context, citations, outputs, validation, and approvals stay together while the work moves.</p>
+      <ul>
+        <li>Automations give a prompt a schedule and an agent; missed runs catch up after sleep and attempts never overlap.</li>
+        <li>Activity shows what is running, on which host, what is waiting on you, and an <em>Explain Status</em> inspector for why.</li>
+        <li>A headless server can own agent turns and schedules so your laptop and iPhone become clients that can sleep, quit, or update.</li>
+        <li>Bounded context packs carry explicit file-and-line citations.</li>
+        <li>Generated work remains separate from canonical notes until someone reviews it.</li>
+        <li>One decision queue brings together approvals from files, agent runs, and mobile.</li>
+        <li>Reusable workflows keep their instructions, schedules, exact model and reasoning choices, history, and results in inspectable files.</li>
+      </ul>
+      <p class="celorga-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="mcp-and-skills.html">MCP and skills</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
+    </div>
+    <div class="celorga-feature-media">
+      <figure><img src="assets/screenshots/macos-workspace-runs-review.png?v=20261009" alt="Celorga Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
+    </div>
   </section>
 
   <section class="celorga-feature-story" id="planning-knowledge" aria-labelledby="planning-knowledge-title">
@@ -83,49 +123,12 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <p class="celorga-feature-links"><a href="workflows.html">Everyday workflows</a><a href="tooling-reference.html">CLI reference</a></p>
     </div>
     <div class="celorga-feature-media celorga-feature-media-pair">
-      <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Celorga agenda with scheduled tasks, assignees, and linked note context" loading="lazy" /><figcaption>A native agenda over ordinary corpus files.</figcaption></figure>
-      <figure><img src="assets/screenshots/macos-workspace-context.png" alt="Celorga project note with open work and a source-cited AI brief in the Context pane" loading="lazy" /><figcaption>Linked work and a source-cited brief stay beside the note.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-agenda.png?v=20261009" alt="Celorga agenda with scheduled tasks, assignees, and linked note context" loading="lazy" /><figcaption>A native agenda over ordinary corpus files.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-context.png?v=20261009" alt="Celorga project note with open work and a source-cited AI brief in the Context pane" loading="lazy" /><figcaption>Linked work and a source-cited brief stay beside the note.</figcaption></figure>
     </div>
   </section>
 
-  <section class="celorga-feature-story celorga-feature-story-reverse" id="agent-work" aria-labelledby="agent-work-title">
-    <div class="celorga-feature-copy">
-      <h2 id="agent-work-title">Decisions become durable work</h2>
-      <p>Selected context, citations, plans, outputs, validation, clarifications, and approvals stay together while the work moves. People can see what happened before approving a consequential action, and what evidence proves it finished.</p>
-      <ul>
-        <li>Bounded context packs carry explicit file-and-line citations.</li>
-        <li>Generated work remains separate from canonical notes until someone reviews it.</li>
-        <li>One decision queue brings together approvals from files, agent runs, and mobile.</li>
-        <li>Reusable workflows keep their instructions, schedules, exact model and reasoning choices, history, and results in inspectable files.</li>
-      </ul>
-      <p class="celorga-feature-links"><a href="agent-quickstart.html">Agent quickstart</a><a href="mcp-and-skills.html">MCP and skills</a><a href="ai-adapters.html">Provider-neutral adapters</a></p>
-    </div>
-    <div class="celorga-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-runs-review.png" alt="Celorga Agent Work showing an approval-ready launch brief with outputs and review state" loading="lazy" /><figcaption>Agent Work keeps outcomes, artifacts, validation, and approval state together.</figcaption></figure>
-    </div>
-  </section>
-
-  <section class="celorga-feature-story" id="multi-agent-chat" aria-labelledby="multi-agent-chat-title">
-    <div class="celorga-feature-copy">
-      <h2 id="multi-agent-chat-title">One conversation, many agents</h2>
-      <p>Celorga works with the models and agent harnesses you already use. A shared AI room lets you bring any named local, remote, hosted, or self-hosted destination into one corpus-grounded conversation. Every participant sees the same bounded transcript, keeps its own identity and model, and answers inside one visible agent round.</p>
-      <ul>
-        <li>Mention <code>@research</code>, <code>@writer</code>, <code>@local-model</code>, or any destination you configure; <code>@all</code> asks every participant.</li>
-        <li>Enable Experimental features in Settings → General to reveal workspace tools, which let a compatible direct model search, read, and propose edits through the built-in agent. Review each patch in Celorga before applying it.</li>
-        <li>Responses stay grouped beneath the question that invoked them, with separate progress, model selection, and failure state for each agent.</li>
-        <li>Synced chat history has deterministic repair without a model call, with a configurable background interval and an off option.</li>
-        <li>Mentioning another agent from a single-agent thread automatically forks it into a shared room, leaving the original conversation untouched. The original agent stays the room's default, so later messages without an <code>@mention</code> keep going to it; change the default from the composer at any time.</li>
-        <li>Agents can hand work to each other: when one agent's reply <code>@mentions</code> another agent in the room, that agent takes the next turn. A per-room limit (four in a row by default) keeps agents from looping until you reply, and background jobs can ask a room agent to respond with <code>celorga thread post --request-turn</code>.</li>
-        <li>Agents can disagree, compare approaches, or propose explicit handoffs without Celorga hiding an autonomous loop behind the interface.</li>
-      </ul>
-      <p class="celorga-feature-links"><a href="editors-macos.html#ai-chat-and-agents">Shared AI rooms</a><a href="agent-quickstart.html">Connect an agent</a></p>
-    </div>
-    <div class="celorga-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-ai-room.png" alt="Celorga shared AI room showing one question answered side by side by two configured agents" loading="lazy" /><figcaption>One agent round, two independently attributed answers, and a shared corpus-backed conversation.</figcaption></figure>
-    </div>
-  </section>
-
-  <section class="celorga-feature-story" id="data-notebooks" aria-labelledby="data-notebooks-title">
+  <section class="celorga-feature-story celorga-feature-story-reverse" id="data-notebooks" aria-labelledby="data-notebooks-title">
     <div class="celorga-feature-copy">
       <h2 id="data-notebooks-title">Data notebooks keep evidence close</h2>
       <p>Celorga renders Org notes that declare local or configured remote datasets, reusable SQL views, materialized results, freshness policy, and deterministic charts. Refresh is explicit; merely opening or publishing a document never runs a warehouse query.</p>
@@ -137,11 +140,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <p class="celorga-feature-links"><a href="language-reference.html#local-datasets-and-sql-views">Notebook syntax</a><a href="tooling-reference.html">Query-data options</a></p>
     </div>
     <div class="celorga-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Celorga rendering a launch readiness data notebook with a materialized table and chart" loading="lazy" /><figcaption>Materialized rows, freshness metadata, and visualization stay connected to the source note.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-data.png?v=20261009" alt="Celorga rendering a launch readiness data notebook with a materialized table and chart" loading="lazy" /><figcaption>Materialized rows, freshness metadata, and visualization stay connected to the source note.</figcaption></figure>
     </div>
   </section>
 
-  <section class="celorga-feature-story celorga-feature-story-reverse" id="meetings-context" aria-labelledby="meetings-context-title">
+  <section class="celorga-feature-story" id="meetings-context" aria-labelledby="meetings-context-title">
     <div class="celorga-feature-copy">
       <h2 id="meetings-context-title">Meetings become source-backed context</h2>
       <p>Celorga can record or import a meeting, keep audio and transcripts local, and render summaries, decisions, and follow-ups from ordinary files. Those records can then feed agenda items, cited agent runs, entity pages, and reports.</p>
@@ -153,7 +156,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <p class="celorga-feature-links"><a href="editors-macos.html">Celorga for macOS</a><a href="corpus-flow.html">Artifact flow</a></p>
     </div>
     <div class="celorga-feature-media">
-      <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Celorga meeting view with transcript metadata, summary, decisions, and action items" loading="lazy" /><figcaption>A meeting record keeps its transcript, decisions, and follow-ups together.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-meetings.png?v=20261009" alt="Celorga meeting view with transcript metadata, summary, decisions, and action items" loading="lazy" /><figcaption>A meeting record keeps its transcript, decisions, and follow-ups together.</figcaption></figure>
     </div>
   </section>
 
@@ -175,7 +178,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <p>Agent work can finish as a talk, an evidence-backed analysis, a customer quote, marketing collateral, a shareable document, or a published site. The artifact stays connected to the source material and approvals that produced it without granting recipients access to the source corpus.</p>
     </div>
     <div class="celorga-editor-strip">
-      <figure><img src="assets/screenshots/macos-workspace-data.png" alt="Celorga rendering an evidence-backed data notebook with an interactive chart" loading="lazy" /><figcaption><strong>Analytics.</strong> Materialized results and visualizations stay connected to their query, freshness, and source context.</figcaption></figure>
+      <figure><img src="assets/screenshots/macos-workspace-data.png?v=20261009" alt="Celorga rendering an evidence-backed data notebook with an interactive chart" loading="lazy" /><figcaption><strong>Analytics.</strong> Materialized results and visualizations stay connected to their query, freshness, and source context.</figcaption></figure>
       <div class="celorga-editor-cards">
         <article><strong>Talks and slides</strong><p>Develop the narrative beside its research, preview the deck in the Mac app, and export Beamer-compatible TeX or a presentation-ready PDF.</p></article>
         <article><strong>Customer-ready documents</strong><p>Turn approved source material into quotes, reports, and marketing collateral, then export a clean reading-layout PDF.</p></article>
@@ -195,14 +198,16 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
       <article><h3>Knowledge + planning</h3><p>Agenda, daily notes, search, IDs, backlinks, people, projects, and graph views keep related work connected.</p></article>
       <article><h3>Agents + review</h3><p>Local or remote agents can use cited context, create durable outputs, and pause for approval.</p></article>
       <article><h3>Data + publishing</h3><p>Build saved table and card views with property filters, sorting, grouping, and source-backed edits. Evaluate table formulas, build data notebooks and charts, export PDFs and slides, and publish sites.</p></article>
-      <article><h3>Apps + editors</h3><p>Use Celorga on Mac and iPhone, work with the same files in other editors, and extend CLI commands, templates, or document rendering with plugins.</p></article>
+      <article><h3>Apps + editors</h3><p>Use the Mac app and the iPhone beta, run the CLI and MCP server on macOS or Linux, work with the same files in VS Code, Vim, or Emacs, and extend commands, templates, or document rendering with plugins.</p></article>
+      <article><h3>Writing</h3><p>Prose mode is a calm, proportional writing view where alternative phrasings, ghosted text, and cut passages stay recoverable in the same file.</p></article>
+      <article><h3>Projects + skills</h3><p>Group chats and agents around one shared project brief, and give every agent workspace-authored skills as ordinary <code>SKILL.md</code> files.</p></article>
       <article><h3>Safety + portability</h3><p>Local files stay canonical, writes are previewable, approvals are explicit, and plugin locks pin exact Git commits and SHA-256 contents.</p></article>
     </div>
   </section>
 
   <section class="celorga-feature-cta" aria-labelledby="feature-cta-title">
     <h2 id="feature-cta-title">Where to start</h2>
-    <p>Celorga for macOS is the primary product experience. The Celorga CLI, VS Code extension, language server, and file format provide independent developer surfaces for the same local corpus.</p>
+    <p>The desktop app is the fastest way in, and the iPhone beta keeps you connected to your agents. The Celorga CLI, MCP server, language server, editor plugins, and file format are open, cross-machine surfaces for the same local files, and they already run on Linux.</p>
     <p class="celorga-feature-links"><a href="getting-started.html">Getting started</a><a href="reference.html">Reference</a><a href="https://github.com/aviaviavi/celorga">GitHub</a></p>
   </section>
 </div>

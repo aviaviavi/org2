@@ -3448,3 +3448,304 @@ html {
     margin-top: 0.5rem;
   }
 }
+
+/* Homepage relaunch: agent control plane + local-first foundation. */
+#content .celorga-home-kicker {
+  margin: 0 0 0.55rem;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#content .celorga-hero-cli {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+#content .celorga-hero-cli code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+#content .celorga-hero-cli code::before {
+  margin-right: 0.45rem;
+  color: var(--quiet);
+  content: "$";
+}
+
+#content .celorga-hero-cli:hover {
+  border-color: var(--link);
+  color: var(--link-strong);
+}
+
+#content .celorga-home-harnesses,
+#content .celorga-home-both,
+#content .celorga-home-uses,
+#content .celorga-home-platforms {
+  max-width: 70rem;
+  margin: 0 0 clamp(3.5rem, 7vw, 5.5rem);
+}
+
+#content .celorga-home-harnesses {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.2fr);
+  gap: 1.25rem clamp(1.75rem, 4vw, 3.5rem);
+  align-items: center;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-small);
+}
+
+#content .celorga-home-harnesses h2 {
+  margin: 0 0 0.7rem;
+  font-size: clamp(1.4rem, 2.5vw, 1.8rem);
+  font-weight: 500;
+  letter-spacing: -0.028em;
+  line-height: 1.15;
+}
+
+#content .celorga-home-harnesses-copy > p:not(.celorga-home-kicker) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+#content .celorga-home-harness-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#content .celorga-home-harness-list li {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--link);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+#content .celorga-home-harness-list strong {
+  color: var(--fg);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+#content .celorga-home-harness-list span {
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+#content .celorga-home-harness-mcp {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+#content .celorga-home-harness-mcp a {
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#content .celorga-home-both-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+#content .celorga-home-both-grid article {
+  padding: clamp(1.1rem, 2.5vw, 1.6rem);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--link);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-small);
+}
+
+#content .celorga-home-both-grid article + article {
+  border-top-color: var(--signal);
+}
+
+#content .celorga-home-both-grid article:first-child .celorga-home-kicker {
+  color: var(--link);
+}
+
+#content .celorga-home-both-grid h3 {
+  margin: 0 0 0.85rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+
+#content .celorga-home-both-grid ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#content .celorga-home-both-grid li {
+  position: relative;
+  margin: 0;
+  padding: 0.5rem 0 0.5rem 1.1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+#content .celorga-home-both-grid li::before {
+  position: absolute;
+  left: 0;
+  color: var(--link);
+  content: "*";
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+#content .celorga-home-both-grid article + article li::before {
+  color: var(--signal);
+}
+
+#content .celorga-home-both-grid li strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+#content .celorga-home-uses-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem 1.25rem;
+}
+
+#content .celorga-home-uses-grid article {
+  padding: 0.85rem 0 0;
+  border-top: 2px solid var(--fg);
+}
+
+#content .celorga-home-uses-grid h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+#content .celorga-home-uses-grid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+#content .celorga-home-own {
+  scroll-margin-top: 5rem;
+}
+
+#content .celorga-home-own .celorga-feature-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#content .celorga-home-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+#content .celorga-home-platform-grid a {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  padding: 0.95rem 1rem 1.05rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--shadow-small);
+}
+
+#content .celorga-home-platform-grid a:hover {
+  border-color: var(--link);
+}
+
+#content .celorga-home-platform-grid strong {
+  color: var(--fg);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+#content .celorga-home-platform-grid span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+#content .celorga-home-platform-grid .celorga-home-platform-status {
+  justify-self: start;
+  margin-bottom: 0.2rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--link-strong);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#content .celorga-home-platform-grid .celorga-home-platform-status-next {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+
+@media (max-width: 920px) {
+  #content .celorga-home-harnesses {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #content .celorga-home-uses-grid,
+  #content .celorga-home-platform-grid,
+  #content .celorga-home-own .celorga-feature-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  #content .celorga-home-harness-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #content .celorga-home-both-grid,
+  #content .celorga-home-uses-grid,
+  #content .celorga-home-platform-grid,
+  #content .celorga-home-own .celorga-feature-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
