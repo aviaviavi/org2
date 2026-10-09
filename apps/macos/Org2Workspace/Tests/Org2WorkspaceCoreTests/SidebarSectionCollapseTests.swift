@@ -28,6 +28,21 @@ final class SidebarSectionCollapseTests: XCTestCase {
     XCTAssertEqual(storage, "daily")
   }
 
+  func testFilesIsACollapsibleSectionLikeTheOthers() {
+    // Files used to be a plain row rather than a section header, so a fully
+    // folded sidebar showed it differently from every other section.
+    XCTAssertEqual(
+      SidebarSectionID.allCases,
+      [.workspace, .pinned, .daily, .files, .projects, .chat],
+      "Sidebar sections in display order"
+    )
+    let allCollapsed = SidebarSectionID.allCases.reduce("") {
+      SidebarSectionCollapseState.toggling($1, in: $0)
+    }
+    XCTAssertEqual(allCollapsed, "workspace,pinned,daily,files,projects,chat")
+    XCTAssertTrue(SidebarSectionCollapseState(storage: allCollapsed).isCollapsed(.files))
+  }
+
   func testUnknownStoredSectionsAreIgnored() {
     let state = SidebarSectionCollapseState(storage: "pinned, retired-section,,chat")
     XCTAssertEqual(state.collapsed, [.pinned, .chat])

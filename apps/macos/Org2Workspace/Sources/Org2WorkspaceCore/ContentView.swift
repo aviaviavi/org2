@@ -2578,67 +2578,71 @@ private struct SidebarView: View {
         }
 
         Section {
-          HStack(spacing: 6) {
-            Button {
-              showsFileTree.toggle()
-            } label: {
-              HStack(spacing: 7) {
-                Image(systemName: "chevron.right")
-                  .font(.caption2.weight(.semibold))
-                  .rotationEffect(.degrees(showsFileTree ? 90 : 0))
-                  .frame(width: 12)
-                Image(systemName: "folder")
-                  .foregroundStyle(WorkspaceDesign.structuralAccent)
-                Text("Files")
-                  .font(.callout.weight(.medium))
-                Spacer(minLength: 0)
-                if showsCommandShortcuts {
-                  KeyboardShortcutBadge(text: NewCorpusFileCommand.shortcutTitle)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-                } else {
-                  Text("\(store.corpusFiles.count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+          if isSidebarSectionExpanded(.files) {
+            HStack(spacing: 6) {
+              Button {
+                showsFileTree.toggle()
+              } label: {
+                HStack(spacing: 7) {
+                  Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(showsFileTree ? 90 : 0))
+                    .frame(width: 12)
+                  Image(systemName: "folder")
+                    .foregroundStyle(WorkspaceDesign.structuralAccent)
+                  Text("Files")
+                    .font(.callout.weight(.medium))
+                  Spacer(minLength: 0)
+                  if showsCommandShortcuts {
+                    KeyboardShortcutBadge(text: NewCorpusFileCommand.shortcutTitle)
+                      .transition(.opacity.combined(with: .move(edge: .trailing)))
+                  } else {
+                    Text("\(store.corpusFiles.count)")
+                      .font(.caption2.monospacedDigit())
+                      .foregroundStyle(.tertiary)
+                  }
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .help(showsFileTree ? "Hide corpus files" : "Browse the corpus as a collapsible file tree")
+
+              Button {
+                store.presentNewCorpusFileSheet()
+              } label: {
+                Image(systemName: "plus")
+                  .font(.caption.weight(.semibold))
+                  .foregroundStyle(.secondary)
+                  .frame(width: 18, height: 18)
+                  .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .disabled(store.corpusRoot == nil)
+              .help("New File… (\(NewCorpusFileCommand.shortcutTitle))")
+              .accessibilityLabel("New File")
+            }
+
+            if showsFileTree {
+              if store.corpusFileTree.isEmpty {
+                Text(store.isScanningCorpusFiles ? "Scanning files…" : "No files")
+                  .font(.caption)
+                  .foregroundStyle(.tertiary)
+                  .padding(.leading, 18)
+                  .padding(.vertical, 3)
+              } else {
+                ForEach(visibleSidebarFileRows) { row in
+                  SidebarCorpusFileTreeRow(
+                    row: row,
+                    isExpanded: expandedSidebarFileDirectoryIDs.contains(row.id),
+                    toggleDirectory: { toggleSidebarFileDirectory(row.id) }
+                  )
+                  .id("sidebar-file:\(row.id)")
                 }
               }
-              .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(showsFileTree ? "Hide corpus files" : "Browse the corpus as a collapsible file tree")
-
-            Button {
-              store.presentNewCorpusFileSheet()
-            } label: {
-              Image(systemName: "plus")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(store.corpusRoot == nil)
-            .help("New File… (\(NewCorpusFileCommand.shortcutTitle))")
-            .accessibilityLabel("New File")
-          }
-
-          if showsFileTree {
-            if store.corpusFileTree.isEmpty {
-              Text(store.isScanningCorpusFiles ? "Scanning files…" : "No files")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 18)
-                .padding(.vertical, 3)
-            } else {
-              ForEach(visibleSidebarFileRows) { row in
-                SidebarCorpusFileTreeRow(
-                  row: row,
-                  isExpanded: expandedSidebarFileDirectoryIDs.contains(row.id),
-                  toggleDirectory: { toggleSidebarFileDirectory(row.id) }
-                )
-                .id("sidebar-file:\(row.id)")
-              }
             }
           }
+        } header: {
+          SidebarSectionLabel("Files", section: .files)
         }
 
         WorkspaceProjectSidebar(presentedSheet: $projectSheet) { summary in chatThreadRow(summary) }

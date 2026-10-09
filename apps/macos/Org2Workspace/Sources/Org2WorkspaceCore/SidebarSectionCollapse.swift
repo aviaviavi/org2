@@ -6,6 +6,7 @@ public enum SidebarSectionID: String, CaseIterable, Sendable {
   case workspace
   case pinned
   case daily
+  case files
   case projects
   case chat
 }
@@ -63,9 +64,6 @@ struct SidebarCollapsibleSectionHeader<Accessory: View>: View {
   @AppStorage(SidebarSectionCollapseState.defaultsKey) private var collapsedStorage = ""
   let title: String
   let section: SidebarSectionID
-  /// Uses the sidebar's monospaced uppercase label style; Projects keeps its
-  /// plain section-header text.
-  var usesSidebarLabelStyle = true
   @ViewBuilder var accessory: () -> Accessory
 
   var body: some View {
@@ -77,19 +75,17 @@ struct SidebarCollapsibleSectionHeader<Accessory: View>: View {
         }
       } label: {
         HStack(spacing: 5) {
-          if usesSidebarLabelStyle {
-            Text(title.uppercased())
-              .font(.system(size: 10, weight: .semibold, design: .monospaced))
-              .tracking(0.7)
-          } else {
-            Text(title)
-          }
+          // Every collapsible section shares one label style, so a fully
+          // folded sidebar reads as a uniform list of section titles.
+          Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .tracking(0.7)
           Image(systemName: "chevron.right")
             .font(.system(size: 8, weight: .bold))
             .rotationEffect(.degrees(isCollapsed ? 0 : 90))
           Spacer(minLength: 0)
         }
-        .foregroundStyle(usesSidebarLabelStyle ? AnyShapeStyle(WorkspaceDesign.tertiaryText) : AnyShapeStyle(.secondary))
+        .foregroundStyle(WorkspaceDesign.tertiaryText)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)

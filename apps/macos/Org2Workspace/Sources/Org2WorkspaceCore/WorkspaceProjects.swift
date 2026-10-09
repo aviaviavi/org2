@@ -168,7 +168,7 @@ struct WorkspaceProjectSidebar<ThreadRow: View>: View {
         }
       }
     } header: {
-      SidebarCollapsibleSectionHeader(title: "Projects", section: .projects, usesSidebarLabelStyle: false) {
+      SidebarCollapsibleSectionHeader(title: "Projects", section: .projects) {
         WorkspaceProjectHeaderButton(
           title: "Refresh projects",
           systemImage: "arrow.clockwise",
