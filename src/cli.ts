@@ -55,6 +55,11 @@ async function main(): Promise<void> {
     const { runAgenticWorkspaceCommand } = await import("./agenticWorkspaceCli.js");
     if (await runAgenticWorkspaceCommand(args)) return;
   }
+  if (args[0] === "migrate-names") {
+    const { runMigrateNamesCommand } = await import("./migrateNames.js");
+    await runMigrateNamesCommand(args.slice(1));
+    return;
+  }
   if (args[0] === "todo-config") {
     const { runTodoConfigCommand } = await import("./todoConfigCli.js");
     await runTodoConfigCommand(args.slice(1));

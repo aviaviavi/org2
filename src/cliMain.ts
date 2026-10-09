@@ -9269,6 +9269,7 @@ Core commands:
   celorga plugin <list|init|add|remove|update|sync|trust|doctor|exec|template> [options]
   celorga eval <run|fixture> RUN [options]
   celorga agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  celorga migrate-names [--dir CORPUS] [--apply] [--force] [--json]
   celorga todo-config <show|set> --dir CORPUS [--sequences-json JSON] [--apply]
   celorga daily-config <show|infer|set> --dir CORPUS [--file PATH] [--template FORMAT|--clear] [--apply]
   celorga embed resolve --target file:NOTE.org|id:ID --file SOURCE [--dir CORPUS] [--json]

@@ -76,11 +76,16 @@ and =CelorgaNames.swift= (apps).
    extension and OpenClaw plugin accepts both names. In existing corpora, writers keep the legacy
    names, so devices still on 0.8.x keep working on a shared corpus. The website
    documents only the Celorga names; [[file:../site/name-compatibility.org][one compatibility page]] lists the old ones.
-2. *Migration (after every app Avi uses runs a dual-read build).* A
-   preview-first =celorga migrate-names= rewrites a corpus: property keys,
-   =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, record types. A corpus
-   with =celorga.json= is "migrated", and writers use Celorga names in it. New
-   corpora start migrated (new workspaces already get =celorga.json=).
+2. *Migration (after every app Avi uses runs a dual-read build).*
+   =celorga migrate-names= (=src/migrateNames.ts=, added 2026-10-09) previews,
+   then with =--apply= renames =org2.json= to =celorga.json=, moves =.org2/= to
+   =.celorga/= (merging without overwriting if both exist), renames =ORG2_=
+   drawer keys and =#+ORG2_= keywords outside blocks and outside =raw/=, and adds
+   =.celorga/= twins of =.org2/= lines to the device's =.stignore=. It refuses to
+   apply while a presence file shows an app or server online. Not migrated yet:
+   =org2:*= record type values inside state files (still read and written), and
+   writers still create new =ORG2_*= keys; readers prefer =CELORGA_*=, and
+   in-place updates keep whichever key exists. New corpora start with =celorga.json=.
 3. *Retirement (much later).* Stop reading legacy names only after a deprecation notice.
 
 * Compatibility surface: do not rename

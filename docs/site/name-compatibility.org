@@ -8,7 +8,7 @@ Celorga was previously released as *OpenOrg* (the Mac app) and *Org2* (the runti
 - The old names keep working for several releases. There is no hard cutover, and you don't need to rename anything to upgrade.
 - When both spellings are present, Celorga prefers the new one: =celorga.json= wins over =org2.json= in the same folder, a =:CELORGA_X:= property wins over =:ORG2_X:=, and a =CELORGA_X= environment variable wins over =ORG2_X=.
 - New workspaces start with =celorga.json=. In an existing workspace, Celorga keeps editing the configuration file it already has and keeps writing the other old names, so devices still running an earlier release keep working on the same files.
-- A later =celorga migrate-names= command will preview and then rewrite an existing workspace to the new names: property keys, =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, and record types. It is not available yet.
+- =celorga migrate-names --dir WORKSPACE= previews moving an existing workspace to the new names: =org2.json= to =celorga.json=, =.org2/= to =.celorga/=, and =:ORG2_X:= properties to =:CELORGA_X:=. Add =--apply= to make the changes. Run it only once every device that opens the workspace has 0.9.0 or later, and quit the app on every device first; =--apply= refuses while any of them is still online. Files under =raw/= keep their captured names. Run it again on each synced device to update that device's =.stignore=.
 
 * Old and new names
 
