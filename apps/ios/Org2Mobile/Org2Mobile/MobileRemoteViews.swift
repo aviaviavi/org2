@@ -163,9 +163,17 @@ struct MobileAISidebarView: View {
           }
         }
 
-        if !activeThreads.isEmpty {
+        if !runningThreads.isEmpty {
+          Section("Running") {
+            ForEach(runningThreads) { thread in
+              threadButton(thread)
+            }
+          }
+        }
+
+        if !idleThreads.isEmpty {
           Section("Threads") {
-            ForEach(activeThreads) { thread in
+            ForEach(idleThreads) { thread in
               threadButton(thread)
             }
           }
@@ -234,7 +242,15 @@ struct MobileAISidebarView: View {
   }
 
   private var activeThreads: [MobileRemoteThreadSummary] {
-    remote.threads.filter { !$0.isSettled }
+    remote.threads.filter { !$0.isSettled }.runningFirst
+  }
+
+  private var runningThreads: [MobileRemoteThreadSummary] {
+    activeThreads.filter(\.isRunning)
+  }
+
+  private var idleThreads: [MobileRemoteThreadSummary] {
+    activeThreads.filter { !$0.isRunning }
   }
 
   private var settledThreads: [MobileRemoteThreadSummary] {
@@ -695,9 +711,17 @@ struct MobileRemoteRootView: View {
         }
       }
 
-      if !activeThreads.isEmpty {
+      if !runningThreads.isEmpty {
+        Section("Running") {
+          ForEach(runningThreads) { thread in
+            threadLink(thread)
+          }
+        }
+      }
+
+      if !idleThreads.isEmpty {
         Section("Chats") {
-          ForEach(activeThreads) { thread in
+          ForEach(idleThreads) { thread in
             threadLink(thread)
           }
         }
@@ -736,7 +760,15 @@ struct MobileRemoteRootView: View {
   }
 
   private var activeThreads: [MobileRemoteThreadSummary] {
-    remote.threads.filter { !$0.isSettled }
+    remote.threads.filter { !$0.isSettled }.runningFirst
+  }
+
+  private var runningThreads: [MobileRemoteThreadSummary] {
+    activeThreads.filter(\.isRunning)
+  }
+
+  private var idleThreads: [MobileRemoteThreadSummary] {
+    activeThreads.filter { !$0.isRunning }
   }
 
   private func projectExpansionBinding(_ projectID: String) -> Binding<Bool> {

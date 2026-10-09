@@ -126,6 +126,24 @@ assert.match(
 assert.match(remoteViews, /Section\("Projects"\)/);
 assert.match(remoteViews, /Menu\("New Chat in Project", systemImage: "folder\.badge\.plus"\)/);
 assert.match(remoteViews, /activeThreads\.filter \{ project\.contains\(\$0\.id\) \}/);
+{
+  const remoteModels = readFileSync(
+    resolve("apps/ios/Org2Mobile/Org2Mobile/MobileRemoteModels.swift"),
+    "utf8",
+  );
+  assert.match(
+    remoteModels,
+    /var runningFirst: \[MobileRemoteThreadSummary\] \{\s*filter\(\\\.isRunning\) \+ filter \{ !\$0\.isRunning \}/,
+    "Running chats sort ahead of idle chats while keeping the host order",
+  );
+  const activeDefinitions = remoteViews.match(/remote\.threads\.filter \{ !\$0\.isSettled \}\.runningFirst/g) ?? [];
+  assert.equal(activeDefinitions.length, 2, "Both the sidebar and the chat list order running chats first");
+  assert.ok(
+    remoteViews.indexOf('Section("Running")') < remoteViews.indexOf('Section("Threads")')
+      && remoteViews.lastIndexOf('Section("Running")') < remoteViews.indexOf('Section("Chats")'),
+    "A Running section sits above the idle chats in the sidebar and the chat list",
+  );
+}
 assert.match(remoteViews, /remote\.setProjectMembership/);
 assert.doesNotMatch(remoteViews, /New \(destination\.name\) Chat/);
 assert.match(remoteViews, /struct MobileSettingsView/);

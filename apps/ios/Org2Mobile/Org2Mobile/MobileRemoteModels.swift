@@ -212,6 +212,14 @@ struct MobileRemoteThreadSummary: Codable, Hashable, Identifiable {
   var executionHostName: String? = nil
 }
 
+extension Array where Element == MobileRemoteThreadSummary {
+  /// Running chats first, then the rest, each group keeping the host's order
+  /// (pinned, then most recent). Matches the Mac sidebar's Running group.
+  var runningFirst: [MobileRemoteThreadSummary] {
+    filter(\.isRunning) + filter { !$0.isRunning }
+  }
+}
+
 struct MobileRemoteThreadDetail: Codable, Hashable {
   let thread: MobileRemoteThreadSummary
   let messages: [MobileRemoteChatMessage]
