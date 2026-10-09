@@ -331,9 +331,13 @@ final class AIChatCrossHostTests: XCTestCase {
     ])
     try flush([thread], to: url)
     let first = try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, onlyIfChanged: true)
+    #if DEBUG
     AIChatTranscriptStore.resetThreadShardDecodeCountForTesting()
+    #endif
     XCTAssertFalse(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, onlyIfChanged: true).checked)
+    #if DEBUG
     XCTAssertEqual(AIChatTranscriptStore.threadShardDecodeCountForTesting(), 0)
+    #endif
     try flush([thread.replacingMessages(thread.messages + [AIChatMessage(role: .assistant, content: "new")])], to: url)
     let before = try storedBytes(url)
     XCTAssertThrowsError(try AIChatTranscriptStore.shared.repair(legacyURL: url, apply: true, expectedRevision: first.revision))
