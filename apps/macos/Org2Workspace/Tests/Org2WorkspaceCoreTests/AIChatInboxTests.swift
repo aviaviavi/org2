@@ -186,6 +186,74 @@ final class AIChatInboxTests: XCTestCase {
   }
 
   @MainActor
+  func testDurableSaveSucceedsWhenAnotherThreadChangesDuringTheBarrier() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-ai-chat-inbox-concurrent-\(UUID().uuidString)", isDirectory: true)
+    let transcript = root
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    try FileManager.default.createDirectory(
+      at: transcript.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suiteName = "AIChatInboxConcurrentTests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      aiChatTranscriptURL: transcript,
+      legacyDefaultsDomains: []
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    let threadID = store.createAIChatThread(runtime: .codex)
+    store.flushDeferredAIChatTranscriptPersistence()
+
+    let inbox = root
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("ai-chat-inbox", isDirectory: true)
+    try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+    let messageID = UUID()
+    let envelope = inbox.appendingPathComponent("\(messageID.uuidString.lowercased()).json")
+    try JSONSerialization.data(withJSONObject: [
+      "schema": "org2:ai-chat-inbox-message:v1",
+      "id": messageID.uuidString.lowercased(),
+      "threadID": threadID.uuidString.lowercased(),
+      "content": "Delivered while another chat is busy.",
+      "createdAt": "2026-10-09T19:30:00.000Z",
+      "authorLabel": "Build Scout",
+    ], options: [.prettyPrinted]).write(to: envelope, options: .atomic)
+
+    // Another chat changes while this state is being committed, as a
+    // streaming OpenClaw or Codex turn does. The committed state still holds
+    // this delivery, so the delivery must not be reported as unsaved.
+    var changedAnotherThread = false
+    store.aiChatTranscriptSaverForTesting = {
+      guard !changedAnotherThread else { return }
+      changedAnotherThread = true
+      MainActor.assumeIsolated {
+        _ = store.createAIChatThread(runtime: .codex)
+      }
+    }
+
+    await store.drainAIChatInbox()
+
+    XCTAssertTrue(changedAnotherThread)
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: envelope.path),
+      "A newer change in another thread must not fail an already durable delivery"
+    )
+    XCTAssertEqual(
+      store.aiChatThreads.first(where: { $0.id == threadID })?.messages.map(\.id),
+      [messageID]
+    )
+    XCTAssertTrue(
+      store.hasUnpersistedAIChatTranscriptMutationForTesting,
+      "The newer change is saved on its own schedule"
+    )
+  }
+
+  @MainActor
   func testOperationJournalAppliesEveryKindInOrderAndPersistsTheResult() async throws {
     let root = temporaryOperationCorpus("all-kinds")
     let transcript = root

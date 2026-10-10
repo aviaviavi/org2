@@ -28740,7 +28740,10 @@ extension WorkspaceStore {
       // termination safer.
       return true
     }
-    guard await persistAIChatTranscriptDurably(context: aiChatContext) else {
+    guard await persistAIChatTranscriptDurably(
+      context: aiChatContext,
+      requiresNoNewerMutations: true
+    ) else {
       if isCurrentAIChatCorpusContext(aiChatContext) {
         statusText = "Could not save AI chat before quitting"
       }
@@ -42124,8 +42127,17 @@ extension WorkspaceStore {
     pendingAIChatSelectionDuringLoad = selectedAIChatThreadID
   }
 
+  /// Commits the transcript as it is now and waits until that state is
+  /// durable. Other threads keep streaming while the barrier is written, so by
+  /// default a newer mutation does not fail the caller: the state the caller
+  /// depends on is already on disk, and the newer mutation is saved on its own
+  /// schedule. Treating it as a failure rejected OpenClaw sends with "the
+  /// pending turn could not be saved before dispatch" whenever another chat was
+  /// active. Pass `requiresNoNewerMutations` when every in-memory change must be
+  /// durable, as before quitting.
   private func persistAIChatTranscriptDurably(
-    context: AIChatCorpusContextToken
+    context: AIChatCorpusContextToken,
+    requiresNoNewerMutations: Bool = false
   ) async -> Bool {
     guard isCurrentAIChatCorpusContext(context),
           !isLoadingAIChatTranscript,
@@ -42167,7 +42179,7 @@ extension WorkspaceStore {
     )
     registerMissingHydratedAIChatThreadsInLRU()
     enforceHydratedAIChatThreadLimit()
-    return !hasUnpersistedAIChatTranscriptMutation
+    return requiresNoNewerMutations ? !hasUnpersistedAIChatTranscriptMutation : true
   }
 
   private func scheduleAIChatTranscriptPersistenceAfterInteraction(
