@@ -580,6 +580,54 @@ function resolveAgendaDatesFromTimestamp(
   return resolved.sort();
 }
 
+export const DEFAULT_AGENDA_DEADLINE_WARNING_DAYS = 14;
+
+/**
+ * Emacs Org shows an upcoming deadline on today's agenda during its warning
+ * period ("In 6 d.:"), even when the task is not scheduled. The warning period
+ * comes from the timestamp's own `-Nd` cookie, or `defaultWarningDays` when it
+ * has none. Deadlines due on or before `startDate` (today) are already shown
+ * as today or overdue, so they get no warning copy.
+ */
+export function agendaDeadlineWarningForStart(
+  raw: string,
+  startDate: Date,
+  defaultWarningDays: number,
+): AgendaDeadlineWarning | null {
+  const dateStr = extractDateFromTimestamp(raw);
+  if (!dateStr) return null;
+  let occurrence = parseIsoDate(dateStr);
+  const repeater = parseTimestampRepeater(raw);
+  const warning = parseTimestampWarning(raw);
+  if (repeater) {
+    for (let i = 0; i < 10000 && occurrence.getTime() <= startDate.getTime(); i += 1) {
+      const next = addRepeaterInterval(occurrence, repeater);
+      if (next.getTime() <= occurrence.getTime()) break;
+      occurrence = next;
+    }
+  }
+  if (occurrence.getTime() <= startDate.getTime()) return null;
+
+  let warningStart: Date;
+  if (warning) {
+    warningStart = subtractWarningInterval(occurrence, warning);
+  } else if (defaultWarningDays > 0) {
+    warningStart = addTimestampInterval(occurrence, defaultWarningDays, "d", -1);
+  } else {
+    return null;
+  }
+  if (warningStart.getTime() > startDate.getTime()) return null;
+
+  const daysUntil = Math.round((occurrence.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+  return { due: formatIsoDateUtc(occurrence), daysUntil };
+}
+
+function agendaItemKindLabel(item: ScheduledItem): string {
+  const warning = item.deadlineWarning;
+  if (!warning) return item.kind;
+  return `${item.kind} in ${warning.daysUntil} d. ${warning.due}`;
+}
+
 // Get today's date as YYYY-MM-DD string
 function getTodayString(): string {
   const now = new Date();
@@ -2092,9 +2140,20 @@ interface ScheduledItem {
   properties: Record<string, string>;
   habit?: HabitAgendaState;
   todoTerminal?: boolean;
+  /**
+   * Set on the copy of an upcoming DEADLINE that is shown on the first day of
+   * the range (normally today) during its warning period, like Emacs Org's
+   * `org-deadline-warning-days`.
+   */
+  deadlineWarning?: AgendaDeadlineWarning;
 }
 
-const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v2";
+interface AgendaDeadlineWarning {
+  due: string;
+  daysUntil: number;
+}
+
+const AGENDA_CACHE_SCHEMA_VERSION = "org2-agenda-cache/v3";
 const AGENDA_CACHE_MAX_QUERIES = 4;
 
 type AgendaCacheFileEntry = {
@@ -2232,7 +2291,13 @@ function deduplicateAgendaPlanningItems(items: ScheduledItem[]): ScheduledItem[]
     }
 
     const existing = deduplicated[existingIndex];
-    if (existing?.kind !== "DEADLINE" && item.kind === "DEADLINE") {
+    if (!existing) continue;
+    if (item.deadlineWarning) {
+      // A warning copy lands before its due date, so an existing DEADLINE row
+      // on that day is an unlabeled prewarning row. A SCHEDULED row already
+      // puts the task on that day and stays.
+      if (existing.kind === "DEADLINE" && !existing.deadlineWarning) deduplicated[existingIndex] = item;
+    } else if (existing.deadlineWarning ? item.kind !== "DEADLINE" : existing.kind !== "DEADLINE" && item.kind === "DEADLINE") {
       deduplicated[existingIndex] = item;
     }
   }
@@ -4477,6 +4542,8 @@ function findScheduledItemsInText(
   excludeTimeFilter: AgendaExcludeTimeFilter,
   excludeEffortFilter: AgendaExcludeEffortFilter,
   excludePropertyFilter: AgendaExcludePropertyFilter,
+  deadlineWarningDays: number = 0,
+  deadlineWarningDate: Date | null = null,
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
@@ -4572,9 +4639,15 @@ function findScheduledItemsInText(
       if (!matchesAgendaTimeFilter(planningTime, timeFilter)) continue;
       if (!matchesAgendaExcludeTimeFilter(planningTime, excludeTimeFilter)) continue;
       const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
-      const agendaDates = resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue, kind as AgendaPlanningKind);
+      const agendaDates: Array<{ dateStr: string; deadlineWarning?: AgendaDeadlineWarning }> =
+        resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue, kind as AgendaPlanningKind)
+          .map((dateStr) => ({ dateStr }));
+      if (kind === "DEADLINE" && !isDoneLike && deadlineWarningDate) {
+        const deadlineWarning = agendaDeadlineWarningForStart(tsRaw, deadlineWarningDate, deadlineWarningDays);
+        if (deadlineWarning) agendaDates.push({ dateStr: formatIsoDateUtc(deadlineWarningDate), deadlineWarning });
+      }
 
-      for (const dateStr of agendaDates) {
+      for (const { dateStr, deadlineWarning } of agendaDates) {
         const itemDate = parseIsoDate(dateStr);
         const inRange = itemDate >= startDate && itemDate <= endDate;
         const isOverdue = itemDate < startDate;
@@ -4629,6 +4702,7 @@ function findScheduledItemsInText(
           tags: [...current.tags],
           properties: { ...current.properties },
           ...(habit ? { habit } : {}),
+          ...(deadlineWarning ? { deadlineWarning } : {}),
         });
       }
     }
@@ -4807,13 +4881,13 @@ function formatUnifiedSection(
 
       const status = item.todo || "ITEM";
       const timePrefix = item.time ? `${item.time} ` : "";
-      output += `    [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+      output += `    [${status}] ${timePrefix}${item.headline} (${agendaItemKindLabel(item)}) ${item.filePath}\n`;
     }
   } else {
     for (const item of items) {
       const status = item.todo || "ITEM";
       const timePrefix = item.time ? `${item.time} ` : "";
-      output += `  [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+      output += `  [${status}] ${timePrefix}${item.headline} (${agendaItemKindLabel(item)}) ${item.filePath}\n`;
     }
   }
 
@@ -4867,13 +4941,13 @@ function formatByDate(
 
         const status = item.todo || "ITEM";
         const timePrefix = item.time ? `${item.time} ` : "";
-        output += `    [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+        output += `    [${status}] ${timePrefix}${item.headline} (${agendaItemKindLabel(item)}) ${item.filePath}\n`;
       }
     } else {
       for (const item of dayItems) {
         const status = item.todo || "ITEM";
         const timePrefix = item.time ? `${item.time} ` : "";
-        output += `  [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+        output += `  [${status}] ${timePrefix}${item.headline} (${agendaItemKindLabel(item)}) ${item.filePath}\n`;
       }
     }
 
@@ -7433,6 +7507,7 @@ async function main(): Promise<void> {
   let agendaLimitRaw = "";
   let agendaDayLimitRaw = "";
   let agendaGroupLimitRaw = "";
+  let agendaDeadlineWarningDaysRaw = "";
   let agendaFromRaw = "";
   let agendaToRaw = "";
   let verboseErrors = false;
@@ -8984,6 +9059,12 @@ async function main(): Promise<void> {
         if (command === "roam" && roamAction === "linkify") {
           roamLinkifyExcludes.push(args[i]!);
         }
+        i++;
+      }
+    } else if (arg === "--deadline-warning-days") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") agendaDeadlineWarningDaysRaw = args[i]!;
         i++;
       }
     } else if (arg === "--no-overdue") {
@@ -14898,6 +14979,18 @@ Flags:
     agendaGroupLimit = parsedGroupLimit;
   }
 
+  let agendaDeadlineWarningDays = DEFAULT_AGENDA_DEADLINE_WARNING_DAYS;
+  if (agendaDeadlineWarningDaysRaw.trim().length > 0) {
+    const rawWarningDays = agendaDeadlineWarningDaysRaw.trim();
+    if (!/^\d+$/.test(rawWarningDays)) {
+      console.error(
+        `Error: invalid agenda --deadline-warning-days value: ${agendaDeadlineWarningDaysRaw}. Expected 0 or a positive integer.`,
+      );
+      process.exit(1);
+    }
+    agendaDeadlineWarningDays = Number.parseInt(rawWarningDays, 10);
+  }
+
   let agendaFromDate: Date | null = null;
   if (agendaFromRaw.trim().length > 0) {
     const rawFrom = agendaFromRaw.trim();
@@ -14969,6 +15062,13 @@ Flags:
     }))
     .digest("hex");
 
+  // Like Emacs Org, upcoming deadline warnings are shown only on today's date.
+  const agendaDeadlineWarningDateFor = (runtimeStartDate: Date, runtimeEndDate: Date): Date | null => {
+    if (agendaDeadlineWarningDays <= 0) return null;
+    const todayDate = parseIsoDate(today);
+    return todayDate >= runtimeStartDate && todayDate <= runtimeEndDate ? todayDate : null;
+  };
+
   const scanAgendaFile = (filePath: string, runtimeStartDate: Date, runtimeEndDate: Date): ScheduledItem[] => {
     const content = fs.readFileSync(filePath, "utf8");
     const normalized = content.replace(/\r?\n/g, "\n");
@@ -15020,6 +15120,8 @@ Flags:
       parsedAgendaExcludeTime.filter,
       parsedAgendaExcludeEffort,
       parsedAgendaExcludeProperty.filter,
+      agendaDeadlineWarningDays,
+      agendaDeadlineWarningDateFor(runtimeStartDate, runtimeEndDate),
     );
   };
 
@@ -15175,6 +15277,7 @@ Flags:
         ...(it.effort ? { effort: it.effort } : {}),
         ...(it.id ? { id: it.id } : {}),
         ...(it.habit ? { habit: it.habit } : {}),
+        ...(it.deadlineWarning ? { deadlineWarning: it.deadlineWarning } : {}),
       });
 
       return Object.keys(byDate)
@@ -15220,7 +15323,12 @@ Flags:
         });
     };
 
-    const workload = agendaWorkloadSummaryForItems(outputItems, parsedAgendaGroup.groupOrder, parsedAgendaTagOrder);
+    // A deadline warning is a second view of a task that is counted on its due date.
+    const workload = agendaWorkloadSummaryForItems(
+      outputItems.filter((item) => !item.deadlineWarning),
+      parsedAgendaGroup.groupOrder,
+      parsedAgendaTagOrder,
+    );
     const payload = {
       $schema: "org2:agenda:v1",
       range: { start: startIso, end: endIso, days: rangeDays },

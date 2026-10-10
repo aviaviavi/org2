@@ -20,7 +20,11 @@
           "body": "",
           "level": 1,
           "tags": [],
-          "properties": {}
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-04-17",
+            "daysUntil": 2
+          }
         }
       ]
     },

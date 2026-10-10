@@ -1051,6 +1051,9 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
   public let idValue: String?
   public let habit: HabitAgendaState?
   public let corpus: WorkspaceResultCorpus?
+  /// Present on the copy of an upcoming deadline that the runtime shows on
+  /// today's date during its warning period.
+  public let deadlineWarning: AgendaDeadlineWarning?
 
   enum CodingKeys: String, CodingKey {
     case todo
@@ -1068,6 +1071,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     case idValue = "id"
     case habit
     case corpus
+    case deadlineWarning
   }
 
   public init(
@@ -1085,7 +1089,8 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     effort: String?,
     idValue: String?,
     habit: HabitAgendaState?,
-    corpus: WorkspaceResultCorpus? = nil
+    corpus: WorkspaceResultCorpus? = nil,
+    deadlineWarning: AgendaDeadlineWarning? = nil
   ) {
     self.todo = todo
     self.headline = headline
@@ -1102,6 +1107,7 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     self.idValue = idValue
     self.habit = habit
     self.corpus = corpus
+    self.deadlineWarning = deadlineWarning
   }
 
   public init(from decoder: Decoder) throws {
@@ -1121,10 +1127,22 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     idValue = try container.decodeIfPresent(String.self, forKey: .idValue)
     habit = try container.decodeIfPresent(HabitAgendaState.self, forKey: .habit)
     corpus = try container.decodeIfPresent(WorkspaceResultCorpus.self, forKey: .corpus)
+    deadlineWarning = try container.decodeIfPresent(AgendaDeadlineWarning.self, forKey: .deadlineWarning)
   }
 
   public var id: String {
-    "\(file):\(line):\(kind):\(headline):\(idValue ?? "")"
+    // The warning copy shown today and the row on the due date are distinct
+    // rows of the same heading.
+    let warningSuffix = deadlineWarning.map { ":warning:\($0.due)" } ?? ""
+    return "\(file):\(line):\(kind):\(headline):\(idValue ?? "")\(warningSuffix)"
+  }
+
+  /// The planning label shown under an agenda row, for example
+  /// "DEADLINE in 6 days · Oct 15" for an upcoming deadline shown today.
+  public var planningLabel: String {
+    let base = [kind, time].compactMap { $0 }.joined(separator: " ")
+    guard let deadlineWarning else { return base }
+    return "\(base) \(deadlineWarning.relativeDescription)"
   }
 
   public var lineForEditor: Int {
@@ -1152,7 +1170,8 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
       effort: effort,
       idValue: idValue,
       habit: habit,
-      corpus: corpus
+      corpus: corpus,
+      deadlineWarning: deadlineWarning
     )
   }
 
@@ -1435,6 +1454,21 @@ public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
       .compactMap { $0 }
       .joined(separator: "\n")
       .lowercased()
+  }
+}
+
+public struct AgendaDeadlineWarning: Decodable, Hashable, Sendable {
+  public let due: String
+  public let daysUntil: Int
+
+  public init(due: String, daysUntil: Int) {
+    self.due = due
+    self.daysUntil = daysUntil
+  }
+
+  /// "due tomorrow" or "due in 6 days (2026-10-15)".
+  public var relativeDescription: String {
+    daysUntil == 1 ? "due tomorrow (\(due))" : "due in \(daysUntil) days (\(due))"
   }
 }
 
@@ -6888,7 +6922,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
 
   public var subtitle: String {
     switch self {
-    case .agenda(let item): [item.todo, item.kind, item.time].compactMap { $0 }.joined(separator: " ")
+    case .agenda(let item): [item.todo, item.planningLabel].compactMap { $0 }.joined(separator: " ")
     case .assigned(let item): [item.todo, item.status, item.assignee].compactMap { $0 }.joined(separator: " ")
     case .search(let result): Org2Display.cleanInline(result.snippet)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.context)

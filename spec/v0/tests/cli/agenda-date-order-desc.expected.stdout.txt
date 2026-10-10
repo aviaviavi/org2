@@ -11,4 +11,5 @@
 ══════════════════════
 
   [TODO] Today task (SCHEDULED) spec/v0/tests/cli/agenda-when-filter.input.txt
+  [TODO] Upcoming task (DEADLINE in 1 d. 2026-01-22) spec/v0/tests/cli/agenda-when-filter.input.txt
 

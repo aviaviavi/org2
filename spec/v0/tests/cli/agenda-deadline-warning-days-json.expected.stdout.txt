@@ -1,0 +1,74 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-10-09",
+    "end": "2026-10-09",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-10-09",
+      "weekday": "Friday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Unscheduled deadline in six days",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-default.input.txt",
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-10-15",
+            "daysUntil": 6
+          }
+        },
+        {
+          "todo": "TODO",
+          "headline": "Unscheduled deadline in twenty days",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-default.input.txt",
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-10-29",
+            "daysUntil": 20
+          }
+        },
+        {
+          "todo": "TODO",
+          "headline": "Scheduled today with a deadline next week",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-default.input.txt",
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
+        },
+        {
+          "todo": "TODO",
+          "headline": "Monthly deadline repeats into the window",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-default.input.txt",
+          "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-10-20",
+            "daysUntil": 11
+          }
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

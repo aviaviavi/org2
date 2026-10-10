@@ -903,7 +903,7 @@ public struct AIChatWorkspaceContext: Sendable {
   private func formatAgendaItem(_ item: AgendaItem) -> String {
     let status = item.todo ?? "TASK"
     let title = Org2Display.cleanInline(item.headline)
-    let timing = [item.kind, item.time].compactMap { $0 }.joined(separator: " ")
+    let timing = item.planningLabel
     let id = item.idValue.map { " id:\(Org2Display.shortID($0))" } ?? ""
     return "- [\(status)] \(title) — \(timing) — \(mappedPath(item.file)):\(item.lineForEditor)\(id)"
   }

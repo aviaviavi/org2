@@ -376,6 +376,7 @@ celorga agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31
 Important behavior:
 
 - Includes both =SCHEDULED:= and =DEADLINE:= rows in-range.
+- Like Emacs Org, an open task whose =DEADLINE:= is coming up also appears on today's date, scheduled or not, for the 14 days before it is due. The row reads =DEADLINE in 6 d. 2026-10-15=, and JSON adds =deadlineWarning: {due, daysUntil}=. A =-Nd= cookie on the timestamp sets that task's warning period. A task already scheduled for today keeps its =SCHEDULED= row. Pass =--deadline-warning-days N= to change the default period, or =0= to turn these rows off.
 - Supports broad filter/sort/group dimensions in CLI + VS Code integration.
 - Normalizes common TODO aliases into stable status buckets (including wait/hold/pause-style states).
 

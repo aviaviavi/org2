@@ -8,6 +8,27 @@
   "overdue": [],
   "days": [
     {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Monthly review",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-repeater-filter.input.txt",
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-01-31",
+            "daysUntil": 10
+          }
+        }
+      ]
+    },
+    {
       "date": "2026-01-22",
       "weekday": "Thursday",
       "items": [

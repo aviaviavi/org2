@@ -1,0 +1,17 @@
+* TODO Unscheduled deadline in six days
+DEADLINE: <2026-10-15 Thu>
+
+* TODO Unscheduled deadline in twenty days
+DEADLINE: <2026-10-29 Thu>
+
+* DONE Finished deadline in three days
+DEADLINE: <2026-10-12 Mon>
+
+* TODO Scheduled today with a deadline next week
+SCHEDULED: <2026-10-09 Fri> DEADLINE: <2026-10-14 Wed>
+
+* TODO Monthly deadline repeats into the window
+DEADLINE: <2026-08-20 Thu +1m>
+
+* TODO Short explicit warning
+DEADLINE: <2026-10-13 Tue -2d>

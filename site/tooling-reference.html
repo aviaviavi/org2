@@ -435,6 +435,7 @@ celorga roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json
 <p>Important behavior:</p>
 <ul>
 <li><p>Includes both <code>SCHEDULED:</code> and <code>DEADLINE:</code> rows in-range.</p></li>
+<li><p>Like Emacs Org, an open task whose <code>DEADLINE:</code> is coming up also appears on today's date, scheduled or not, for the 14 days before it is due. The row reads <code>DEADLINE in 6 d. 2026-10-15</code>, and JSON adds <code>deadlineWarning: {due, daysUntil}</code>. A <code>-Nd</code> cookie on the timestamp sets that task's warning period. A task already scheduled for today keeps its <code>SCHEDULED</code> row. Pass <code>--deadline-warning-days N</code> to change the default period, or <code>0</code> to turn these rows off.</p></li>
 <li><p>Supports broad filter/sort/group dimensions in CLI + VS Code integration.</p></li>
 <li><p>Normalizes common TODO aliases into stable status buckets (including wait/hold/pause-style states).</p></li>
 </ul>

@@ -21,6 +21,36 @@
           "level": 1,
           "tags": [],
           "properties": {}
+        },
+        {
+          "todo": "TODO",
+          "headline": "Deep task",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-level-filter.input.txt",
+          "line": 6,
+          "body": "",
+          "level": 3,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-01-21",
+            "daysUntil": 2
+          }
+        },
+        {
+          "todo": "TODO",
+          "headline": "Another top",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-level-filter.input.txt",
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-01-22",
+            "daysUntil": 3
+          }
         }
       ]
     },

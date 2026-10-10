@@ -23,6 +23,24 @@
             "work"
           ],
           "properties": {}
+        },
+        {
+          "todo": "IN_PROGRESS",
+          "headline": "Build feature",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-exclude-filters.input.txt",
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [
+            "work",
+            "someday"
+          ],
+          "properties": {},
+          "deadlineWarning": {
+            "due": "2026-01-22",
+            "daysUntil": 1
+          }
         }
       ]
     },

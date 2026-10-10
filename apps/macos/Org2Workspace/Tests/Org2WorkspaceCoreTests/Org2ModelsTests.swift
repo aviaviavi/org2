@@ -12818,6 +12818,48 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testUpcomingDeadlineWarningShowsInTodayAndFocusAsADistinctRow() throws {
+    let payload = try JSONDecoder().decode(AgendaPayload.self, from: Data("""
+    {
+      "$schema": "org2:agenda:v1",
+      "range": { "start": "2026-10-09", "end": "2026-11-07", "days": 30 },
+      "overdue": [],
+      "days": [
+        {
+          "date": "2026-10-09",
+          "weekday": "Friday",
+          "items": [{ "todo": "TODO", "headline": "Unscheduled deadline", "kind": "DEADLINE", "file": "/tmp/warn.org", "line": 0, "tags": [], "properties": {}, "deadlineWarning": { "due": "2026-10-15", "daysUntil": 6 } }]
+        },
+        {
+          "date": "2026-10-15",
+          "weekday": "Thursday",
+          "items": [{ "todo": "TODO", "headline": "Unscheduled deadline", "kind": "DEADLINE", "file": "/tmp/warn.org", "line": 0, "tags": [], "properties": {} }]
+        }
+      ],
+      "skippedFiles": 0
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.agenda = payload
+
+    store.agendaMode = .focus
+    let focusToday = try XCTUnwrap(store.agendaDisplaySections.first { $0.label == "Today" })
+    XCTAssertEqual(focusToday.items.map(\.headline), ["Unscheduled deadline"])
+    XCTAssertEqual(focusToday.items.first?.planningLabel, "DEADLINE due in 6 days (2026-10-15)")
+
+    store.agendaMode = .today
+    XCTAssertEqual(store.agendaDisplaySections.first { $0.label == "Today" }?.items.count, 1)
+
+    store.agendaMode = .range
+    let warning = try XCTUnwrap(store.agendaDisplaySections.first { $0.label == "Today" }?.items.first)
+    let due = try XCTUnwrap(store.agendaDisplaySections.first { $0.label == "Next 7 days" }?.items.first)
+    XCTAssertNotEqual(warning.id, due.id)
+    XCTAssertEqual(due.planningLabel, "DEADLINE")
+    XCTAssertEqual(warning.replacing(todo: "DONE").id, warning.id)
+  }
+
+  @MainActor
   func testAgendaUppercaseJKScrollDetailPaneWithoutMovingSelection() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.selectedSurface = .agenda

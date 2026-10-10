@@ -9137,7 +9137,7 @@ private struct AgendaRow: View, Equatable {
           }
         }
         HStack(spacing: 8) {
-          Text([item.kind, item.time].compactMap { $0 }.joined(separator: " "))
+          Text(item.planningLabel)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
           Text(sourceReference)
